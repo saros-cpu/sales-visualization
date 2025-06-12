@@ -1,0 +1,13 @@
+appId: com.sales.desktop
+productName: 销售管理系统
+directories:
+  output: release
+files:
+  - dist/**/*
+  - electron/**/*
+win:
+  target: nsis
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

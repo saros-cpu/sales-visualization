@@ -1,0 +1,190 @@
+import { useEffect, useState } from 'react';
+import { Row, Col, Card, Statistic, Spin, Alert, Select, Tag } from 'antd';
+import { ShoppingOutlined, FileTextOutlined, AuditOutlined, ShopOutlined, DollarOutlined, RiseOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import * as echarts from 'echarts/core';
+import { LineChart, BarChart } from 'echarts/charts';
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+import client from '@/api/client';
+import { getKpiYearly, getDashboardYearly, getMonthly } from '@/api/retail';
+import { getCurrentExchange, CurrentExchange } from '@/api/exchange';
+
+echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+
+interface DashboardData {
+  monthlyWholesaleTons: number;
+  weeklyWeighCount: number;
+  activeContracts: number;
+  monthlyProcurementTons: number;
+}
+
+interface MonthlyTrend {
+  month: string;
+  volume: number;
+  amount: number;
+}
+
+export default function Dashboard() {
+  const { t } = useTranslation();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [kpi, setKpi] = useState<{ totalSales: number; totalLiters: number; activeShops: number; yoySales?: number; yoyVolume?: number } | null>(null);
+  const [trend, setTrend] = useState<MonthlyTrend[]>([]);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [rate, setRate] = useState<CurrentExchange | null>(null);
+  const [marketWatch, setMarketWatch] = useState<{ items: any[]; updatedAt: string | null } | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    const currentMonth = new Date().getMonth() + 1;
+    Promise.all([
+      client.get('/dashboard/overview'),
+      getKpiYearly(year),
+      Promise.allSettled(
+        Array.from({ length: currentMonth > 12 ? 12 : currentMonth }, (_, i) =>
+          getMonthly(`${year}-${String(i + 1).padStart(2, '0')}`)
+        )
+      ),
+      getCurrentExchange(),
+      client.get('/dashboard/market-watch'),
+    ]).then(([overview, kpiRes, results, rateRes, mwRes]) => {
+      setData(overview.data.data);
+      const ks = kpiRes.summary || kpiRes.data?.summary || {};
+      setKpi({
+        totalSales: ks.totalSales || 0,
+        totalLiters: ks.totalLiters || 0,
+        activeShops: ks.activeShops || 0,
+        yoySales: kpiRes.comparison?.yoySales || ks.yoySales,
+        yoyVolume: kpiRes.comparison?.yoyVolume || ks.yoyVolume,
+      });
+      const monthlyTrend: MonthlyTrend[] = [];
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          monthlyTrend.push({
+            month: `${i + 1}${t('common.month')}`,
+            volume: Math.round(r.value.summary.totalLiters),
+            amount: Math.round(r.value.summary.totalSales / 10000),
+          });
+        }
+      });
+      setTrend(monthlyTrend);
+      setRate(rateRes);
+      setMarketWatch(mwRes.data.data);
+    }).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  }, [year]);
+
+  if (loading) return <Spin style={{ display: 'block', margin: '100px auto' }} />;
+  if (error) return <Alert type="error" message={t('common.error')} description={error} showIcon />;
+  if (!data) return null;
+
+  const trendOption = trend.length > 0 ? {
+    tooltip: { trigger: 'axis' as const },
+    legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
+    grid: { left: 60, right: 60, top: 20, bottom: 40 },
+    xAxis: { type: 'category' as const, data: trend.map((d) => d.month) },
+    yAxis: [
+      { type: 'value' as const, name: t('retail.volume') + '(L)' },
+      { type: 'value' as const, name: `${t('retail.amount')}(${t('common.wan')})`, position: 'right' as const },
+    ],
+    series: [
+      { name: t('retail.volume'), type: 'bar' as const, data: trend.map((d) => d.volume), itemStyle: { color: '#1677ff' } },
+      { name: t('retail.amount'), type: 'line' as const, yAxisIndex: 1, data: trend.map((d) => d.amount), lineStyle: { color: '#52c41a' }, itemStyle: { color: '#52c41a' } },
+    ],
+  } : null;
+
+  const formatYoy = (v: number | undefined) => {
+    if (v == null) return '-';
+    return `${(v >= 0 ? '+' : '')}${(v * 100).toFixed(1)}%`;
+  };
+
+  return (
+    <div>
+      <Row justify="space-between" style={{ marginBottom: 16 }}>
+        <Col><h2>{t('nav.dashboard')}</h2></Col>
+        <Col>
+          <Select value={year} onChange={setYear} style={{ width: 100 }}>
+            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+              <Select.Option key={y} value={y}>{y}</Select.Option>
+            ))}
+          </Select>
+        </Col>
+      </Row>
+      <Row gutter={16}>
+        <Col span={4} style={{ display: 'flex' }}>
+          <Card size="small" style={{width: '100%', height: '100%'}}><Statistic title={t('dashboard.monthlyWholesaleTons')} value={data.monthlyWholesaleTons} precision={1} prefix={<ShoppingOutlined />} /></Card>
+        </Col>
+        <Col span={4} style={{ display: 'flex' }}>
+          <Card size="small" style={{width: '100%', height: '100%'}}><Statistic title={t('dashboard.activeContracts')} value={data.activeContracts} prefix={<FileTextOutlined />} valueStyle={{ color: '#1677ff' }} /></Card>
+        </Col>
+        <Col span={4} style={{ display: 'flex' }}>
+          <Card size="small" style={{width: '100%', height: '100%'}}><Statistic title={t('dashboard.monthlyProcurementTons')} value={data.monthlyProcurementTons} precision={1} prefix={<AuditOutlined />} /></Card>
+        </Col>
+        {kpi && (
+          <>
+            <Col span={4} style={{ display: 'flex' }}>
+              <Card size="small" style={{width: '100%', height: '100%'}}>
+                <Statistic title={t('retail.totalSales')} value={Math.round(kpi.totalSales / 100000000)} suffix={t('common.yi')} prefix={<DollarOutlined />} />
+                <div style={{ fontSize: 12, color: '#999' }}>{t('common.yoy')} {formatYoy(kpi.yoySales)}</div>
+              </Card>
+            </Col>
+            <Col span={4} style={{ display: 'flex' }}>
+              <Card size="small" style={{width: '100%', height: '100%'}}>
+                <Statistic title={t('retail.totalVolume')} value={Math.round(kpi.totalLiters / 10000)} suffix={t('common.wanL')} prefix={<RiseOutlined />} />
+                <div style={{ fontSize: 12, color: '#999' }}>{t('common.yoy')} {formatYoy(kpi.yoyVolume)}</div>
+              </Card>
+            </Col>
+            <Col span={4} style={{ display: 'flex' }}>
+              <Card size="small" style={{width: '100%', height: '100%'}}><Statistic title={t('retail.activeShops')} value={`${kpi.activeShops}${kpi.activeShops ? '/' : ''}30`} prefix={<ShopOutlined />} /></Card>
+            </Col>
+          </>
+        )}
+      </Row>
+      <Row gutter={16} style={{ marginTop: 16 }}>
+        <Col span={12}>
+          <Card size="small" title={<><DollarOutlined /> {t('exchange.today')}</>}>
+            {rate ? (
+              <Row gutter={16}>
+                <Col span={6}><Statistic title="USD/KGS" value={rate.usdKgs} precision={4} valueStyle={{ color: '#22d3ee', fontSize: 18 }} /></Col>
+                <Col span={6}><Statistic title="CNY/KGS" value={rate.cnyKgs} precision={4} valueStyle={{ color: '#facc15', fontSize: 18 }} /></Col>
+                <Col span={6}><Statistic title="KGS/CNY" value={+(1 / rate.cnyKgs).toFixed(6)} precision={6} valueStyle={{ fontSize: 18 }} /></Col>
+                <Col span={6}>
+                  <div style={{ fontSize: 12, color: '#999' }}>
+                    <div>{rate.date}</div>
+                    <div style={{ marginTop: 4 }}>{t('exchange.source')}: {rate.source}</div>
+                  </div>
+                </Col>
+              </Row>
+            ) : <Alert type="info" message={t('common.noData')} style={{ margin: 0 }} />}
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card size="small" title={<><InfoCircleOutlined /> {t('exchange.marketWatch')}</>}>
+            {marketWatch && marketWatch.items && marketWatch.items.length > 0 ? marketWatch.items.map((item: any) => (
+              <div key={item.id} style={{ marginBottom: 12, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{item.title}</div>
+                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{item.summary}</div>
+                {item.priceText && <Tag style={{ marginTop: 4 }}>{item.priceText}</Tag>}
+                <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
+                  {item.sourceName} | {item.observedAt?.substring(0, 10)}
+                </div>
+              </div>
+            )) : <Alert type="info" message={t('common.noData')} />}
+          </Card>
+        </Col>
+      </Row>
+      <Row style={{ marginTop: 16 }}>
+        <Col span={24}>
+          <Card title={`${year}${t('common.retailTrend')}`} size="small">
+            {trendOption ? (
+              <ReactEChartsCore echarts={echarts} option={trendOption} style={{ height: 350 }} />
+            ) : <Alert type="info" message={t('common.noData')} />}
+          </Card>
+        </Col>
+      </Row>
+    </div>
+  );
+}

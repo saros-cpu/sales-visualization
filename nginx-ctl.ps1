@@ -1,0 +1,62 @@
+# nginx-ctl.ps1 - Control Nginx service
+# Usage: powershell -File nginx-ctl.ps1 [start|stop|restart|reload|status]
+
+$nginxHome = "D:\nginx\nginx-1.26.3"
+$projectConf = "D:\SalesVisualization\nginx.conf"
+$action = if ($args[0]) { $args[0] } else { "status" }
+
+# Sync project nginx.conf to nginx home before any action
+if ($action -ne "status" -and (Test-Path $projectConf)) {
+    Copy-Item $projectConf "$nginxHome\conf\nginx.conf" -Force
+    if (Test-Path "D:\SalesVisualization\mime.types") {
+        Copy-Item "D:\SalesVisualization\mime.types" "$nginxHome\conf\mime.types" -Force
+    }
+}
+
+Push-Location $nginxHome
+
+switch ($action) {
+    "start" {
+        $proc = Get-Process -Name "nginx" -ErrorAction SilentlyContinue
+        if ($proc) {
+            Write-Host "Nginx already running (PID: $($proc[0].Id))"
+        } else {
+            Start-Process -FilePath ".\nginx.exe" -WindowStyle Hidden
+            Start-Sleep -Seconds 1
+            $proc = Get-Process -Name "nginx" -ErrorAction SilentlyContinue
+            if ($proc) { Write-Host "Nginx started (PID: $($proc[0].Id))" }
+            else { Write-Host "ERROR: Failed to start. Check logs\error.log" }
+        }
+    }
+    "stop" {
+        .\nginx.exe -s stop
+        Write-Host "Nginx stopped"
+    }
+    "restart" {
+        .\nginx.exe -s stop
+        Start-Sleep -Seconds 1
+        Start-Process -FilePath ".\nginx.exe" -WindowStyle Hidden
+        Start-Sleep -Seconds 1
+        $proc = Get-Process -Name "nginx" -ErrorAction SilentlyContinue
+        if ($proc) { Write-Host "Nginx restarted (PID: $($proc[0].Id))" }
+        else { Write-Host "ERROR: Failed to restart. Check logs\error.log" }
+    }
+    "reload" {
+        .\nginx.exe -s reload
+        Write-Host "Nginx config reloaded"
+    }
+    "status" {
+        $proc = Get-Process -Name "nginx" -ErrorAction SilentlyContinue
+        if ($proc) {
+            Write-Host "Nginx is running"
+            $proc | Format-Table Id, ProcessName, CPU, WorkingSet64 -AutoSize
+        } else {
+            Write-Host "Nginx is not running"
+        }
+    }
+    default {
+        Write-Host "Usage: nginx-ctl.ps1 [start|stop|restart|reload|status]"
+    }
+}
+
+Pop-Location

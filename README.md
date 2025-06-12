@@ -1,0 +1,784 @@
+# 销售板块可视化平台
+
+项目根目录：`D:\SalesVisualization`
+
+本项目是公司销售数据可视化总平台，用于统一展示零售、批发与合并统计数据。当前系统已经整合为单端口生产运行，默认端口为 `8900`。
+
+## 版本更新记录
+
+### 2026-07-08 (v2.2.1)
+
+- 修复：3D 地图标点悬停不显示站点信息（加载 kgz-map.css）
+- 修复：3D 地图客户点位不显示（mountHomeMap 参数映射修复）
+- 修复：Electron CSP 警告（添加 Content-Security-Policy）
+- 修复：React Router v7 迁移警告（HashRouter 添加 future 配置）
+- 优化：CORS 手工处理替代 Flask-CORS（修复跨域问题）
+- 优化：Three.js Clock → Timer 废弃警告修复
+- 优化：仪表板市场观察卡片显示真实数据
+
+### 2026-06-17
+
+- 全量清理：移除 Sales/ 旧 HTML + styles.css + app_nav.js；移除根目录旧 .bat 脚本；清空 OilStation/ 非运行时文件至 _archive/；更新 nginx.conf 旧路由为 301 跳转；删除 Flask 遗留路由；修复快照刷新脚本断链引用；更新 /api/retail/pages 为 SPA 路径。
+- 零售模块（768px/480px）手机响应式适配：
+  - 总览/月度/报表/预警页面：多列网格收窄为单列，面板高度适配小屏，报表 `tfoot` 固定底部显示合计
+  - 区域/站点/油品页面：左侧列 `flex:1` 面板在自动高度容器中坍缩修复（`flex:none!important`），各图表面板显式高度 260px 确保 `height:100%` 正确计算
+  - 全局：`.retail-shell` 在 768px 下 `overflow-y:auto` 允许页面滚动，子容器 `overflow:visible` 避免内容裁剪
+- 已知遗留差距（计划后续修复）：
+  - **WholesalePanel**：缺少整理工作流信息行、批发明细缺少 `productName` 字段、整理/去重结果详情展示
+  - **HealthPanel**：快照状态缺少"最近完成月日销表"行和文件明细
+  - **SystemPanel**：缺少"系统管理"标题栏和 `admin-tab active` CSS 类
+  - **ContractsPanel**：价格列缺少"含物流"/"不含物流"标签
+  - **RetailDashboard**：缺少年度日销趋势图
+
+### 2026-06-17b (经营助手增强)
+
+- 经营助手新增查询类型，覆盖全项目：
+  - **趋势查询**：`本月每日销量趋势` → 读取 `daily_YYYY-MM.json` 日趋势快照，返回每日销量/金额明细及最高/最低日分析
+  - **同比环比**：`本月同比环比` → 读取月度快照 `comparison` 字段，返回金额/销量同比（较上年同月）和环比（较上月）变化
+  - **站点状态**：`当前停业站点` → 查询 `retail_station_status` 表，返回停业/异常站点列表及原因
+  - **油品占比**：`本月油品占比` → 按油品计算销量/金额占比
+  - **年度KPI**：`2026年KPI` → 读取 `kpi_yearly_YYYY_summary.json` 快照，返回累计销量/金额/交易笔数/活跃站点及同比
+- 前端新增 12 个快捷按钮（停业站点、同比、油品占比、月趋势、年KPI、合计等）
+- 提问示例更新：支持 `本月每日趋势`、`同比环比`、`停业站点`、`油品占比`、`年度KPI` 等自然语言问题
+
+### 2026-07-01（批发看板全功能整改 + T+1修复 + 数据验证）
+
+- 四规则分类全面完成：49,340 条全部自动分类，零 `needs_review`
+- 称重明细表格对齐模板 9 列（序号/入厂日期/油品名称/磅单号/车号/油品所属公司/供应商/客户/过磅重量/备注）
+- DB `wholesale_detail_records` 新增 `weigh_serial_no`、`sender_name` 列
+- 后端生成端点加 3 字段存储 + 自动审核逻辑 + 执行看板排序参数
+- 后端新增 `POST /api/admin/weigh/auto-audit` 一键自动审核端点
+- 后端 weigh-details API 增加 weighSerialNo/senderName/remark 字段 + 6 种筛选参数（车号/客户/油品/分类/匹配状态/审核状态）
+- 后端 export API 改为模板 9 列，正月完整月份下载（不随筛选变化）
+- 前端 WeighDetailTab 全重写为模板 9 列表格 + 过滤栏（车号/客户/油品/分类/匹配状态/审核状态）+ 生成报表按钮
+- 前端 AuditPanel 新增绿色一键自动审核按钮
+- 前端 ExecutionPanel 新增排序下拉、超量行红底、到期未完成橙底、合同号可点击跳转、统计卡片联动
+- 前端 WeighPanel 新增日期范围筛选
+- 前端 Vite 构建通过（80 modules, 213ms），Python 语法检查通过
+- 导出 `批发客户名单.xlsx`（本地批发 1064 客户 + 出口批发 10 客户）
+- 零售 T+1 数据延迟修复：`new Date()` 改为 `Date.now() - 86400000`
+- 零售数据全链路验证通过：POS 源文件(АЗС-27) 13 月累计(2025-06→2026-06)问题查明，全站 6 月快照 vs DB selling 表经 `NOT IN (2,4)` 过滤后全部匹配
+- DerivedPaymentTypeKey 映射完整梳理：0=现金销售、2=自用油(排除)、3=合同销售(талоны/保留)、4=标定(поверки/排除)、5=银行卡/油卡、8=现金记账/赊销
+- SQL 过滤条件 `NOT IN (2, 4)` 确认正确，无需修改；快照刷新脚本 `scripts/refresh_current_snapshots.py:339` 保持一致
+
+### 2026-06-14
+
+- 完成 React + Vite 前端迁移，所有页面从内联 HTML/JS 改为 React SPA 构建。
+- 部署 Nginx 1.26.3 作为反向代理：静态文件服务 + API 转发到 Flask :8900。
+- 访问地址新增 `http://localhost`（Nginx :80），原 `http://127.0.0.1:8900`（Flask）保留兼容。
+- 新增前端项目目录 `frontend/`，包含 React 源码、Vite 构建配置和部署脚本。
+- 首页 3D 地图尺寸固定为 650px，国家模型水平偏移 `viewOffsetX: -4.0` 避免道路面板遮挡。
+- 新增运维脚本：`deploy-production.ps1`（一键构建部署）、`nginx-ctl.ps1`（Nginx 控制）、`register-nginx-task.ps1`（开机自启）。
+
+### 2026-06-06
+
+- 修复市场观察自动任务在乌兹别克央行 `KGS` 汇率接口超时时整体失败的问题。
+- 市场观察新增降级容错：`UZEX` 成品油行情仍会保存，汇率接口不可用时先显示原始报价，接口恢复后可在后台重新获取并换算为 `索姆/升`。
+- 验证市场观察手动执行成功：抓取 `3` 项、更新 `3` 项、错误 `0`。
+- 重启生产服务并完成健康检查，系统健康检查 `12/12` 通过。
+
+## 访问地址
+
+- **生产访问（Nginx）**：`http://localhost`（推荐）
+- Flask 直连：`http://127.0.0.1:8900/`（兼容保留）
+- 外网访问：`http://198.51.100.10:8900/`
+- 零售总览：`http://localhost/retail`
+- 后台管理：`http://localhost/admin`
+
+所有业务页面均需要登录。普通用户可查看主页、批发、零售等数据页面；管理员可进入后台维护系统。
+
+## 目录结构
+
+```
+SalesVisualization/
+│
+├── frontend/                  React 19 + Vite 8 前端 SPA
+│   ├── src/                   源码（页面/组件/API/工具/样式）
+│   ├── dist/                  构建产物 → Nginx/Flask 静态服务
+│   └── index.html             Vite 开发入口
+│
+├── Sales/                     Flask 后端（主服务）
+│   ├── api.py                 路由入口 → API / auth / admin / SPA / 代理
+│   ├── retail_internal.py     嵌入 OilStation 子应用
+│   ├── calculations.py        批发计算逻辑
+│   ├── analysis_reports.py    分析报告路由
+│   ├── summary_service.py     批发汇总服务
+│   ├── wholesale_service.py   汇率/批发页面服务
+│   ├── daily_maintenance.py   计划任务维护
+│   ├── scripts/               生产脚本（重启/注册/数据导入等）
+│   └── run_production.py      生产入口（Waitress）
+│
+├── OilStation/                嵌入的零售数据源（精简运行时）
+│   ├── api.py                 零售接口实现（被 Sales 嵌入）
+│   ├── routes/                分析/报表/KPI/导出路由
+│   ├── scripts/               快照刷新脚本
+│   ├── echarts.min.js         ECharts 库（前端 SPA 加载）
+│   ├── kgz_merged.json        KGZ 地图 GeoJSON
+│   └── cache_snapshots/       快照缓存目录
+│
+├── assets/kgz-map/            3D 吉尔吉斯地图模块
+│
+├── _archive/                  旧版 HTML/静态文件归档
+│   ├── Sales/                旧 Sales 页面（index/login/admin/wholesale）
+│   └── OilStation/           旧 OilStation 页面 + 文档 + 测试
+│
+├── nginx.conf                 生产 Nginx 反向代理配置
+└── deploy-production.ps1      一键构建+部署脚本
+```
+
+## 项目架构
+
+### 总体架构
+
+```text
+┌──────────┐   HTTP :80    ┌────────────┐  反向代理   ┌──────────────────┐
+│  浏览器   │ ───────────→ │   Nginx    │ ────────→ │  Flask :8900     │
+│ (PC/手机) │ ←─────────── │ (静态文件) │ ←──────── │  (API 后端)      │
+└──────────┘               └────────────┘            └────────┬─────────┘
+                                    │                         │
+                                    │ / → frontend/dist/       │ MySQL
+                                    │   (React SPA)           │ sales_visualization
+                                    │                         ▼
+                                    │ /api/* → Flask :8900  ┌──────────┐
+                                    │ /legacy/* → Flask     │  OilStation  │
+                                    │                         │ (嵌入数据源) │
+                                    │                         └──────────┘
+```
+
+- **Nginx（:80）**：静态文件服务（React SPA 构建产物）+ API 反向代理到 Flask
+- **Flask（:8900）**：Waitress 承载，提供 REST API、登录鉴权、文件导出、嵌入 OilStation 零售数据源
+- **React SPA**：Vite 构建，输出到 `frontend/dist/`，路由由 React Router 客户端处理
+- **MySQL**：`sales_visualization` 数据库，存储零售、批发、汇率、字典等全量数据
+- **OilStation**：作为 Python 子模块嵌入 Flask，提供零售数据接口和快照管理
+
+### 前端架构
+
+```text
+src/
+├── main.jsx                        # 应用入口：ReactDOM.createRoot
+├── App.jsx                         # 路由配置：/ → AppLayout, /retail → RetailLayout
+├── api/                            # API 请求封装
+│   ├── client.js                   #   统一 fetch（credentials:include + 401 跳转）
+│   ├── auth.js / retail.js / sales.js / wholesale.js / admin.js
+├── components/
+│   ├── layout/
+│   │   ├── AppLayout.jsx           # 销售/批发/管理共用布局（topbar + outlet）
+│   │   ├── RetailLayout.jsx        # 零售暗色布局（header + footer + outlet）
+│   │   └── RetailHeaderContext.jsx # 零售 header 控件注册 Context
+│   ├── admin/                      # 10+ 管理面板组件
+│   ├── wholesale/                  # 批发子组件（BarList, RankList）
+│   └── common/                     # AuthGuard, AdminGuard, LoadingSpinner
+├── hooks/                          # useAuth, useChart, usePeriod, useApi
+├── pages/
+│   ├── retail/                     # 7 个零售页面（暗色大屏风格）
+│   │   ├── RetailDashboard.jsx     #   总览：KPI + 3D 地图 + 排行 + 趋势
+│   │   ├── MonthlyPage.jsx         #   月度：KPI + 趋势 + 油品结构 + 洞察
+│   │   ├── RegionPage.jsx          #   区域：区域切换 + 站点排行 + 概览
+│   │   ├── StationPage.jsx         #   站点：站点选择 + 6 个分析图表
+│   │   ├── ResourcePage.jsx        #   油品：结构 + 同比环比 + 价格趋势
+│   │   ├── ReportPage.jsx          #   报表：多维查询 + 导出
+│   │   └── AlertPage.jsx           #   预警：停业/库存/趋势 + 运营建议
+│   └── sales/                      # 销售/批发/管理页面
+│       ├── DashboardPage.jsx       #   主页：KPI + 汇率 + 地图 + 市场观察
+│       ├── WholesalePage.jsx       #   批发：8 个 Tab（总览/油品/客户/外运/趋势/审核/汇率/称重明细）
+│       ├── AdminPage.jsx           #   管理：9 个 Tab（首页/自动任务/市场/零售/批发合同/财务/资料/健康/系统）
+│       └── LoginPage.jsx           #   登录
+└── styles/
+    ├── global.css                  # 全局 + 销售/管理模块样式
+    └── retail.css                  # 零售暗色主题 + 响应式（768px/480px）
+```
+
+**双布局架构**：
+- **AppLayout**：销售/批发/管理共用，topbar 含标题、模块导航（首页/批发/管理）、年份月份筛选
+- **RetailLayout**：零售专用，暗色科技风，header 接受子页面动态注册控件（月份选择、报告按钮等），footer 显示实时滚动动态
+
+**数据流**：
+```
+页面组件 → useApi / useChart → api/*.js → fetch → Flask API → 快照/数据库 → 响应
+                                                                     ↓
+                                                               ECharts 图表渲染
+```
+
+### 后端架构
+
+```text
+Sales/
+├── api.py                  # Flask 主应用：路由注册、CORS、session、错误处理
+├── run_production.py       # Waitress 生产入口（含缓存预热）
+├── config.py               # 数据库/NBKR/密钥配置
+├── retail_internal.py      # 嵌入调用 OilStation 零售接口
+├── calculations.py         # 批发数据计算（金额换算、合同匹配）
+├── summary_service.py      # 主页合并统计（零售+批发合并 KPI）
+├── wholesale_service.py    # 批发统计（出口/本地/外运/排行/分布）
+├── analysis_reports.py     # 分析报告生成（HTML + Word）
+├── daily_maintenance.py    # 自动任务维护（汇率、市场观察、零售快照）
+└── scripts/                # 运维脚本
+    ├── health_check.py           # 生产服务健康检查（12 项）
+    ├── data_call_audit.py        # 数据调用自检（37+ 接口验证）
+    ├── backfill_nbkr.py          # NBKR 汇率补齐
+    ├── fetch_market_insight.py   # 市场观察获取
+    ├── refresh_retail_snapshot.py # 零售快照刷新
+    └── backup_project.py         # 项目备份（数据库 + 快照 + 密钥）
+```
+
+**OilStation 嵌入**：
+```
+OilStation/
+├── api.py                  # 零售接口（被 Sales/api.py 通过 retail_internal.py 调用）
+├── routes/                 # 分析/报表/KPI/导出路由实现
+├── scripts/                # 快照刷新脚本
+├── echarts.min.js          # ECharts 库（SPA 的 index.html 加载）
+├── kgz_merged.json         # KGZ 地图 GeoJSON
+└── cache_snapshots/        # 快照缓存目录（JSON 文件）
+```
+
+### 数据管道
+
+```text
+[MySQL 原始表] ──→ [零售快照脚本] ──→ [JSON 快照文件] ──→ [Flask API] ──→ [React SPA]
+                    每日 08:30 自动         OilStation/              毫秒级读取
+                    或后台手动触发          cache_snapshots/
+```
+
+**快照类型**：
+| 快照 | 频率 | 内容 |
+|------|------|------|
+| 日快照 | 每日 | 各站点当日销量/金额/刷卡/现金 |
+| 月快照 | 每日（刷新当月） | 月度 KPI、站点排行、油品结构 |
+| 年派生快照 | 每日 | 年度总览、区域同比环比 |
+| 报表辅助快照 | 按需 | 日报/月报 Excel 索引 |
+
+**缓存预热**：Flask 启动时自动加载当前月和年份数据到内存，首次页面打开免慢查询。
+
+### 部署架构
+
+```text
+Windows Server (物理机)
+├── Nginx (nginx.exe)          :80  → 前台进程，反向代理
+├── Flask (pythonw + Waitress) :8900 → Windows 计划任务启动
+├── MySQL (mysqld)             :3306 → 数据库
+├── Windows Task Scheduler
+│   ├── 07:30 汇率 + 市场观察
+│   └── 08:30 零售快照
+└── 部署脚本
+    ├── deploy-production.ps1   # 一键构建+部署
+    ├── nginx-ctl.ps1           # Nginx 启停控制
+    ├── restart_production_task.ps1  # 重启生产服务（含端口清理）
+    └── register-nginx-task.ps1 # Nginx 开机自启
+```
+
+### 安全模型
+
+```
+浏览器 → Nginx（:80，仅 HTTP） → Flask（:8900，仅本地）
+                                        │
+                                    ┌───┴───┐
+                                    │ Session │ ← Flask session cookie
+                                    │ 14 天   │   (HttpOnly)
+                                    └────────┘
+```
+
+- 所有页面需登录（Session Cookie，14 天有效）
+- 普通用户：查看销售/批发/零售页面
+- 管理员：额外访问后台管理（汇率/字典/合同/审核/健康）
+- 401 未登录自动跳转 `/login`
+- 未上 HTTPS，`SALES_COOKIE_SECURE=1` 待域名配置后启用
+
+## 运行方式
+
+生产服务由 Windows 计划任务运行。推荐使用项目重启脚本，它会先停止计划任务，再清理仍占用 `8900` 的旧 `pythonw` 进程，最后重新启动计划任务：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\SalesVisualization\Sales\restart_production_task.ps1
+```
+
+不建议只手工执行 `Stop-ScheduledTask` / `Start-ScheduledTask`。如果旧进程未退出，页面可能仍运行旧代码，表现为强制刷新后仍显示旧接口结果。
+
+生产入口：
+
+```text
+D:\SalesVisualization\Sales\run_production.py
+```
+
+监听地址：
+
+```text
+0.0.0.0:8900
+```
+
+项目已不再拆分 `8900` 和 `8910` 两个端口，所有页面与接口统一走 `8900`。
+
+### Nginx 生产部署
+
+生产环境由 Nginx 作为反向代理，静态文件服务 + API 转发：
+
+```text
+浏览器 → Nginx :80 → frontend/dist/（React SPA）
+                     → Flask :8900（/api/* 接口）
+                     → Flask :8900（/legacy/* 旧版 HTML，过渡期保留）
+                     → Flask :8900（/retail-app/* 零售页面，过渡期保留）
+```
+
+一键构建 + 部署：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\SalesVisualization\deploy-production.ps1
+```
+
+该脚本会自动检测环境、执行 `npm install` + `npm run build`、生成 `nginx.conf`、启动或重载 Nginx。
+
+Nginx 控制：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\SalesVisualization\nginx-ctl.ps1 start|stop|restart|reload|status
+```
+
+注册开机自启（需管理员权限）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\SalesVisualization\register-nginx-task.ps1
+```
+
+## 主要功能
+
+### 主页
+
+- 零售、批发、合并统计 KPI。
+- 今日汇率。
+- 市场观察。
+- 3D 吉尔吉斯斯坦地图。
+- 主页地图显示油库和批发客户点位。
+- 地图道路信息、点位标签、鼠标悬停高亮与提示。
+
+### 零售板块
+
+- 总览、区域、站点、月度、油品、报表、预警、分析报告。
+- 严格沿用零售系统已有逻辑，只统计已结束班组。
+- 销售量原始单位为升，同时按密度换算吨位。
+- 销售金额原始单位为索姆，同时按历史每日汇率换算人民币。
+- 普通柴油除 `ДТ -35` 外统一归集为 `Д/Т`。
+- MBank 刷卡与正常刷卡统一归入刷卡销售。
+- 年度、月度分析报告支持 HTML 和 Word 输出。
+- 零售总览地图显示油库和加油站点位，并支持悬停高亮。
+
+### 批发板块
+
+- 出口批发、本地批发、外运统计。
+- 外运仅统计数量，不计算金额。
+- 合同金额按合同有效期内登记价格计算。
+- 合同未匹配时，已有客户分类的批发数量仍计入出口或本地统计；未能判定类别的数量单列为待审核批发，均不提前计算金额。
+- STN-01加油站编号 `001`，外运明细中的 `X-25` 按该站点识别。
+- 支持 Excel 上传识别和在线录入。
+- 支持合同审核、待复核数据和数据审核。
+- 支持客户、油品、油库、加油站名称别名识别；批发油品名称按零售板块口径智能归集，支持 80/92/95、液化气、K5/K3/常柴、催化柴油、油浆等常见写法。
+- **称重明细 Tab**：9 列模板化展示（序号/入厂日期/油品名称/磅单号/车号/油品所属公司/供应商/客户/过磅重量/备注），支持车号/客户/油品/分类/匹配状态/审核状态筛选，按正月完整月份生成 Excel 报表。
+- **执行看板**（后台批发合同 → 执行看板）：合同执行进度列表，支持排序（按执行率/数量/金额/合同日期），超量执行行红底、到期未完成行橙底，合同号可点击跳转详情，统计卡片与列表联动。
+
+### 后台管理
+
+- 用户与权限维护。
+- 汇率维护和一键补齐。
+- 市场观察维护和一键获取。
+- 站点状态维护。
+- 批发数据一键整理：自动保留同月最新批发批次、回滚重复旧批次，并按最新合同重新匹配和计算金额。
+- 批发数据一键去重：扫描同一天、同一家公司、同一个车号与同一个重量的重复明细；若油品名称不一致，自动转入数据审核，由运营人员手动复核。
+- 油品字典、客户字典、别名维护。
+- 密度维护，按生效日期影响后续计算。
+- 合同、上传批次、审核、日志、系统健康检查。
+- 一键刷新当前月零售缓存。
+- 称重管理（后台批发合同 → 称重原始数据）：上磅/下磅原始记录查看，支持入厂日期范围筛选。
+- 审核中心（后台批发合同 → 审核中心）：称重审核 Tab 支持一键自动审核（`product_id` + `entity_code` 已知且 `classification` 合法时自动通过）。
+- 执行看板（后台批发合同 → 执行看板）：合同执行进度可视化，红底/橙底条件高亮，排序联动统计。
+- 批发客户导出：生成 `批发客户名单.xlsx`（本地 + 出口客户）。
+
+### 数据问答
+
+支持通过问答方式查询零售、批发、汇率、密度、合同等数据。典型问题包括：
+
+- 上周销量。
+- 本月销量。
+- 2026 年 4 月销量。
+- 出口批发量。
+- 本地批发量。
+- 汇率数据。
+- 密度数据。
+- 合同信息。
+
+## 数据口径
+
+- 零售统计只计入已结束班组。
+- 当前未结束班组不进入正式统计。
+- 零售金额按业务日期对应的历史汇率换算人民币。
+- 零售吨位按密度历史记录换算，密度变更只影响生效日期后的计算。
+- 批发外运只统计数量，不计算金额。
+- 批发合同金额按合同有效期内登记价格计算，不因后续价格变化回算。
+- 上传新的合同或批发统计后，可在后台“批发维护”中点击“一键整理批发数据”，统一处理油品智能识别、重复批次、合同匹配、金额重算和待复核提示。
+- 对疑似重复录入的批发明细，可在后台“批发维护”中点击“一键去重”；系统只生成审核提示，不会自动删除或修改明细。
+- 汇率来源以吉尔吉斯斯坦国家银行 NBKR 为准。
+- 汇率缺失时进入待补齐状态，可后台一键获取或人工录入。
+
+## 快照与加载速度
+
+当前系统已建立快照优先策略，页面默认优先读取快照，只有快照缺失或强制刷新时才查数据库。
+
+快照目录：
+
+```text
+D:\SalesVisualization\OilStation\cache_snapshots
+```
+
+主要快照：
+
+- `monthly/monthly_YYYY-MM.json`：月度汇总快照。
+- `monthly/stations_YYYY-MM.json`：月度站点快照。
+- `monthly/regions_YYYY-MM.json`：月度区域快照。
+- `monthly/daily_YYYY-MM.json`：月内每日趋势快照。
+- `daily/day_YYYY-MM-DD.json`：每日完整快照。
+- `report_extras/report_extras_YYYY-MM.json`：报表辅助快照。
+- `exports/.monthly_report_index.json`：已生成零售月度日销表索引，用于直接下载复用，避免逐个扫描 Excel 文件。
+- 零售月份/年份选择列表由现有月份快照生成并在服务启动时预热，不再扫描原始销售表。
+- 区域快照使用前月和上年同月快照补齐环比、同比字段，避免快照模式下区域分析字段缺失。
+
+从 `2026-05-01` 开始，系统生成每日完整快照。当前月快照有效期为 30 小时；如果磁盘快照在有效期内被自动任务更新，服务会自动识别并读取新快照，不会被旧内存缓存阻挡。
+
+`2026-05-31` 维护后，零售快照链路已调整为“先强制刷新当月日销表，再生成日/月/年快照”。当前月日销表索引会记录最新文件和最后数据日，后台系统健康页可直接查看。
+
+实测零售内部接口读取速度为：
+
+- 月份列表首次约 12 ms，再次读取约 1 ms。
+- 月度接口约 3 ms。
+- 站点接口约 3 ms。
+- 区域接口约 6 ms，包含环比、同比补齐。
+- 日趋势接口约 4 ms。
+- 最新当月日销表强制刷新约 50 秒，后续索引复用约 8 ms。
+
+## 自动任务
+
+当前已注册的 Windows 每日任务：
+
+- `SalesVisualizationDailyExchangeRates`：每天 `07:30` 自动补齐汇率。
+- `SalesVisualizationDailyMarketWatch`：每天 `07:30` 自动获取市场观察。
+- `SalesVisualizationDailyRetailSnapshots`：每天 `08:30` 先强制刷新当月零售日销表，再生成零售日快照、当前月与年度派生快照，并预热区域同比环比数据。
+- `SalesVisualizationProduction`：生产服务任务。
+
+注册自动任务：
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File D:\SalesVisualization\Sales\register_daily_automation_tasks.ps1
+```
+
+维护日志：
+
+```text
+D:\SalesVisualization\Sales\logs\daily_maintenance.log
+```
+
+生产日志：
+
+```text
+D:\SalesVisualization\Sales\logs\production.log
+```
+
+## 报表与分析报告
+
+零售日报、月报、分析报告输出目录：
+
+```text
+D:\SalesVisualization\OilStation\exports
+```
+
+批发分析报告、销售分析报告、汇率 Excel 输出目录：
+
+```text
+D:\SalesVisualization\Sales\exports
+```
+
+当前行为：
+
+- 报表和分析报告继续保存到 `exports/`。
+- 外网电脑点击生成时，会在服务器保存文件，同时向访问电脑下载。
+- HTML 分析报告会自动打开预览。
+- Word 分析报告会自动下载。
+- 主页可生成销售分析报告，批发页面可生成批发分析报告，批发汇率页面可保存汇率 Excel。
+
+## 系统健康检查
+
+后台健康检查页面集中查看：
+
+- 主项目服务状态。
+- 零售嵌入接口状态。
+- 销售数据库状态。
+- 运维概览：今日汇率、市场观察、零售快照、最近任务执行。
+- 报表辅助快照完整性。
+- 零售日快照完整性。
+- 当前月短期缓存状态。
+- 自动任务状态。
+- 最新汇率日期。
+- 最新市场观察日期。
+- 日志状态。
+- 登录与安全配置。
+
+接口：
+
+```text
+/api/admin/system-health
+```
+
+后台一键刷新当前月缓存：
+
+```text
+/api/admin/system-health/refresh-cache
+```
+
+命令行完整检查：
+
+```powershell
+C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe D:\SalesVisualization\Sales\scripts\health_check.py --strict-tasks
+```
+
+命令行数据调用自检：
+
+```powershell
+C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe D:\SalesVisualization\Sales\scripts\data_call_audit.py
+```
+
+该脚本会检查运行中的 `8900` 服务、零售日/月/年快照、主页/批发/零售核心数据接口、地图悬停接口和数据问答接口。若页面显示异常但脚本通过，优先检查浏览器缓存、登录态或是否仍有旧进程占用 `8900`。
+
+最近一次全量数据调用自检基线（2026-06-06）：
+
+- 数据调用自检 `37/37` 通过。
+- 系统健康检查 `12/12` 通过。
+- `2026-06` 日快照当前 `5` 天完整，月度、站点、区域、日趋势和年度派生快照均存在。
+- `5月零售销量`、`五月零售销量` 均识别为 `2026-05-01` 至 `2026-05-31`，返回该区间零售销量。
+- `上周零售销量`、`本月零售销量`、`2026年零售销量`、`本月批发分类统计`、`今日汇率`、`市场观察` 问答均通过。
+- 批发明细 `3150` 条当前无未识别油品；典型批发油品名称可按零售口径智能归集。
+- 批发/销售年度与月度 Word 分析报告均使用新版居中表格格式；HTML 报告使用零售月报同类 KPI + 卡片 + 明细表结构。
+- 汇率 Excel 当前列为日期、美元/索姆、人民币/索姆、索姆/人民币、数据来源、获取时间；列宽自适应、单元格居中、黑色框线。
+- 预警页 `/api/kpi` 已改为优先读取已完成月份快照，当前来源为 `monthly_snapshot`。
+
+读取 Windows 计划任务状态需要在服务器上以具备任务读取权限的会话运行。后台健康页已做双来源判断：能读取 Windows 任务时显示计划任务状态；读取受限时，会标注“受限”，并使用后台自动任务执行记录、服务状态和快照更新时间判断任务是否实际运行。
+
+## 3D 地图
+
+地图资源目录：
+
+```text
+D:\SalesVisualization\assets\kgz-map
+```
+
+当前使用范围：
+
+- 主页：显示油库和批发客户点位。
+- 零售总览：显示油库和加油站点位。
+
+当前能力：
+
+- 3D 吉尔吉斯斯坦底图。
+- 区域轮廓。
+- 道路信息。
+- 湖泊和主要城市。
+- 点位标签。
+- 鼠标悬停点位高亮。
+- 悬停提示信息。
+- 旧 ECharts 地图回退能力。
+
+## 备份
+
+执行本地备份：
+
+```powershell
+cd D:\SalesVisualization
+C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe Sales\scripts\backup_project.py
+```
+
+默认备份目录：
+
+```text
+D:\SalesVisualization\backups
+```
+
+备份内容：
+
+- `sales_visualization` 数据库 SQL 备份。
+- `OilStation/exports` 报表与分析报告。
+- `OilStation/cache_snapshots` 快照。
+- `Sales/.runtime` 运行密钥。
+- README 和docs。
+
+默认清理 30 天以前的同类备份，可通过 `--keep-days` 调整。
+
+## 前端架构
+
+当前前端已从内联 HTML/JS 迁移为 React + Vite 构建：
+
+- **框架**：React 19 + React Router 7 + Vite 8
+- **构建**：`npm run build` 产出 `frontend/dist/`，由 Nginx 静态服务
+- **开发**：`npm run dev` 启动 Vite dev server（:5173），API 代理到 Flask :8900
+- **图表**：ECharts 通过全局 `window.echarts` 使用，不打包进 bundle
+- **3D 地图**：动态 import `/assets/kgz-map/` 模块，不修改原有 Three.js 代码
+- **认证**：Session Cookie 兼容，`credentials: 'include'`
+
+路由结构：
+
+- `/login`：登录页
+- `/`：销售主页（KPI + 汇率 + 市场观察 + 3D 地图）
+- `/wholesale`：批发板块（8 个 Tab，含称重明细）
+- `/admin`：管理后台（11 个面板组件）
+- `/retail`：零售总览
+- `/retail/station`、`/retail/region`、`/retail/monthly`、`/retail/resource`、`/retail/report`、`/retail/alert`：零售子页面
+- `/legacy/*`：旧版 HTML 页面（仅保留跳转，不再主动使用）
+
+### 迁移完成度
+
+| 旧版 HTML 文件 | React 等价页面 | 状态 |
+|---|---|---|
+| `Sales/index.html` | `DashboardPage.jsx` | ✅ 已迁移 |
+| `Sales/login.html` | `LoginPage.jsx` | ✅ 已迁移 |
+| `Sales/admin.html` | `AdminPage.jsx` + 9 Tab（批发合同含 4 子面板） | ✅ 已迁移（差距见下方） |
+| `Sales/wholesale.html` | `WholesalePage.jsx` + 7 Tab 组件 | ✅ 已迁移 |
+| `OilStation/dashboard.html` | `RetailDashboard.jsx` | ✅ 已迁移 |
+| `OilStation/region.html` | `RegionPage.jsx` | ✅ 已迁移 |
+| `OilStation/station.html` | `StationPage.jsx` | ✅ 已迁移 |
+| `OilStation/monthly.html` | `MonthlyPage.jsx` | ✅ 已迁移 |
+| `OilStation/resource.html` | `ResourcePage.jsx` | ✅ 已迁移 |
+| `OilStation/report.html` | `ReportPage.jsx` | ✅ 已迁移 |
+| `OilStation/alert.html` | `AlertPage.jsx` | ✅ 已迁移 |
+
+**已知迁移差距**（优先级由高到低）：
+
+1. **ReferencePanel 实体标准选择器** — 旧版 admin.html 的`实体别名`表单有实体类型选择+自动填充标准名称功能，React 版缺少。
+2. **HealthPanel 运维摘要卡片** — 旧版显示 4 张状态卡片（汇率、市场、快照、任务），React 版未实现。
+3. **部分 API 函数缺命名导出** — `POST /api/admin/product-aliases`、`POST /api/densities` 无封装函数，直接调用 `post()`。
+
+## 后续优化方向
+
+- 域名和 HTTPS 完成后启用安全 Cookie。
+- 增加异常销量、异常价格、汇率缺失、快照滞后的主动提醒。
+- 建立月度归档和自动备份策略。
+- 对首页、批发、零售和后台继续做小步视觉精修，避免大规模重构影响稳定。
+- 数据问答继续扩展经营问题模板，并保持表格优先展示。
+- 补全迁移差距：ReferencePanel 实体标准选择器、HealthPanel 摘要卡片、API 函数导出。
+- 移除 `/legacy/*` 路由、Flask 旧 HTML 服务路由及旧版 `admin.html`/`wholesale.html` 等直接服务文件（当前阶段建议保留维护期）。
+
+## 界面美化方案
+
+当前项目建议走“稳重经营驾驶舱”风格，不再做大面积炫光或复杂动画，重点提高领导查看时的清晰度和质感。
+
+### 主页
+
+- 保留第一屏 KPI + 今日汇率 + 市场观察 + 3D 地图的结构。
+- KPI 卡片做成更统一的经营指标样式：大数字、单位、同比/环比、更新时间四层信息。
+- 今日汇率保持小而精，市场观察增强信息层级：区域、市场行情、原料油、成品油、价格影响。
+- 3D 地图减少视觉噪音，点位高亮、标签和 Tooltip 做得更清楚，默认视角避免遮挡地图边界。
+
+### 批发
+
+- 批发页面偏“业务分析台”：分类、客户、油品、外运、审核各模块用统一图表卡片。
+- 出口批发、本地批发、外运使用固定颜色和图标，所有页面保持一致。
+- 审核类数据突出“待处理数量、影响吨数、影响金额、处理入口”。
+
+### 零售
+
+- 零售页面偏“运营看板”：总览、站点、区域、油品、月度、报表保持同一套深色主题。
+- 站点和区域排行增加更清晰的排序标识，减少表格拥挤。
+- 地图 Tooltip 保留库存和价格，但排版更像小型信息卡。
+
+### 后台
+
+- 后台偏“运维控制台”：少装饰、强分组、按钮状态明确。
+- 系统健康页继续强化为第一入口，显示今日状态、任务状态、快照状态、异常提示。
+- 所有一键操作按钮增加执行中、成功、失败和最近执行时间，降低误操作。
+
+### 移动端
+
+- 手机端优先保证主页、零售总览和数据问答可读。
+- 表格默认横向滚动，不强行压缩到多行。
+- 后台主要适配电脑和平板，不建议为手机端做复杂维护操作。
+
+## 发布版维护
+
+当前项目已进入稳定运行阶段，日常维护建议以后台为主：
+
+- 汇率、市场观察、零售快照可在后台“自动任务”中手动执行。
+- 服务、快照、日志、安全配置和任务状态可在后台“系统健康”中查看。
+- 若 Windows 计划任务读取显示“受限”，优先查看最近自动任务记录和日志，不必立即判断为任务失败。
+- 发布前可清理 `__pycache__`、`.pytest_cache` 和空日志文件；不要清理 `cache_snapshots`、`exports`、`logs` 中的有效运行数据。
+
+## 当前运行方案
+
+零售页面的日常访问链路已经固定为“自动任务生成快照，页面读取快照”：
+
+1. `07:30` 获取汇率和市场观察信息。
+2. `08:30` 按“昨天所属月份”强制刷新日销表 Excel，保证跨月第 1 天会补齐上月最后一天。
+3. 日销表刷新成功后，生成当月每日快照、当月页面快照、年度派生快照和区域同比环比数据。
+4. 后台自动任务记录写入 `automation_task_runs`，系统健康页可查看最近执行状态。
+5. 服务启动时预热月份、年份、年度总览及当前月核心接口。
+6. 月度、区域、报表页面打开时并行读取当前月快照；历史月份直接使用已归档快照。
+7. 日销 Excel 报表通过索引复用；自动快照任务每日强制刷新一次最近已完成销售日所属月份的报表，保证快照口径跟随最新报表。
+
+零售快照链路：
+
+```text
+零售数据库 -> 当月日销表 Excel -> 日快照 day_YYYY-MM-DD -> 月快照 monthly/stations/regions/daily -> 年度派生快照 dashboard/resources/kpi
+```
+
+如果数据库当天补录或修正后需要立即展示最新数据，可在后台“自动任务”执行“立即刷新零售快照”；正常情况下无需每天手动点击。
+
+异常处理顺序：
+
+1. 后台系统健康页查看任务、快照日期与日志。
+2. 数据已更新但页面未变化时，执行“刷新当前月缓存”。
+3. 自动任务中断时，执行“立即刷新零售快照”。
+4. 服务无法访问时，运行 `D:\SalesVisualization\ops-restart-service.bat`。
+
+后台“立即刷新零售快照”已采用后台执行与单实例保护：按钮提交后立即返回执行状态；自动任务或人工刷新已经在运行时，再次点击不会重复启动任务，也不会让报表生成阻塞快照更新。
+
+## 自助运维入口
+
+后台已经把常用维护动作集中到页面内，正常情况下不需要打开 Codex：
+
+- 后台 `自动任务` 页面：可手动执行 `立即补齐汇率`、`立即获取市场观察`、`立即刷新零售快照`、`执行全部自动任务`。
+- 后台 `系统健康` 页面：可查看服务、数据库、快照、日志和计划任务状态。
+- 后台 `系统健康` 页面：可提交 `重启生产服务`，提交后约 20 秒恢复访问。
+- 后台 `系统健康` 页面：可执行 `刷新当前月缓存`，用于手动刷新零售当前月短期缓存。
+
+如果网页服务本身不可访问，可以在服务器电脑上双击项目根目录下的脚本：
+
+```text
+D:\SalesVisualization\ops-restart-service.bat
+D:\SalesVisualization\ops-fetch-data.bat
+D:\SalesVisualization\ops-refresh-retail-snapshots.bat
+```
+
+三个脚本分别用于重启生产服务、补齐汇率与市场观察、刷新零售快照。
+
+## 数据问答
+
+数据问答已升级为表格化展示。回答会尽量将同一组数据放在同一行，表格可横向滚动，便于在电脑、手机和平板上查看。
+
+当前支持的经营问题包括：
+
+- 零售销量、油品结构、站点排行、区域排行。
+- 批发总量、出口批发、本地批发、外运统计。
+- 批发客户排行、批发油品排行、外运区域汇总。
+- 合并统计、汇率、密度、合同、审核提示、市场观察。
+
+零售问答和合并统计中的零售部分优先读取快照，不再优先扫零售数据库；快照缺失时才回退到接口实时查询。
+
+## 市场观察自动任务
+
+市场观察采用非中国境内的官方或公开市场来源，覆盖俄罗斯、乌兹别克和国际市场。自动任务会在获取后做中文整理：
+
+- 统一地区名称为 `俄罗斯`、`乌兹别克`、`国际`。
+- 统一原油、成品油、炼厂、库存、制裁、出口等常用术语。
+- 过滤明显不适合展示的英文尾注和来源重复。
+- 首页和数据问答均优先显示中文整理后的内容。
+- 乌兹别克成品油报价来自 `UZEX` 官网公开报价，按乌兹别克央行 `KGS` 汇率和系统中对应油品生效密度换算为 `索姆/升`，页面保留来源链接与换算说明。
+- 国际原油价格自动获取 `Brent` 与 `WTI` 基准报价。
+- 俄罗斯市场以 `SPIMEX` 官方指数入口为参考；其指数数值再展示受许可要求约束，取得许可前不自动转载数值。
+
+每日自动任务时间：
+
+- `07:30`：补齐汇率。
+- `07:30`：获取并整理市场观察。
+- `08:30`：生成零售日快照、当前月/年度汇总快照和区域同比环比数据；Excel 日销报表按需生成并复用已有索引。

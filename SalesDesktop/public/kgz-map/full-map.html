@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D 地图 - 销售管理系统</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/kgz-map/vendor/three.module.js",
+    "three/addons/": "/kgz-map/vendor/examples/jsm/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/kgz-map/kgz-map.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #111; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #mapChart { width: 100%; height: 100%; }
+  .top-bar { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.6); padding: 8px 20px; border-radius: 8px; font-size: 14px; pointer-events: none; }
+  .map-controls { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); z-index: 10; display: flex; flex-direction: column; gap: 6px; }
+  .map-controls button { background: rgba(0,0,0,0.7); color: #ccc; border: 1px solid rgba(255,255,255,0.15); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; text-align: left; transition: all 0.15s; }
+  .map-controls button:hover { background: rgba(255,255,255,0.1); color: #fff; }
+  .map-controls button.active { background: rgba(34,211,238,0.2); border-color: #22d3ee; color: #22d3ee; }
+  .legend { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); z-index: 10; background: rgba(0,0,0,0.7); padding: 12px 16px; border-radius: 8px; font-size: 13px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .legend-item.hidden { opacity: 0.25; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="top-bar" id="topBar">吉尔吉斯斯坦 — 油库 · 加油站 · 客户点位</div>
+<div class="map-controls" id="layerControls"></div>
+<div class="legend" id="legend">
+  <div class="legend-item" data-layer="depots"><span class="legend-dot" style="background:#22d3ee"></span> 油库</div>
+  <div class="legend-item" data-layer="stations"><span class="legend-dot" style="background:#34d399"></span> 加油站</div>
+  <div class="legend-item" data-layer="customers"><span class="legend-dot" style="background:#facc15"></span> 客户</div>
+</div>
+<div id="mapChart"></div>
+
+<script type="module">
+import { mountHomeMap } from '/kgz-map/kgz-map-entry.js';
+
+function getToken() {
+  const p = new URLSearchParams(window.location.search);
+  return p.get('token') || '';
+}
+
+async function init() {
+  const token = getToken();
+  const headers = {};
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+
+  let data, role;
+  try {
+    const res = await fetch('/api/v2/map/stations', { headers });
+    const json = await res.json();
+    const d = json.data || json;
+    data = d;
+    role = d.role || 'viewer';
+  } catch (err) {
+    document.getElementById('mapChart').innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff4d4f;text-align:center"><h3>地图加载失败</h3><p style="margin-top:8px;font-size:13px;color:#999">' + err.message + '</p></div>';
+    return;
+  }
+
+  // 管理员显示图层切换按钮
+  const allowedLayers = data.allowedLayers || ['stations', 'depots'];
+  const visible = { stations: allowedLayers.includes('stations'), depots: allowedLayers.includes('depots'), customers: allowedLayers.includes('customers') };
+
+  if (role === 'admin') {
+    const container = document.getElementById('layerControls');
+    container.innerHTML = '';
+    const layers = [
+      { key: 'stations', label: '加油站', color: '#34d399' },
+      { key: 'depots', label: '油库', color: '#22d3ee' },
+      { key: 'customers', label: '客户', color: '#facc15' },
+    ];
+    layers.forEach(({ key, label, color }) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      if (visible[key]) btn.classList.add('active');
+      btn.style.borderLeftColor = color;
+      btn.addEventListener('click', () => {
+        visible[key] = !visible[key];
+        btn.classList.toggle('active');
+        // 更新图例
+        document.querySelectorAll(`.legend-item[data-layer="${key}"]`).forEach(el => el.classList.toggle('hidden'));
+        // 重新渲染
+        renderMap(data, visible);
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  // 根据初始 allowedLayers 更新图例
+  document.querySelectorAll('.legend-item').forEach(el => {
+    const layer = el.dataset.layer;
+    if (!visible[layer]) el.classList.add('hidden');
+  });
+
+  renderMap(data, visible);
+}
+
+function renderMap(data, visible) {
+  const el = document.getElementById('mapChart');
+  el.innerHTML = '';
+
+  const stations = (visible.stations ? data.stations || [] : []).map(s => ({ ...s, type: 'station', size: 0.28 }));
+  const depots = (visible.depots ? data.depots || [] : []).map(dp => ({ ...dp, type: 'depot', size: 0.55 }));
+  const customers = (visible.customers ? data.customers || [] : []).map(c => ({ ...c, type: 'wholesale_customer', size: 0.35 }));
+
+  mountHomeMap('#mapChart', { depots, stations, customers }, {
+    showRoadPanel: false, showLakeLabels: true, showCities: true,
+    showRegionLabels: false, showLegend: false,
+    initialCamera: { cameraX: -2.35, cameraY: 24.77, cameraZ: 38.2, targetX: -2.35, targetY: 0.33, targetZ: 3.95 },
+  }).catch(err => {
+    el.innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff4d4f;text-align:center"><h3>地图加载失败</h3><p style="margin-top:8px;font-size:13px;color:#999">' + err.message + '</p></div>';
+  });
+}
+
+init();
+</script>
+</body>
+</html>
