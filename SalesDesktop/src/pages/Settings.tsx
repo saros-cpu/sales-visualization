@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Card, Typography, Button, Space, Descriptions, Modal, Form, Input, message } from 'antd';
-import { GlobalOutlined, LockOutlined } from '@ant-design/icons';
+import { useState, useEffect, useCallback } from 'react';
+import { Card, Typography, Button, Space, Descriptions, Modal, Form, Input, message, Progress } from 'antd';
+import { GlobalOutlined, LockOutlined, ReloadOutlined, DownloadOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { changePassword } from '@/api/client';
@@ -13,6 +13,27 @@ export default function Settings() {
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ status: 'idle' });
+
+  useEffect(() => {
+    if (!window.updater) return;
+    const cleanup = window.updater.onStatusChange(setUpdateStatus);
+    return cleanup;
+  }, []);
+
+  const handleCheckUpdate = useCallback(() => {
+    window.updater?.checkForUpdates();
+  }, []);
+
+  const handleDownloadUpdate = useCallback(() => {
+    window.updater?.downloadUpdate();
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    window.updater?.restartApp();
+  }, []);
+
+  const isPackaged = typeof window.updater !== 'undefined';
 
   const switchLang = (lang: string) => {
     i18n.changeLanguage(lang);
@@ -49,6 +70,50 @@ export default function Settings() {
             <Button icon={<GlobalOutlined />} type={i18n.language === 'ru' ? 'primary' : 'default'} onClick={() => switchLang('ru')}>Русский</Button>
           </Space>
         </Card>
+        {isPackaged && (
+          <Card size="small" title={t('settings.appUpdate')}>
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {(updateStatus.status === 'idle' || updateStatus.status === 'not-available' || updateStatus.status === 'error') && (
+                <Button icon={<SyncOutlined />} onClick={handleCheckUpdate}>{t('settings.update')}</Button>
+              )}
+              {updateStatus.status === 'checking' && (
+                <Space><SyncOutlined spin />{t('settings.checking')}</Space>
+              )}
+              {updateStatus.status === 'not-available' && (
+                <Typography.Text type="secondary">{t('settings.upToDate')} (v{VERSION})</Typography.Text>
+              )}
+              {updateStatus.status === 'available' && (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Typography.Text type="warning">{t('settings.updateAvailable', { version: updateStatus.version })}</Typography.Text>
+                  <Button icon={<DownloadOutlined />} type="primary" onClick={handleDownloadUpdate}>{t('settings.downloadNow')}</Button>
+                </Space>
+              )}
+              {updateStatus.status === 'downloading' && (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Typography.Text>{t('settings.downloading', { percent: updateStatus.percent })}</Typography.Text>
+                  <Progress percent={updateStatus.percent || 0} showInfo={false} />
+                </Space>
+              )}
+              {updateStatus.status === 'downloaded' && (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Typography.Text type="success">{t('settings.updateReady')}</Typography.Text>
+                  <Button icon={<ReloadOutlined />} type="primary" onClick={handleRestart}>{t('settings.restartNow')}</Button>
+                </Space>
+              )}
+              {updateStatus.status === 'error' && (
+                <Space>
+                  <Typography.Text type="danger">{t('settings.updateError')}: {updateStatus.message}</Typography.Text>
+                  <Button size="small" onClick={handleCheckUpdate}>{t('common.retry')}</Button>
+                </Space>
+              )}
+            </Space>
+          </Card>
+        )}
+        {!isPackaged && (
+          <Card size="small" title={t('settings.appUpdate')}>
+            <Typography.Text type="secondary">{t('settings.updateDevOnly')}</Typography.Text>
+          </Card>
+        )}
         <Card size="small" title={t('common.about')}>
           <Typography.Text style={{ whiteSpace: 'pre-line' }}>
             {t('app.title')} v{VERSION}

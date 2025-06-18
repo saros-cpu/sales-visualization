@@ -285,7 +285,19 @@
   },
   "settings": {
     "chinese": "中文",
-    "russian": "Русский"
+    "russian": "Русский",
+    "update": "Проверить обновления",
+    "checking": "Проверка обновлений...",
+    "upToDate": "Установлена последняя версия",
+    "updateAvailable": "Доступна версия {{version}}",
+    "downloading": "Загрузка {{percent}}%",
+    "updateReady": "Обновление загружено, перезапустите приложение",
+    "downloadNow": "Скачать обновление",
+    "restartNow": "Перезапустить",
+    "updateError": "CTY-05ибка проверки обновлений",
+    "updateServer": "Сервер обновлений",
+    "appUpdate": "Обновление",
+    "updateDevOnly": "Обновление доступно только в собранной версии"
   },
   "exchange": {
     "title": "Курсы валют",

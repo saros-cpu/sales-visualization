@@ -284,7 +284,19 @@
   },
   "settings": {
     "chinese": "中文",
-    "russian": "Русский"
+    "russian": "Русский",
+    "update": "检查更新",
+    "checking": "正在检查更新...",
+    "upToDate": "已是最新版本",
+    "updateAvailable": "发现新版本 {{version}}",
+    "downloading": "下载中 {{percent}}%",
+    "updateReady": "更新已下载完毕，重启以安装",
+    "downloadNow": "下载更新",
+    "restartNow": "立即重启",
+    "updateError": "检查更新失败",
+    "updateServer": "更新服务器",
+    "appUpdate": "软件更新",
+    "updateDevOnly": "更新仅支持打包版本"
   },
   "exchange": {
     "title": "汇率快照",

@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '2.2.1';
+export const VERSION = '2.3.0';
 export const BUILD_DATE = '2026-07-08';
 
 export interface ChangelogEntry {
@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.3.0',
+    date: '2026-07-08',
+    type: 'minor',
+    changes: [
+      '新增：Electron 自动更新（electron-updater + IPC + 设置页 UI）',
+      '新增：自动更新配置（electron-builder.yml publish + preload 桥接）',
+      '优化：package.json 版本号与 version.ts 对齐',
+    ],
+  },
   {
     version: '2.2.1',
     date: '2026-07-08',
