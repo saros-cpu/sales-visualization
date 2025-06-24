@@ -1,9 +1,35 @@
 import { message } from 'antd';
 
-const API_BASE = 'http://127.0.0.1:8900/api';
+const API_BASE = 'http://198.51.100.10:8080/api';
+const BASE_URL = 'http://198.51.100.10:8080';
 
 async function getToken() {
   return localStorage.getItem('accessToken') || '';
+}
+
+async function downloadBlob(url: string, filename: string, token?: string) {
+  if ((window as any).electronAPI?.downloadFile) {
+    const ok = await (window as any).electronAPI.downloadFile(url, filename, token || '');
+    if (!ok) throw new Error('保存取消');
+    return;
+  }
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  }, 200);
 }
 
 export async function exportExcel(yearMonth: string) {
@@ -15,11 +41,8 @@ export async function exportExcel(yearMonth: string) {
     const res = await fetch(`${API_BASE}/export/monthly/${yearMonth}`, { headers });
     const json = await res.json();
     if (json.status === 'ok' || json.code === 0) {
-      const dlUrl = `${API_BASE}/export/monthly/${yearMonth}/download`;
-      const a = document.createElement('a');
-      a.href = dlUrl;
-      a.download = json.file || `零售日销表_${yearMonth}.xlsx`;
-      a.click();
+      const filename = json.file || `零售日销表_${yearMonth}.xlsx`;
+      await downloadBlob(`${API_BASE}/export/monthly/${yearMonth}/download`, filename, token);
       message.success('导出成功');
     } else {
       message.error(json.message || '导出失败');
@@ -38,16 +61,14 @@ export async function exportAnalysis(yearMonth: string) {
     const res = await fetch(`${API_BASE}/export/analysis/monthly/${yearMonth}`, { headers });
     const json = await res.json();
     if (json.status === 'ok' || json.code === 0) {
-      const docx = json.docx || json.files?.docx;
-      if (docx) {
-        const a = document.createElement('a');
-        a.href = `${API_BASE}/export/analysis/download/${docx}`;
-        a.download = docx;
-        a.click();
+      if (json.docxDownloadUrl) {
+        await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'report.docx', token);
       }
-      const html = json.html || json.files?.html;
-      if (html) {
-        window.open(`${API_BASE}/export/analysis/view/${html}`, '_blank');
+      if (json.htmlDownloadUrl) {
+        await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'report.html', token);
+      }
+      if (json.htmlViewUrl) {
+        (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);
       }
       message.success('分析报告已生成');
     } else {
@@ -56,4 +77,38 @@ export async function exportAnalysis(yearMonth: string) {
   } catch (err: any) {
     message.error('生成分析报告失败: ' + (err.message || ''));
   }
+}
+
+export async function downloadMonthlyReport(ym: string) {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}/api/export/analysis/monthly/${ym}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  const json = await res.json();
+  if (json.docxDownloadUrl) await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'report.docx', token);
+  if (json.htmlDownloadUrl) await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'report.html', token);
+  if (json.htmlViewUrl) (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);
+}
+
+export async function downloadYearlyReport(year: number) {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}/api/export/analysis/yearly/${year}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  const json = await res.json();
+  if (json.docxDownloadUrl) await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'report.docx', token);
+  if (json.htmlDownloadUrl) await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'report.html', token);
+  if (json.htmlViewUrl) (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);
+}
+
+export async function downloadWholesaleReport(params: { year: number; month?: number }) {
+  const ym = params.month ? `${params.year}-${String(params.month).padStart(2, '0')}` : `${params.year}`;
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}/api/export/analysis/wholesale/monthly/${ym}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  const json = await res.json();
+  if (json.docxDownloadUrl) await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'wholesale-report.docx', token);
+  if (json.htmlDownloadUrl) await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'wholesale-report.html', token);
+  if (json.htmlViewUrl) (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);
 }

@@ -1,26 +1,6 @@
-import axios from 'axios';
+import { createApi } from './http';
 
-const retailClient = axios.create({
-  baseURL: 'http://127.0.0.1:8900/api',
-  timeout: 30000,
-});
-
-retailClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-retailClient.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('accessToken');
-      window.location.hash = '#/login';
-    }
-    return Promise.reject(err);
-  }
-);
+const api = createApi('/api');
 
 interface StationData {
   shopKey: number; name: string; short: string; region: string;
@@ -97,58 +77,68 @@ export interface ResourceYearlyData {
 }
 
 export async function getDashboardYearly(year: number) {
-  const res = await retailClient.get('/dashboard/yearly', { params: { year } });
+  const res = await api.get('/dashboard/yearly', { params: { year } });
   return res.data as DashboardYearlyData;
 }
 
 export async function getMonthly(yearMonth: string) {
-  const res = await retailClient.get(`/monthly/${yearMonth}`);
+  const res = await api.get(`/monthly/${yearMonth}`);
   return res.data as MonthlyData;
 }
 
 export async function getStations(yearMonth: string) {
-  const res = await retailClient.get(`/stations/${yearMonth}`);
+  const res = await api.get(`/stations/${yearMonth}`);
   return res.data;
 }
 
 export async function getStationMonthly(yearMonth: string, shopKey: number) {
-  const res = await retailClient.get(`/station/${yearMonth}/${shopKey}`);
+  const res = await api.get(`/station/${yearMonth}/${shopKey}`);
   return res.data as StationMonthlyData;
 }
 
 export async function getRegions(yearMonth: string) {
-  const res = await retailClient.get(`/regions/${yearMonth}`);
+  const res = await api.get(`/regions/${yearMonth}`);
   return res.data as RegionsData;
 }
 
 export async function getDaily(yearMonth: string) {
-  const res = await retailClient.get(`/daily/${yearMonth}`);
+  const res = await api.get(`/daily/${yearMonth}`);
   return res.data as DailyDataResponse;
 }
 
 export async function getResourcesYearly(year: number, month?: number) {
   const params: Record<string, number> = { year };
   if (month) params.month = month;
-  const res = await retailClient.get('/resources/yearly', { params });
+  const res = await api.get('/resources/yearly', { params });
   return res.data as ResourceYearlyData;
 }
 
 export async function getKpi() {
-  const res = await retailClient.get('/kpi');
+  const res = await api.get('/kpi');
   return res.data;
 }
 
 export async function getKpiYearly(year: number) {
-  const res = await retailClient.get('/kpi/yearly', { params: { year } });
+  const res = await api.get('/kpi/yearly', { params: { year } });
   return res.data;
 }
 
 export async function getYears() {
-  const res = await retailClient.get('/years');
+  const res = await api.get('/years');
   return res.data as string[];
 }
 
 export async function getMonths() {
-  const res = await retailClient.get('/months');
+  const res = await api.get('/months');
   return res.data as string[];
+}
+
+export async function getStationStatuses() {
+  const res = await api.get('/retail/station-statuses');
+  return res.data.data?.items ?? res.data;
+}
+
+export async function exportMonthlyExcel(ym: string) {
+  const res = await api.get(`/export/monthly/${ym}`);
+  return res.data.data ?? res.data;
 }

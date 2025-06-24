@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Row, Col, Card, Statistic, Spin, Alert, Select, Tag } from 'antd';
-import { ShoppingOutlined, FileTextOutlined, AuditOutlined, ShopOutlined, DollarOutlined, RiseOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { DollarOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -10,6 +10,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import client from '@/api/client';
 import { getKpiYearly, getDashboardYearly, getMonthly } from '@/api/retail';
 import { getCurrentExchange, CurrentExchange } from '@/api/exchange';
+import KpiCard from '@/components/ui/KpiCard';
 
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
@@ -113,57 +114,43 @@ export default function Dashboard() {
           </Select>
         </Col>
       </Row>
-      <Row gutter={16}>
-        <Col span={4} style={{ display: 'flex' }}>
-          <Card size="small" style={{width: '100%', height: '100%'}}><Statistic title={t('dashboard.monthlyWholesaleTons')} value={data.monthlyWholesaleTons} precision={1} prefix={<ShoppingOutlined />} /></Card>
-        </Col>
-        <Col span={4} style={{ display: 'flex' }}>
-          <Card size="small" style={{width: '100%', height: '100%'}}><Statistic title={t('dashboard.activeContracts')} value={data.activeContracts} prefix={<FileTextOutlined />} valueStyle={{ color: '#1677ff' }} /></Card>
-        </Col>
-        <Col span={4} style={{ display: 'flex' }}>
-          <Card size="small" style={{width: '100%', height: '100%'}}><Statistic title={t('dashboard.monthlyProcurementTons')} value={data.monthlyProcurementTons} precision={1} prefix={<AuditOutlined />} /></Card>
-        </Col>
-        {kpi && (
-          <>
-            <Col span={4} style={{ display: 'flex' }}>
-              <Card size="small" style={{width: '100%', height: '100%'}}>
-                <Statistic title={t('retail.totalSales')} value={Math.round(kpi.totalSales / 100000000)} suffix={t('common.yi')} prefix={<DollarOutlined />} />
-                <div style={{ fontSize: 12, color: '#999' }}>{t('common.yoy')} {formatYoy(kpi.yoySales)}</div>
-              </Card>
-            </Col>
-            <Col span={4} style={{ display: 'flex' }}>
-              <Card size="small" style={{width: '100%', height: '100%'}}>
-                <Statistic title={t('retail.totalVolume')} value={Math.round(kpi.totalLiters / 10000)} suffix={t('common.wanL')} prefix={<RiseOutlined />} />
-                <div style={{ fontSize: 12, color: '#999' }}>{t('common.yoy')} {formatYoy(kpi.yoyVolume)}</div>
-              </Card>
-            </Col>
-            <Col span={4} style={{ display: 'flex' }}>
-              <Card size="small" style={{width: '100%', height: '100%'}}><Statistic title={t('retail.activeShops')} value={`${kpi.activeShops}${kpi.activeShops ? '/' : ''}30`} prefix={<ShopOutlined />} /></Card>
-            </Col>
-          </>
-        )}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={12} lg={6}><KpiCard title={t('dashboard.monthlyWholesaleTons')} value={data.monthlyWholesaleTons} precision={1} suffix="т" /></Col>
+        <Col xs={24} sm={12} lg={6}><KpiCard title={t('dashboard.activeContracts')} value={data.activeContracts} /></Col>
+        <Col xs={24} sm={12} lg={6}><KpiCard title={t('dashboard.monthlyProcurementTons')} value={data.monthlyProcurementTons} precision={1} suffix="т" /></Col>
+        <Col xs={24} sm={12} lg={6}><KpiCard title={t('retail.activeShops')} value={kpi?.activeShops ?? 0} /></Col>
       </Row>
-      <Row gutter={16} style={{ marginTop: 16 }}>
-        <Col span={12}>
-          <Card size="small" title={<><DollarOutlined /> {t('exchange.today')}</>}>
-            {rate ? (
-              <Row gutter={16}>
-                <Col span={6}><Statistic title="USD/KGS" value={rate.usdKgs} precision={4} valueStyle={{ color: '#22d3ee', fontSize: 18 }} /></Col>
-                <Col span={6}><Statistic title="CNY/KGS" value={rate.cnyKgs} precision={4} valueStyle={{ color: '#facc15', fontSize: 18 }} /></Col>
-                <Col span={6}><Statistic title="KGS/CNY" value={+(1 / rate.cnyKgs).toFixed(6)} precision={6} valueStyle={{ fontSize: 18 }} /></Col>
-                <Col span={6}>
-                  <div style={{ fontSize: 12, color: '#999' }}>
-                    <div>{rate.date}</div>
-                    <div style={{ marginTop: 4 }}>{t('exchange.source')}: {rate.source}</div>
-                  </div>
-                </Col>
-              </Row>
-            ) : <Alert type="info" message={t('common.noData')} style={{ margin: 0 }} />}
-          </Card>
+      <Row gutter={16}>
+        <Col xs={24} lg={12}>
+          <Row gutter={[16, 16]}>
+            {kpi && (
+              <>
+                <Col span={12}><KpiCard title={t('retail.totalSales')} value={Math.round(kpi.totalSales / 100000000)} suffix={t('common.yi')} delta={kpi.yoySales ? Math.round(kpi.yoySales * 100) : undefined} /></Col>
+                <Col span={12}><KpiCard title={t('retail.totalLiters')} value={Math.round(kpi.totalLiters / 10000)} suffix={t('common.wanL')} delta={kpi.yoyVolume ? Math.round(kpi.yoyVolume * 100) : undefined} /></Col>
+              </>
+            )}
+            <Col span={24}>
+              <Card size="small" title={<><DollarOutlined /> {t('exchange.today')}</>}>
+                {rate ? (
+                  <Row gutter={16}>
+                    <Col span={6}><Statistic title="USD/KGS" value={rate.usdKgs} precision={4} valueStyle={{ color: '#22d3ee', fontSize: 18 }} /></Col>
+                    <Col span={6}><Statistic title="CNY/KGS" value={rate.cnyKgs} precision={4} valueStyle={{ color: '#facc15', fontSize: 18 }} /></Col>
+                    <Col span={6}><Statistic title="KGS/CNY" value={+(1 / rate.cnyKgs).toFixed(6)} precision={6} valueStyle={{ fontSize: 18 }} /></Col>
+                    <Col span={6}>
+                      <div style={{ fontSize: 12, color: '#999' }}>
+                        <div>{rate.date}</div>
+                        <div style={{ marginTop: 4 }}>{t('exchange.source')}: {rate.source}</div>
+                      </div>
+                    </Col>
+                  </Row>
+                ) : <Alert type="info" message={t('common.noData')} style={{ margin: 0 }} />}
+              </Card>
+            </Col>
+          </Row>
         </Col>
-        <Col span={12}>
-          <Card size="small" title={<><InfoCircleOutlined /> {t('exchange.marketWatch')}</>}>
-            {marketWatch && marketWatch.items && marketWatch.items.length > 0 ? marketWatch.items.map((item: any) => (
+        <Col xs={24} lg={12}>
+          <Card size="small" title={<><InfoCircleOutlined /> {t('exchange.marketWatch')}</>} style={{ width: '100%' }} styles={{ body: { height: '100%' } }}>
+            {marketWatch && marketWatch.items && marketWatch.items.length > 0 ? marketWatch.items.slice(0, 3).map((item: any) => (
               <div key={item.id} style={{ marginBottom: 12, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{item.title}</div>
                 <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{item.summary}</div>

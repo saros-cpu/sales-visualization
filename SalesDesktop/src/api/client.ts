@@ -1,39 +1,18 @@
-import axios from 'axios';
+import { createApi } from './http';
 
-const client = axios.create({
-  baseURL: 'http://127.0.0.1:8900/api/v2',
-  timeout: 30000,
-  headers: { 'Content-Type': 'application/json' },
-});
-
-client.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-client.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('accessToken');
-      window.location.hash = '#/login';
-    }
-    return Promise.reject(err);
-  }
-);
+const client = createApi('/api/v2');
 
 export async function changePassword(oldPassword: string, newPassword: string) {
   const res = await client.post('/auth/change-password', { oldPassword, newPassword });
   return res.data;
 }
 
-export async function getProductOptions(): Promise<{value: string; label: string}[]> {
+export async function getProductOptions(): Promise<{ value: string; label: string }[]> {
   const res = await client.get('/aliases/products');
   return (res.data.data || []).map((p: any) => ({ value: p.displayName, label: p.displayName }));
 }
 
-export async function getEntityOptions(): Promise<{value: string; label: string}[]> {
+export async function getEntityOptions(): Promise<{ value: string; label: string }[]> {
   const res = await client.get('/aliases/entities');
   const items = new Map<string, string>();
   for (const e of res.data.data) {

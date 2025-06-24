@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Row, Col, Card, Table, Button, Space, DatePicker, Input, Modal, Form, message, Popconfirm, Tag, Statistic, Select } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Row, Col, Card, Table, Button, Space, DatePicker, Input, Modal, Form, message, Popconfirm, Tag, Statistic, Select, Upload } from 'antd';
+import { PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import { getTrainEntryList, createTrainEntry, updateTrainEntry, deleteTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
+import * as XLSX from 'xlsx';
+import { getTrainEntryList, createTrainEntry, updateTrainEntry, deleteTrainEntry, batchCreateTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
 import { getProductOptions, getEntityOptions } from '@/api/client';
 
 const { RangePicker } = DatePicker;
@@ -22,6 +23,9 @@ export default function TrainEntryPage() {
   const [submitting, setSubmitting] = useState(false);
   const [productOpts, setProductOpts] = useState<{value: string; label: string}[]>([]);
   const [entityOpts, setEntityOpts] = useState<{value: string; label: string}[]>([]);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadRecords, setUploadRecords] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -64,6 +68,7 @@ export default function TrainEntryPage() {
         entryDate: values.entryDate.format('YYYY-MM-DD'),
         productName: values.productName,
         vehicleNo: values.vehicleNo,
+        weighNo: values.weighNo || '',
         senderName: values.senderName || '',
         receiverName: values.receiverName || '',
         weightKg: values.weightKg ? Number(values.weightKg) : undefined,
@@ -88,9 +93,61 @@ export default function TrainEntryPage() {
     fetchData();
   };
 
+  const handleUploadFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target?.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        const headerRow = rows.find((r) => r[1] && String(r[1]).includes('入厂日期'));
+        if (!headerRow) { message.error('未找到表头行（需包含「入厂日期」列）'); return; }
+        const headerIdx = rows.indexOf(headerRow);
+        const records: any[] = [];
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r[1]) continue;
+          const entryDate = String(r[1]).trim();
+          const productName = String(r[2] || '').trim();
+          const weighNo = String(r[3] || '').trim();
+          const vehicleNo = String(r[4] || '').trim();
+          const senderName = String(r[5] || '').trim();
+          const receiverName = String(r[6] || '').trim();
+          const weightKg = r[7] != null ? Number(r[7]) : undefined;
+          const remark = String(r[8] || '').trim();
+          if (!entryDate || !productName || !vehicleNo) continue;
+          records.push({ entryDate, productName, weighNo, vehicleNo, senderName, receiverName, weightKg, remark });
+        }
+        if (records.length === 0) { message.error('未解析到有效数据'); return; }
+        setUploadRecords(records);
+        setUploadModalOpen(true);
+      } catch (err: any) {
+        message.error('文件解析失败: ' + (err.message || ''));
+      }
+    };
+    reader.readAsBinaryString(file);
+    return false;
+  };
+
+  const handleUploadConfirm = async () => {
+    setUploading(true);
+    try {
+      const res = await batchCreateTrainEntry(uploadRecords);
+      message.success(t('common.uploadSuccess', { count: res.data?.inserted ?? uploadRecords.length }));
+      setUploadModalOpen(false);
+      setUploadRecords([]);
+      fetchData();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || err.message || '导入失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const columns = [
     { title: t('common.date'), dataIndex: 'entryDate', key: 'entryDate', width: 100 },
     { title: t('retail.product'), dataIndex: 'productName', key: 'productName', width: 100, render: (v: string) => t(`product.${v}`, { defaultValue: v }) },
+    { title: '磅单号', dataIndex: 'weighNo', key: 'weighNo', width: 100 },
     { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 120 },
     { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: 150, ellipsis: true },
     { title: t('weighing.receiverName'), dataIndex: 'receiverName', key: 'receiverName', width: 150, ellipsis: true },
@@ -118,6 +175,8 @@ export default function TrainEntryPage() {
             <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
             <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
             <Button icon={<ReloadOutlined />} onClick={fetchData}>{t('common.reset')}</Button>
+            <Button icon={<UploadOutlined />} onClick={() => document.getElementById('train-upload-input')?.click()}>{t('common.import')}</Button>
+            <input id="train-upload-input" type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && handleUploadFile(e.target.files[0])} />
             <Button icon={<PlusOutlined />} type="primary" onClick={openAdd}>{t('common.add')}</Button>
           </Space>
         }
@@ -147,6 +206,9 @@ export default function TrainEntryPage() {
           <Form.Item name="productName" label={t('retail.product')} rules={[{ required: true }]}>
             <Select showSearch placeholder={t('common.select')} options={productOpts} />
           </Form.Item>
+          <Form.Item name="weighNo" label="磅单号">
+            <Input placeholder="磅单号" />
+          </Form.Item>
           <Form.Item name="vehicleNo" label={t('common.vehicleNo')} rules={[{ required: true }]}>
             <Input placeholder="01KG000AA" />
           </Form.Item>
@@ -163,6 +225,28 @@ export default function TrainEntryPage() {
             <TextArea rows={2} />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title={t('common.uploadPreview')}
+        open={uploadModalOpen}
+        onCancel={() => { setUploadModalOpen(false); setUploadRecords([]); }}
+        onOk={handleUploadConfirm}
+        confirmLoading={uploading}
+        width={800}
+      >
+        <p>{t('common.total', { count: uploadRecords.length })}</p>
+          <Table
+            dataSource={uploadRecords.slice(0, 50)} columns={[
+              { title: t('common.date'), dataIndex: 'entryDate', width: 100 },
+              { title: t('retail.product'), dataIndex: 'productName', width: 100 },
+              { title: '磅单号', dataIndex: 'weighNo', width: 100 },
+              { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', width: 120 },
+              { title: t('weighing.senderName'), dataIndex: 'senderName', width: 120, ellipsis: true },
+              { title: t('weighing.receiverName'), dataIndex: 'receiverName', width: 120, ellipsis: true },
+              { title: t('common.weightKg'), dataIndex: 'weightKg', width: 100, render: (v: number | undefined) => v?.toLocaleString() ?? '-' },
+            ]} rowKey="vehicleNo" size="small" pagination={false} scroll={{ y: 300 }}
+          />
+        {uploadRecords.length > 50 && <p style={{ marginTop: 8, color: '#999' }}>...{t('common.andMore', { count: uploadRecords.length - 50 })}</p>}
       </Modal>
     </div>
   );
