@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.0.0';
+export const VERSION = '3.0.1';
 export const BUILD_DATE = '2026-07-10';
 
 export interface ChangelogEntry {
@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.0.1',
+    date: '2026-07-10',
+    type: 'patch',
+    changes: [
+      '修复：删除孤立文件（Wholesale.tsx, StationAnalysis.tsx, ProductAnalysis.tsx）',
+      '修复：批发 i18n 键不匹配——exportWholesale→export_wholesale, localWholesale→local_wholesale, transferClass→transfer',
+      '修复：零售缺失 i18n 键——amount, volume',
+      '修复：批发分类 missing i18n——external_transport, toll_processing',
+      '修复：common 缺失 i18n 键——downloadStarted, downloadFailed, closed, ok, rows',
+    ],
+  },
   {
     version: '3.0.0',
     date: '2026-07-10',

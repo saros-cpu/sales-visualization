@@ -63,7 +63,7 @@ export default function Transfer() {
             style={{ width: '100%', marginBottom: 16 }}
           />
           <TableCard
-            title={t('wholesale.transfer')}
+            title={t('wholesale.transferClass')}
             columns={detailColumns}
             data={filtered}
             rowKey={(r: any) => `${r.region}-${r.product}` as any}

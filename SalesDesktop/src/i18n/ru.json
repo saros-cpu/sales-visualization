@@ -101,6 +101,11 @@
     "day": "дн.",
     "action": "Действие",
     "type": "Тип",
+    "rows": "Строк",
+    "closed": "Закрыто",
+    "ok": "Нормально",
+    "downloadStarted": "Загрузка начата",
+    "downloadFailed": "CTY-05ибка загрузки",
     "input": "Введите",
     "name": "Наименование",
     "password": "Пароль",
@@ -216,6 +221,7 @@
     "overview": "Обзор", "region": "Регион", "station": "АЗС", "monthly": "Месячный",
     "resource": "Нефтепродукты", "report": "Отчет", "alert": "Оповещения",
     "year": "Год", "month": "Месяц", "totalSales": "Общий объем продаж", "totalLiters": "Общий объем (л)",
+    "amount": "Сумма", "volume": "Объем",
     "activeShops": "Активные АЗС", "inventory": "Остатки", "generateReport": "Создать отчет",
     "regionSales": "Продажи по регионам", "topStations": "ТОП-10 АЗС", "productRank": "Рейтинг продуктов",
     "paymentDist": "Распределение оплат", "cash": "Наличные", "card": "Карта", "bonus": "Бонусы",
@@ -241,12 +247,12 @@
   "wholesale": {
     "overview": "Обзор", "products": "Продукты", "customers": "Клиенты", "transfer": "Перевозки",
     "trend": "Тренд", "review": "Контроль", "query": "Запрос",
-    "exportWholesale": "Экспорт опт", "localWholesale": "Местный опт", "unknown": "Ожидает контроля",
+    "export_wholesale": "Экспорт опт", "local_wholesale": "Местный опт", "unknown": "Ожидает контроля",
+    "external_transport": "Перевозка", "toll_processing": "Переработка",
     "transferClass": "Перевозка", "processing": "Переработка", "procurement": "Закупки",
     "tons": "Тонны", "amountCny": "Сумма (юань)", "entities": "Контрагенты",
     "byRegion": "По регионам", "byProduct": "По продуктам", "dailyTrend": "Дневной тренд",
-    "dataIssues": "Проблемы с данными", "noIssues": "Нет проблем",
-    "needsReview": "Требует проверки", "contractReview": "Проверка контрактов"
+    "dataIssues": "Проблемы с данными", "noIssues": "Нет проблем"
   },
   "transferLoss": {
     "station": "АЗС",

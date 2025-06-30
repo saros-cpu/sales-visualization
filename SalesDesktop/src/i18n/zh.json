@@ -101,6 +101,11 @@
     "day": "天",
     "action": "操作",
     "type": "类型",
+    "rows": "条数",
+    "closed": "停业",
+    "ok": "正常",
+    "downloadStarted": "下载已开始",
+    "downloadFailed": "下载失败",
     "input": "请输入",
     "name": "名称",
     "password": "密码",
@@ -215,6 +220,7 @@
     "overview": "总览", "region": "区域", "station": "站点", "monthly": "月度",
     "resource": "油品", "report": "报表", "alert": "预警",
     "year": "年份", "month": "月份", "totalSales": "累计销售额", "totalLiters": "累计销量",
+    "amount": "金额", "volume": "销量",
     "activeShops": "活跃站点", "inventory": "期末库存", "generateReport": "生成分析报告",
     "regionSales": "区域年销售额", "topStations": "站点 TOP10", "productRank": "油品排行",
     "paymentDist": "支付分布", "cash": "现金", "card": "刷卡", "bonus": "积分",
@@ -237,12 +243,12 @@
   "wholesale": {
     "overview": "总览", "products": "油品统计", "customers": "客户排行", "transfer": "外运详情",
     "trend": "每日趋势", "review": "审核", "query": "批发查询",
-    "exportWholesale": "出口批发", "localWholesale": "本地批发", "unknown": "待审核批发",
+    "export_wholesale": "出口批发", "local_wholesale": "本地批发", "unknown": "待审核批发",
+    "external_transport": "外运", "toll_processing": "代加工",
     "transferClass": "外运", "processing": "代加工", "procurement": "采购入库",
     "tons": "吨数", "amountCny": "金额(元)", "entities": "实体数",
     "byRegion": "按区域", "byProduct": "按油品", "dailyTrend": "每日趋势",
-    "dataIssues": "数据质量问题", "noIssues": "暂无数据问题",
-    "needsReview": "待复核数据", "contractReview": "合同审核"
+    "dataIssues": "数据质量问题", "noIssues": "暂无数据问题"
   },
   "transferLoss": {
     "station": "站点",
