@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Row, Col, Button, Space, Tabs, message } from 'antd';
+import { Row, Col, Button, Space, Tabs } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
-import { getMonthly, exportMonthlyExcel } from '@/api/retail';
+import { getMonthly } from '@/api/retail';
+import { exportExcel } from '@/api/export';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 
@@ -62,14 +63,7 @@ export default function Report() {
     { title: t('retail.cardRatio'), dataIndex: 'cardRatio', key: 'cardRatio' },
   ];
 
-  const onExport = async () => {
-    try {
-      await exportMonthlyExcel(ym);
-      message.success(t('common.downloadStarted'));
-    } catch {
-      message.error(t('common.downloadFailed'));
-    }
-  };
+  const onExport = () => exportExcel(ym);
 
   return (
     <div>

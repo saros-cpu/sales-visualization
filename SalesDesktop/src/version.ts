@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.0.1';
+export const VERSION = '3.0.2';
 export const BUILD_DATE = '2026-07-10';
 
 export interface ChangelogEntry {
@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.0.2',
+    date: '2026-07-10',
+    type: 'patch',
+    changes: [
+      '修复：零售报表导出Excel只提示不保存——改用 exportExcel 下载流程',
+      '修复：批发总览KPI卡片高度不一——flex等高布局',
+      '修复：数据录入未实现Excel表格样式——改为inline editable table',
+    ],
+  },
   {
     version: '3.0.1',
     date: '2026-07-10',

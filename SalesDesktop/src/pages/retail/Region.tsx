@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Row, Col, Tabs, Card, Statistic } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
@@ -29,6 +29,12 @@ export default function Region() {
   }, [data]);
 
   const [activeRegion, setActiveRegion] = useState('');
+
+  useEffect(() => {
+    if (regionKeys.length > 0 && !activeRegion) {
+      setActiveRegion(regionKeys[0]);
+    }
+  }, [regionKeys]);
 
   const region = activeRegion && data?.regions ? data.regions[activeRegion] : null;
   const regionStations = region

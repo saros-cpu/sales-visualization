@@ -9,8 +9,8 @@ import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 
 const REGION_COLORS: Record<string, string> = {
-  'REG-02': '#ef5350', 'REG-01': '#00e5a0', 'REG-04': '#a78bfa',
-  'REG-05': '#ffa726', 'REG-06': '#00d4ff', 'REG-03': '#66bb6a',
+  CTY-30: '#ef5350', chu: '#00e5a0', CTY-29: '#a78bfa',
+  CTY-33: '#ffa726', CTY-31: '#00d4ff', CTY-35: '#66bb6a',
 };
 
 export default function Overview() {

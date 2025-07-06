@@ -19,7 +19,9 @@ export default function TableCard<T extends object>({ title, columns, data, rowK
       style={{ marginBottom: 16 }}
       extra={onExport && <Button onClick={onExport}>{exportText}</Button>}
     >
-      <Table<T> columns={columns} dataSource={data} rowKey={rowKey} loading={loading} size="small" pagination={{ pageSize: 20 }} scroll={{ x: 'max-content' }} />
+      <div style={{ overflow: 'auto' }}>
+        <Table<T> columns={columns} dataSource={data} rowKey={rowKey} loading={loading} size="small" pagination={{ pageSize: 20 }} scroll={{ x: 'max-content' }} />
+      </div>
     </Card>
   );
 }

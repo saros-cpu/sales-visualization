@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Table, Card, DatePicker, Input, Button, Space, Tag } from 'antd';
+import { Row, Col, Statistic, Table, Card, DatePicker, Input, Button, Space, Tag, Select } from 'antd';
 import { SearchOutlined, ReloadOutlined, EditOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
@@ -23,6 +23,7 @@ export default function WeighingList() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [vehicleNo, setVehicleNo] = useState('');
+  const [status, setStatus] = useState<string>('');
   const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('month'), dayjs()]);
   const [verifyRecord, setVerifyRecord] = useState<WeighingItem | null>(null);
 
@@ -33,6 +34,7 @@ export default function WeighingList() {
         date_from: dates[0].format('YYYY-MM-DD'),
         date_to: dates[1].format('YYYY-MM-DD'),
         vehicle_no: vehicleNo || undefined,
+        status: status || undefined,
         page,
         page_size: 50,
       });
@@ -41,9 +43,11 @@ export default function WeighingList() {
     } finally {
       setLoading(false);
     }
-  }, [dates, vehicleNo, page]);
+  }, [dates, vehicleNo, status, page]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const totalTons = data.reduce((s, i) => s + (i.netWeight || 0), 0);
 
   const columns = [
     { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: 130 },
@@ -72,36 +76,47 @@ export default function WeighingList() {
   ];
 
   return (
-    <Card
-      title={t('weighing.title')}
-      extra={
-        <Space>
-          <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
-          <Input placeholder={t('weighing.vehicleNo')} value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} style={{ width: 120 }} />
-          <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
-          <Button icon={<ReloadOutlined />} onClick={fetchData}>{t('common.reset')}</Button>
-          <Button icon={<DownloadOutlined />} onClick={() => {
-            const ym = dates[0].format('YYYY-MM');
-            window.open(`http://127.0.0.1:8900/api/export/wholesale/details/${ym}`, '_blank');
-          }}>{t('common.export')}</Button>
-        </Space>
-      }
-    >
-      <Table
-        dataSource={data}
-        columns={columns}
-        rowKey={(r) => `${r.source}-${r.id}`}
-        loading={loading}
-        pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
-        scroll={{ x: 1400 }}
-        size="small"
-      />
-      <WeighingVerifyModal
-        record={verifyRecord}
-        visible={!!verifyRecord}
-        onClose={() => setVerifyRecord(null)}
-        onSuccess={() => { setPage(1); fetchData(); }}
-      />
-    </Card>
+    <div>
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={6}><Card size="small"><Statistic title={t('common.total')} value={total} suffix={t('common.rows')} /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title={t('weighing.netWeight')} value={Math.round(totalTons)} suffix="т" /></Card></Col>
+      </Row>
+      <Card
+        title={t('weighing.title')}
+        extra={
+          <Space>
+            <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
+            <Input placeholder={t('weighing.vehicleNo')} value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} style={{ width: 120 }} />
+            <Select value={status} onChange={setStatus} style={{ width: 120 }} allowClear placeholder={t('common.status')}>
+              <Select.Option value="matched">{t('common.matched')}</Select.Option>
+              <Select.Option value="unmatched">{t('common.unmatched')}</Select.Option>
+              <Select.Option value="needs_review">{t('common.needsReview')}</Select.Option>
+            </Select>
+            <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
+            <Button icon={<ReloadOutlined />} onClick={() => { setStatus(''); setVehicleNo(''); fetchData(); }}>{t('common.reset')}</Button>
+            <Button icon={<DownloadOutlined />} onClick={() => {
+              const ym = dates[0].format('YYYY-MM');
+              window.open(`http://198.51.100.10:8080/api/export/wholesale/details/${ym}`, '_blank');
+            }}>{t('common.export')}</Button>
+          </Space>
+        }
+      >
+        <Table
+          dataSource={data}
+          columns={columns}
+          rowKey={(r) => `${r.source}-${r.id}`}
+          loading={loading}
+          pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
+          scroll={{ x: 1400 }}
+          size="small"
+        />
+        <WeighingVerifyModal
+          record={verifyRecord}
+          visible={!!verifyRecord}
+          onClose={() => setVerifyRecord(null)}
+          onSuccess={() => { setPage(1); fetchData(); }}
+        />
+      </Card>
+    </div>
   );
 }

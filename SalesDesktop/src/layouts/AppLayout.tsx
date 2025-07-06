@@ -85,17 +85,19 @@ export default function AppLayout() {
   return (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed}
-        style={{ position: 'fixed', left: 0, top: 0, bottom: 0, height: '100vh', zIndex: 10 }}>
+        style={{ position: 'fixed', left: 0, top: 0, bottom: 0, height: '100vh', zIndex: 10, display: 'flex', flexDirection: 'column' }}>
         <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #f0f0f0' }}>
           <img src={logoSrc} alt="" style={{ width: collapsed ? 28 : 36, height: collapsed ? 28 : 36 }} />
         </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          defaultOpenKeys={openKeys}
-          items={antMenuItems}
-          onClick={({ key }) => navigate(key)}
-        />
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          <Menu
+            mode="inline"
+            selectedKeys={[selectedKey]}
+            defaultOpenKeys={openKeys}
+            items={antMenuItems}
+            onClick={({ key }) => navigate(key)}
+          />
+        </div>
       </Sider>
       <Layout style={{ marginLeft: siderWidth, transition: 'margin-left 0.2s' }}>
         <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16 }}>

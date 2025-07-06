@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Space, Tag, List, Card } from 'antd';
+import { Space, Tag, List, Card, Button } from 'antd';
+import { FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
 import { fetchWholesale } from '@/api/wholesale';
+import { downloadWholesaleReport } from '@/api/export';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 
 const SEVERITY_COLOR: Record<string, string> = { error: 'red', warning: 'orange', info: 'blue' };
@@ -21,6 +23,9 @@ export default function Review() {
       <Space style={{ marginBottom: 16 }}>
         <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
           onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
+        <Button icon={<FileTextOutlined />} onClick={() => downloadWholesaleReport({ year, month })}>
+          {t('wholesale.generateReport')}
+        </Button>
       </Space>
       <Card size="small" title={t('wholesale.dataIssues')}>
         {issues.length > 0 ? (
@@ -29,7 +34,7 @@ export default function Review() {
             dataSource={issues}
             renderItem={(issue) => (
               <List.Item>
-                <Tag color={SEVERITY_COLOR[issue.severity] || 'default'}>{issue.type}</Tag>
+                <Tag color={SEVERITY_COLOR[issue.severity] || 'default'}>{t(`wholesale.${issue.type}`, { defaultValue: issue.type })}</Tag>
                 {issue.message}
                 <span style={{ marginLeft: 8, color: '#909090', fontSize: 12 }}>{issue.date}</span>
               </List.Item>

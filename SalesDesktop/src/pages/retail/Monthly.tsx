@@ -132,16 +132,33 @@ export default function Monthly() {
           </Row>
           <div style={{ marginTop: 16 }}>
             <Card size="small" title={t('retail.insights')}>
-              {data?.daily?.length ? (
-                <ul>
-                  <li>{t('retail.totalSales')}: {Math.round(s.totalSales / 10000)}{t('common.wan')}</li>
-                  <li>{t('retail.totalLiters')}: {Math.round(s.totalLiters).toLocaleString()}L</li>
-                  <li>{t('retail.activeShops')}: {s.activeShops}/{s.totalShops}</li>
-                  <li>{t('retail.cardRatio')}: {s.totalSales > 0 ? `${Math.round((s.cardSales / s.totalSales) * 100)}%` : '-'}</li>
-                  {momSales != null && <li>{t('common.mom')}: {momSales >= 0 ? '+' : ''}{momSales.toFixed(1)}%</li>}
-                  {yoySales != null && <li>{t('common.yoy')}: {yoySales >= 0 ? '+' : ''}{yoySales.toFixed(1)}%</li>}
-                </ul>
-              ) : null}
+              {data?.daily?.length ? (() => {
+                const daily = data.daily as any[];
+                const volumes = daily.map(d => d.volume);
+                const maxVol = Math.max(...volumes);
+                const minVol = Math.min(...volumes);
+                const maxDay = daily.find(d => d.volume === maxVol);
+                const minDay = daily.find(d => d.volume === minVol);
+                const firstHalf = daily.slice(0, Math.ceil(daily.length / 2)).reduce((s, d) => s + d.volume, 0);
+                const secondHalf = daily.slice(Math.ceil(daily.length / 2)).reduce((s, d) => s + d.volume, 0);
+                const halfCompVal = firstHalf > 0 ? (secondHalf - firstHalf) / firstHalf * 100 : null;
+                return (
+                  <ul>
+                    <li>{t('retail.totalSales')}: {Math.round(s.totalSales / 10000)}{t('common.wan')}</li>
+                    <li>{t('retail.totalLiters')}: {Math.round(s.totalLiters).toLocaleString()}L</li>
+                    <li>{t('retail.activeShops')}: {s.activeShops}/{s.totalShops}</li>
+                    <li>{t('retail.cardRatio')}: {s.totalSales > 0 ? `${Math.round((s.cardSales / s.totalSales) * 100)}%` : '-'}</li>
+                    <li>{t('retail.avgDaily')}: {Math.round(s.totalLiters / daily.length).toLocaleString()}L ({daily.length}{t('common.day')})</li>
+                    <li>{t('retail.bestDay')}: {maxDay?.date?.slice(8)} - {Math.round(maxVol).toLocaleString()}L</li>
+                    <li>{t('retail.worstDay')}: {minDay?.date?.slice(8)} - {Math.round(minVol).toLocaleString()}L</li>
+                    {halfCompVal != null && <li>{t('retail.halfCompare')}: {halfCompVal >= 0 ? '+' : ''}{halfCompVal.toFixed(1)}%</li>}
+                    {momSales != null && <li>{t('common.mom')}: {momSales >= 0 ? '+' : ''}{momSales.toFixed(1)}% ({t('retail.amount')})</li>}
+                    {momVolume != null && <li>{t('common.mom')}: {momVolume >= 0 ? '+' : ''}{momVolume.toFixed(1)}% ({t('retail.volume')})</li>}
+                    {yoySales != null && <li>{t('common.yoy')}: {yoySales >= 0 ? '+' : ''}{yoySales.toFixed(1)}% ({t('retail.amount')})</li>}
+                    {yoyVolume != null && <li>{t('common.yoy')}: {yoyVolume >= 0 ? '+' : ''}{yoyVolume.toFixed(1)}% ({t('retail.volume')})</li>}
+                  </ul>
+                );
+              })() : null}
             </Card>
           </div>
         </>

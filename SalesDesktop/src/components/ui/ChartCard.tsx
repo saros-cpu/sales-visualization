@@ -11,9 +11,9 @@ interface Props {
 
 export default function ChartCard({ title, option, loading, height = 320 }: Props) {
   return (
-    <Card title={title} size="small" style={{ marginBottom: 16 }}>
+    <Card title={title} size="small" style={{ marginBottom: 16, overflow: 'hidden' }}>
       <Spin spinning={!!loading}>
-        <ReactECharts option={option} style={{ height }} notMerge lazyUpdate />
+        <ReactECharts option={option} style={{ height, width: '100%' }} notMerge lazyUpdate />
       </Spin>
     </Card>
   );

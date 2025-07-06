@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Row, Col, Space, Card } from 'antd';
+import { Row, Col, Space, Card, Alert } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
 import { fetchWholesale } from '@/api/wholesale';
@@ -27,6 +27,9 @@ export default function Customers() {
         <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
           onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
       </Space>
+      {q.data && ORDER.every(k => !q.data?.customerRankings?.[k]?.length) && (
+        <Alert type="info" message={t('common.noData')} showIcon style={{ marginBottom: 16 }} />
+      )}
       <Row gutter={16}>
         {ORDER.map((key) => {
           const items = q.data?.customerRankings[key];

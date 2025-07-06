@@ -9,10 +9,12 @@ import PeriodPicker from '@/components/ui/PeriodPicker';
 
 export default function Resource() {
   const { t } = useTranslation();
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [month, setMonth] = useState<number | undefined>(undefined);
+  const now = new Date();
+  const [ym, setYm] = useState(`${now.getFullYear()}`);
+  const year = parseInt(ym.split('-')[0]);
+  const month = ym.includes('-') ? parseInt(ym.split('-')[1]) : undefined;
 
-  const resQ = useApiQuery(['retail', 'resources', year, month], () => getResourcesYearly(year, month));
+  const resQ = useApiQuery(['retail', 'resources', ym], () => getResourcesYearly(year, month));
   const data = resQ.data;
 
   const columns = [
@@ -26,7 +28,7 @@ export default function Resource() {
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
-        <PeriodPicker value={year} onChange={(y) => { setYear(y); setMonth(undefined); }} picker="year" />
+        <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
       </Space>
       {data?.summary && (
         <Row gutter={16} style={{ marginBottom: 16 }}>

@@ -23,7 +23,6 @@ const WholesaleProducts = lazy(() => import('@/pages/wholesale/Products'));
 const WholesaleCustomers = lazy(() => import('@/pages/wholesale/Customers'));
 const WholesaleTransfer = lazy(() => import('@/pages/wholesale/Transfer'));
 const WholesaleTrend = lazy(() => import('@/pages/wholesale/Trend'));
-const WholesaleReview = lazy(() => import('@/pages/wholesale/Review'));
 const WholesaleQuery = lazy(() => import('@/pages/wholesale/Query'));
 const WeighingList = lazy(() => import('@/pages/WeighingList'));
 const TrainEntry = lazy(() => import('@/pages/TrainEntry'));
@@ -66,7 +65,6 @@ function AppRoutes() {
           <Route path="customers" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleCustomers /></Suspense></ErrorBoundary>} />
           <Route path="transfer" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleTransfer /></Suspense></ErrorBoundary>} />
           <Route path="trend" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleTrend /></Suspense></ErrorBoundary>} />
-          <Route path="review" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleReview /></Suspense></ErrorBoundary>} />
           <Route path="query" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleQuery /></Suspense></ErrorBoundary>} />
         </Route>
         <Route path="exchange" element={<ErrorBoundary><Suspense fallback={loading}><ExchangeRates /></Suspense></ErrorBoundary>} />

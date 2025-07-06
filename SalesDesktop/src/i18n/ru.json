@@ -92,6 +92,7 @@
     "yoy": "г/г",
     "mom": "м/м",
     "updated": "Обновлено",
+    "saved": "Сохранено",
     "created": "Создано",
     "deleted": "Удалено",
     "passwordReset": "Пароль сбрCTY-05ен",
@@ -106,6 +107,8 @@
     "ok": "Нормально",
     "downloadStarted": "Загрузка начата",
     "downloadFailed": "CTY-05ибка загрузки",
+    "matched": "Сопоставлено", "unmatched": "Не сопоставлено",
+    "needsReview": "На проверке",
     "input": "Введите",
     "name": "Наименование",
     "password": "Пароль",
@@ -242,7 +245,8 @@
     "resourceRank": "Рейтинг продуктов", "payMethod": "Способ оплаты",
     "stationAnalysis": "Анализ АЗС", "stationList": "Список АЗС",
     "resourceMix": "Структура продуктов", "productAnalysis": "Анализ продуктов",
-    "volumeProportion": "Доля объема", "productDetail": "Детали продуктов", "product": "Продукт"
+    "volumeProportion": "Доля объема", "productDetail": "Детали продуктов", "product": "Продукт",
+    "bestDay": "Лучший день", "worstDay": "Худший день", "halfCompare": "2-я пол. vs 1-я"
   },
   "wholesale": {
     "overview": "Обзор", "products": "Продукты", "customers": "Клиенты", "transfer": "Перевозки",
@@ -252,7 +256,12 @@
     "transferClass": "Перевозка", "processing": "Переработка", "procurement": "Закупки",
     "tons": "Тонны", "amountCny": "Сумма (юань)", "entities": "Контрагенты",
     "byRegion": "По регионам", "byProduct": "По продуктам", "dailyTrend": "Дневной тренд",
-    "dataIssues": "Проблемы с данными", "noIssues": "Нет проблем"
+    "dataIssues": "Проблемы с данными", "noIssues": "Нет проблем",
+    "contractReview": "Проверка контрактов", "matchedContracts": "Сопоставлено", "needsReview": "Требует проверки",
+    "topNeedsReview": "Ожидает проверки", "noReviewData": "Нет данных на проверку",
+    "contract_unmatched": "Контракт не сопоставлен", "classification_mismatch": "Несоответствие категории",
+    "missing_price": "Отсутствует цена", "missing_exchange_rate": "Отсутствует курс",
+    "generateReport": "Создать отчет"
   },
   "transferLoss": {
     "station": "АЗС",

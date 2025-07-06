@@ -114,19 +114,17 @@ export default function Dashboard() {
           </Select>
         </Col>
       </Row>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={12} lg={6}><KpiCard title={t('dashboard.monthlyWholesaleTons')} value={data.monthlyWholesaleTons} precision={1} suffix="т" /></Col>
-        <Col xs={24} sm={12} lg={6}><KpiCard title={t('dashboard.activeContracts')} value={data.activeContracts} /></Col>
-        <Col xs={24} sm={12} lg={6}><KpiCard title={t('dashboard.monthlyProcurementTons')} value={data.monthlyProcurementTons} precision={1} suffix="т" /></Col>
-        <Col xs={24} sm={12} lg={6}><KpiCard title={t('retail.activeShops')} value={kpi?.activeShops ?? 0} /></Col>
-      </Row>
       <Row gutter={16}>
-        <Col xs={24} lg={12}>
+        <Col xs={24} lg={16}>
           <Row gutter={[16, 16]}>
+            <Col span={8}><KpiCard title={t('dashboard.monthlyWholesaleTons')} value={data.monthlyWholesaleTons} precision={1} suffix="т" /></Col>
+            <Col span={8}><KpiCard title={t('dashboard.activeContracts')} value={data.activeContracts} /></Col>
+            <Col span={8}><KpiCard title={t('dashboard.monthlyProcurementTons')} value={data.monthlyProcurementTons} precision={1} suffix="т" /></Col>
             {kpi && (
               <>
-                <Col span={12}><KpiCard title={t('retail.totalSales')} value={Math.round(kpi.totalSales / 100000000)} suffix={t('common.yi')} delta={kpi.yoySales ? Math.round(kpi.yoySales * 100) : undefined} /></Col>
-                <Col span={12}><KpiCard title={t('retail.totalLiters')} value={Math.round(kpi.totalLiters / 10000)} suffix={t('common.wanL')} delta={kpi.yoyVolume ? Math.round(kpi.yoyVolume * 100) : undefined} /></Col>
+                <Col span={8}><KpiCard title={t('retail.totalSales')} value={Math.round(kpi.totalSales / 100000000)} suffix={t('common.yi')} delta={kpi.yoySales ? Math.round(kpi.yoySales * 100) : undefined} /></Col>
+                <Col span={8}><KpiCard title={t('retail.totalLiters')} value={Math.round(kpi.totalLiters / 10000)} suffix={t('common.wanL')} delta={kpi.yoyVolume ? Math.round(kpi.yoyVolume * 100) : undefined} /></Col>
+                <Col span={8}><KpiCard title={t('retail.activeShops')} value={kpi.activeShops} /></Col>
               </>
             )}
             <Col span={24}>
@@ -148,8 +146,8 @@ export default function Dashboard() {
             </Col>
           </Row>
         </Col>
-        <Col xs={24} lg={12}>
-          <Card size="small" title={<><InfoCircleOutlined /> {t('exchange.marketWatch')}</>} style={{ width: '100%' }} styles={{ body: { height: '100%' } }}>
+        <Col xs={24} lg={8}>
+          <Card size="small" title={<><InfoCircleOutlined /> {t('exchange.marketWatch')}</>} style={{ height: '100%' }}>
             {marketWatch && marketWatch.items && marketWatch.items.length > 0 ? marketWatch.items.slice(0, 3).map((item: any) => (
               <div key={item.id} style={{ marginBottom: 12, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{item.title}</div>

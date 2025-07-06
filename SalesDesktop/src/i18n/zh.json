@@ -92,6 +92,7 @@
     "yoy": "同比",
     "mom": "环比",
     "updated": "已更新",
+    "saved": "已保存",
     "created": "已创建",
     "deleted": "已删除",
     "passwordReset": "密码已重置",
@@ -106,6 +107,8 @@
     "ok": "正常",
     "downloadStarted": "下载已开始",
     "downloadFailed": "下载失败",
+    "matched": "已匹配", "unmatched": "未匹配",
+    "needsReview": "待审核",
     "input": "请输入",
     "name": "名称",
     "password": "密码",
@@ -238,7 +241,8 @@
     "resourceRank": "油品销售排行", "payMethod": "支付方式",
     "stationAnalysis": "站点分析", "stationList": "站点列表",
     "resourceMix": "油品结构", "productAnalysis": "油品分析",
-    "volumeProportion": "销量占比", "productDetail": "油品明细", "product": "油品"
+    "volumeProportion": "销量占比", "productDetail": "油品明细", "product": "油品",
+    "bestDay": "最高日", "worstDay": "最低日", "halfCompare": "下半月环比"
   },
   "wholesale": {
     "overview": "总览", "products": "油品统计", "customers": "客户排行", "transfer": "外运详情",
@@ -248,7 +252,12 @@
     "transferClass": "外运", "processing": "代加工", "procurement": "采购入库",
     "tons": "吨数", "amountCny": "金额(元)", "entities": "实体数",
     "byRegion": "按区域", "byProduct": "按油品", "dailyTrend": "每日趋势",
-    "dataIssues": "数据质量问题", "noIssues": "暂无数据问题"
+    "dataIssues": "数据质量问题", "noIssues": "暂无数据问题",
+    "contractReview": "合同审核", "matchedContracts": "已匹配合同", "needsReview": "需要复核",
+    "topNeedsReview": "待复核数据", "noReviewData": "暂无待复核数据",
+    "contract_unmatched": "合同未匹配", "classification_mismatch": "分类不符",
+    "missing_price": "缺少价格", "missing_exchange_rate": "缺少汇率",
+    "generateReport": "生成批发分析报告"
   },
   "transferLoss": {
     "station": "站点",

@@ -35,7 +35,6 @@ export const menuConfig: MenuItem[] = [
       { key: '/wholesale/customers', labelKey: 'wholesale.customers' },
       { key: '/wholesale/transfer', labelKey: 'wholesale.transfer' },
       { key: '/wholesale/trend', labelKey: 'wholesale.trend' },
-      { key: '/wholesale/review', labelKey: 'wholesale.review' },
       { key: '/wholesale/query', labelKey: 'wholesale.query' },
     ],
   },

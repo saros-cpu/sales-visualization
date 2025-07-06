@@ -29,8 +29,24 @@ export default function Transfer() {
     return ts.byRegionProduct.filter((r) => r.region === filterRegion);
   }, [ts, filterRegion]);
 
+  const regionMergeMap = useMemo(() => {
+    const map: Record<number, number> = {};
+    let i = 0;
+    while (i < filtered.length) {
+      const region = filtered[i].region;
+      let j = i + 1;
+      while (j < filtered.length && filtered[j].region === region) j++;
+      map[i] = j - i;
+      i = j;
+    }
+    return map;
+  }, [filtered]);
+
   const detailColumns = [
-    { title: t('retail.region'), dataIndex: 'region', key: 'region' },
+    { title: t('retail.region'), dataIndex: 'region', key: 'region', onCell: (_: unknown, index?: number) => {
+      const span = index !== undefined ? regionMergeMap[index] : undefined;
+      return span ? { rowSpan: span } : { rowSpan: 0 };
+    } },
     { title: t('wholesale.byProduct'), dataIndex: 'product', key: 'product' },
     { title: t('common.rows'), dataIndex: 'rows', key: 'rows' },
     { title: t('wholesale.tons'), dataIndex: 'tons', key: 'tons', render: (v: number) => `${v.toLocaleString()} т` },

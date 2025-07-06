@@ -97,8 +97,8 @@ export default function ExchangeRates() {
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={6}><Card size="small"><Statistic title={t('exchange.totalDays')} value={data?.total ?? 0} suffix={t('common.day')} /></Card></Col>
         <Col span={6}><Card size="small"><Statistic title={t('exchange.openGaps')} value={data?.openGaps ?? 0} valueStyle={{ color: (data?.openGaps ?? 0) > 0 ? '#ff4d4f' : undefined }} /></Card></Col>
-        <Col span={6} />
-        <Col span={6} />
+        <Col span={6}><Card size="small"><Statistic title={t('exchange.missingUsd')} value={data?.missingUsd ?? 0} valueStyle={{ color: (data?.missingUsd ?? 0) > 0 ? '#faad14' : undefined }} /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title={t('exchange.missingCny')} value={data?.missingCny ?? 0} valueStyle={{ color: (data?.missingCny ?? 0) > 0 ? '#faad14' : undefined }} /></Card></Col>
       </Row>
       <Card size="small" style={{ marginBottom: 16 }}>
         <ReactEChartsCore echarts={echarts} option={chartOption} style={{ height: 320 }} />
