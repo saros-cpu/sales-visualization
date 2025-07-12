@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.0.2';
-export const BUILD_DATE = '2026-07-10';
+export const VERSION = '3.1.0';
+export const BUILD_DATE = '2026-07-11';
 
 export interface ChangelogEntry {
   version: string;
@@ -14,6 +14,93 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.1.0',
+    date: '2026-07-11',
+    type: 'minor',
+    changes: [
+      '基础设施：Typer CLI + Loguru + pydantic-settings，替代原生 logging + argparse',
+      '双端统一：后端 response.py（ok/fail 格式），HttpClient 自动解包 data 字段，统一错误提取',
+      '四层重构：retail 端路由按 controller/service/common 模式拆分（KPI/analytics/export/analysis_report）',
+      '持久化：缓存快照管理规则写入 AGENTS.md，禁止随意删除快照文件',
+      '优化：Electron 客户端 fetch 401 自动跳转登录，错误消息提取优化',
+    ],
+  },
+  {
+    version: '3.0.9',
+    date: '2026-07-11',
+    type: 'patch',
+    changes: [
+      '修复：右侧内容区多容器/双滚动条问题（移除内层div，Content直接overflow:auto）',
+      '修复：设置页关于中缺失3.0.3~3.0.7版本历史记录',
+    ],
+  },
+  {
+    version: '3.0.7',
+    date: '2026-07-11',
+    type: 'patch',
+    changes: [
+      '修复：所有趋势图悬停提示改为显示实际数值（跟随web版模式）',
+      '修复：零售区域页面空白（API返回中文区域名，客户端用ZH_REGION_KEY反向映射）',
+      '修复：零售总览区域颜色不显示（中文区域名→英文key映射）',
+      '修复：站点页面累计销量/累计金额NaN问题',
+    ],
+  },
+  {
+    version: '3.0.6',
+    date: '2026-07-10',
+    type: 'patch',
+    changes: [
+      '修复：批发查询API路径拆分（概览用/api，查询用/api/v2），数据正常联动',
+      '修复：采购吨位列数据是公斤，改为kg显示',
+      '修复：用户角色列非管理员显示空白问题',
+      '修复：角色权限模块列添加中俄文对照映射',
+    ],
+  },
+  {
+    version: '3.0.5',
+    date: '2026-07-10',
+    type: 'patch',
+    changes: [
+      '修复：批发查询API路径错误（/api → /api/v2），数据未联动',
+      '修复：采购查询吨位列数据为空（weightKg→weightTons）',
+      '修复：称重审核条数KPI名称显示问题',
+      '修复：仪表板零售KPI标注"零售累计销售额/零售累计销量"，金额加сом单位',
+      '修复：角色权限模块列切换俄语后仍显示中文',
+      '修复：用户角色列大小写兼容',
+    ],
+  },
+  {
+    version: '3.0.4',
+    date: '2026-07-10',
+    type: 'patch',
+    changes: [
+      '仪表板：KPI 改为年数据（年批发/年采购）',
+      '语言切换：点击按钮直接切换中俄，无需下拉选择',
+      '零售：菜单文字改为"零售"；总览区域颜色美化；站点默认加载第一个站点',
+      '零售：预警页全量俄语翻译（规则/建议/提示）',
+      '零售：油品日历默认显示当月',
+      '批发客户排行：移除采购/代加工数据',
+      '批发外运详情：按外运量排序KPI，REG-07→STN-63',
+      '采购查询：数据单位改为 kg 与称重管理统一',
+      '称重审核：KPI 重量单位改为 kg（原为 т）',
+      '用户管理：角色列大小写兼容修复',
+      '右侧内容区：移除多余滚动条',
+    ],
+  },
+  {
+    version: '3.0.3',
+    date: '2026-07-10',
+    type: 'patch',
+    changes: [
+      '修复：仪表板 KPI 左右列等宽 12:12 + 2列排布，底部对齐',
+      '修复：趋势图颜色改用明亮色板（蓝/绿/橙/紫/青/玫红/金/亮绿）',
+      '修复：所有趋势图 X 轴添加"日期"单位说明',
+      '修复：地名/站名/产品名随语言切换（俄语下显示俄文名称）',
+      '修复：右侧内容区统一单滚动容器，消除双滚动条',
+      '修复：左侧菜单展开子菜单后支持下滑到底部',
+    ],
+  },
   {
     version: '3.0.2',
     date: '2026-07-10',

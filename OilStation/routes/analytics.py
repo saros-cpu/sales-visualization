@@ -23,16 +23,13 @@ from constants import (
     SHOP_KEY_MAP,
 )
 from db import get_connection
-from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, STATION_RK_CORRECTIONS
+from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, SK29_RSK_MAP, STATION_RK_CORRECTIONS
 
+from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, query_month_summary
 
 analytics_api = Blueprint("analytics_api", __name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OILSTATION_ROOT = Path(__file__).resolve().parents[1]
-
-calc_yoy_mom = None
-get_query_date_range = None
-query_month_summary = None
 
 RESOURCE_NAMES = {
     102: 'АИ 80',
@@ -415,6 +412,10 @@ def report_resource_key_expr(alias="s"):
         f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 2 THEN 104 "
         f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 5 THEN 106 "
         f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 7 THEN 108 "
+        f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 7 THEN 103 "
+        f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 8 THEN 102 "
+        f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 9 THEN 106 "
+        f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 10 THEN 108 "
         f"WHEN {alias}.ShopKey IN (7, 15) AND {alias}.ResourceKey = 104 THEN 102 "
         f"WHEN {alias}.ResourceKey IN (102, 103, 104, 106, 108, 109, 110) THEN {alias}.ResourceKey "
         f"WHEN {alias}.BasePrice <= 0 THEN {alias}.ResourceKey "
@@ -470,6 +471,8 @@ def infer_balance_resource_key(shop_key, resource_key, price=None, resource_shop
         return canonical_resource_key(SK6_RSK_MAP[rsk])
     if sk == 4 and rsk in SK4_RSK_MAP:
         return canonical_resource_key(SK4_RSK_MAP[rsk])
+    if sk == 29 and rsk in SK29_RSK_MAP:
+        return canonical_resource_key(SK29_RSK_MAP[rsk])
     corrected = STATION_RK_CORRECTIONS.get((sk, rk))
     if corrected:
         return canonical_resource_key(corrected)
@@ -1014,10 +1017,7 @@ def _resources_yearly_from_monthly_snapshots(year, month=None):
     }
 
 
-def register_analytics_routes(app, *, calc_yoy_mom, get_query_date_range, query_month_summary):
-    globals()["calc_yoy_mom"] = calc_yoy_mom
-    globals()["get_query_date_range"] = get_query_date_range
-    globals()["query_month_summary"] = query_month_summary
+def register_analytics_routes(app):
     app.register_blueprint(analytics_api)
 
 

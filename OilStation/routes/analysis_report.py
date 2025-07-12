@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import re
 import zipfile
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from urllib.parse import quote
 from xml.sax.saxutils import escape
 
@@ -33,9 +33,9 @@ from routes.analytics import (
 )
 
 
+from endpoints.v1.retail.common.query import get_query_date_range, query_month_summary
+
 analysis_report_api = Blueprint("analysis_report_api", __name__)
-get_query_date_range = None
-query_month_summary = None
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPORT_EXTRAS_DIR = Path(__file__).resolve().parents[1] / "cache_snapshots" / "report_extras"
 REPORT_MONTH_NAMES_RU = {
@@ -67,9 +67,7 @@ def _empty_report_extras():
     }
 
 
-def register_analysis_report_routes(app, *, get_query_date_range, query_month_summary):
-    globals()["get_query_date_range"] = get_query_date_range
-    globals()["query_month_summary"] = query_month_summary
+def register_analysis_report_routes(app):
     app.register_blueprint(analysis_report_api)
 
 
@@ -257,7 +255,8 @@ def _ym_for_full_month(start, end):
 
 
 def _report_extras_snapshot_path(ym):
-    return REPORT_EXTRAS_DIR / f"report_extras_{ym}.json"
+    year, month = ym.split("-")
+    return REPORT_EXTRAS_DIR / year / f"report_extras_{int(month):02d}.json"
 
 
 def _read_report_extras_snapshot(ym):
@@ -286,8 +285,9 @@ def _write_report_extras_snapshot(ym, extras):
     if not _is_snapshot_writable_ym(year, month):
         return
     try:
-        REPORT_EXTRAS_DIR.mkdir(parents=True, exist_ok=True)
-        _report_extras_snapshot_path(ym).write_text(
+        path = _report_extras_snapshot_path(ym)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
             json.dumps(extras, ensure_ascii=False, separators=(",", ":")),
             encoding="utf-8",
         )
@@ -897,6 +897,15 @@ def _ensure_report_comparison(data):
     return data
 
 
+def _month_exclusive_end(year, month):
+    today = date.today()
+    if year == today.year and month == today.month:
+        return today.isoformat()
+    if month == 12:
+        return f"{year + 1}-01-01"
+    return f"{year}-{month + 1:02d}-01"
+
+
 def _month_dataset(year_month):
     year, month = [int(part) for part in year_month.split("-")]
     cached = get_cached(f"monthly:{year_month}")
@@ -928,7 +937,7 @@ def _month_dataset(year_month):
             "title": f"加油站{year}年{month}月份分析报告",
             "periodLabel": f"{year}年{month}月",
             "queryStart": summary.get("queryStart", f"{year_month}-01"),
-            "queryEndExclusive": summary.get("queryEnd") or (f"{year + 1}-01-01" if month == 12 else f"{year}-{month + 1:02d}-01"),
+            "queryEndExclusive": _month_exclusive_end(year, month),
             "summary": summary,
             "resources": resources,
             "stations": cached.get("stations") or [],
@@ -1194,10 +1203,9 @@ def _render_html_report(data):
     station_chart_height = max(460, min(1100, len(station_rows) * 28 + 80))
     exchange_info = data.get("exchangeRates") or {}
     exchange_rows = exchange_info.get("rows") or []
-    last_rate = exchange_info.get("last") or {}
     rate_line = (
-        f" | {last_rate.get('date')}汇率：1 人民币 = {_fmt(last_rate.get('cnyKgs'), 4)} 索姆"
-        if last_rate.get("cnyKgs") is not None else ""
+        f" | 月均汇率：1 人民币 = {_fmt(exchange_info.get('avgCny'), 4)} 索姆"
+        if exchange_info.get("avgCny") is not None else ""
     )
     exchange_chart = (
         '<div id="chartRate" class="chart"></div>'
@@ -1489,8 +1497,8 @@ def _render_html_report(data):
           {{ type:'value', name:'CNY/KGS', scale:true }}
         ],
         series: [
-          {{ name:'USD/KGS', type:'line', smooth:true, symbolSize:6, data:exchangeRows.map(x=>x.usdKgs), itemStyle:{{color:'#1e8bc3'}}, areaStyle:{{color:'rgba(30,139,195,.10)'}} }},
-          {{ name:'CNY/KGS', type:'line', smooth:true, symbolSize:6, yAxisIndex:1, data:exchangeRows.map(x=>x.cnyKgs), itemStyle:{{color:'#27ae60'}}, areaStyle:{{color:'rgba(39,174,96,.10)'}} }}
+          {{ name:'USD/KGS', type:'line', smooth:true, symbolSize:6, data:exchangeRows.map(x=>x.usdKgs), itemStyle:{{color:'#1e8bc3'}}, areaStyle:{{color:'rgba(30,139,195,.10)'}}, markLine:{{silent:true, data:[{{type:'average', name:'月均'}}], lineStyle:{{color:'#1e8bc3', type:'dashed'}}, label:{{formatter:'月均 {{c}}'}}}} }},
+          {{ name:'CNY/KGS', type:'line', smooth:true, symbolSize:6, yAxisIndex:1, data:exchangeRows.map(x=>x.cnyKgs), itemStyle:{{color:'#27ae60'}}, areaStyle:{{color:'rgba(39,174,96,.10)'}}, markLine:{{silent:true, data:[{{type:'average', name:'月均'}}], lineStyle:{{color:'#27ae60', type:'dashed'}}, label:{{formatter:'月均 {{c}}'}}}} }}
         ]
       }});
     }}
@@ -1815,7 +1823,7 @@ def _write_reports(data):
     return {
         "htmlFile": html_name,
         "docxFile": docx_name,
-        "htmlViewUrl": f"/retail-app/exports/{quote(html_name)}",
+        "htmlViewUrl": f"/api/export/analysis/view/{quote(html_name)}",
         "htmlDownloadUrl": f"/api/export/analysis/download/{quote(html_name)}",
         "docxDownloadUrl": f"/api/export/analysis/download/{quote(docx_name)}",
     }
@@ -1842,3 +1850,12 @@ def api_download_analysis_report(filename):
     if not os.path.exists(path):
         return jsonify({"error": "report not found"}), 404
     return send_file(path, as_attachment=True, download_name=safe_name)
+
+
+@analysis_report_api.route("/api/export/analysis/view/<path:filename>")
+def api_view_analysis_report(filename):
+    safe_name = os.path.basename(filename)
+    path = os.path.join(EXPORT_DIR, safe_name)
+    if not os.path.exists(path):
+        return jsonify({"error": "report not found"}), 404
+    return send_file(path)

@@ -4,8 +4,8 @@ import argparse
 import logging
 from pathlib import Path
 
-from api import (
-    record_automation_task,
+from shared_utils import record_automation_task
+from routes_data import (
     run_exchange_maintenance,
     run_market_watch_maintenance,
     run_retail_snapshot_maintenance,

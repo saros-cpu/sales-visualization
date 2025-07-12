@@ -6,6 +6,7 @@ import { fetchWholesale } from '@/api/wholesale';
 import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { CHART_PALETTE } from '@/theme/charts';
 
 export default function Trend() {
   const { t } = useTranslation();
@@ -17,9 +18,17 @@ export default function Trend() {
   const trend = q.data?.dailyTrend ?? [];
 
   const trendOption = {
-    tooltip: { trigger: 'axis' as const },
+    color: CHART_PALETTE,
+    tooltip: { trigger: 'axis' as const, formatter: (p: any) => {
+      const list = Array.isArray(p) ? p : [p];
+      let html = `<b>${list[0]?.axisValue || ''}</b>`;
+      list.forEach((item: any) => {
+        html += `<br/>${item.marker} ${item.seriesName}: ${item.value}${item.seriesName === t('wholesale.amountCny') ? '¥万' : ' т'}`;
+      });
+      return html;
+    } },
     legend: { data: [t('wholesale.export_wholesale'), t('wholesale.local_wholesale'), t('wholesale.unknown'), t('wholesale.transferClass'), t('wholesale.amountCny')], bottom: 0 },
-    xAxis: { type: 'category' as const, data: trend.map((d) => d.date.slice(5)) },
+    xAxis: { type: 'category' as const, name: t('common.date'), nameLocation: 'center' as const, nameGap: 30, data: trend.map((d) => d.date.slice(5)) },
     yAxis: [
       { type: 'value' as const, name: 'т' },
       { type: 'value' as const, name: '¥万' },

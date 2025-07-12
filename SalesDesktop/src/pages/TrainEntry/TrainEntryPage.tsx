@@ -16,7 +16,7 @@ export default function TrainEntryPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('month'), dayjs()]);
-  const [editingKeys, setEditingKeys] = useState<Set<number>>(new Set());
+  const [editing, setEditing] = useState(false); // 批量编辑模式
   const [editData, setEditData] = useState<Record<number, any>>({});
   const [productOpts, setProductOpts] = useState<{value: string; label: string}[]>([]);
   const [entityOpts, setEntityOpts] = useState<{value: string; label: string}[]>([]);
@@ -45,26 +45,28 @@ export default function TrainEntryPage() {
     getEntityOptions().then(setEntityOpts);
   }, []);
 
-  const cancelEditing = (id: number) => {
-    const next = new Set(editingKeys);
-    next.delete(id);
-    setEditingKeys(next);
-    setEditData(prev => { const n = { ...prev }; delete n[id]; return n; });
+  // 进入编辑模式
+  const startEditing = () => {
+    setEditing(true);
+    const editMap: Record<number, any> = {};
+    data.forEach(r => { editMap[r.id] = { ...r }; });
+    setEditData(editMap);
   };
 
-  const startEditing = (record: TrainEntryRecord) => {
-    setEditingKeys(prev => new Set(prev).add(record.id));
-    setEditData(prev => ({ ...prev, [record.id]: { ...record } }));
+  // 退出编辑模式
+  const cancelEditing = () => {
+    setEditing(false);
+    setEditData({});
   };
 
+  // 新增一行
   const addRow = () => {
     const tempId = --tempIdCounter.current;
     const blank: any = {
       id: tempId, entryDate: dayjs().format('YYYY-MM-DD'), productName: '', vehicleNo: '',
       weighNo: '', senderName: '', receiverName: '', weightKg: null, remark: '',
     };
-    setData(prev => [blank as any, ...prev]);
-    setEditingKeys(prev => new Set(prev).add(tempId));
+    setData(prev => [...prev, blank as any]);
     setEditData(prev => ({ ...prev, [tempId]: { ...blank } }));
   };
 
@@ -75,14 +77,17 @@ export default function TrainEntryPage() {
     }));
   };
 
-  const saveRow = async (id: number) => {
-    const record = editData[id];
-    if (!record) return;
-    if (!record.productName || !record.vehicleNo) {
-      message.error('产品名和车号必填');
-      return;
-    }
-    try {
+  // 批量保存所有编辑中的行
+  const saveAll = async () => {
+    const tempIds = new Set<number>();
+    const updates: any[] = [];
+    const creates: any[] = [];
+    for (const [idStr, record] of Object.entries(editData)) {
+      const id = Number(idStr);
+      if (!record.productName || !record.vehicleNo) {
+        message.error('产品名和车号必填');
+        return;
+      }
       const payload = {
         entryDate: dayjs.isDayjs(record.entryDate) ? record.entryDate.format('YYYY-MM-DD') : record.entryDate,
         productName: record.productName,
@@ -94,12 +99,23 @@ export default function TrainEntryPage() {
         remark: record.remark || '',
       };
       if (id > 0) {
-        await updateTrainEntry(id, payload);
+        updates.push({ id, ...payload });
       } else {
-        await createTrainEntry(payload);
+        creates.push(payload);
+        tempIds.add(id);
+      }
+    }
+    try {
+      // 批量创建新行
+      if (creates.length > 0) {
+        await batchCreateTrainEntry(creates);
+      }
+      // 逐条更新已有行
+      for (const u of updates) {
+        await updateTrainEntry(u.id, u);
       }
       message.success(t('common.saved'));
-      cancelEditing(id);
+      cancelEditing();
       fetchData();
     } catch { message.error(t('common.error')); }
   };
@@ -107,12 +123,12 @@ export default function TrainEntryPage() {
   const handleDelete = async (id: number) => {
     if (id > 0) await deleteTrainEntry(id);
     setData(prev => prev.filter(r => r.id !== id));
-    cancelEditing(id);
     if (id > 0) message.success(t('common.deleted'));
     fetchData();
   };
 
   const handleUploadFile = (file: File) => {
+    // ... Excel 上传保持不变
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -162,8 +178,7 @@ export default function TrainEntryPage() {
   };
 
   const renderCell = (id: number, field: string, value: any, record: any) => {
-    const isEditing = editingKeys.has(id);
-    if (!isEditing) {
+    if (!editing) {
       if (field === 'productName') return t(`product.${value}`, { defaultValue: value });
       if (field === 'weightKg') return value?.toLocaleString() ?? '-';
       return value || '-';
@@ -231,28 +246,17 @@ export default function TrainEntryPage() {
     { title: t('weighing.receiverName'), dataIndex: 'receiverName', key: 'receiverName', width: 140, ellipsis: true, render: (v: string, r: any) => renderCell(r.id, 'receiverName', v, r) },
     { title: t('common.weightKg'), dataIndex: 'weightKg', key: 'weightKg', width: 110, render: (v: number | null, r: any) => renderCell(r.id, 'weightKg', v, r) },
     { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', ellipsis: true, width: 130, render: (v: string, r: any) => renderCell(r.id, 'remark', v, r) },
-    {
-      title: t('common.action'), key: 'action', width: 120, fixed: 'right' as const,
-      render: (_: unknown, r: any) => {
-        const isEditing = editingKeys.has(r.id);
-        if (isEditing) {
-          return (
-            <Space>
-              <Button type="link" size="small" icon={<SaveOutlined />} onClick={() => saveRow(r.id)}>{t('common.save')}</Button>
-              <Button type="link" size="small" icon={<CloseOutlined />} onClick={() => cancelEditing(r.id)}>{t('common.cancel')}</Button>
-            </Space>
-          );
-        }
-        return (
-          <Space>
-            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => startEditing(r)} />
-            <Popconfirm title={t('common.deleteConfirm')} onConfirm={() => handleDelete(r.id)}>
-              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
-          </Space>
-        );
-      },
-    },
+    ...(editing ? [{
+      title: t('common.action'), key: 'action', width: 60, fixed: 'right' as const,
+      render: (_: unknown, r: any) => (
+        <Popconfirm title={t('common.deleteConfirm')} onConfirm={() => {
+          setData(prev => prev.filter(x => x.id !== r.id));
+          setEditData(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+        }}>
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+        </Popconfirm>
+      ),
+    }] : []),
   ];
 
   return (
@@ -269,7 +273,15 @@ export default function TrainEntryPage() {
             </Button>
             <input id="train-upload-input" type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
               onChange={(e) => e.target.files?.[0] && handleUploadFile(e.target.files[0])} />
-            <Button icon={<PlusOutlined />} type="primary" onClick={addRow}>{t('common.add')}</Button>
+            <Button icon={<PlusOutlined />} type="primary" onClick={editing ? addRow : startEditing}>
+              {editing ? t('common.add') : t('common.edit')}
+            </Button>
+            {editing && (
+              <>
+                <Button icon={<SaveOutlined />} type="primary" onClick={saveAll}>{t('common.save')}</Button>
+                <Button icon={<CloseOutlined />} onClick={cancelEditing}>{t('common.cancel')}</Button>
+              </>
+            )}
           </Space>
         }
       >

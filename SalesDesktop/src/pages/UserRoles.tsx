@@ -17,7 +17,7 @@ interface Permission {
 }
 
 export default function UserRoles() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [modules, setModules] = useState<ModuleItem[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +30,30 @@ export default function UserRoles() {
     operator: t('users.operator'),
     auditor: t('users.auditor'),
     viewer: t('users.viewer'),
+  };
+
+  // 模块名称中俄对照（从数据库moduleKey映射）
+  const moduleNameZh: Record<string, string> = {
+    dashboard: '仪表板', data_entry: '数据录入', train_entry: '火车装卸车',
+    contract_mgmt: '合同管理', monthly_volume: '月拉运量', data_view: '数据查看',
+    wholesale_view: '批发', transfer_view: '外运', procurement_view: '采购',
+    processing_view: '代加工', retail_view: '零售', contract_view: '合同查看',
+    reports: '报表打印', print_detail: '明细表打印', print_summary: '汇总表打印',
+    print_loss: '损耗分析报告', print_retail: '零售分析报告',
+    settings: '设置', user_mgmt: '用户管理', about: '关于系统',
+  };
+  const moduleNameRu: Record<string, string> = {
+    dashboard: 'Панель', data_entry: 'Ввод данных', train_entry: 'Ж/д налив',
+    contract_mgmt: 'Договоры', monthly_volume: 'Объем за месяц', data_view: 'Просмотр',
+    wholesale_view: 'Опт', transfer_view: 'Перевозки', procurement_view: 'Закупки',
+    processing_view: 'Переработка', retail_view: 'Розница', contract_view: 'Договоры',
+    reports: 'Отчеты', print_detail: 'Детали', print_summary: 'Сводка',
+    print_loss: 'Потери', print_retail: 'Розница',
+    settings: 'Настройки', user_mgmt: 'Пользователи', about: 'О системе',
+  };
+  const getModuleName = (record: ModuleItem) => {
+    if (i18n.language === 'ru') return moduleNameRu[record.moduleKey] || record.moduleName;
+    return moduleNameZh[record.moduleKey] || record.moduleName;
   };
 
   const fetchData = async () => {
@@ -79,7 +103,7 @@ export default function UserRoles() {
   if (error) return <Alert type="error" message={t('common.error')} description={error} showIcon />;
 
   const columns = [
-    { title: t('common.module'), dataIndex: 'moduleName', key: 'moduleName', width: 200 },
+    { title: t('common.module'), dataIndex: 'moduleName', key: 'moduleName', width: 200, render: (_: string, record: ModuleItem) => getModuleName(record) },
     ...roles.map((role) => ({
       title: roleLabels[role],
       key: role,

@@ -22,7 +22,9 @@ CACHE_TTL = {
 CURRENT_MONTH_MAX_TTL = 108000
 
 _cache = {}
-SNAPSHOT_DIR = Path(__file__).resolve().parent / "cache_snapshots" / "monthly"
+ROOT = Path(__file__).resolve().parent
+SNAPSHOT_DIR = ROOT / "cache_snapshots" / "monthly"
+YEARLY_DIR = ROOT / "cache_snapshots" / "yearly"
 SNAPSHOT_PREFIXES = {
     "monthly",
     "stations",
@@ -99,7 +101,12 @@ def _is_current_year_key(key):
 
 def _snapshot_path(key):
     prefix, value = key.split(":", 1)
-    value = value.replace(":", "_")
+    if prefix in {"monthly", "stations", "regions", "daily"}:
+        year, month = value.split("-")[:2]
+        return SNAPSHOT_DIR / str(year) / f"{prefix}_{int(month):02d}.json"
+    if prefix in YEARLY_SNAPSHOT_PREFIXES:
+        value = value.replace(":", "_")
+        return YEARLY_DIR / f"{prefix}_{value}.json"
     return SNAPSHOT_DIR / f"{prefix}_{value}.json"
 
 
@@ -166,8 +173,8 @@ def _write_snapshot(key, data):
     elif not _is_completed_month(key) and not _is_current_month_key(key):
         return
     try:
-        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
         path = _snapshot_path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = path.with_suffix(path.suffix + ".tmp")
         content = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
         for attempt in range(5):

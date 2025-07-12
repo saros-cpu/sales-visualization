@@ -7,10 +7,10 @@ import RankList from '@/components/wholesale/RankList';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import type { WholesaleClass } from '@/types/api';
 
-const ORDER: WholesaleClass[] = ['export_wholesale', 'local_wholesale', 'unknown', 'procurement', 'processing'];
+const ORDER: WholesaleClass[] = ['export_wholesale', 'local_wholesale', 'unknown'];
 const MODE: Partial<Record<WholesaleClass, 'customer' | 'pending'>> = {
   export_wholesale: 'customer', local_wholesale: 'customer',
-  unknown: 'pending', procurement: 'customer', processing: 'customer',
+  unknown: 'pending',
 };
 
 export default function Customers() {

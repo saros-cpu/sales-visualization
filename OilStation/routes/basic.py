@@ -12,7 +12,7 @@ basic_api = Blueprint("basic_api", __name__)
 
 def _snapshot_months():
     months = []
-    for path in SNAPSHOT_DIR.glob("monthly_????-??.json"):
+    for path in SNAPSHOT_DIR.rglob("monthly_*.json"):
         try:
             payload = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError):

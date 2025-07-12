@@ -8,7 +8,11 @@ declare global {
     message?: string;
   }
   interface Window {
-    electronAPI?: { platform: string };
+    electronAPI?: {
+      platform: string;
+      downloadFile: (url: string, filename: string) => Promise<boolean>;
+      openExternal: (url: string) => Promise<void>;
+    };
     updater?: {
       onStatusChange: (callback: (status: UpdateStatus) => void) => () => void;
       checkForUpdates: () => void;

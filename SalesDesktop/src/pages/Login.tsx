@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { Form, Input, Button, Card, Typography, message } from 'antd';
+import { Form, Input, Button, Card, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
-
-const { Title } = Typography;
+import logoSrc from '@/assets/logo.svg';
 
 export default function Login() {
   const { t } = useTranslation();
@@ -24,9 +23,9 @@ export default function Login() {
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f2f5' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f2f5' }}>
+      <img src={logoSrc} alt="" style={{ width: 80, height: 80, marginBottom: 24 }} />
       <Card style={{ width: 400 }}>
-        <Title level={3} style={{ textAlign: 'center' }}>{t('login.title')}</Title>
         <Form onFinish={onFinish} layout="vertical">
           <Form.Item name="username" rules={[{ required: true, message: t('login.username') }]}>
             <Input prefix={<UserOutlined />} placeholder={t('login.username')} />

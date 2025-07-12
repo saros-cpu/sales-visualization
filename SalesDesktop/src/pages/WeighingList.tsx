@@ -20,6 +20,7 @@ export default function WeighingList() {
   const { t } = useTranslation();
   const [data, setData] = useState<WeighingItem[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalWeight, setTotalWeight] = useState(0);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [vehicleNo, setVehicleNo] = useState('');
@@ -40,6 +41,7 @@ export default function WeighingList() {
       });
       setData(res.data.items);
       setTotal(res.data.total);
+      setTotalWeight(res.data.totalWeight || 0);
     } finally {
       setLoading(false);
     }
@@ -47,7 +49,7 @@ export default function WeighingList() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const totalTons = data.reduce((s, i) => s + (i.netWeight || 0), 0);
+  const totalKg = totalWeight;
 
   const columns = [
     { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: 130 },
@@ -78,8 +80,8 @@ export default function WeighingList() {
   return (
     <div>
       <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}><Card size="small"><Statistic title={t('common.total')} value={total} suffix={t('common.rows')} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title={t('weighing.netWeight')} value={Math.round(totalTons)} suffix="т" /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title={t('common.rows')} value={total} /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title={t('weighing.netWeight')} value={Math.round(totalKg)} suffix="kg" /></Card></Col>
       </Row>
       <Card
         title={t('weighing.title')}

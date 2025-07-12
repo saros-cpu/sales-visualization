@@ -41,6 +41,8 @@ def find_detail_columns(df):
         "entity": ("供应商/客户", "получатель"),
         "weight": ("过磅重量", "обьем"),
         "remark": ("备注",),
+        "serial": ("编号",),
+        "sender": ("发货单位",),
     }
     for row_idx in range(min(len(df), 15)):
         cells = [normalize_text(clean_str(value)) for value in df.iloc[row_idx].tolist()]
@@ -162,6 +164,8 @@ def import_detail_rows(cur, batch_id, path, product_lookup, entity_lookup, sales
 
         business_date = parse_date(detail_value("date"))
         raw_product = clean_str(detail_value("product"))
+        weigh_serial_no = clean_str(detail_value("serial"))
+        sender_name = clean_str(detail_value("sender"))
         raw_entity = clean_str(detail_value("entity"))
         weight_kg = parse_decimal(detail_value("weight"))
         if not business_date or not raw_product or not raw_entity or weight_kg is None:
@@ -201,9 +205,9 @@ def import_detail_rows(cur, batch_id, path, product_lookup, entity_lookup, sales
             """
             INSERT INTO wholesale_detail_records
                 (batch_id, source_row_number, business_date, raw_product_name, product_id,
-                 vehicle_no, raw_entity_name, entity_type, entity_code, standard_entity_name,
-                 classification, weight_kg, remark, match_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 vehicle_no, weigh_serial_no, raw_entity_name, sender_name, entity_type, entity_code,
+                 standard_entity_name, classification, weight_kg, remark, match_status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 batch_id,
@@ -212,7 +216,9 @@ def import_detail_rows(cur, batch_id, path, product_lookup, entity_lookup, sales
                 raw_product,
                 product["id"] if product else None,
                 clean_str(detail_value("vehicle")),
+                weigh_serial_no,
                 raw_entity,
+                sender_name,
                 entity["entity_type"] if entity else "unknown",
                 entity["entity_code"] if entity else None,
                 entity["standard_name"] if entity else None,

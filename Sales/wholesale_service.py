@@ -6,8 +6,8 @@ import sys
 from summary_service import period_bounds, product_rankings
 
 
-SALES_CLASSES = ("export_wholesale", "local_wholesale", "unknown")
-WHOLESALE_CLASSES = ("export_wholesale", "local_wholesale", "unknown", "transfer")
+SALES_CLASSES = ("export_wholesale", "local_wholesale", "unknown", "processing", "procurement")
+WHOLESALE_CLASSES = ("export_wholesale", "local_wholesale", "unknown", "transfer", "processing", "procurement")
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 
@@ -71,7 +71,7 @@ def category_cards(cur, start, end):
         FROM wholesale_detail_records d
         LEFT JOIN calculation_results cr ON cr.detail_id = d.id
         WHERE d.business_date >= %s AND d.business_date < %s
-          AND d.classification IN ('export_wholesale', 'local_wholesale', 'unknown', 'transfer')
+          AND d.classification IN ('export_wholesale', 'local_wholesale', 'unknown', 'transfer', 'processing', 'procurement')
         GROUP BY d.classification
         """,
         (start, end),
@@ -235,7 +235,7 @@ def daily_trend(cur, start, end):
         FROM wholesale_detail_records d
         LEFT JOIN calculation_results cr ON cr.detail_id = d.id
         WHERE d.business_date >= %s AND d.business_date < %s
-          AND d.classification IN ('export_wholesale', 'local_wholesale', 'unknown', 'transfer')
+          AND d.classification IN ('export_wholesale', 'local_wholesale', 'unknown', 'transfer', 'processing', 'procurement')
         GROUP BY d.business_date, d.classification
         ORDER BY d.business_date
         """,
@@ -251,6 +251,8 @@ def daily_trend(cur, start, end):
                 "localTons": 0,
                 "pendingTons": 0,
                 "transferTons": 0,
+                "processingTons": 0,
+                "procurementTons": 0,
                 "amountCny": 0,
             },
         )
@@ -262,6 +264,10 @@ def daily_trend(cur, start, end):
             item["pendingTons"] = round(float(tons or 0), 3)
         elif classification == "transfer":
             item["transferTons"] = round(float(tons or 0), 3)
+        elif classification == "processing":
+            item["processingTons"] = round(float(tons or 0), 3)
+        elif classification == "procurement":
+            item["procurementTons"] = round(float(tons or 0), 3)
         if classification in ("export_wholesale", "local_wholesale"):
             item["amountCny"] = round(item["amountCny"] + float(amount_cny or 0), 2)
     return list(by_day.values())

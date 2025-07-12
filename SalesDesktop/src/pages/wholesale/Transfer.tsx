@@ -21,6 +21,12 @@ export default function Transfer() {
     return [...new Set(ts.byRegionProduct.map((r) => r.region))];
   }, [ts]);
 
+  // 按外运量排序区域，同名区域聚合
+  const regionOrder = useMemo(() => {
+    if (!ts?.byRegion) return [];
+    return [...ts.byRegion].sort((a, b) => b.tons - a.tons).map(r => r.region);
+  }, [ts]);
+
   const [filterRegion, setFilterRegion] = useState<string>('');
 
   const filtered = useMemo(() => {
@@ -28,6 +34,12 @@ export default function Transfer() {
     if (!filterRegion) return ts.byRegionProduct;
     return ts.byRegionProduct.filter((r) => r.region === filterRegion);
   }, [ts, filterRegion]);
+
+  // 按外运量排序右侧byRegion图表
+  const sortedByRegion = useMemo(() => {
+    if (!ts?.byRegion) return [];
+    return [...ts.byRegion].sort((a, b) => b.tons - a.tons);
+  }, [ts]);
 
   const regionMergeMap = useMemo(() => {
     const map: Record<number, number> = {};
@@ -61,7 +73,7 @@ export default function Transfer() {
       <Row gutter={16}>
         <Col xs={24} lg={8}>
           <Card size="small" title={t('wholesale.byRegion')} style={{ marginBottom: 16 }}>
-            <BarList rows={(ts?.byRegion ?? []).map((r) => ({ name: r.region, tons: r.tons }))} />
+            <BarList rows={sortedByRegion.map((r) => ({ name: r.region === 'CTY-30' ? 'STN-63' : r.region, tons: r.tons }))} />
           </Card>
         </Col>
         <Col xs={24} lg={8}>

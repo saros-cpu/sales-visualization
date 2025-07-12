@@ -198,6 +198,10 @@ def fetch_retail_rows(start, end):
             WHEN s.ShopKey = 6  AND s.ResourceShopKey = 3  THEN 102
             WHEN s.ShopKey = 6  AND s.ResourceShopKey = 5  THEN 106
             WHEN s.ShopKey IN (7, 15) AND s.ResourceKey = 104 THEN 102
+            WHEN s.ShopKey = 29 AND s.ResourceShopKey = 7  THEN 103
+            WHEN s.ShopKey = 29 AND s.ResourceShopKey = 8  THEN 102
+            WHEN s.ShopKey = 29 AND s.ResourceShopKey = 9  THEN 106
+            WHEN s.ShopKey = 29 AND s.ResourceShopKey = 10 THEN 108
             WHEN s.ResourceKey >= 100 THEN s.ResourceKey
             WHEN s.BasePrice <= 0 THEN s.ResourceKey
             WHEN s.BasePrice <= 45 THEN 108

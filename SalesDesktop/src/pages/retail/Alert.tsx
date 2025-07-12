@@ -4,11 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
 import { getStationStatuses, getKpi, getDaily, getDashboardYearly } from '@/api/retail';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { useNameI18n } from '@/utils/i18nNames';
 
 const { Text } = Typography;
 
 export default function Alert() {
   const { t } = useTranslation();
+  const { region } = useNameI18n();
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
 
@@ -87,17 +89,17 @@ export default function Alert() {
         </Card>
         <Card size="small" title={t('retail.suggestions')}>
           <ul>
-            <li>{t('retail.cardRatio')}: {kpi?.cardSales && kpi?.totalSales ? `${Math.round((kpi.cardSales / kpi.totalSales) * 100)}%` : '-'} — 推广电子支付</li>
-            <li>{t('retail.region')}: {topRegion} {regionConcentration.toFixed(0)}% — {regionConcentration > 30 ? t('retail.suggestions') : t('common.ok')}</li>
-            <li>{t('retail.closedStations')}: {statuses.closed.length} 站 — {t('retail.suggestions')}</li>
+            <li>{t('retail.cardRatio')}: {kpi?.cardSales && kpi?.totalSales ? `${Math.round((kpi.cardSales / kpi.totalSales) * 100)}%` : '-'} — {t('retail.promoteCard')}</li>
+            <li>{t('retail.region')}: {region(topRegion)} {regionConcentration.toFixed(0)}% — {regionConcentration > 30 ? t('retail.regionConcentrationWarn') : t('common.ok')}</li>
+            <li>{t('retail.closedStations')}: {statuses.closed.length} {t('retail.stationUnit')} — {t('retail.suggestions')}</li>
           </ul>
         </Card>
         <Card size="small" title={t('retail.alertRules')}>
           <ul>
-            <li>连续 2 天环比下降 &gt; 30% → 趋势异常告警</li>
-            <li>库存 &lt; 10% 总容量 → 低库存预警</li>
-            <li>单个区域占比 &gt; 30% → 区域集中度建议</li>
-            <li>停业/装修超过 7 天 → 运营跟进建议</li>
+            <li>{t('retail.ruleTrendAnomaly')}</li>
+            <li>{t('retail.ruleLowInventory')}</li>
+            <li>{t('retail.ruleRegionConcentration')}</li>
+            <li>{t('retail.ruleStationDowntime')}</li>
           </ul>
         </Card>
       </Space>

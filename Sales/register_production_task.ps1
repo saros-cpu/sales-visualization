@@ -3,7 +3,10 @@ $ErrorActionPreference = "Stop"
 $TaskName = "SalesVisualizationProduction"
 $TaskPath = "\SalesVisualization\"
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PythonwExe = "C:\Users\User\AppData\Local\Programs\Python\Python313\pythonw.exe"
+$PythonwExe = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
+if (-not $PythonwExe) {
+    $PythonwExe = "C:\Users\User\AppData\Local\Programs\Python\Python313\pythonw.exe"
+}
 $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 $Action = New-ScheduledTaskAction `

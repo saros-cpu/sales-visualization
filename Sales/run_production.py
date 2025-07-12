@@ -1,26 +1,22 @@
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 import threading
 from datetime import datetime
 
+from loguru import logger as log
 from waitress import serve
+
+from log_setup import setup_logging
+
+setup_logging()
 
 from api import app
 from retail_internal import open_oilstation
 
 
 APP_ROOT = Path(__file__).resolve().parent
-LOG_DIR = APP_ROOT / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-logging.basicConfig(
-    filename=LOG_DIR / "production.log",
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
 
 
 def start_retail_cache_warmup():
@@ -40,7 +36,7 @@ def start_retail_cache_warmup():
         for path, refresh, query in paths:
             try:
                 label = f"{path}?{query}" if query else path
-                logging.info("Retail cache warmup: %s", label)
+                log.info("Retail cache warmup: {}", label)
                 response = open_oilstation(
                     path,
                     query_string="&".join(part for part in (query, "refresh=1" if refresh else "") if part),
@@ -48,7 +44,7 @@ def start_retail_cache_warmup():
                 if response.status_code >= 400:
                     raise RuntimeError(response.get_data(as_text=True))
             except Exception:
-                logging.exception("Retail cache warmup failed: %s", path)
+                log.exception("Retail cache warmup failed: {}", path)
 
     thread = threading.Thread(target=worker, name="retail-cache-warmup", daemon=True)
     thread.start()
@@ -57,7 +53,7 @@ def start_retail_cache_warmup():
 if __name__ == "__main__":
     host = os.getenv("SALES_HOST", "0.0.0.0")
     port = int(os.getenv("SALES_PORT", "8900"))
-    logging.info("Starting Sales Visualization on %s:%s", host, port)
+    log.info("Starting Sales Visualization on {}:{}", host, port)
     start_retail_cache_warmup()
 
-    serve(app, host=host, port=port)
+    serve(app, host=host, port=port, threads=12)

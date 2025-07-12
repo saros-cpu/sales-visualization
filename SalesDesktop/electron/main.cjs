@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
@@ -60,9 +61,44 @@ function setupUpdater() {
   });
 }
 
+function setupFileDownload() {
+  ipcMain.handle('download-file', async (event, { url, filename, token }) => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: filename,
+      filters: [
+        { name: 'Documents', extensions: ['xlsx', 'docx', 'html', 'pdf'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePath) return false;
+
+    try {
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      fs.writeFileSync(result.filePath, buffer);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  });
+}
+
+function setupOpenExternal() {
+  ipcMain.handle('open-external', async (event, url) => {
+    if (typeof url === 'string' && url.startsWith('http')) {
+      await shell.openExternal(url);
+    }
+  });
+}
+
 app.whenReady().then(() => {
   createWindow();
   setupUpdater();
+  setupFileDownload();
+  setupOpenExternal();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

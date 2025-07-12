@@ -16,11 +16,20 @@ export function createApi(basePath: string): AxiosInstance {
   });
 
   instance.interceptors.response.use(
-    (res) => res,
+    (res) => {
+      if (res.data && typeof res.data === 'object' && 'data' in res.data) {
+        res.data = res.data.data;
+      }
+      return res;
+    },
     (err: AxiosError) => {
       if (err.response?.status === 401) {
         localStorage.removeItem('accessToken');
         if (window.location.hash !== '#/login') window.location.hash = '#/login';
+      }
+      const body = err.response?.data as Record<string, unknown> | undefined;
+      if (body?.message) {
+        return Promise.reject(new Error(String(body.message)));
       }
       return Promise.reject(err);
     }

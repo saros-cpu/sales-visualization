@@ -17,7 +17,7 @@ def main():
             """
             SELECT id, raw_entity_name, entity_type, entity_code, standard_entity_name
             FROM wholesale_detail_records
-            WHERE classification = 'transfer'
+            WHERE classification IN ('transfer', 'local_wholesale', 'export_wholesale', 'unknown')
             """
         )
         rows = cur.fetchall()

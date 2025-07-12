@@ -9,13 +9,13 @@ export async function changePassword(oldPassword: string, newPassword: string) {
 
 export async function getProductOptions(): Promise<{ value: string; label: string }[]> {
   const res = await client.get('/aliases/products');
-  return (res.data.data || []).map((p: any) => ({ value: p.displayName, label: p.displayName }));
+  return (res.data || []).map((p: any) => ({ value: p.displayName, label: p.displayName }));
 }
 
 export async function getEntityOptions(): Promise<{ value: string; label: string }[]> {
   const res = await client.get('/aliases/entities');
   const items = new Map<string, string>();
-  for (const e of res.data.data) {
+  for (const e of res.data) {
     items.set(e.standardName, e.standardName);
     for (const a of e.aliases) items.set(a, a);
   }
@@ -24,12 +24,12 @@ export async function getEntityOptions(): Promise<{ value: string; label: string
 
 export async function getProductAliasesList() {
   const res = await client.get('/aliases/products/list');
-  return res.data.data || [];
+  return res.data || [];
 }
 
 export async function getEntityAliasesList() {
   const res = await client.get('/aliases/entities/list');
-  return res.data.data || [];
+  return res.data || [];
 }
 
 export async function createProductAlias(productId: number, aliasName: string) {

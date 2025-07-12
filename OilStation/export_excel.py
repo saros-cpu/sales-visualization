@@ -53,6 +53,29 @@ SK4_RSK_MAP = {
     7: 108,
 }
 
+# SK=30 STN-59（关闭站）：油罐编号调整后 RSK 保持不变，价格/密度不可靠
+SK30_RSK_MAP = {
+    7: 103,   # АИ-92
+    8: 102,   # АИ-80
+    9: 106,   # Д/Т
+}
+
+# SK=29 STN-57：测试数据清理后 EndPrice=0，价格推断失效
+SK29_RSK_MAP = {
+    7: 103,   # АИ-92
+    8: 102,   # АИ-80
+    9: 106,   # Д/Т
+    10: 108,  # СПБТ（液化气）
+}
+
+# SK=29 STN-57 已知真实价格（新站无销售记录时硬编码覆盖）
+SK29_PRICE_MAP = {
+    103: 79,    # АИ-92
+    102: 66,    # АИ-80
+    106: 93.3,  # Д/Т
+    108: 41.3,  # СПБТ
+}
+
 # 部分加油站的 ResourceKey 编号非标准：RK=104 实际是 АИ-80 而非 АИ-95
 # 经 fuelbalance.ResourceName 交叉验证确认
 STATION_RK_CORRECTIONS = {
@@ -122,6 +145,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
             WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
             WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+            WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+            WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+            WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+            WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
             WHEN ResourceKey >= 100 THEN ResourceKey
             WHEN BasePrice <= 0    THEN ResourceKey
@@ -170,6 +197,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                 WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -204,6 +235,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                 WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -250,6 +285,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                 WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -276,6 +315,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                 WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -312,6 +355,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                 WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -340,6 +387,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                 WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -431,7 +482,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         orig_rk = int(r[2])
         price = float(r[3])
         density = float(r[4] or 0)
-        if (int(r[0]), orig_rk) in _rk_std_map_monthly:
+        if int(r[0]) not in (29, 30) and (int(r[0]), orig_rk) in _rk_std_map_monthly:
             _rsk_std_map_monthly[sk_rsk] = _rk_std_map_monthly[(int(r[0]), orig_rk)]
         elif orig_rk >= 100:
             rk = orig_rk
@@ -466,6 +517,14 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             AVG(Density) as avg_density, ResourceShopKey
         FROM supply
         WHERE AcceptDateTime >= %s AND AcceptDateTime < %s
+          AND NOT ((AcceptDateTime >= '2026-06-22 00:00:00'
+                    AND AcceptDateTime < '2026-06-23 00:00:00'
+                    AND ShopKey IN (29, 30)
+                    AND Volume BETWEEN 50 AND 500)
+                   OR (AcceptDateTime >= '2026-06-17 00:00:00'
+                       AND AcceptDateTime < '2026-06-18 00:00:00'
+                       AND ShopKey = 29
+                       AND Volume BETWEEN 50 AND 500))
         GROUP BY ShopKey, ResourceKey, ResourceShopKey
     """, (ym_start, ym_end))
     supply_data = {}
@@ -485,6 +544,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         elif sk == 28 and rsk is not None:
             # SK=28 专用：通过 ResourceShopKey 精确映射
             rk = SK28_RSK_MAP.get(int(rsk), orig_rk)
+        elif sk == 30 and rsk is not None:
+            rk = SK30_RSK_MAP.get(int(rsk), orig_rk)
+        elif sk == 29 and rsk is not None:
+            rk = SK29_RSK_MAP.get(int(rsk), orig_rk)
         elif rsk is not None and (sk, int(rsk)) in _rsk_std_map_monthly:
             # 用 balance 表建立的 RSK→标准RK 映射
             rk = _rsk_std_map_monthly[(sk, int(rsk))]
@@ -510,12 +573,52 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                     rk = 103  # 汽油类，默认 АИ-92（保守估计）
             else:
                 continue  # 无法推断，跳过
-
         if rk < 100:
             continue
         if sk not in supply_data:
             supply_data[sk] = {}
         supply_data[sk][rk] = round(supply_data[sk].get(rk, 0) + vol, 3)
+
+    # 29/30 号站今天录入了转运数据，需要用排除 today 后的范围补充查询
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    if ym_end == today_str:
+        cur.execute("""
+            SELECT ShopKey, ResourceKey, SUM(Volume) as supply_vol,
+                AVG(Density) as avg_density, ResourceShopKey
+            FROM supply
+            WHERE AcceptDateTime >= %s AND AcceptDateTime < DATE_ADD(%s, INTERVAL 1 DAY)
+              AND ShopKey IN (29, 30)
+              AND Volume > 500
+            GROUP BY ShopKey, ResourceKey, ResourceShopKey
+        """, (ym_end, ym_end))
+        for r in cur.fetchall():
+            sk = int(r[0])
+            orig_rk = int(r[1])
+            vol = round(float(r[2] or 0), 3)
+            avg_density = float(r[3] or 0)
+            rsk = r[4]
+
+            if orig_rk >= 100:
+                rk = orig_rk
+                corrected = STATION_RK_CORRECTIONS.get((sk, rk))
+                if corrected:
+                    rk = corrected
+            elif sk == 28 and rsk is not None:
+                rk = SK28_RSK_MAP.get(int(rsk), orig_rk)
+            elif sk == 30 and rsk is not None:
+                rk = SK30_RSK_MAP.get(int(rsk), orig_rk)
+            elif sk == 29 and rsk is not None:
+                rk = SK29_RSK_MAP.get(int(rsk), orig_rk)
+            elif rsk is not None and (sk, int(rsk)) in _rsk_std_map_monthly:
+                rk = _rsk_std_map_monthly[(sk, int(rsk))]
+            else:
+                continue
+
+            if rk < 100:
+                continue
+            if sk not in supply_data:
+                supply_data[sk] = {}
+            supply_data[sk][rk] = round(supply_data[sk].get(rk, 0) + vol, 3)
 
 
     # 查询 fuelbalance 获取起初量和期末量（月初/月末最近记录）
@@ -553,6 +656,12 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         # SK=28 专用：通过 ResourceShopKey 精确映射
         if sk == 28 and rsk is not None:
             return SK28_RSK_MAP.get(int(rsk), rc)
+        # SK=30 关闭站：油罐编号调整后价格不可靠，硬映射
+        if sk == 30 and rsk is not None:
+            return SK30_RSK_MAP.get(int(rsk), rc)
+        # SK=29 新站测试清理后 EndPrice=0，价格推断失效
+        if sk == 29 and rsk is not None:
+            return SK29_RSK_MAP.get(int(rsk), rc)
         # 通用价格推断
         p = float(price or 0)
         if p <= 45:    return 108  # СПБТ（液化气）
@@ -637,6 +746,40 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         elif shift_dt == end_balance_dt[key]:
             end_balance[key] = round(end_balance[key] + val, 3)
 
+    # 29/30 号站补充查询当天平衡数据（exclude_today 排除的部分）
+    if ym_end == datetime.now().strftime('%Y-%m-%d'):
+        cur.execute(f"""
+            SELECT b.ShopKey, b.ResourceKey, b.EndBalance, b.EndPrice, b.ResourceShopKey,
+                   s.DatetimeShiftBegin
+            FROM balance b
+            JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
+            WHERE b.ShopKey IN (29, 30)
+              AND b.BeginMass IS NOT NULL
+              AND {shift_business_day} >= '{ym_end}'
+              AND {shift_business_day} < DATE_ADD('{ym_end}', INTERVAL 1 DAY)
+            ORDER BY b.ShopKey, b.ResourceKey, s.DatetimeShiftBegin DESC
+        """)
+        seen = set()
+        for r in cur.fetchall():
+            sk, rk = int(r[0]), int(r[1])
+            if rk >= 100:
+                corrected = STATION_RK_CORRECTIONS.get((sk, rk))
+                if corrected:
+                    rk = corrected
+            else:
+                rk = _infer_resource_code(rk, r[3], rsk=r[4], sk=sk)
+            if rk < 100:
+                continue
+            key = (sk, rk)
+            if key in seen:
+                continue
+            seen.add(key)
+            val = round(float(r[2] or 0), 3)
+            shift_dt = r[5]
+            if key not in end_balance_dt or shift_dt >= end_balance_dt.get(key, shift_dt):
+                end_balance_dt[key] = shift_dt
+                end_balance[key] = val
+
     # 对装修停业站（如 SK=1/2），若新月份内没有任何新班次，
     # 则沿用月初前最新一期末量作为当月起初量；且当月期末量=起初量。
     pre_month_latest_bal = {}
@@ -686,6 +829,8 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
     loss_data = {}
     for r in cur.fetchall():
         sk, rk = int(r[0]), int(r[1])
+        if sk in (29, 30):
+            continue
         if rk >= 100:
             corrected = STATION_RK_CORRECTIONS.get((sk, rk))
             if corrected:
@@ -753,6 +898,10 @@ def _build_daily_sheet_data(cur, day, station_keys):
                 WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
                 WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -783,6 +932,10 @@ def _build_daily_sheet_data(cur, day, station_keys):
                 WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
                 WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -825,6 +978,10 @@ def _build_daily_sheet_data(cur, day, station_keys):
                 WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
                 WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -847,6 +1004,10 @@ def _build_daily_sheet_data(cur, day, station_keys):
                 WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
                 WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -879,6 +1040,10 @@ def _build_daily_sheet_data(cur, day, station_keys):
                 WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
                 WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -903,6 +1068,10 @@ def _build_daily_sheet_data(cur, day, station_keys):
                 WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
                 WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
                 WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -1028,6 +1197,14 @@ def _build_daily_sheet_data(cur, day, station_keys):
             AVG(Density) as avg_density, ResourceShopKey
         FROM supply
         WHERE AcceptDateTime >= %s AND AcceptDateTime < %s
+          AND NOT ((AcceptDateTime >= '2026-06-22 00:00:00'
+                    AND AcceptDateTime < '2026-06-23 00:00:00'
+                    AND ShopKey IN (29, 30)
+                    AND Volume BETWEEN 50 AND 500)
+                   OR (AcceptDateTime >= '2026-06-17 00:00:00'
+                       AND AcceptDateTime < '2026-06-18 00:00:00'
+                       AND ShopKey = 29
+                       AND Volume BETWEEN 50 AND 500))
         GROUP BY ShopKey, ResourceKey, ResourceShopKey
     """, (day_start, day_end))
     supply_data = {}
@@ -1094,7 +1271,7 @@ def _get_station_fuel_keys(shop_key, start_bal, end_bal, sales_data, ved_data, s
 
 def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_data,
                          start_bal, end_bal, contract_data=None, loss_data=None,
-                         is_monthly=True, fuel_keys=None):
+                          is_monthly=True, fuel_keys=None):
     """写入一个站点的 n_fuel 行油品数据 + 小计行，返回下一行号
     列布局（新增辅助列）：
       1=编号 (合并 n_fuel 行), 2=辅助列 (中俄文站名), 3=加油站名称 (合并 n_fuel 行), 4=油品名，5=密度，6~26=数值
@@ -1144,8 +1321,11 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
         ct = cd.get(shop_key, {}).get(rk, {})
 
         if not has_start_balance and has_end_balance:
-            sb = eb
-            has_start_balance = True
+            if sp > 0:
+                pass
+            else:
+                sb = eb
+                has_start_balance = True
         if not has_end_balance and has_start_balance:
             eb = sb
             has_end_balance = True
@@ -1164,6 +1344,11 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
         total_vol = sd.get('total_vol', 0)
         total_amt = sd.get('total_amt', 0)
         avg_price = sd.get('avg_price', 0)
+        # 29号站始终使用已知真实价格
+        if shop_key == 29:
+            hard_price = SK29_PRICE_MAP.get(rk)
+            if hard_price is not None:
+                avg_price = hard_price
 
         contract_vol = ct.get('vol', 0)
         contract_amt = ct.get('amt', 0)
@@ -1350,6 +1535,14 @@ def _infer_resource_code_daily(rc, price, rsk=None, sk=None):
             return mapped
     if sk == 4 and rsk is not None:
         mapped = SK4_RSK_MAP.get(int(rsk))
+        if mapped:
+            return mapped
+    if sk == 30 and rsk is not None:
+        mapped = SK30_RSK_MAP.get(int(rsk))
+        if mapped:
+            return mapped
+    if sk == 29 and rsk is not None:
+        mapped = SK29_RSK_MAP.get(int(rsk))
         if mapped:
             return mapped
     # 低编号 RK 先查 STATION_RK_CORRECTIONS（兜底）

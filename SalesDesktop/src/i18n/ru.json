@@ -3,6 +3,7 @@
   "nav": {
     "dashboard": "Панель",
     "retail": "Розница",
+    "retailShort": "Розница",
     "weighing": "Взвешивание",
     "trainEntry": "Ввод данных",
     "dataEntry": "Ввод данных",
@@ -197,10 +198,11 @@
     "originalValue": "Оригинал: {{value}}"
   },
   "dashboard": {
-    "monthlyWholesaleTons": "Опт за месяц (т)",
-    "weeklyWeighCount": "Взвешиваний за неделю",
+    "yearlyWholesaleTons": "Опт за год (т)",
     "activeContracts": "Активных договоров",
-    "monthlyProcurementTons": "Закупки за месяц (т)"
+    "yearlyProcurementTons": "Закупки за год (т)",
+    "retailSales": "Розница (выручка)",
+    "retailVolume": "Розница (объем)"
   },
   "product": {
     "AI-80": "AI-80 (АИ-80)",
@@ -240,6 +242,13 @@
     "inventoryAlert": "Остатки на складах", "trendAnomaly": "Аномалии тренда",
     "suggestions": "Рекомендации", "alertRules": "Правила оповещений",
     "expectedResume": "Ожидаемое возобновление",
+    "promoteCard": "Продвигать безналичные платежи",
+    "stationUnit": "станций",
+    "regionConcentrationWarn": "Рекомендуется диверсификация регионов",
+    "ruleTrendAnomaly": "Падение > 30% 2 дня подряд → аномалия",
+    "ruleLowInventory": "Запас < 10% → низкий запас",
+    "ruleRegionConcentration": "Доля региона > 30% → концентрация",
+    "ruleStationDowntime": "Простой > 7 дней → требуется внимание",
     "totalVolume": "Общий объем", "totalTxn": "Всего транзакций",
     "cashSales": "Наличные", "cardSales": "Карта",
     "resourceRank": "Рейтинг продуктов", "payMethod": "Способ оплаты",

@@ -6,11 +6,14 @@ import { getResourcesYearly } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { useNameI18n } from '@/utils/i18nNames';
+import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 export default function Resource() {
   const { t } = useTranslation();
+  const { product } = useNameI18n();
   const now = new Date();
-  const [ym, setYm] = useState(`${now.getFullYear()}`);
+  const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const year = parseInt(ym.split('-')[0]);
   const month = ym.includes('-') ? parseInt(ym.split('-')[1]) : undefined;
 
@@ -18,7 +21,7 @@ export default function Resource() {
   const data = resQ.data;
 
   const columns = [
-    { title: t('retail.product'), dataIndex: 'name', key: 'name' },
+    { title: t('retail.product'), dataIndex: 'name', key: 'name', render: (v: string) => product(v) },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', render: (v: number) => Math.round(v).toLocaleString() },
     { title: t('retail.amount'), dataIndex: 'amount', key: 'amount', render: (v: number) => `${Math.round(v / 10000)}${t('common.wan')}` },
     { title: t('common.yoy'), dataIndex: 'yoyAmount', key: 'yoyAmount', render: (v: number) => v != null ? `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%` : '-' },
@@ -40,28 +43,30 @@ export default function Resource() {
       <Row gutter={16}>
         <Col xs={24} lg={12}>
           <ChartCard title={t('retail.productStruct')} loading={resQ.isLoading}
-            option={{
-              tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-              grid: { left: 80, right: 20 },
-              xAxis: { type: 'value' },
-              yAxis: { type: 'category', data: (data?.resources ?? []).map((r: any) => r.name).reverse(), axisLabel: { fontSize: 11 } },
-              series: [{ type: 'bar', data: (data?.resources ?? []).map((r: any) => r.volume).reverse() }],
-            }}
+              option={{
+                color: CHART_PALETTE,
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                grid: { left: 80, right: 20 },
+                xAxis: { type: 'value', name: CHART_AXIS.liters },
+                yAxis: { type: 'category', data: (data?.resources ?? []).map((r: any) => product(r.name)).reverse(), axisLabel: { fontSize: 11 } },
+                series: [{ type: 'bar', data: (data?.resources ?? []).map((r: any) => r.volume).reverse() }],
+              }}
           />
         </Col>
         <Col xs={24} lg={12}>
           <ChartCard title={t('retail.productRank')} loading={resQ.isLoading}
-            option={{
-              tooltip: { trigger: 'axis' },
-              grid: { left: 80, right: 60 },
-              xAxis: { type: 'value' },
-              yAxis: { type: 'category', data: (data?.resources ?? []).map((r: any) => r.name).reverse(), axisLabel: { fontSize: 11 } },
-              legend: { data: [t('common.yoy'), t('common.mom')], bottom: 0 },
-              series: [
-                { name: t('common.yoy'), type: 'bar', data: (data?.resources ?? []).map((r: any) => (r.yoyAmount ?? 0) * 100).reverse() },
-                { name: t('common.mom'), type: 'bar', data: (data?.resources ?? []).map((r: any) => (r.momAmount ?? 0) * 100).reverse() },
-              ],
-            }}
+              option={{
+                color: CHART_PALETTE,
+                tooltip: { trigger: 'axis' },
+                grid: { left: 80, right: 60 },
+                xAxis: { type: 'value' },
+                yAxis: { type: 'category', data: (data?.resources ?? []).map((r: any) => product(r.name)).reverse(), axisLabel: { fontSize: 11 } },
+                legend: { data: [t('common.yoy'), t('common.mom')], bottom: 0 },
+                series: [
+                  { name: t('common.yoy'), type: 'bar', data: (data?.resources ?? []).map((r: any) => (r.yoyAmount ?? 0) * 100).reverse() },
+                  { name: t('common.mom'), type: 'bar', data: (data?.resources ?? []).map((r: any) => (r.momAmount ?? 0) * 100).reverse() },
+                ],
+              }}
           />
         </Col>
       </Row>

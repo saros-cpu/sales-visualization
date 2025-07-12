@@ -33,7 +33,8 @@ def _completed_month_label():
 
 
 def _inventory_from_report_extras(year_month):
-    path = OILSTATION_ROOT / "cache_snapshots" / "report_extras" / f"report_extras_{year_month}.json"
+    year, month = year_month.split("-")
+    path = OILSTATION_ROOT / "cache_snapshots" / "report_extras" / year / f"report_extras_{int(month):02d}.json"
     if not path.exists():
         return 0.0
     try:

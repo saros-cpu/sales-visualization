@@ -19,7 +19,7 @@ export interface MonthlyVolume {
 
 export async function getContracts(params?: { company?: string; sort_by?: string; sort_dir?: string; page?: number; page_size?: number }) {
   const res = await client.get('/contracts', { params });
-  return res.data.data as { items: Contract[]; total: number };
+  return res.data as { items: Contract[]; total: number };
 }
 
 export async function createContract(data: {

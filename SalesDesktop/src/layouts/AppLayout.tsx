@@ -89,28 +89,26 @@ export default function AppLayout() {
         <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #f0f0f0' }}>
           <img src={logoSrc} alt="" style={{ width: collapsed ? 28 : 36, height: collapsed ? 28 : 36 }} />
         </div>
-        <div style={{ overflowY: 'auto', flex: 1 }}>
+        <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, minHeight: 0, maxHeight: 'calc(100vh - 64px)' }}>
           <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
             defaultOpenKeys={openKeys}
             items={antMenuItems}
             onClick={({ key }) => navigate(key)}
+            style={{ height: 'auto' }}
           />
         </div>
       </Sider>
-      <Layout style={{ marginLeft: siderWidth, transition: 'margin-left 0.2s' }}>
-        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16 }}>
-          <Dropdown menu={{ items: [
-            { key: 'zh', label: t('settings.chinese'), onClick: () => switchLang('zh') },
-            { key: 'ru', label: 'Русский', onClick: () => switchLang('ru') },
-          ]}}>
-            <Button icon={<GlobalOutlined />}>{i18n.language === 'ru' ? t('settings.russian') : t('settings.chinese')}</Button>
-          </Dropdown>
+      <Layout style={{ marginLeft: siderWidth, height: '100vh', overflow: 'hidden' }}>
+        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16, height: 64, lineHeight: '64px' }}>
+          <Button icon={<GlobalOutlined />} onClick={() => switchLang(i18n.language === 'zh' ? 'ru' : 'zh')}>
+            {i18n.language === 'ru' ? '中文' : 'Русский'}
+          </Button>
           <Text>{user?.username}</Text>
           <Button icon={<LogoutOutlined />} onClick={logout}>{t('nav.logout')}</Button>
         </Header>
-        <Content style={{ margin: 24, overflow: 'auto', height: 'calc(100vh - 64px)' }}>
+        <Content style={{ padding: 24, overflow: 'auto' }}>
           <Outlet />
         </Content>
       </Layout>

@@ -16,7 +16,7 @@ export interface MenuItem {
 export const menuConfig: MenuItem[] = [
   { key: '/', icon: <DashboardOutlined />, labelKey: 'nav.dashboard' },
   {
-    key: '/retail', icon: <ShopOutlined />, labelKey: 'nav.retail',
+    key: '/retail', icon: <ShopOutlined />, labelKey: 'nav.retailShort',
     children: [
       { key: '/retail/overview', labelKey: 'retail.overview' },
       { key: '/retail/region', labelKey: 'retail.region' },

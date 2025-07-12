@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, Typography, Button, Space, Descriptions, Modal, Form, Input, message, Progress } from 'antd';
-import { GlobalOutlined, LockOutlined, ReloadOutlined, DownloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { GlobalOutlined, LockOutlined, ReloadOutlined, DownloadOutlined, SyncOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { changePassword } from '@/api/client';
@@ -14,6 +14,7 @@ export default function Settings() {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ status: 'idle' });
+  const [showAllVersions, setShowAllVersions] = useState(false);
 
   useEffect(() => {
     if (!window.updater) return;
@@ -59,7 +60,7 @@ export default function Settings() {
       <Card title={t('common.settings')}>
       <Descriptions column={1} bordered size="small" style={{ marginBottom: 24 }}>
         <Descriptions.Item label={t('common.version')}>{VERSION}</Descriptions.Item>
-        <Descriptions.Item label={t('common.backendUrl')}>http://127.0.0.1:8900</Descriptions.Item>
+        <Descriptions.Item label={t('common.backendUrl')}>http://198.51.100.10:8080</Descriptions.Item>
         <Descriptions.Item label={t('common.currentUser')}>{user?.username} ({user?.role})</Descriptions.Item>
         <Descriptions.Item label={t('common.buildDate')}>{BUILD_DATE}</Descriptions.Item>
       </Descriptions>
@@ -115,11 +116,23 @@ export default function Settings() {
           </Card>
         )}
         <Card size="small" title={t('common.about')}>
-          <Typography.Text style={{ whiteSpace: 'pre-line' }}>
+          <Typography.Paragraph style={{ whiteSpace: 'pre-line', marginBottom: 4 }}>
             {t('app.title')} v{VERSION}
-            {'\n\n'}{t('common.changelog')}
-            {CHANGELOG.map((entry) => `\n\n${entry.version} (${entry.date})\n${entry.changes.map((c) => `  · ${c}`).join('\n')}`).join('')}
-          </Typography.Text>
+          </Typography.Paragraph>
+          <div style={{ maxHeight: showAllVersions ? 400 : 180, overflow: 'auto', transition: 'max-height 0.3s' }}>
+            <Typography.Text style={{ whiteSpace: 'pre-line', fontSize: 12, color: '#888' }}>
+              {t('common.changelog')}
+              {(showAllVersions ? CHANGELOG : CHANGELOG.slice(0, 2)).map((entry) =>
+                `\n\n${entry.version} (${entry.date})\n${entry.changes.map((c) => `  · ${c}`).join('\n')}`
+              ).join('')}
+            </Typography.Text>
+          </div>
+          {CHANGELOG.length > 2 && (
+            <Button type="link" size="small" onClick={() => setShowAllVersions(!showAllVersions)}
+              icon={showAllVersions ? <UpOutlined /> : <DownOutlined />}>
+              {showAllVersions ? '收起' : `展开全部 (共 ${CHANGELOG.length} 个版本)`}
+            </Button>
+          )}
         </Card>
         <Card size="small" title={t('common.resetPassword')}>
           <Button icon={<LockOutlined />} onClick={() => setPwModalOpen(true)}>{t('common.resetPassword')}</Button>

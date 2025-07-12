@@ -15,6 +15,8 @@ from export_excel import (
     MONTH_NAMES_RU,
     PatternFill,
     SK28_RSK_MAP,
+    SK29_RSK_MAP,
+    SK30_RSK_MAP,
     STATION_RK_CORRECTIONS,
     _FILL_TOTAL,
     _apply_style,
@@ -28,8 +30,9 @@ from export_excel import (
 )
 
 
+from endpoints.v1.retail.common.query import get_query_date_range
+
 export_api = Blueprint("export_api", __name__)
-get_query_date_range = None
 REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".monthly_report_index.json"
 
 
@@ -153,8 +156,7 @@ def _can_reuse_report_workbook(year_month, path):
     return int(last_day or 0) >= expected_day
 
 
-def register_export_routes(app, *, get_query_date_range):
-    globals()["get_query_date_range"] = get_query_date_range
+def register_export_routes(app):
     app.register_blueprint(export_api)
 
 
@@ -309,6 +311,10 @@ def api_export_monthly_excel(year_month):
                     WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                     WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                     WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                    WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                    WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
                     WHEN ResourceKey >= 100 THEN ResourceKey
                     WHEN BasePrice <= 0    THEN ResourceKey
                     WHEN BasePrice <= 45   THEN 108
@@ -343,6 +349,10 @@ def api_export_monthly_excel(year_month):
                     WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                     WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                     WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                    WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                    WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
                     WHEN ResourceKey >= 100 THEN ResourceKey
                     WHEN BasePrice <= 0    THEN ResourceKey
                     WHEN BasePrice <= 45   THEN 108
@@ -405,6 +415,10 @@ def api_export_monthly_excel(year_month):
                     WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                     WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                     WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                    WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                    WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                     WHEN ResourceKey >= 100 THEN ResourceKey
                     WHEN BasePrice <= 0    THEN ResourceKey
@@ -432,6 +446,10 @@ def api_export_monthly_excel(year_month):
                     WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                     WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                     WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                    WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                    WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
                     WHEN ResourceKey >= 100 THEN ResourceKey
                     WHEN BasePrice <= 0    THEN ResourceKey
                     WHEN BasePrice <= 45   THEN 108
@@ -470,6 +488,14 @@ def api_export_monthly_excel(year_month):
                 DATE(AcceptDateTime) as day_date, ResourceShopKey
             FROM supply
             WHERE AcceptDateTime >= %s AND AcceptDateTime < %s
+              AND NOT ((AcceptDateTime >= '2026-06-22 00:00:00'
+                        AND AcceptDateTime < '2026-06-23 00:00:00'
+                        AND ShopKey IN (29, 30)
+                        AND Volume BETWEEN 50 AND 500)
+                       OR (AcceptDateTime >= '2026-06-17 00:00:00'
+                           AND AcceptDateTime < '2026-06-18 00:00:00'
+                           AND ShopKey = 29
+                           AND Volume BETWEEN 50 AND 500))
             GROUP BY ShopKey, ResourceKey, DATE(AcceptDateTime), ResourceShopKey
         """, (ym_start + ' 00:00:00', ym_end + ' 00:00:00'))
         daily_supply_cache = {}
@@ -488,6 +514,10 @@ def api_export_monthly_excel(year_month):
                     rk = corrected
             elif sk == 28 and rsk is not None:
                 rk = SK28_RSK_MAP.get(int(rsk), orig_rk)
+            elif sk == 30 and rsk is not None:
+                rk = SK30_RSK_MAP.get(int(rsk), orig_rk)
+            elif sk == 29 and rsk is not None:
+                rk = SK29_RSK_MAP.get(int(rsk), orig_rk)
             else:
                 ref_price = supply_price_ref.get((sk, orig_rk), 0)
                 if ref_price > 0:
@@ -525,6 +555,10 @@ def api_export_monthly_excel(year_month):
                     WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                     WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                     WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                    WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                    WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                     WHEN ResourceKey >= 100 THEN ResourceKey
                     WHEN BasePrice <= 0    THEN ResourceKey
@@ -554,6 +588,10 @@ def api_export_monthly_excel(year_month):
                     WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
                     WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
                     WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
+                    WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
+                    WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
+                    WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
 
                     WHEN ResourceKey >= 100 THEN ResourceKey
                     WHEN BasePrice <= 0    THEN ResourceKey
@@ -642,7 +680,8 @@ def api_export_monthly_excel(year_month):
             if key not in ds_end_dt or shift_dt > ds_end_dt[key]:
                 ds_end_dt[key] = shift_dt
                 ds_end[key] = end
-                ds_loss[key] = round(end_calc - end, 3)
+                if sk not in (29, 30):
+                    ds_loss[key] = round(end_calc - end, 3)
             elif shift_dt == ds_end_dt[key]:
                 ds_end[key] = round(ds_end.get(key, 0) + end, 3)
                 ds_loss[key] = round(ds_loss.get(key, 0) + (end_calc - end), 3)
@@ -661,7 +700,12 @@ def api_export_monthly_excel(year_month):
         daily_price_cache = {}
         for r in cur.fetchall():
             sk = int(r[0])
-            rk = _infer_resource_code_daily(int(r[1]), r[2], sk=sk)
+            rc = int(r[1])
+            # SK29 fuelbalance.ResourceCode=0，无法推断油品类型，跳过
+            # SK29_PRICE_MAP 已在 _write_station_block 中使用硬编码价格
+            if sk == 29 and rc < 100:
+                continue
+            rk = _infer_resource_code_daily(rc, r[2], sk=sk)
             ds = str(r[3])
             if (sk, rk) not in daily_price_cache.get(ds, {}):
                 daily_price_cache.setdefault(ds, {})[(sk, rk)] = round(float(r[2] or 0), 2)
@@ -669,7 +713,8 @@ def api_export_monthly_excel(year_month):
         # 备用：从 balance 表取 EndPrice，补充 fuelbalance 中缺失的价格（如 SK=28 的 110）
         cur.execute(f"""
             SELECT b.ShopKey, b.ResourceKey, b.EndPrice,
-                {shift_business_day} as shift_date
+                {shift_business_day} as shift_date,
+                b.ResourceShopKey
             FROM balance b
             JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
             WHERE b.ShopKey IN (%s)
@@ -680,7 +725,8 @@ def api_export_monthly_excel(year_month):
         """ % (','.join(str(k) for k in station_keys), ym_start, month_end_str))
         for r in cur.fetchall():
             sk = int(r[0])
-            rk = _infer_resource_code_daily(int(r[1]), r[2], sk=sk)
+            rsk = r[4] if len(r) > 4 else None
+            rk = _infer_resource_code_daily(int(r[1]), r[2], rsk=rsk, sk=sk)
             ds = str(r[3])
             # 仅当 fuelbalance 中无价格时才用 balance.EndPrice 补充
             if (sk, rk) not in daily_price_cache.get(ds, {}) and float(r[2] or 0) > 0:
@@ -789,7 +835,6 @@ def api_export_monthly_excel(year_month):
                 elif key in prev_day_bal and prev_day_bal[key] > 0:
                     d_start_bal[key] = prev_day_bal[key]
             d_loss = daily_loss_cache.get(day_str, {})
-
             # 日分表现金单价 = 当天 fuelbalance 实际零售价（非均价）
             d_prices = daily_price_cache.get(day_str, {})
             # 用浅拷贝替换 avg_price，避免污染缓存

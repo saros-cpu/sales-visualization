@@ -24,7 +24,8 @@ from routes.analytics import (  # noqa: E402
 
 
 def _load_snapshot(day):
-    path = OILSTATION_ROOT / "cache_snapshots" / "daily" / f"day_{day}.json"
+    year, month, _ = day.split("-")
+    path = OILSTATION_ROOT / "cache_snapshots" / "daily" / year / month / f"day_{int(day.split('-')[-1]):02d}.json"
     if not path.exists():
         raise SystemExit(f"missing snapshot: {path}")
     return json.loads(path.read_text(encoding="utf-8-sig"))

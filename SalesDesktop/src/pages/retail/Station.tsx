@@ -1,15 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Row, Col, Card, Statistic, Select, Typography, Tag, Button } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
 import { getStations, getStationMonthly } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { useNameI18n } from '@/utils/i18nNames';
+import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 const { Text } = Typography;
 
 export default function Station() {
   const { t } = useTranslation();
+  const { region, station } = useNameI18n();
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const [shopKey, setShopKey] = useState<number | null>(null);
@@ -22,6 +25,13 @@ export default function Station() {
   );
 
   const stations: any[] = (staQ.data as any)?.stations ?? [];
+
+  // 数据加载完成后默认选中第一个站点
+  useEffect(() => {
+    if (!shopKey && stations.length > 0) {
+      setShopKey(stations[0].shopKey);
+    }
+  }, [stations, shopKey]);
   const detail = detailQ.data;
 
   const options = useMemo(() => {
@@ -29,14 +39,14 @@ export default function Station() {
     for (const s of stations) {
       (groups[s.region] = groups[s.region] || []).push(s);
     }
-    return Object.entries(groups).map(([region, items]) => ({
-      label: t(`retail.${region}`, { defaultValue: region }),
+    return Object.entries(groups).map(([regionKey, items]) => ({
+      label: region(regionKey),
       options: items.map((s: any) => ({
-        label: `${s.name}${s.status !== 'normal' ? ` [${t('common.closed')}]` : ''}`,
+        label: `${station(s)}${s.status !== 'normal' ? ` [${t('common.closed')}]` : ''}`,
         value: s.shopKey,
       })),
     }));
-  }, [stations, t]);
+  }, [stations, t, region, station]);
 
   return (
     <div>
@@ -53,23 +63,32 @@ export default function Station() {
           <Row gutter={16} style={{ marginTop: 16, marginBottom: 16 }}>
             <Col span={24}>
               <Card size="small" title={detail.name}>
-                <Text>{t('retail.ruName')}: {(detail as any).short}</Text> | <Text>{t('retail.region')}: {(detail as any).region}</Text>
+                <Text>{t('retail.ruName')}: {(detail as any).short}</Text> | <Text>{t('retail.region')}: {region((detail as any).region)}</Text>
               </Card>
             </Col>
           </Row>
           <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(detail.summary.totalSales / 10000)} suffix={t('common.wan')} /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(detail.summary.totalLiters)} suffix="L" /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters)} suffix="L" /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round((detail.summary.totalSales ?? 0) / 10000)} suffix={t('common.wan')} /></Card></Col>
+            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(detail.summary.totalLiters ?? 0)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters ?? 0)} suffix="L" /></Card></Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} lg={12}>
               <ChartCard title={t('retail.trend30')} loading={detailQ.isLoading}
                 option={{
-                  tooltip: { trigger: 'axis' },
+                  color: CHART_PALETTE,
+                  tooltip: { trigger: 'axis', formatter: (p: any) => {
+                    const list = Array.isArray(p) ? p : [p];
+                    let html = `<b>${list[0]?.axisValue || ''}</b>`;
+                    list.forEach((item: any) => {
+                      const val = item.seriesName === t('retail.volume') ? item.value.toLocaleString() + 'L' : item.value + t('common.wan');
+                      html += `<br/>${item.marker} ${item.seriesName}: ${val}`;
+                    });
+                    return html;
+                  } },
                   legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
-                  xAxis: { type: 'category', data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
+                  xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
                   yAxis: [
                     { type: 'value', name: 'L' },
                     { type: 'value', name: t('common.wan') },
@@ -100,9 +119,10 @@ export default function Station() {
             <Col xs={24} lg={8}>
               <ChartCard title={t('retail.productStruct')} loading={detailQ.isLoading}
                 option={{
+                  color: CHART_PALETTE,
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 80, right: 20 },
-                  xAxis: { type: 'value' },
+                  xAxis: { type: 'value', name: CHART_AXIS.liters },
                   yAxis: { type: 'category', data: (detail.byResource ?? []).map((r: any) => r.name).reverse(), axisLabel: { fontSize: 11 } },
                   series: [{ type: 'bar', data: (detail.byResource ?? []).map((r: any) => r.volume).reverse() }],
                 }}
@@ -111,10 +131,18 @@ export default function Station() {
             <Col xs={24} lg={8}>
               <ChartCard title={t('retail.cardRatio')} loading={detailQ.isLoading}
                 option={{
-                  tooltip: { trigger: 'axis' },
+                  color: CHART_PALETTE,
+                  tooltip: { trigger: 'axis', formatter: (p: any) => {
+                    const list = Array.isArray(p) ? p : [p];
+                    let html = `<b>${list[0]?.axisValue || ''}</b>`;
+                    list.forEach((item: any) => {
+                      html += `<br/>${item.marker} ${item.seriesName || t('retail.cardRatio')}: ${item.value}%`;
+                    });
+                    return html;
+                  } },
                   grid: { left: 60, right: 20 },
-                  xAxis: { type: 'category', data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
-                  yAxis: { type: 'value', max: 100 },
+                  xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
+                  yAxis: { type: 'value', max: 100, name: CHART_AXIS.percent },
                   series: [{
                     type: 'line', data: (detail.daily ?? []).map((d: any) => {
                       const total = (d.cashSales ?? 0) + (d.cardSales ?? 0);

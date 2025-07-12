@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const client = axios.create({
-  baseURL: 'http://127.0.0.1:8900/api',
+  baseURL: 'http://198.51.100.10:8080/api',
   timeout: 15000,
 });
 
@@ -51,7 +51,7 @@ export async function getExchangeRates(year: number, month: number): Promise<Exc
 export function exportExchangeRates(year: number, month: number) {
   const token = localStorage.getItem('accessToken');
   const params = new URLSearchParams({ year: String(year), month: String(month) });
-  const url = `http://127.0.0.1:8900/api/export/exchange-rates?${params}`;
+  const url = `http://198.51.100.10:8080/api/export/exchange-rates?${params}`;
   const a = document.createElement('a');
   a.href = url;
   if (token) {

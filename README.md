@@ -6,12 +6,77 @@
 
 ## 版本更新记录
 
-### 2026-07-08 (v2.3.0)
+### 2026-07-11 (v3.1.0)
 
-- 新增：Electron 自动更新功能（electron-updater + IPC 桥接）
-- 新增：设置页软件更新卡片（检查更新/下载进度/重启安装）
-- 新增：打包配置 publish 发布服务器地址
-- 优化：package.json 版本号与 version.ts 对齐
+- 基础设施：Typer CLI + Loguru + pydantic-settings 替代原生 logging + argparse
+- 双端统一：后端 response.py（ok/fail 格式），HttpClient 自动解包 data 字段
+- 四层重构：OilStation 后端按 controller/service/common/query 模式拆分（KPI / analytics / export / analysis_report）
+- Electron 客户端：fetch 401 自动跳转登录，错误消息提取优化
+
+### 2026-07-11 (v3.0.8)
+
+- 修复：称重 KPI 条数与重量不匹配（后端返回 totalWeight 全量汇总）
+- 新增：数据录入改为 Excel 批量编辑模式（点编辑进入编辑模式，可多行录入后统一保存）
+
+### 2026-07-11 (v3.0.7)
+
+- 修复：所有趋势图悬停提示改为显示实际数值（跟随 web 版模式）
+- 修复：零售区域页面空白（API 返回中文区域名，客户端用 ZH_REGION_KEY 反向映射）
+- 修复：零售总览区域颜色不显示（中文区域名→英文 key 映射）
+- 修复：站点页面累计销量/累计金额 NaN 问题
+
+### 2026-07-10 (v3.0.6)
+
+- 修复：批发查询 API 路径拆分（概览用 `/api`，查询用 `/api/v2`），数据正常联动
+- 修复：采购吨位列数据是公斤，改为 kg 显示
+- 修复：用户角色列非管理员显示空白问题
+- 修复：角色权限模块列添加中俄文对照映射
+
+### 2026-07-10 (v3.0.5)
+
+- 修复：批发查询 API 路径错误（`/api` → `/api/v2`），数据未联动
+- 修复：采购查询吨位列数据为空（weightKg→weightTons）
+- 修复：称重审核条数 KPI 名称显示问题
+- 修复：仪表板零售 KPI 标注"零售累计销售额/零售累计销量"，金额加 сом 单位
+- 修复：角色权限模块列切换俄语后仍显示中文
+- 修复：用户角色列大小写兼容
+
+### 2026-07-10 (v3.0.4)
+
+- 仪表板：KPI 改为年数据（年批发/年采购）
+- 语言切换：点击按钮直接切换中俄，无需下拉选择
+- 零售：菜单文字改为"零售"；总览区域颜色美化；站点默认加载第一个站点
+- 零售：预警页全量俄语翻译（规则/建议/提示）
+- 零售：油品日历默认显示当月
+- 批发客户排行：移除采购/代加工数据
+- 批发外运详情：按外运量排序 KPI，REG-07→STN-63
+- 采购查询：数据单位改为 kg 与称重管理统一
+- 称重审核：KPI 重量单位改为 kg（原为 т）
+- 用户管理：角色列大小写兼容修复
+- 右侧内容区：移除多余滚动条
+
+### 2026-07-10 (v3.0.3)
+
+- 修复：仪表板 KPI 左右列等宽 12:12 + 2 列排布，底部对齐
+- 修复：趋势图颜色改用明亮色板（蓝/绿/橙/紫/青/玫红/金/亮绿）
+- 修复：所有趋势图 X 轴添加"日期"单位说明
+- 修复：地名/站名/产品名随语言切换（俄语下显示俄文名称）
+- 修复：右侧内容区统一单滚动容器，消除双滚动条
+- 修复：左侧菜单展开子菜单后支持下滑到底部
+
+### 2026-07-10 (v3.0.0-3.0.2)
+
+- 3.0.2：修复零售报表导出、批发KPI高度、数据录入表格样式
+- 3.0.1：修复各页面 i18n 键缺失
+- 3.0.0：零售板块重构为 7 页大类菜单（总览/区域/站点/月度/油品/报表/预警）；新增批发板块 6 页；架构重构（统一 HTTP 层、React Query、共享组件库、路由懒加载）
+
+### 2026-07-09 (v2.x)
+
+- 2.7.0：侧边栏菜单重构，别名管理移入管理菜单
+- 2.6.x：多轮修复（分析报告下载、3D 地图、IPC 下载、版本号管理）
+- 2.5.0：仪表板 KPI 布局重构，市场观察卡片优化
+- 2.4.0：浅色主题，自定义 logo 与应用图标
+- 2.3.0：Electron 自动更新功能
 
 ### 2026-07-08 (v2.2.1)
 
@@ -231,12 +296,18 @@ Sales/
 **OilStation 嵌入**：
 ```
 OilStation/
-├── api.py                  # 零售接口（被 Sales/api.py 通过 retail_internal.py 调用）
-├── routes/                 # 分析/报表/KPI/导出路由实现
+├── api.py                  # 零售接口入口：路由注册 + 缓存预热
+├── cli.py                  # Typer CLI（run / serve / cache-warm）
+├── settings.py / log_setup.py / response.py  # 配置/日志/统一响应
+├── endpoints/v1/retail/    # 四层模块架构
+│   ├── common/query.py     #   共享查询（get_query_date_range / query_month_summary）
+│   ├── kpi/                #   KPI 模块：controller + service
+│   ├── analytics/          #   分析模块：controller + service/shared + service/core
+│   ├── export/             #   导出模块：controller + service/workbook + service/generator
+│   └── analysis_report/    #   报表模块：controller + service/common + service/docx
+├── routes/                 # 旧路由文件（保留回退）
 ├── scripts/                # 快照刷新脚本
-├── echarts.min.js          # ECharts 库（SPA 的 index.html 加载）
-├── kgz_merged.json         # KGZ 地图 GeoJSON
-└── cache_snapshots/        # 快照缓存目录（JSON 文件）
+├── echarts.min.js / kgz_merged.json / cache_snapshots/
 ```
 
 ### 数据管道
@@ -656,6 +727,44 @@ D:\SalesVisualization\backups
 1. **ReferencePanel 实体标准选择器** — 旧版 admin.html 的`实体别名`表单有实体类型选择+自动填充标准名称功能，React 版缺少。
 2. **HealthPanel 运维摘要卡片** — 旧版显示 4 张状态卡片（汇率、市场、快照、任务），React 版未实现。
 3. **部分 API 函数缺命名导出** — `POST /api/admin/product-aliases`、`POST /api/densities` 无封装函数，直接调用 `post()`。
+
+## Electron 桌面客户端
+
+```
+SalesDesktop/
+├── package.json              # 版本 3.1.0（与 version.ts 对齐）
+├── vite.config.ts            # Vite 构建配置
+├── electron/
+│   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）
+│   ├── preload.cjs           # 预加载脚本（contextBridge 桥接）
+│   └── builder-config.cjs    # electron-builder 配置
+├── src/
+│   ├── main.tsx              # React 入口
+│   ├── App.tsx               # 路由 + 布局
+│   ├── version.ts            # 版本号 + CHANGELOG
+│   ├── api/
+│   │   ├── http.ts           # Axios 封装（JWT Token + 401 跳转 + 自动解包 data）
+│   │   ├── client.ts         # 客户端 v2 API 封装
+│   │   ├── retail.ts         # 零售 API 封装
+│   │   ├── wholesale.ts / procurement.ts / weighing.ts / contracts.ts / ...
+│   │   └── export.ts / exchange.ts / transferLoss.ts / ...
+│   ├── pages/                # 15+ 页面组件
+│   ├── components/           # 通用组件（KpiCard, TableCard, ChartCard, PeriodPicker 等）
+│   ├── config/               # 菜单配置 + 路由表
+│   ├── i18n/                 # 中俄双语（zh.json / ru.json）
+│   ├── types/                # TypeScript 类型定义
+│   └── hooks/                # 自定义 hooks
+├── dist/                     # Vite 构建产物（dev: :5173, prod: electron loadFile）
+├── release_v18/              # 安装包输出目录
+└── latest.yml                # 自动更新清单
+```
+
+**架构特点**：
+- **双端统一**：客户端直连生产 API（`http://198.51.100.10:8080`），不走本地服务器
+- **双认证**：JWT Token（客户端）+ Session Cookie（Web 端），后端统一校验
+- **响应解包**：`http.ts` 自动解 `res.data.data → res.data`，API 封装层无感
+- **自动更新**：electron-updater + `latest.yml`，设置页触发检查更新
+- **401 处理**：interceptor 自动清 Token 跳登录页，错误消息统一提取
 
 ## 后续优化方向
 

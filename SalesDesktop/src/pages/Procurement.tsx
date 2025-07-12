@@ -34,7 +34,7 @@ export default function Procurement() {
     { title: t('common.date'), dataIndex: 'businessDate', key: 'businessDate', ellipsis: true },
     { title: t('retail.product'), dataIndex: 'productName', key: 'productName', ellipsis: true, render: (v: string) => t(`product.${v}`, { defaultValue: v }) },
     { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', ellipsis: true },
-    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 80 },
+    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 80, render: (v: number) => v != null ? `${Math.round(v * 1000).toLocaleString()} kg` : '-' },
     { title: t('common.source'), dataIndex: 'weighSource', key: 'weighSource', ellipsis: true },
     { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', ellipsis: true },
   ];

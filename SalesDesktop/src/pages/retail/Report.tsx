@@ -6,9 +6,11 @@ import { getMonthly } from '@/api/retail';
 import { exportExcel } from '@/api/export';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { useNameI18n } from '@/utils/i18nNames';
 
 export default function Report() {
   const { t } = useTranslation();
+  const { region, station } = useNameI18n();
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
 
@@ -18,8 +20,8 @@ export default function Report() {
   const regions = data?.regions ?? {};
 
   const stationColumns = [
-    { title: t('retail.station'), dataIndex: 'name', key: 'name', sorter: (a: any, b: any) => a.name.localeCompare(b.name) },
-    { title: t('retail.region'), dataIndex: 'region', key: 'region' },
+    { title: t('retail.station'), dataIndex: 'name', key: 'name', sorter: (a: any, b: any) => a.name.localeCompare(b.name), render: (_: any, r: any) => station(r) },
+    { title: t('retail.region'), dataIndex: 'region', key: 'region', render: (v: string) => region(v) },
     { title: t('retail.amount'), dataIndex: 'amount', key: 'amount', sorter: (a: any, b: any) => a.amount - b.amount, render: (v: number) => `${Math.round(v / 10000)}${t('common.wan')}` },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', sorter: (a: any, b: any) => a.volume - b.volume, render: (v: number) => `${Math.round(v).toLocaleString()}L` },
     { title: t('retail.cash'), dataIndex: 'cash', key: 'cash', render: (v: number) => `${Math.round(v / 10000)}${t('common.wan')}` },
@@ -29,7 +31,7 @@ export default function Report() {
   ];
 
   const regionColumns = [
-    { title: t('retail.region'), dataIndex: 'name', key: 'name' },
+    { title: t('retail.region'), dataIndex: 'name', key: 'name', render: (v: string) => region(v) },
     { title: t('retail.station'), dataIndex: 'stationCount', key: 'stationCount' },
     { title: t('retail.amount'), dataIndex: 'amount', key: 'amount', sorter: (a: any, b: any) => a.amount - b.amount, render: (v: number) => `${Math.round(v / 10000)}${t('common.wan')}` },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', sorter: (a: any, b: any) => a.volume - b.volume, render: (v: number) => `${Math.round(v).toLocaleString()}L` },
@@ -45,7 +47,7 @@ export default function Report() {
 
   const paymentData = useMemo(() =>
     stations.map((s: any) => ({
-      key: s.shopKey, name: s.name, region: s.region,
+      key: s.shopKey, name: s.name, short: s.short, region: s.region,
       cash: Math.round(s.cash / 10000), card: Math.round(s.card / 10000),
       total: Math.round((s.cash + s.card) / 10000),
       cashRatio: s.amount > 0 ? `${Math.round((s.cash / s.amount) * 100)}%` : '-',
@@ -55,8 +57,8 @@ export default function Report() {
   );
 
   const paymentColumns = [
-    { title: t('retail.station'), dataIndex: 'name', key: 'name' },
-    { title: t('retail.region'), dataIndex: 'region', key: 'region' },
+    { title: t('retail.station'), dataIndex: 'name', key: 'name', render: (_: any, r: any) => station(r) },
+    { title: t('retail.region'), dataIndex: 'region', key: 'region', render: (v: string) => region(v) },
     { title: t('retail.cash'), dataIndex: 'cash', key: 'cash' },
     { title: t('retail.card'), dataIndex: 'card', key: 'card' },
     { title: t('common.total'), dataIndex: 'total', key: 'total' },

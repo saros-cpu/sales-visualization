@@ -1,0 +1,179 @@
+"""桌面端认证 API — 使用 JWT（跨域 Electron 无法使用 Session Cookie）"""
+from flask import request, jsonify
+from flask_jwt_extended import (
+    create_access_token, create_refresh_token,
+    jwt_required, get_jwt_identity
+)
+from werkzeug.security import check_password_hash, generate_password_hash
+from api_v2 import bp_v2
+from db import get_connection
+import pymysql
+from datetime import timedelta
+
+
+def _get_user_permissions(user_id, role):
+    """获取用户权限列表"""
+    if role == 'admin':
+        return ['*']
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute('''
+                SELECT module_key, can_view, can_edit 
+                FROM user_module_permissions 
+                WHERE user_id = %s AND can_view = 1
+            ''', (user_id,))
+            perms = {}
+            for row in cur.fetchall():
+                perms[row['module_key']] = {
+                    'view': bool(row['can_view']),
+                    'edit': bool(row['can_edit']),
+                }
+            return perms
+    finally:
+        conn.close()
+
+
+@bp_v2.route('/auth/login', methods=['POST'])
+def login():
+    """桌面端登录 — 返回 JWT Token"""
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    if not username or not password:
+        return jsonify({'code': 4221, 'message': '请输入用户名和密码', 'data': None}), 422
+
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute('''
+                SELECT id, username, password_hash, display_name, role, is_active 
+                FROM system_users WHERE username = %s
+            ''', (username,))
+            user = cur.fetchone()
+
+        if not user or not check_password_hash(user['password_hash'], password):
+            return jsonify({'code': 4001, 'message': '用户名或密码错误', 'data': None}), 401
+
+        if not user['is_active']:
+            return jsonify({'code': 4003, 'message': '账户已被禁用', 'data': None}), 403
+
+        with conn.cursor() as cur:
+            cur.execute('UPDATE system_users SET last_login_at = NOW() WHERE id = %s', (user['id'],))
+        conn.commit()
+
+        identity = str(user['id'])
+        access_token = create_access_token(
+            identity=identity,
+            additional_claims={
+                'username': user['username'],
+                'role': user['role'],
+            },
+            expires_delta=timedelta(hours=2)
+        )
+        refresh_token = create_refresh_token(
+            identity=identity,
+            expires_delta=timedelta(days=7)
+        )
+
+        permissions = _get_user_permissions(user['id'], user['role'])
+
+        return jsonify({
+            'code': 0,
+            'message': 'success',
+            'data': {
+                'accessToken': access_token,
+                'refreshToken': refresh_token,
+                'user': {
+                    'id': user['id'],
+                    'username': user['username'],
+                    'displayName': user['display_name'],
+                    'role': user['role'],
+                },
+                'permissions': permissions,
+            }
+        })
+    finally:
+        conn.close()
+
+
+@bp_v2.route('/auth/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    """刷新 Token"""
+    identity = get_jwt_identity()
+    access_token = create_access_token(identity=identity)
+    return jsonify({
+        'code': 0, 'message': 'success',
+        'data': {'accessToken': access_token}
+    })
+
+
+@bp_v2.route('/auth/logout', methods=['POST'])
+def logout():
+    return jsonify({'code': 0, 'message': 'success', 'data': None})
+
+
+@bp_v2.route('/auth/me', methods=['GET'])
+@jwt_required()
+def me():
+    user_id = int(get_jwt_identity())
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute('''
+                SELECT id, username, display_name, role
+                FROM system_users WHERE id = %s
+            ''', (user_id,))
+            user = cur.fetchone()
+        if not user:
+            return jsonify({'code': 4001, 'message': '用户不存在', 'data': None}), 401
+
+        permissions = _get_user_permissions(user['id'], user['role'])
+        return jsonify({
+            'code': 0, 'message': 'success',
+            'data': {
+                'user': {
+                    'id': user['id'],
+                    'username': user['username'],
+                    'displayName': user['display_name'],
+                    'role': user['role'],
+                },
+                'permissions': permissions,
+            }
+        })
+    finally:
+        conn.close()
+
+
+@bp_v2.route('/auth/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    """用户修改自己的密码（需旧密码验证）"""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    old_password = data.get('oldPassword', '')
+    new_password = data.get('newPassword', '')
+
+    if not old_password or not new_password:
+        return jsonify({'code': 4221, 'message': '旧密码和新密码不能为空', 'data': None}), 422
+    if len(new_password) < 6:
+        return jsonify({'code': 4221, 'message': '新密码长度不能少于6位', 'data': None}), 422
+
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute('SELECT password_hash FROM system_users WHERE id = %s', (user_id,))
+            user = cur.fetchone()
+            if not user:
+                return jsonify({'code': 4004, 'message': '用户不存在', 'data': None}), 404
+            if not check_password_hash(user['password_hash'], old_password):
+                return jsonify({'code': 4001, 'message': '旧密码错误', 'data': None}), 401
+
+            new_hash = generate_password_hash(new_password)
+            cur.execute('UPDATE system_users SET password_hash = %s WHERE id = %s', (new_hash, user_id))
+            conn.commit()
+        return jsonify({'code': 0, 'message': 'success', 'data': None})
+    finally:
+        conn.close()

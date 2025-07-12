@@ -3,6 +3,7 @@
   "nav": {
     "dashboard": "仪表板",
     "retail": "零售分析",
+    "retailShort": "零售",
     "weighing": "称重审核",
     "trainEntry": "数据录入",
     "dataEntry": "数据录入",
@@ -196,10 +197,11 @@
     "originalValue": "原值: {{value}}"
   },
   "dashboard": {
-    "monthlyWholesaleTons": "月批发(吨)",
-    "weeklyWeighCount": "本周称重",
+    "yearlyWholesaleTons": "年批发(吨)",
     "activeContracts": "有效合同",
-    "monthlyProcurementTons": "月采购(吨)"
+    "yearlyProcurementTons": "年采购(吨)",
+    "retailSales": "零售累计销售额",
+    "retailVolume": "零售累计销量"
   },
   "product": {
     "AI-80": "AI-80 (АИ-80)",
@@ -236,6 +238,13 @@
     "byRegion": "按区域汇总", "byPayment": "按支付方式", "closedStations": "停业站点",
     "pendingStations": "待关注站点", "inventoryAlert": "库存预警", "trendAnomaly": "趋势异常",
     "suggestions": "运营建议", "alertRules": "预警规则", "expectedResume": "预计恢复",
+    "promoteCard": "推广电子支付",
+    "stationUnit": "站",
+    "regionConcentrationWarn": "区域集中度建议",
+    "ruleTrendAnomaly": "连续 2 天环比下降 > 30% → 趋势异常告警",
+    "ruleLowInventory": "库存 < 10% 总容量 → 低库存预警",
+    "ruleRegionConcentration": "单个区域占比 > 30% → 区域集中度建议",
+    "ruleStationDowntime": "停业/装修超过 7 天 → 运营跟进建议",
     "totalVolume": "总销量", "totalTxn": "总笔数",
     "cashSales": "现金销售额", "cardSales": "刷卡销售额",
     "resourceRank": "油品销售排行", "payMethod": "支付方式",

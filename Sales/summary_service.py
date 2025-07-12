@@ -5,7 +5,7 @@ from datetime import date
 from retail_bridge import summarize_retail
 
 
-PRODUCT_SECTIONS = ("export_wholesale", "local_wholesale", "unknown", "transfer")
+PRODUCT_SECTIONS = ("export_wholesale", "local_wholesale", "unknown", "transfer", "processing", "procurement")
 
 
 def period_bounds(year, month=None):
@@ -126,5 +126,5 @@ def available_periods(cur):
         """
     )
     wholesale_months = [{"year": int(row[0]), "month": int(row[1])} for row in cur.fetchall()]
-    years = sorted({item["year"] for item in wholesale_months} | {2023, 2024, 2025, 2026})
+    years = sorted({item["year"] for item in wholesale_months if item["year"] > 0} | {2023, 2024, 2025, 2026})
     return {"years": years, "wholesaleMonths": wholesale_months}

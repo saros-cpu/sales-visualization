@@ -7,14 +7,17 @@ import { downloadYearlyReport } from '@/api/export';
 import KpiCard from '@/components/ui/KpiCard';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { useNameI18n, ZH_REGION_KEY } from '@/utils/i18nNames';
+import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 const REGION_COLORS: Record<string, string> = {
-  CTY-30: '#ef5350', chu: '#00e5a0', CTY-29: '#a78bfa',
-  CTY-33: '#ffa726', CTY-31: '#00d4ff', CTY-35: '#66bb6a',
+  CTY-30: '#722ed1', chu: '#1677ff', CTY-29: '#13c2c2',
+  CTY-33: '#ff7a45', CTY-31: '#52c41a', CTY-35: '#eb2f96',
 };
 
 export default function Overview() {
   const { t } = useTranslation();
+  const { region, station, product } = useNameI18n();
   const [year, setYear] = useState(new Date().getFullYear());
 
   const dashQ = useApiQuery(['retail', 'dashboard', year], () => getDashboardYearly(year));
@@ -34,22 +37,24 @@ export default function Overview() {
   };
 
   const regionOption = dash ? {
+    color: CHART_PALETTE,
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
     grid: { left: 120, right: 20, top: 10, bottom: 30 },
-    xAxis: { type: 'value' as const },
-    yAxis: { type: 'category' as const, data: Object.keys(dash.regions).reverse(), axisLabel: { fontSize: 11 } },
+    xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
+    yAxis: { type: 'category' as const, data: Object.keys(dash.regions).reverse().map((r) => region(r)), axisLabel: { fontSize: 11 } },
     series: [{
       type: 'bar' as const, data: Object.keys(dash.regions).reverse().map((r) => ({
         value: Math.round(dash.regions[r].amount / 10000),
-        itemStyle: { color: REGION_COLORS[r] || '#999' },
+        itemStyle: { color: REGION_COLORS[ZH_REGION_KEY[r]] || REGION_COLORS[r] || '#999' },
       })),
     }],
   } : {};
 
   const productOption = {
+    color: CHART_PALETTE,
     tooltip: { trigger: 'axis' as const },
-    xAxis: { type: 'value' as const },
-    yAxis: { type: 'category' as const, data: (resQ.data?.resources ?? []).map((r: any) => r.name).reverse() },
+    xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
+    yAxis: { type: 'category' as const, data: (resQ.data?.resources ?? []).map((r: any) => product(r.name)).reverse() },
     series: [{ type: 'bar' as const, data: (resQ.data?.resources ?? []).map((r: any) => r.amount).reverse() }],
   };
 
@@ -58,10 +63,11 @@ export default function Overview() {
     : [];
 
   const top10Option = {
+    color: CHART_PALETTE,
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
     grid: { left: 120, right: 20, top: 10, bottom: 30 },
-    xAxis: { type: 'value' as const },
-    yAxis: { type: 'category' as const, data: top10.map((s) => s.name).reverse(), axisLabel: { fontSize: 11 } },
+    xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
+    yAxis: { type: 'category' as const, data: top10.map((s) => station(s)).reverse(), axisLabel: { fontSize: 11 } },
     series: [{ type: 'bar' as const, data: top10.map((s) => Math.round(s.amount / 10000)).reverse() }],
   };
 
@@ -100,14 +106,15 @@ export default function Overview() {
         <Col xs={24} lg={12}>
           <ChartCard title={t('retail.regionSalesRank')} loading={dashQ.isLoading}
             option={{
+              color: CHART_PALETTE,
               tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
               grid: { left: 120, right: 20, top: 10, bottom: 30 },
-              xAxis: { type: 'value' as const },
-              yAxis: { type: 'category' as const, data: Object.keys(dash?.regions ?? {}).reverse(), axisLabel: { fontSize: 11 } },
+              xAxis: { type: 'value' as const, name: '万L' },
+              yAxis: { type: 'category' as const, data: Object.keys(dash?.regions ?? {}).reverse().map((r) => region(r)), axisLabel: { fontSize: 11 } },
               series: [{
                 type: 'bar' as const, data: Object.keys(dash?.regions ?? {}).reverse().map((r) => ({
                   value: Math.round((dash?.regions[r]?.volume ?? 0) / 10000),
-                  itemStyle: { color: REGION_COLORS[r] || '#999' },
+                  itemStyle: { color: REGION_COLORS[ZH_REGION_KEY[r]] || REGION_COLORS[r] || '#999' },
                 })),
               }],
             }}

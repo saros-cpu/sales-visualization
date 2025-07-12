@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from api import app, get_report_month_inventory  # noqa: E402
+from api import app, calc_yoy_mom, get_report_month_inventory, query_month_summary  # noqa: E402
 from business_time import business_period_condition_with_pruning, business_period_params, shift_join  # noqa: E402
 from cache_store import set_cached  # noqa: E402
 from constants import CLOSED_STATIONS, DEPOT_COORDS, SHOP_COORDS, SHOP_KEY_MAP  # noqa: E402
@@ -416,7 +416,6 @@ def _regions_from_station_rows(station_rows: list[dict]) -> dict:
 
 
 def _write_day_snapshots(day_totals: dict) -> int:
-    DAY_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     written = 0
     for current_date, values in sorted(day_totals.items()):
         station_map = {
@@ -455,7 +454,10 @@ def _write_day_snapshots(day_totals: dict) -> int:
             "daily": [daily_item],
         }
         _attach_monthly_finance_metrics(payload)
-        _write_json_snapshot(DAY_SNAPSHOT_DIR / f"day_{current_date}.json", payload)
+        year, month, day = current_date.split("-")
+        day_dir = DAY_SNAPSHOT_DIR / year / month
+        day_dir.mkdir(parents=True, exist_ok=True)
+        _write_json_snapshot(day_dir / f"day_{int(day):02d}.json", payload)
         written += 1
     return written
 
@@ -584,7 +586,8 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
             for shop_key, days in station_daily.items()
         }
         existing_monthly = {}
-        monthly_path = ROOT / "cache_snapshots" / "monthly" / f"monthly_{ym}.json"
+        y, m = ym.split("-")
+        monthly_path = ROOT / "cache_snapshots" / "monthly" / y / f"monthly_{int(m):02d}.json"
         if monthly_path.exists():
             try:
                 existing_monthly = json.loads(monthly_path.read_text(encoding="utf-8-sig"))
@@ -616,10 +619,47 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
             "queryStart": query_start,
             "queryEnd": query_end,
         }
+        # 重新计算同比环比，避免沿用旧快照的错误数据
+        y, m = int(ym.split('-')[0]), int(ym.split('-')[1])
+        dates = calc_yoy_mom(y, m)
+        conn_cmp = get_connection()
+        try:
+            cur_cmp = conn_cmp.cursor()
+            prev_summary = query_month_summary(cur_cmp, dates['prev'])
+            yoy_summary = query_month_summary(cur_cmp, dates['yoy'])
+        finally:
+            conn_cmp.close()
+
+        def calc_change(current, previous):
+            if not previous or previous <= 0:
+                return None
+            return round((current - previous) / previous * 100, 1)
+
+        comparison = {
+            'mom': {
+                'sales': calc_change(monthly_summary['totalSales'], prev_summary['totalSales']),
+                'volume': calc_change(monthly_summary['totalLiters'], prev_summary['totalLiters']),
+                'cashSales': calc_change(monthly_summary['cashSales'], prev_summary['cashSales']),
+                'cardSales': calc_change(monthly_summary['cardSales'], prev_summary['cardSales']),
+                'activeShops': (monthly_summary['activeShops'] - prev_summary.get('activeShops', monthly_summary['activeShops'])) if prev_summary.get('activeShops') else None,
+                'prevMonth': dates['prev'],
+            },
+            'yoy': {
+                'sales': calc_change(monthly_summary['totalSales'], yoy_summary['totalSales']),
+                'volume': calc_change(monthly_summary['totalLiters'], yoy_summary['totalLiters']),
+                'cashSales': calc_change(monthly_summary['cashSales'], yoy_summary['cashSales']),
+                'cardSales': calc_change(monthly_summary['cardSales'], yoy_summary['cardSales']),
+                'activeShops': (monthly_summary['activeShops'] - yoy_summary.get('activeShops', monthly_summary['activeShops'])) if yoy_summary.get('activeShops') else None,
+                'yoyMonth': dates['yoy'],
+            },
+            'prev': {'summary': prev_summary},
+            'yoyRef': {'summary': yoy_summary},
+        }
+
         monthly_payload = {
             "month": ym,
             "summary": monthly_summary,
-            "comparison": existing_monthly.get("comparison") or {},
+            "comparison": comparison,
             "stations": station_rows,
             "regions": {
                 region: {

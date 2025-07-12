@@ -112,10 +112,11 @@ def check_snapshot_files(results: list[Result]):
     snapshot_root = PROJECT_ROOT / "OilStation" / "cache_snapshots"
     monthly_dir = snapshot_root / "monthly"
     daily_dir = snapshot_root / "daily"
+    yearly_dir = snapshot_root / "yearly"
     expected_daily = []
     cursor = date(COMPLETED_DAY.year, COMPLETED_DAY.month, 1)
     while cursor <= COMPLETED_DAY:
-        expected_daily.append(daily_dir / f"day_{cursor.isoformat()}.json")
+        expected_daily.append(daily_dir / str(cursor.year) / f"{cursor.month:02d}" / f"day_{cursor.day:02d}.json")
         cursor += timedelta(days=1)
     missing_daily = [path.name for path in expected_daily if not path.exists()]
     add(
@@ -125,15 +126,16 @@ def check_snapshot_files(results: list[Result]):
         None,
         "缺失：" + "、".join(missing_daily[:8]) if missing_daily else f"{len(expected_daily)} 天完整",
     )
+    ym_year, ym_month = CURRENT_MONTH.split("-")
     for prefix in ("monthly", "stations", "regions", "daily"):
-        path = monthly_dir / f"{prefix}_{CURRENT_MONTH}.json"
+        path = monthly_dir / ym_year / f"{prefix}_{int(ym_month):02d}.json"
         add(results, f"月快照文件 {prefix}_{CURRENT_MONTH}", path.exists() and path.stat().st_size > 40, None, f"{path.stat().st_size if path.exists() else 0} bytes")
     for name in (
         f"dashboard_yearly_{CURRENT_YEAR}.json",
         f"kpi_yearly_{CURRENT_YEAR}_summary.json",
         f"resources_yearly_{CURRENT_YEAR}_year.json",
     ):
-        path = monthly_dir / name
+        path = yearly_dir / name
         add(results, f"年快照文件 {name}", path.exists() and path.stat().st_size > 40, None, f"{path.stat().st_size if path.exists() else 0} bytes")
 
 

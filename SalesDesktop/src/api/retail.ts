@@ -135,10 +135,10 @@ export async function getMonths() {
 
 export async function getStationStatuses() {
   const res = await api.get('/retail/station-statuses');
-  return res.data.data?.items ?? res.data;
+  return res.data?.items ?? res.data;
 }
 
 export async function exportMonthlyExcel(ym: string) {
   const res = await api.get(`/export/monthly/${ym}`);
-  return res.data.data ?? res.data;
+  return res.data;
 }

@@ -74,7 +74,12 @@ export default function Users() {
   const columns = [
     { title: t('common.username'), dataIndex: 'username', key: 'username' },
     { title: t('common.displayName'), dataIndex: 'displayName', key: 'displayName' },
-    { title: t('common.role'), dataIndex: 'role', key: 'role', render: (v: string) => <Tag color={roleColors[v]}>{roleLabels[v] || v}</Tag> },
+    { title: t('common.role'), dataIndex: 'role', key: 'role', render: (v: string) => {
+      // 强制转小写匹配，确保角色显示正确
+      const key = v?.toLowerCase().trim() || '';
+      const label = roleLabels[key] || v;
+      return <Tag color={roleColors[key] || 'default'}>{label}</Tag>;
+    }},
     { title: t('common.status'), dataIndex: 'isActive', key: 'isActive', render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? t('common.active') : t('common.inactive')}</Tag> },
     { title: t('common.lastLogin'), dataIndex: 'lastLoginAt', key: 'lastLoginAt' },
     { title: t('common.createdAt'), dataIndex: 'createdAt', key: 'createdAt' },

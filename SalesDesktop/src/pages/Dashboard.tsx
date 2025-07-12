@@ -11,14 +11,15 @@ import client from '@/api/client';
 import { getKpiYearly, getDashboardYearly, getMonthly } from '@/api/retail';
 import { getCurrentExchange, CurrentExchange } from '@/api/exchange';
 import KpiCard from '@/components/ui/KpiCard';
+import { useNameI18n } from '@/utils/i18nNames';
+import { CHART_PALETTE } from '@/theme/charts';
 
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 interface DashboardData {
-  monthlyWholesaleTons: number;
-  weeklyWeighCount: number;
+  yearlyWholesaleTons: number;
   activeContracts: number;
-  monthlyProcurementTons: number;
+  yearlyProcurementTons: number;
 }
 
 interface MonthlyTrend {
@@ -29,6 +30,7 @@ interface MonthlyTrend {
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const { product } = useNameI18n();
   const [data, setData] = useState<DashboardData | null>(null);
   const [kpi, setKpi] = useState<{ totalSales: number; totalLiters: number; activeShops: number; yoySales?: number; yoyVolume?: number } | null>(null);
   const [trend, setTrend] = useState<MonthlyTrend[]>([]);
@@ -83,10 +85,19 @@ export default function Dashboard() {
   if (!data) return null;
 
   const trendOption = trend.length > 0 ? {
-    tooltip: { trigger: 'axis' as const },
+    color: CHART_PALETTE,
+    tooltip: { trigger: 'axis' as const, formatter: (p: any) => {
+      const list = Array.isArray(p) ? p : [p];
+      let html = `<b>${list[0]?.axisValue || ''}</b>`;
+      list.forEach((item: any) => {
+        const val = item.seriesName === t('retail.volume') ? item.value.toLocaleString() + 'L' : item.value + t('common.wan');
+        html += `<br/>${item.marker} ${item.seriesName}: ${val}`;
+      });
+      return html;
+    } },
     legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
     grid: { left: 60, right: 60, top: 20, bottom: 40 },
-    xAxis: { type: 'category' as const, data: trend.map((d) => d.month) },
+    xAxis: { type: 'category' as const, name: t('common.date'), nameLocation: 'center', nameGap: 30, data: trend.map((d) => d.month) },
     yAxis: [
       { type: 'value' as const, name: t('retail.volume') + '(L)' },
       { type: 'value' as const, name: `${t('retail.amount')}(${t('common.wan')})`, position: 'right' as const },
@@ -114,21 +125,21 @@ export default function Dashboard() {
           </Select>
         </Col>
       </Row>
-      <Row gutter={16}>
-        <Col xs={24} lg={16}>
-          <Row gutter={[16, 16]}>
-            <Col span={8}><KpiCard title={t('dashboard.monthlyWholesaleTons')} value={data.monthlyWholesaleTons} precision={1} suffix="т" /></Col>
-            <Col span={8}><KpiCard title={t('dashboard.activeContracts')} value={data.activeContracts} /></Col>
-            <Col span={8}><KpiCard title={t('dashboard.monthlyProcurementTons')} value={data.monthlyProcurementTons} precision={1} suffix="т" /></Col>
+      <Row gutter={16} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch' }}>
+        <Col xs={24} lg={12} style={{ display: 'flex' }}>
+          <Row gutter={[16, 16]} style={{ flex: 1, width: '100%', alignContent: 'flex-start' }}>
+            <Col span={12}><KpiCard title={t('dashboard.yearlyWholesaleTons')} value={data.yearlyWholesaleTons} precision={1} suffix="т" /></Col>
+            <Col span={12}><KpiCard title={t('dashboard.activeContracts')} value={data.activeContracts} /></Col>
+            <Col span={12}><KpiCard title={t('dashboard.yearlyProcurementTons')} value={data.yearlyProcurementTons} precision={1} suffix="т" /></Col>
             {kpi && (
               <>
-                <Col span={8}><KpiCard title={t('retail.totalSales')} value={Math.round(kpi.totalSales / 100000000)} suffix={t('common.yi')} delta={kpi.yoySales ? Math.round(kpi.yoySales * 100) : undefined} /></Col>
-                <Col span={8}><KpiCard title={t('retail.totalLiters')} value={Math.round(kpi.totalLiters / 10000)} suffix={t('common.wanL')} delta={kpi.yoyVolume ? Math.round(kpi.yoyVolume * 100) : undefined} /></Col>
-                <Col span={8}><KpiCard title={t('retail.activeShops')} value={kpi.activeShops} /></Col>
+                <Col span={12}><KpiCard title={t('dashboard.retailSales')} value={Math.round(kpi.totalSales / 100000000)} suffix={t('common.yi') + ' сом'} delta={kpi.yoySales ? Math.round(kpi.yoySales * 100) : undefined} /></Col>
+                <Col span={12}><KpiCard title={t('dashboard.retailVolume')} value={Math.round(kpi.totalLiters / 10000)} suffix={t('common.wanL')} delta={kpi.yoyVolume ? Math.round(kpi.yoyVolume * 100) : undefined} /></Col>
+                <Col span={12}><KpiCard title={t('retail.activeShops')} value={kpi.activeShops} /></Col>
               </>
             )}
-            <Col span={24}>
-              <Card size="small" title={<><DollarOutlined /> {t('exchange.today')}</>}>
+            <Col span={24} style={{ display: 'flex', flex: 1 }}>
+              <Card size="small" title={<><DollarOutlined /> {t('exchange.today')}</>} style={{ width: '100%' }}>
                 {rate ? (
                   <Row gutter={16}>
                     <Col span={6}><Statistic title="USD/KGS" value={rate.usdKgs} precision={4} valueStyle={{ color: '#22d3ee', fontSize: 18 }} /></Col>
@@ -146,8 +157,8 @@ export default function Dashboard() {
             </Col>
           </Row>
         </Col>
-        <Col xs={24} lg={8}>
-          <Card size="small" title={<><InfoCircleOutlined /> {t('exchange.marketWatch')}</>} style={{ height: '100%' }}>
+        <Col xs={24} lg={12} style={{ display: 'flex' }}>
+          <Card size="small" title={<><InfoCircleOutlined /> {t('exchange.marketWatch')}</>} style={{ height: '100%', width: '100%' }}>
             {marketWatch && marketWatch.items && marketWatch.items.length > 0 ? marketWatch.items.slice(0, 3).map((item: any) => (
               <div key={item.id} style={{ marginBottom: 12, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{item.title}</div>

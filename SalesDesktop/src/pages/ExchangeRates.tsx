@@ -42,10 +42,17 @@ export default function ExchangeRates() {
   const cnyMax = Math.max(...cnyValues);
 
   const chartOption = {
-    tooltip: { trigger: 'axis' as const },
+    tooltip: { trigger: 'axis' as const, formatter: (p: any) => {
+      const list = Array.isArray(p) ? p : [p];
+      let html = `<b>${list[0]?.axisValue || ''}</b>`;
+      list.forEach((item: any) => {
+        html += `<br/>${item.marker} ${item.seriesName}: ${item.value?.toFixed(4)}`;
+      });
+      return html;
+    } },
     legend: { data: ['USD/KGS', 'CNY/KGS'], bottom: 0 },
     grid: { left: 60, right: 60, top: 10, bottom: 40 },
-    xAxis: { type: 'category' as const, data: sorted.map((r) => r.date.slice(5)), axisLabel: { fontSize: 10 } },
+    xAxis: { type: 'category' as const, name: t('common.date'), nameLocation: 'center', nameGap: 30, data: sorted.map((r) => r.date.slice(5)), axisLabel: { fontSize: 10 } },
     yAxis: [
       { type: 'value' as const, name: 'USD/KGS', position: 'left' as const, axisLabel: { fontSize: 10 },
         min: usdMin - (usdMax - usdMin) * 0.1,

@@ -7,11 +7,14 @@ import { downloadMonthlyReport } from '@/api/export';
 import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { useNameI18n } from '@/utils/i18nNames';
+import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 const { Text } = Typography;
 
 export default function Monthly() {
   const { t } = useTranslation();
+  const { region, station, product } = useNameI18n();
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
 
@@ -43,8 +46,8 @@ export default function Monthly() {
 
   const topColumns = [
     { title: '#', dataIndex: 'rank', key: 'rank', width: 40, render: (_: any, __: any, i: number) => i + 1 },
-    { title: t('retail.station'), dataIndex: 'name', key: 'name' },
-    { title: t('retail.region'), dataIndex: 'region', key: 'region' },
+    { title: t('retail.station'), dataIndex: 'name', key: 'name', render: (_: any, r: any) => station(r) },
+    { title: t('retail.region'), dataIndex: 'region', key: 'region', render: (v: string) => region(v) },
     { title: t('retail.amount'), dataIndex: 'amount', key: 'amount', render: (v: number) => `${Math.round(v / 10000)}${t('common.wan')}` },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', render: (v: number) => `${Math.round(v).toLocaleString()}L` },
   ];
@@ -79,9 +82,18 @@ export default function Monthly() {
             <Col xs={24} lg={12}>
               <ChartCard title={t('retail.dailyTrend')} loading={monthQ.isLoading}
                 option={{
-                  tooltip: { trigger: 'axis' },
+                  color: CHART_PALETTE,
+                  tooltip: { trigger: 'axis', formatter: (p: any) => {
+                    const list = Array.isArray(p) ? p : [p];
+                    let html = `<b>${list[0]?.axisValue || ''}</b>`;
+                    list.forEach((item: any) => {
+                      const val = item.seriesName === t('retail.volume') ? item.value.toLocaleString() + 'L' : item.value + t('common.wan');
+                      html += `<br/>${item.marker} ${item.seriesName}: ${val}`;
+                    });
+                    return html;
+                  } },
                   legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
-                  xAxis: { type: 'category', data: (data?.daily ?? []).map((d: any) => d.date.slice(8)) },
+                  xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: (data?.daily ?? []).map((d: any) => d.date.slice(8)) },
                   yAxis: [
                     { type: 'value', name: 'L' },
                     { type: 'value', name: t('common.wan') },
@@ -96,10 +108,11 @@ export default function Monthly() {
             <Col xs={24} lg={12}>
               <ChartCard title={t('retail.productStruct')} loading={monthQ.isLoading}
                 option={{
+                  color: CHART_PALETTE,
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 80, right: 20 },
-                  xAxis: { type: 'value' },
-                  yAxis: { type: 'category', data: (data?.byResource ?? []).map((r: any) => r.name).reverse(), axisLabel: { fontSize: 11 } },
+                  xAxis: { type: 'value', name: CHART_AXIS.liters },
+                  yAxis: { type: 'category', data: (data?.byResource ?? []).map((r: any) => product(r.name)).reverse(), axisLabel: { fontSize: 11 } },
                   series: [{ type: 'bar', data: (data?.byResource ?? []).map((r: any) => r.volume).reverse() }],
                 }}
               />
