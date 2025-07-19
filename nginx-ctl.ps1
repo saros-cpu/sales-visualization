@@ -1,15 +1,15 @@
 # nginx-ctl.ps1 - Control Nginx service
 # Usage: powershell -File nginx-ctl.ps1 [start|stop|restart|reload|status]
 
-$nginxHome = "D:\nginx\nginx-1.26.3"
-$projectConf = "D:\SalesVisualization\nginx.conf"
+. "$PSScriptRoot\nginx\config.ps1"
+$projectConf = "$PSScriptRoot\nginx.conf"
 $action = if ($args[0]) { $args[0] } else { "status" }
 
 # Sync project nginx.conf to nginx home before any action
 if ($action -ne "status" -and (Test-Path $projectConf)) {
     Copy-Item $projectConf "$nginxHome\conf\nginx.conf" -Force
-    if (Test-Path "D:\SalesVisualization\mime.types") {
-        Copy-Item "D:\SalesVisualization\mime.types" "$nginxHome\conf\mime.types" -Force
+    if (Test-Path "$PSScriptRoot\mime.types") {
+        Copy-Item "$PSScriptRoot\mime.types" "$nginxHome\conf\mime.types" -Force
     }
 }
 

@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.1.0';
+export const VERSION = '3.1.1';
 export const BUILD_DATE = '2026-07-11';
 
 export interface ChangelogEntry {
@@ -15,12 +15,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.1.1',
+    date: '2026-07-11',
+    type: 'patch',
+    changes: [
+      '修复：HttpClient 响应解包导致登录崩溃（res.data.data 双重解包），移除 auto-unwrap 拦截器',
+    ],
+  },
+  {
     version: '3.1.0',
     date: '2026-07-11',
     type: 'minor',
     changes: [
       '基础设施：Typer CLI + Loguru + pydantic-settings，替代原生 logging + argparse',
-      '双端统一：后端 response.py（ok/fail 格式），HttpClient 自动解包 data 字段，统一错误提取',
+      '双端统一：后端 response.py（ok/fail 格式），统一错误提取',
       '四层重构：retail 端路由按 controller/service/common 模式拆分（KPI/analytics/export/analysis_report）',
       '持久化：缓存快照管理规则写入 AGENTS.md，禁止随意删除快照文件',
       '优化：Electron 客户端 fetch 401 自动跳转登录，错误消息提取优化',

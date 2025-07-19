@@ -1,6 +1,6 @@
 // src/pages/retail/StationPage.jsx — 站点详情
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useChart } from '../../hooks/useChart';
 import { getMonths, getStations, getStationDetail } from '../../api/retail';
 import { REGION_COLORS, REGION_ORDER, numberFormat } from '../../utils/retail-helpers';
@@ -22,13 +22,14 @@ function fixed2(n) { return Number(n || 0).toFixed(2); }
 export default function StationPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryName = params.get('name');
   const fromRegion = params.get('from') === 'region';
   const fromRegionName = params.get('region') || '';
 
   const [allStations, setAllStations] = useState([]);
-  const [currentMonth, setCurrentMonth] = useState('');
-  const [currentShopKey, setCurrentShopKey] = useState(null);
+  const [currentMonth, setCurrentMonth] = useState(location.state?.month || '');
+  const [currentShopKey, setCurrentShopKey] = useState(location.state?.shopKey || null);
   const [detail, setDetail] = useState(null);
 
   // 6 charts
@@ -41,6 +42,7 @@ export default function StationPage() {
 
   // ── 选择最近有数据的月份 ──
   useEffect(() => {
+    if (currentMonth) return;
     (async () => {
       try {
         const months = await getMonths();

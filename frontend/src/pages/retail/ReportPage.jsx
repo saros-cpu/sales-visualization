@@ -21,7 +21,9 @@ export default function ReportPage() {
     (async () => {
       try {
         const months = await getMonths();
-        const cm = months[0]?.month || '2026-04';
+        const yesterday = new Date(Date.now() - 86400000);
+        const prefer = yesterday.toISOString().slice(0, 7);
+        const cm = months.some(m => m.month === prefer) ? prefer : (months[0]?.month || '2026-04');
         setCurrentMonth(cm);
         const res = await getStations(cm);
         setAllStations(res.stations || []);
@@ -93,7 +95,7 @@ export default function ReportPage() {
           {data.map(s => {
             const color = REGION_COLORS[s.region] || '#7db8f0';
             return (
-              <tr key={s.shopKey} onClick={() => navigate(`/retail/station?name=${encodeURIComponent(s.name)}`)} style={{ cursor: 'pointer' }}>
+              <tr key={s.shopKey} onClick={() => navigate(`/retail/station?name=${encodeURIComponent(s.name)}`, { state: { shopKey: s.shopKey, month: currentMonth } })} style={{ cursor: 'pointer' }}>
                 <td><b>{s.name}</b></td>
                 <td style={{ color: 'rgba(160,180,210,0.5)' }}>{s.short}</td>
                 <td><span className="retail-tag" style={{ background: color + '18', color, border: `1px solid ${color}30` }}>{s.region}</span></td>
@@ -192,7 +194,7 @@ export default function ReportPage() {
           {data.map(s => {
             const color = REGION_COLORS[s.region] || '#7db8f0';
             return (
-              <tr key={s.shopKey} onClick={() => navigate(`/retail/station?name=${encodeURIComponent(s.name)}`)} style={{ cursor: 'pointer' }}>
+              <tr key={s.shopKey} onClick={() => navigate(`/retail/station?name=${encodeURIComponent(s.name)}`, { state: { shopKey: s.shopKey, month: currentMonth } })} style={{ cursor: 'pointer' }}>
                 <td><b>{s.name}</b></td>
                 <td><span className="retail-tag" style={{ background: color + '18', color, border: `1px solid ${color}30` }}>{s.region}</span></td>
                 <td className="num">{fixed2(s.cash)}</td>

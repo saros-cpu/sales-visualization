@@ -1,6 +1,13 @@
 // src/pages/sales/wholesale/ReviewTab.jsx — 审核
 import { num } from '../../../utils/format';
 
+const ISSUE_LABELS = {
+  contract_unmatched: '合同未匹配',
+  classification_mismatch: '分类不符',
+  missing_price: '缺少价格',
+  missing_exchange_rate: '缺少汇率',
+};
+
 export default function ReviewTab({ data }) {
   if (!data) return null;
 
@@ -56,7 +63,7 @@ export default function ReviewTab({ data }) {
         <div className="stack-list review-scroll">
           {issues.length ? issues.map((item, i) => (
             <div key={i} className={`stack-row ${item.severity === 'info' ? '' : 'warning'}`}>
-              <span>{item.type}</span>
+              <span>{ISSUE_LABELS[item.type] || item.type}</span>
               <strong>{item.date || '未指定日期'}</strong>
               <small>{item.message}</small>
             </div>

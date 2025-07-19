@@ -116,7 +116,10 @@ export default function RegionPage() {
     // 点击跳转
     const rankInst = rankC.getInstance();
     rankInst?.off('click');
-    rankInst?.on('click', p => { navigate(`/retail/station?name=${encodeURIComponent(p.name)}&from=region&region=${encodeURIComponent(currentRegion)}`); });
+    rankInst?.on('click', p => {
+      const found = allStations.find(s => s.name === p.name);
+      navigate(`/retail/station?name=${encodeURIComponent(p.name)}&from=region&region=${encodeURIComponent(currentRegion)}`, { state: { shopKey: found?.shopKey, month: currentMonth } });
+    });
 
     // 3. 支付方式
     const pc = payC.init('chart-region-pay');
@@ -200,7 +203,7 @@ export default function RegionPage() {
               {[...sts].sort((a, b) => b.amount - a.amount).map(s => {
                 const isClosed = s.status === 'closed';
                 return (
-                  <div key={s.shopKey} className="station-item" onClick={() => navigate(`/retail/station?name=${encodeURIComponent(s.name)}&from=region&region=${encodeURIComponent(currentRegion)}`)}>
+                  <div key={s.shopKey} className="station-item" onClick={() => navigate(`/retail/station?name=${encodeURIComponent(s.name)}&from=region&region=${encodeURIComponent(currentRegion)}`, { state: { shopKey: s.shopKey, month: currentMonth } })}>
                     <div>
                       <div className="station-name">{s.name} {isClosed && <span className="closed-badge">● {s.closedReason || '停业'}</span>}</div>
                       <div className="station-short">{s.short}</div>

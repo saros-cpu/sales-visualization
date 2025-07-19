@@ -33,7 +33,7 @@ try {
 Write-Host ""
 Write-Host "[3] GET static JS asset ..."
 try {
-    $jsFiles = Get-ChildItem "D:\SalesVisualization\frontend\dist\assets\*.js" | Select-Object -First 1
+    $jsFiles = Get-ChildItem "$PSScriptRoot\frontend\dist\assets\*.js" | Select-Object -First 1
     $jsName = $jsFiles.Name
     $r = Invoke-WebRequest -Uri "http://localhost/assets/$jsName" -UseBasicParsing -TimeoutSec 5
     Write-Host "  Status: $($r.StatusCode)"

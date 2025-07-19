@@ -491,8 +491,8 @@ export default function RetailDashboard() {
     if (btn) btn.disabled = true;
     try {
       const data = await generateYearlyReport(year);
-      download(data.docxDownloadUrl || data.htmlDownloadUrl);
-      if (data.htmlViewUrl) window.open(data.htmlViewUrl, '_blank');
+      download(data.docxDownloadUrl);
+      download(data.htmlDownloadUrl);
     } catch (err) {
       alert(err.message || '年度分析报告生成失败');
     } finally {

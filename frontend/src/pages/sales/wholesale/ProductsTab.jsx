@@ -21,6 +21,14 @@ export default function ProductsTab({ data }) {
         <div className="panel-head"><h2>外运油品</h2><span>只统计吨数</span></div>
         <BarList rows={groups.transfer || []} />
       </section>
+      <section className="panel">
+        <div className="panel-head"><h2>采购入库油品</h2><span>只统计吨数</span></div>
+        <BarList rows={groups.procurement || []} />
+      </section>
+      <section className="panel">
+        <div className="panel-head"><h2>代加工油品</h2><span>只统计吨数</span></div>
+        <BarList rows={groups.processing || []} />
+      </section>
     </section>
   );
 }

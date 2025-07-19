@@ -34,7 +34,7 @@ frontend/
 │   │   │   ├── AppLayout.jsx        #   销售/批发/管理布局（Outlet + DataAssistant）
 │   │   │   ├── RetailLayout.jsx     #   零售布局（暗色主题 + Header + Footer）
 │   │   │   └── RetailHeaderContext.jsx  # 零售 Header 动态控件 Context
-│   │   ├── admin/                   #   管理后台 10 个面板组件
+│   │   ├── admin/                   #   管理后台组件（9 个 Tab，批发合同含 4 子面板）
 │   │   ├── wholesale/               #   批发子组件（BarList, RankList）
 │   │   ├── common/                  #   AuthGuard, AdminGuard, LoadingSpinner
 │   │   └── DataAssistant.jsx        #   数据助手（浮动面板）
@@ -54,8 +54,8 @@ frontend/
 │   │   │   └── AlertPage.jsx        #     预警中心
 │   │   └── sales/                   #   销售板块 3 个页面
 │   │       ├── DashboardPage.jsx    #     销售主页
-│   │       ├── WholesalePage.jsx    #     批发统计（7 个 Tab）
-│   │       ├── AdminPage.jsx        #     管理后台（11 个 Tab）
+│   │       ├── WholesalePage.jsx    #     批发统计（8 个 Tab，含称重明细）
+│   │       ├── AdminPage.jsx        #     管理后台（9 个 Tab）
 │   │       └── LoginPage.jsx        #     登录
 │   ├── styles/                      # 样式文件
 │   │   ├── global.css               #   全局样式 + 销售/管理模块
@@ -76,8 +76,8 @@ frontend/
 | ------------------- | ------------ | ------------- | ----------------------------- |
 | `/login`            | 登录页       | 独立           |                               |
 | `/`                 | 销售主页     | AppLayout      | KPI + 汇率 + 市场观察 + 3D 地图 |
-| `/wholesale`        | 批发板块     | AppLayout      | 7 个 Tab                      |
-| `/admin`            | 管理后台     | AppLayout      | 需管理员权限，11 个 Tab        |
+| `/wholesale`        | 批发板块     | AppLayout      | 8 个 Tab（含称重明细）         |
+| `/admin`            | 管理后台     | AppLayout      | 需管理员权限，9 个 Tab         |
 | `/retail`           | 零售总览     | RetailLayout   | 暗色大屏，三栏布局             |
 | `/retail/monthly`   | 月度分析     | RetailLayout   | KPI + 趋势 + 油品 + 洞察      |
 | `/retail/region`    | 区域分析     | RetailLayout   | 区域切换 + 站点排行            |
@@ -193,3 +193,4 @@ powershell -ExecutionPolicy Bypass -File D:\SalesVisualization\deploy-production
 | 0.2.0 | 2026-06    | UI 一致性修复：KPI 修正、表单补齐、站点状态自动判定、运营建议动态化、审核分类完善、statusType 联动 |
 | 0.3.0 | 2026-06-17 | 零售模块手机/平板响应式适配：768px/480px 断点，面板坍缩修复，滚动/溢出处理 |
 | 0.4.0 | 2026-06-17 | 经营助手增强：趋势/同比环比/站点状态/油品占比/KPI 查询，覆盖全项目快照 |
+| 0.5.0 | 2026-07-01 | 批发看板全功能整改：称重明细模板9列+筛选+报表、执行看板排序高亮跳转、自动审核、客户导出、日期筛选；T+1修复 |

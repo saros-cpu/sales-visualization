@@ -4,8 +4,8 @@
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+. "$projectRoot\nginx\config.ps1"
 $frontendDir = Join-Path $projectRoot "frontend"
-$nginxHome = "D:\nginx\nginx-1.26.3"
 $confSource = Join-Path $projectRoot "nginx.conf"
 
 Write-Host "====================================="
@@ -31,8 +31,8 @@ if (-not (Test-Path $confSource)) {
     Write-Host "  ERROR: nginx.conf not found at $confSource"
     exit 1
 }
-Copy-Item $confSource "$nginxHome\conf\nginx.conf" -Force
-Write-Host "  Config deployed: $nginxHome\conf\nginx.conf"
+(Get-Content $confSource -Raw) -replace "__PROJECT_ROOT__", $projectRoot.Replace("\", "/") | Set-Content "$nginxHome\conf\nginx.conf" -Force
+Write-Host "  Config deployed: $nginxHome\conf\nginx.conf (project_root=$projectRoot)"
 
 # Step 3: Test nginx config
 Write-Host "[3/4] Testing nginx configuration ..."

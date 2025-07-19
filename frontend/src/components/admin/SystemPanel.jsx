@@ -44,7 +44,9 @@ export default function SystemPanel({ refreshKey, setStatusText }) {
   };
 
   return (
-    <div className="admin-users-grid">
+    <section className="admin-tab active">
+      <div className="section-title"><h2>系统管理</h2><span>用户与操作日志管理</span></div>
+      <div className="admin-users-grid">
       {/* 新增用户表单 */}
       <section className="panel admin-form-panel">
         <div className="panel-head"><h2>新增用户</h2><span>管理员维护</span></div>
@@ -111,6 +113,7 @@ export default function SystemPanel({ refreshKey, setStatusText }) {
           </table>
         </div>
       </section>
-    </div>
+      </div>
+    </section>
   );
 }

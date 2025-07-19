@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { RETAIL_NAV } from '../../utils/retail-helpers';
 import { RetailHeaderProvider, useRetailHeader } from './RetailHeaderContext';
+import DataAssistant from '../DataAssistant';
 
 function RetailHeaderControls() {
   const { controls } = useRetailHeader();
@@ -94,6 +95,7 @@ function RetailLayoutInner() {
   }, []);
 
   return (
+    <>
     <div className="retail-shell">
       <header className="retail-header">
         <div className="retail-header-left">
@@ -132,6 +134,8 @@ function RetailLayoutInner() {
 
       <Outlet />
     </div>
+      <DataAssistant />
+    </>
   );
 }
 

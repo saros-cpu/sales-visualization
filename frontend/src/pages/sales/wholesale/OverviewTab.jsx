@@ -1,6 +1,13 @@
 // src/pages/sales/wholesale/OverviewTab.jsx — 批发总览
 import { yuan, num, card } from '../../../utils/format';
 
+const ISSUE_LABELS = {
+  contract_unmatched: '合同未匹配',
+  classification_mismatch: '分类不符',
+  missing_price: '缺少价格',
+  missing_exchange_rate: '缺少汇率',
+};
+
 export default function OverviewTab({ data }) {
   if (!data) return null;
 
@@ -8,6 +15,8 @@ export default function OverviewTab({ data }) {
   const localCard = card(data, 'local_wholesale');
   const pendingCard = card(data, 'unknown');
   const transferCard = card(data, 'transfer');
+  const procurementCard = card(data, 'procurement');
+  const processingCard = card(data, 'processing');
 
   // 合同审核
   const status = data.review?.status || {};
@@ -58,6 +67,24 @@ export default function OverviewTab({ data }) {
             <div><dt>记录</dt><dd>{num.format(transferCard.rows || 0)} 条</dd></div>
           </dl>
         </article>
+        <article className="metric-panel processing" style={{borderLeftColor:'#FF9800'}}>
+          <span>采购入库</span>
+          <strong>{num.format(procurementCard.tons || 0)} 吨</strong>
+          <small>外部采购</small>
+          <dl>
+            <div><dt>供应商</dt><dd>{num.format(procurementCard.entities || 0)} 个</dd></div>
+            <div><dt>记录</dt><dd>{num.format(procurementCard.rows || 0)} 条</dd></div>
+          </dl>
+        </article>
+        <article className="metric-panel processing" style={{borderLeftColor:'#9C27B0'}}>
+          <span>代加工</span>
+          <strong>{num.format(processingCard.tons || 0)} 吨</strong>
+          <small>外部加工</small>
+          <dl>
+            <div><dt>客户</dt><dd>{num.format(processingCard.entities || 0)} 个</dd></div>
+            <div><dt>记录</dt><dd>{num.format(processingCard.rows || 0)} 条</dd></div>
+          </dl>
+        </article>
       </section>
 
       <section className="content-grid">
@@ -101,7 +128,7 @@ export default function OverviewTab({ data }) {
           <div className="stack-list review-scroll">
             {issues.length ? issues.map((item, i) => (
               <div key={i} className={`stack-row ${item.severity === 'info' ? '' : 'warning'}`}>
-                <span>{item.type}</span>
+                <span>{ISSUE_LABELS[item.type] || item.type}</span>
                 <strong>{item.date || '未指定日期'}</strong>
                 <small>{item.message}</small>
               </div>

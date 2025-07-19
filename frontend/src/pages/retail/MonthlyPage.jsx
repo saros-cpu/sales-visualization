@@ -25,8 +25,8 @@ export default function MonthlyPage() {
     setReporting(true);
     try {
       const res = await generateMonthlyReport(ym);
-      download(res.docxDownloadUrl || res.htmlDownloadUrl);
-      if (res.htmlViewUrl) window.open(res.htmlViewUrl, '_blank');
+      download(res.docxDownloadUrl);
+      download(res.htmlDownloadUrl);
     } catch (err) {
       alert(err.message || '分析报告生成失败');
     } finally {
@@ -34,9 +34,10 @@ export default function MonthlyPage() {
     }
   }, [ym]);
 
-  // Load months
+  // Load months — 零售数据 T+1 延迟，当前月份 = 昨天的月份
   useEffect(() => {
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const yesterday = new Date(Date.now() - 86400000);
+    const currentMonth = yesterday.toISOString().slice(0, 7);
     getMonths().then(list => {
       setMonths(list);
       if (list.length > 0) {
@@ -65,7 +66,8 @@ export default function MonthlyPage() {
     const seq = renderSeq + 1;
     setRenderSeq(seq);
 
-    const currentYm = new Date().toISOString().slice(0, 7);
+    const yesterday = new Date(Date.now() - 86400000);
+    const currentYm = yesterday.toISOString().slice(0, 7);
     const isCurrentMonth = ym === currentYm;
     getMonthlyData(ym, { refresh: isCurrentMonth })
       .then(d => { setData(d); initCharts(d); })

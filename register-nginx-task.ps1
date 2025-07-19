@@ -4,9 +4,10 @@
 
 $ErrorActionPreference = "Stop"
 
+. "$PSScriptRoot\nginx\config.ps1"
 $taskName = "Nginx-SalesViz"
-$nginxExe = "D:\nginx\nginx-1.26.3\nginx.exe"
-$nginxDir = "D:\nginx\nginx-1.26.3"
+$nginxExe = "$nginxHome\nginx.exe"
+$nginxDir = $nginxHome
 
 Write-Host "=== Register Nginx Auto-Start ==="
 

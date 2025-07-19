@@ -3,11 +3,9 @@
 
 $ErrorActionPreference = "Stop"
 
-$nginxVersion = "1.26.3"
+. "$PSScriptRoot\nginx\config.ps1"
 $nginxUrl = "https://nginx.org/download/nginx-$nginxVersion.zip"
 $downloadPath = "$env:TEMP\nginx-$nginxVersion.zip"
-$installDir = "D:\nginx"
-$nginxHome = "$installDir\nginx-$nginxVersion"
 
 Write-Host "====================================="
 Write-Host " Nginx $nginxVersion Installer"

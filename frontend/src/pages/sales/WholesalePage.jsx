@@ -12,6 +12,7 @@ import TransferTab from './wholesale/TransferTab';
 import TrendTab from './wholesale/TrendTab';
 import ReviewTab from './wholesale/ReviewTab';
 import ExchangeTab from './wholesale/ExchangeTab';
+import WeighDetailTab from './wholesale/WeighDetailTab';
 
 const TABS = [
   { key: 'overview', label: '总览' },
@@ -21,6 +22,7 @@ const TABS = [
   { key: 'trend', label: '每日趋势' },
   { key: 'review', label: '审核' },
   { key: 'exchange', label: '汇率' },
+  { key: 'weigh', label: '称重明细' },
 ];
 
 const sectionTitles = {
@@ -31,6 +33,7 @@ const sectionTitles = {
   trend: '每日批发趋势',
   review: '审核',
   exchange: '汇率',
+  weigh: '称重明细',
 };
 
 export default function WholesalePage() {
@@ -146,6 +149,7 @@ export default function WholesalePage() {
           {activeTab === 'trend' && <TrendTab data={data} />}
           {activeTab === 'review' && <ReviewTab data={data} />}
           {activeTab === 'exchange' && <ExchangeTab data={data} onExport={handleExportExchange} />}
+          {activeTab === 'weigh' && <WeighDetailTab year={year} month={month} />}
         </>
       )}
       </main>

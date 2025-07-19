@@ -52,12 +52,17 @@ export default function ReferencePanel({ products, refresh }) {
     <section className="admin-tab active">
       <div className="section-title"><h2>基础资料</h2><span>油品字典和别名规则</span></div>
       <section className="content-grid reference-grid">
-        <section className="panel">
+        <section className="panel reference-customer-panel">
           <div className="panel-head"><h2>客户资料</h2><span>出口/本地批发客户</span></div>
           <form className="form-grid single-form" onSubmit={handleCustomer}><label>客户名称<input name="name" required /></label><label>客户类型<select name="customerType"><option value="unknown">待识别</option><option value="local_wholesale">本地批发</option><option value="export_wholesale">出口批发</option><option value="mixed">混合</option></select></label><button type="submit">保存客户</button></form>
           <p className="form-status muted">{customerStatus}</p>
         </section>
-        <section className="panel">
+        <section className="panel reference-product-panel">
+          <div className="panel-head"><h2>油品别名</h2><span>用于 Excel 自动识别</span></div>
+          <form className="form-grid single-form" onSubmit={handleProductAlias}><label>标准油品<select name="productCode" required>{productOpts}</select></label><label>新增别名<input name="aliasName" required /></label><button type="submit">保存别名</button></form>
+          <p className="form-status muted">{productAliasStatus}</p>
+        </section>
+        <section className="panel reference-entity-panel">
           <div className="panel-head"><h2>实体别名</h2><span>加油站、油库、客户名称识别</span></div>
           <form className="form-grid single-form" onSubmit={handleAlias}>
             <label>实体类型<select name="entityType" onChange={e => { setCurrentEntityType(e.target.value); setEntityCode(''); if (stdNameRef.current) stdNameRef.current.value = ''; }}><option value="retail_station">加油站</option><option value="own_depot">自营油库</option><option value="wholesale_customer">批发客户</option><option value="unknown">其他</option></select></label>
@@ -69,11 +74,6 @@ export default function ReferencePanel({ products, refresh }) {
             <input name="entityCode" type="hidden" value={entityCode} />
           </form>
           <p className="form-status muted">{aliasStatus}</p>
-        </section>
-        <section className="panel">
-          <div className="panel-head"><h2>油品别名</h2><span>用于 Excel 自动识别</span></div>
-          <form className="form-grid single-form" onSubmit={handleProductAlias}><label>标准油品<select name="productCode" required>{productOpts}</select></label><label>新增别名<input name="aliasName" required /></label><button type="submit">保存别名</button></form>
-          <p className="form-status muted">{productAliasStatus}</p>
         </section>
         <section className="panel panel-wide">
           <div className="panel-head"><h2>客户列表</h2><div className="inline-filter">

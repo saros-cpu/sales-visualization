@@ -68,6 +68,7 @@ export default function HealthPanel() {
           <div className="stack-list">
             <div className="stack-row"><span>报表辅助快照</span><strong>{healthMark(!data.snapshots?.missing?.length)}</strong><small>缺失：{data.snapshots?.missing?.join('、') || '无'}</small></div>
             <div className="stack-row"><span>缓存刷新</span><strong>{healthMark(data.cacheRefresh?.status !== 'failed')}</strong><small>{data.cacheRefresh?.message || '--'}</small></div>
+            <div className="stack-row"><span>最近月度日销表</span><strong>{healthMark(data.snapshots?.reportWorkbook?.exists)}</strong><small>{data.snapshots?.reportWorkbook?.exists ? `${data.snapshots.reportWorkbook.month} · ${data.snapshots.reportWorkbook.lastNonemptyDay || '--'} · ${(data.snapshots.reportWorkbook.size / 1024).toFixed(0)}KB` : '无'}</small></div>
           </div>
         </section>
         <section className="panel">

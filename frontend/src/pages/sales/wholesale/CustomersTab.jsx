@@ -17,6 +17,14 @@ export default function CustomersTab({ data }) {
         <div className="panel-head"><h2>待审核合同客户</h2><span>数量已进入统计</span></div>
         <RankList rows={customers.unknown || []} mode="pending" />
       </section>
+      <section className="panel">
+        <div className="panel-head"><h2>采购供应商排行</h2><span>按吨数排序</span></div>
+        <RankList rows={customers.procurement || []} mode="customer" />
+      </section>
+      <section className="panel">
+        <div className="panel-head"><h2>代加工客户排行</h2><span>按吨数排序</span></div>
+        <RankList rows={customers.processing || []} mode="customer" />
+      </section>
     </section>
   );
 }

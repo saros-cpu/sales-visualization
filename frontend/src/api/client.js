@@ -17,19 +17,21 @@ async function api(path, options = {}) {
     throw new Error('Session expired');
   }
 
+  const ct = res.headers.get('content-type') || '';
+  const isJson = ct.includes('application/json');
+
   if (!res.ok) {
-    let message = '请求失败';
-    try {
-      const data = await res.json();
-      message = data.error || message;
-    } catch {
-      message = await res.text();
+    if (isJson) {
+      const body = await res.json();
+      throw new Error(body.message || body.error || '请求失败');
     }
-    throw new Error(message);
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   }
 
-  const ct = res.headers.get('content-type') || '';
-  if (ct.includes('application/json')) return res.json();
+  if (isJson) {
+    const json = await res.json();
+    return json.data ?? json;
+  }
   return res;
 }
 

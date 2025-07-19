@@ -8,13 +8,11 @@ import OverviewPanel from '../../components/admin/OverviewPanel';
 import AutomationPanel from '../../components/admin/AutomationPanel';
 import MarketPanel from '../../components/admin/MarketPanel';
 import RetailPanel from '../../components/admin/RetailPanel';
-import WholesalePanel from '../../components/admin/WholesalePanel';
-import ContractsPanel from '../../components/admin/ContractsPanel';
-import AuditPanel from '../../components/admin/AuditPanel';
 import FinancePanel from '../../components/admin/FinancePanel';
 import ReferencePanel from '../../components/admin/ReferencePanel';
 import HealthPanel from '../../components/admin/HealthPanel';
 import SystemPanel from '../../components/admin/SystemPanel';
+import WholesaleContractPanel from '../../components/admin/WholesaleContractPanel';
 
 export default function AdminPage() {
   const { logout } = useAuth();
@@ -62,8 +60,7 @@ export default function AdminPage() {
     getStationCatalog().then(d => setStationCount(d?.items?.length ?? '--')).catch(() => {});
     getStationStatuses().then(d => setStatusCount(d?.items?.length ?? '--')).catch(() => {});
     getAdminExchangeRates({ year: new Date().getFullYear() }).then(d => {
-      const gaps = (d.items || []).filter(r => !r.rate || r.rate === 0).length;
-      setExchangeGapCount(gaps);
+      setExchangeGapCount(d.openGaps ?? 0);
     }).catch(() => {});
   }, [refreshKey]);
 
@@ -133,9 +130,7 @@ export default function AdminPage() {
               {activeTab === 'automation' && <AutomationPanel {...panelProps} />}
               {activeTab === 'market' && <MarketPanel {...panelProps} />}
               {activeTab === 'retail' && <RetailPanel {...panelProps} />}
-              {activeTab === 'wholesale' && <WholesalePanel {...panelProps} />}
-              {activeTab === 'contracts' && <ContractsPanel {...panelProps} />}
-              {activeTab === 'audit' && <AuditPanel {...panelProps} />}
+              {activeTab === 'wholesale-contract' && <WholesaleContractPanel {...panelProps} />}
               {activeTab === 'finance' && <FinancePanel {...panelProps} />}
               {activeTab === 'reference' && <ReferencePanel {...panelProps} />}
               {activeTab === 'health' && <HealthPanel {...panelProps} />}

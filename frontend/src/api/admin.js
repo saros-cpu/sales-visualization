@@ -119,6 +119,63 @@ export const saveDensity = (payload) => post('/api/densities', payload);
 // ── 操作日志 ──
 export const getOperationLogs = () => get('/api/admin/operation-logs');
 
+// ── 合同执行看板 ──
+export const getContractExecution = ({ status, lifecycle, customerId, year, month, page, perPage }) => {
+  const q = {};
+  if (status) q.status = status;
+  if (lifecycle) q.lifecycle = lifecycle;
+  if (customerId) q.customerId = customerId;
+  if (year) q.year = year;
+  if (month) q.month = month;
+  if (page) q.page = page;
+  if (perPage) q.perPage = perPage;
+  return get(`/api/admin/contracts/execution?${buildQuery(q)}`);
+};
+
+// ── 称重管理 ──
+export const getWeighEntityMappings = (params) => {
+  const q = {};
+  if (params?.keyword) q.keyword = params.keyword;
+  if (params?.unmapped) q.unmapped = params.unmapped;
+  return get(`/api/admin/weigh/mappings/entities?${buildQuery(q)}`);
+};
+export const saveWeighEntityMapping = (payload) => post('/api/admin/weigh/mappings/entities', payload);
+export const deleteWeighEntityMapping = (id) => fetch(`/api/admin/weigh/mappings/entities/${id}`, { method: 'DELETE', credentials: 'include' }).then(r => r.json());
+
+export const getWeighProductMappings = (params) => {
+  const q = {};
+  if (params?.keyword) q.keyword = params.keyword;
+  if (params?.unmapped) q.unmapped = params.unmapped;
+  return get(`/api/admin/weigh/mappings/products?${buildQuery(q)}`);
+};
+export const saveWeighProductMapping = (payload) => post('/api/admin/weigh/mappings/products', payload);
+export const deleteWeighProductMapping = (id) => fetch(`/api/admin/weigh/mappings/products/${id}`, { method: 'DELETE', credentials: 'include' }).then(r => r.json());
+
+export const getWeighRecords = (params) => {
+  const q = { page: params?.page || 1, size: params?.size || 50 };
+  if (params?.vehicle) q.vehicle = params.vehicle;
+  if (params?.entity) q.entity = params.entity;
+  if (params?.product) q.product = params.product;
+  if (params?.dateFrom) q.dateFrom = params.dateFrom;
+  if (params?.dateTo) q.dateTo = params.dateTo;
+  if (params?.colSender?.length) q.col_sender = params.colSender.join(',');
+  if (params?.colReceiver?.length) q.col_receiver = params.colReceiver.join(',');
+  if (params?.colProduct?.length) q.col_product = params.colProduct.join(',');
+  if (params?.colSource?.length) q.col_source = params.colSource.join(',');
+  return get(`/api/admin/weigh/records?${buildQuery(q)}`);
+};
+
+export const getWeighRecordFilterOptions = () => get('/api/admin/weigh/records/filter-options');
+export const generateWeighDetails = (payload) => post('/api/admin/weigh/generate', payload);
+
+export const getWeighAuditItems = ({ year, month }) => {
+  const q = { year };
+  if (month) q.month = month;
+  return get(`/api/admin/weigh/audit?${buildQuery(q)}`);
+};
+export const applyWeighAudit = (payload) => post('/api/admin/weigh/audit', payload);
+export const autoAuditWeigh = (payload) => post('/api/admin/weigh/auto-audit', payload);
+
 // ── 系统健康 ──
 export const getSystemHealth = () => get('/api/admin/system-health');
 export const refreshCache = () => post('/api/admin/system-health/refresh-cache', {});

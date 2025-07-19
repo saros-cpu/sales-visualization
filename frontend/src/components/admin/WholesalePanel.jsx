@@ -9,6 +9,8 @@ const batchStatusLabel = (v) => ({ created: '已创建', parsed: '已解析', va
 export default function WholesalePanel({ products, customerOptions, refresh }) {
   const [batches, setBatches] = useState([]);
   const [orgStatus, setOrgStatus] = useState('');
+  const [orgResult, setOrgResult] = useState(null);
+  const [orgExpanded, setOrgExpanded] = useState(false);
   const [dedStatus, setDedStatus] = useState('');
   const [uploadStatus, setUploadStatus] = useState('');
   const [detailStatus, setDetailStatus] = useState('');
@@ -24,10 +26,13 @@ export default function WholesalePanel({ products, customerOptions, refresh }) {
 
   const handleOrganize = async () => {
     setOrgStatus('正在整理批发数据...');
+    setOrgResult(null);
     try {
       const d = await organizeWholesale();
       const recalc = d.recalculation || {};
       setOrgStatus(`整理完成：匹配 ${num.format(recalc.matched || 0)} 条，待复核 ${num.format(recalc.unmatched || 0)} 条`);
+      setOrgResult(d);
+      setOrgExpanded(true);
       await loadBatches(); refresh();
     } catch (err) { setOrgStatus(err.message); }
   };
@@ -90,6 +95,56 @@ export default function WholesalePanel({ products, customerOptions, refresh }) {
         <section className="panel panel-wide">
           <div className="panel-head"><h2>一键整理批发数据</h2><div className="inline-filter"><button type="button" onClick={handleOrganize}>开始整理</button><button type="button" onClick={handleDeduplicate}>一键去重</button></div></div>
           <p className="form-status muted">{orgStatus}{dedStatus ? ` | ${dedStatus}` : ''}</p>
+          {orgResult && (
+            <div className="org-details" style={{marginTop:8}}>
+              <button type="button" className="inline-filter" onClick={() => setOrgExpanded(v => !v)}>
+                {orgExpanded ? '收起详情' : '展开详情'}
+              </button>
+              {orgExpanded && (
+                <div style={{marginTop:8}}>
+                  {orgResult.productReconciliation && (
+                    <div style={{marginBottom:12}}>
+                      <strong>油品匹配结果</strong>
+                      <table className="compact-table" style={{width:'100%',marginTop:4,fontSize:'0.9em'}}>
+                        <thead><tr><th>表</th><th>扫描</th><th>识别</th><th>更新</th></tr></thead>
+                        <tbody>
+                          {Object.entries(orgResult.productReconciliation).map(([table, info]) => (
+                            <tr key={table}><td>{table}</td><td>{num.format(info.scanned)}</td><td>{num.format(info.recognized)}</td><td>{num.format(info.updated)}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {orgResult.statusRows && orgResult.statusRows.length > 0 && (
+                    <div style={{marginBottom:12}}>
+                      <strong>匹配状态分布</strong>
+                      <table className="compact-table" style={{width:'100%',marginTop:4,fontSize:'0.9em'}}>
+                        <thead><tr><th>匹配状态</th><th>分类</th><th>行数</th><th>吨数</th></tr></thead>
+                        <tbody>
+                          {orgResult.statusRows.map((r, i) => (
+                            <tr key={i}><td>{r.matchStatus}</td><td>{r.classification}</td><td>{num.format(r.rows)}</td><td>{num.format(r.tons)}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {orgResult.issueRows && orgResult.issueRows.length > 0 && (
+                    <div>
+                      <strong>数据问题分类</strong>
+                      <table className="compact-table" style={{width:'100%',marginTop:4,fontSize:'0.9em'}}>
+                        <thead><tr><th>问题类型</th><th>行数</th></tr></thead>
+                        <tbody>
+                          {orgResult.issueRows.map((r, i) => (
+                            <tr key={i}><td>{r.issueType}</td><td>{num.format(r.rows)}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </section>
         <section className="panel panel-wide">
           <div className="panel-head"><h2>数据上传</h2><span>自动识别批发明细或合同登记 Excel</span></div>
@@ -111,7 +166,7 @@ export default function WholesalePanel({ products, customerOptions, refresh }) {
               <p className="muted">录入单条批发明细，保存后自动识别油品、客户/去向并参与当前统计。</p>
               <form className="form-grid manual-entry-form" onSubmit={handleDetail}>
                 <label>日期<input name="businessDate" type="date" required /></label>
-                <label>分类<select name="classification"><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">加工</option><option value="unknown">待识别</option></select></label>
+                <label>分类<select name="classification"><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">加工</option><option value="procurement">采购</option><option value="unknown">待识别</option></select></label>
                 <label>油品<select name="productCode"><option value="">自动识别</option>{productOpts}</select></label>
                 <label>客户 / 去向<input name="entityName" list="wsCustomerOpts" required /></label>
                 <label>重量 KG<input name="weightKg" type="number" step="0.001" required /></label>
