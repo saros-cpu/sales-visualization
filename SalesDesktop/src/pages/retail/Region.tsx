@@ -41,7 +41,7 @@ export default function Region() {
     }
   }, [regionKeys]);
 
-  const regionData = activeRegion && data?.regions ? data.regions[activeRegion] : null;
+  const regionData = activeRegion && data?.regions ? data.regions[ZH_REGION_KEY[activeRegion] ?? activeRegion] : null;
   const regionStations = regionData
     ? stations.filter((s: any) => s.region === activeRegion).sort((a: any, b: any) => b.amount - a.amount)
     : [];

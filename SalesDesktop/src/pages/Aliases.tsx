@@ -30,7 +30,7 @@ export default function Aliases() {
       ]);
       setProductList(pList);
       setEntityList(eList);
-      const opts = (pOpts.data.data || []).map((p: any) => ({ value: p.id, label: p.displayName }));
+      const opts = (pOpts.data || []).map((p: any) => ({ value: p.id, label: p.displayName }));
       opts.sort((a: any, b: any) => a.label.localeCompare(b.label));
       setProductOpts(opts);
     } catch (e: any) {

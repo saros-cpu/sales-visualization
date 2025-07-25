@@ -14,4 +14,7 @@ contextBridge.exposeInMainWorld('updater', {
 contextBridge.exposeInMainWorld('electronAPI', {
   downloadFile: (url, filename, token) => ipcRenderer.invoke('download-file', { url, filename, token }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  minimize: () => ipcRenderer.send('window-minimize'),
+  maximize: () => ipcRenderer.send('window-maximize'),
+  close: () => ipcRenderer.send('window-close'),
 });

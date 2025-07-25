@@ -17,15 +17,15 @@ export default function Resource() {
   const year = parseInt(ym.split('-')[0]);
   const month = ym.includes('-') ? parseInt(ym.split('-')[1]) : undefined;
 
-  const resQ = useApiQuery(['retail', 'resources', ym], () => getResourcesYearly(year, month));
+  const resQ = useApiQuery(['retail', 'resources', `${year}${month ? '-' + String(month).padStart(2, '0') : ''}`], () => getResourcesYearly(year, month));
   const data = resQ.data;
 
   const columns = [
     { title: t('retail.product'), dataIndex: 'name', key: 'name', render: (v: string) => product(v) },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', render: (v: number) => Math.round(v).toLocaleString() },
     { title: t('retail.amount'), dataIndex: 'amount', key: 'amount', render: (v: number) => `${Math.round(v / 10000)}${t('common.wan')}` },
-    { title: t('common.yoy'), dataIndex: 'yoyAmount', key: 'yoyAmount', render: (v: number) => v != null ? `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%` : '-' },
-    { title: t('common.mom'), dataIndex: 'momAmount', key: 'momAmount', render: (v: number) => v != null ? `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%` : '-' },
+    { title: t('common.yoy'), dataIndex: 'yoySales', key: 'yoySales', render: (v: number) => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}%` : '-' },
+    { title: t('common.mom'), dataIndex: 'momSales', key: 'momSales', render: (v: number) => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}%` : '-' },
   ];
 
   return (
@@ -63,8 +63,8 @@ export default function Resource() {
                 yAxis: { type: 'category', data: (data?.resources ?? []).map((r: any) => product(r.name)).reverse(), axisLabel: { fontSize: 11 } },
                 legend: { data: [t('common.yoy'), t('common.mom')], bottom: 0 },
                 series: [
-                  { name: t('common.yoy'), type: 'bar', data: (data?.resources ?? []).map((r: any) => (r.yoyAmount ?? 0) * 100).reverse() },
-                  { name: t('common.mom'), type: 'bar', data: (data?.resources ?? []).map((r: any) => (r.momAmount ?? 0) * 100).reverse() },
+                  { name: t('common.yoy'), type: 'bar', data: (data?.resources ?? []).map((r: any) => r.yoySales ?? 0).reverse() },
+                  { name: t('common.mom'), type: 'bar', data: (data?.resources ?? []).map((r: any) => r.momSales ?? 0).reverse() },
                 ],
               }}
           />

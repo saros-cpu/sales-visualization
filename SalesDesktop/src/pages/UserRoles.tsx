@@ -64,8 +64,8 @@ export default function UserRoles() {
         client.get('/users/permissions/modules'),
         client.get('/users/permissions'),
       ]);
-      setModules(modRes.data.data || []);
-      setPermissions(permRes.data.data || []);
+      setModules(modRes.data || []);
+      setPermissions(permRes.data || []);
     } catch (e: any) {
       setError(e.message);
     } finally {

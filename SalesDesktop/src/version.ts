@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.1.1';
+export const VERSION = '3.1.3';
 export const BUILD_DATE = '2026-07-11';
 
 export interface ChangelogEntry {
@@ -15,11 +15,37 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.1.3',
+    date: '2026-07-11',
+    type: 'patch',
+    changes: [
+      '客户端：无边框窗口 + 自定义标题栏（Electron frame: false + 拖拽区 + 窗口控制按钮）',
+      '客户端：修复批发查询页面无数据（res.data.items → res.items）',
+      '客户端：修复零售区域页面无数据（ZH_REGION_KEY 反向映射）',
+      '客户端：修复站点同区域对比图（从 stations 筛选同区域）',
+      '客户端：修复站点刷卡比例（从 summary.cardSales/amount 计算）',
+      '客户端：修复油品排行无数据（yoyAmount/momAmount → yoySales/momSales）',
+      '客户端：去除外层容器嵌套，统一视口高度（AppLayout/Content 布局优化）',
+      '客户端：添加 CSS 重置消除 body margin/padding',
+    ],
+  },
+  {
+    version: '3.1.2',
+    date: '2026-07-11',
+    type: 'patch',
+    changes: [
+      '回滚 3.1.1：恢复 HttpClient auto-unwrap 拦截器（后端统一返回 {code,data} 格式）',
+      '修复：别名/权限页崩溃（S.map is not a function）—— 残余 res.data.data 改为 res.data',
+      '修复：AuthContext /auth/me 与 /auth/login 解包错误',
+      '部署：nginx 新增 /download/ 静态路由，自动更新可正常拉取安装包',
+    ],
+  },
+  {
     version: '3.1.1',
     date: '2026-07-11',
     type: 'patch',
     changes: [
-      '修复：HttpClient 响应解包导致登录崩溃（res.data.data 双重解包），移除 auto-unwrap 拦截器',
+      '误删 auto-unwrap 拦截器导致全站 API 解包错误，已由 3.1.2 回滚',
     ],
   },
   {

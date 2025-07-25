@@ -34,6 +34,14 @@ export default function Station() {
   }, [stations, shopKey]);
   const detail = detailQ.data;
 
+  const regionStations = useMemo(() => {
+    if (!detail) return [];
+    const rgn = (detail as any).region;
+    return stations
+      .filter((s: any) => s.region === rgn && s.status !== 'closed')
+      .sort((a: any, b: any) => b.amount - a.amount);
+  }, [stations, detail]);
+
   const options = useMemo(() => {
     const groups: Record<string, any[]> = {};
     for (const s of stations) {
@@ -68,8 +76,8 @@ export default function Station() {
             </Col>
           </Row>
           <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round((detail.summary.totalSales ?? 0) / 10000)} suffix={t('common.wan')} /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(detail.summary.totalLiters ?? 0)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(((detail.summary as any).amount ?? detail.summary.totalSales ?? 0) / 10000)} suffix={t('common.wan')} /></Card></Col>
+            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round((detail.summary as any).volume ?? detail.summary.totalLiters ?? 0)} suffix="L" /></Card></Col>
             <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>
             <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters ?? 0)} suffix="L" /></Card></Col>
           </Row>
@@ -145,8 +153,9 @@ export default function Station() {
                   yAxis: { type: 'value', max: 100, name: CHART_AXIS.percent },
                   series: [{
                     type: 'line', data: (detail.daily ?? []).map((d: any) => {
-                      const total = (d.cashSales ?? 0) + (d.cardSales ?? 0);
-                      return total > 0 ? Math.round(((d.cardSales ?? 0) / total) * 100) : 0;
+                      const amount = (detail.summary as any).amount || 0;
+                      const cardSales = (detail.summary as any).cardSales || 0;
+                      return amount > 0 ? Math.round((cardSales / amount) * 100) : 0;
                     }),
                     areaStyle: { opacity: 0.3 },
                   }],
@@ -159,8 +168,8 @@ export default function Station() {
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 120, right: 20 },
                   xAxis: { type: 'value' },
-                  yAxis: { type: 'category', data: [], axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: [] }],
+                  yAxis: { type: 'category', data: regionStations.map((s: any) => s.name).reverse(), axisLabel: { fontSize: 11 } },
+                  series: [{ type: 'bar', data: regionStations.map((s: any) => s.amount).reverse() }],
                 }}
               />
             </Col>

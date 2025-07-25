@@ -23,8 +23,8 @@ export default function Query() {
         date_to: dates[1].format('YYYY-MM-DD'),
         page, page_size: 50,
       });
-      setData(res.data.items);
-      setTotal(res.data.total);
+      setData(res.items);
+      setTotal(res.total);
     } finally { setLoading(false); }
   }, [dates, page]);
 

@@ -357,7 +357,7 @@ def spa_catchall(path):
 
 @app.route("/api/download/<filename>")
 def download_desktop(filename: str):
-    allowed = {"SalesDesktop Setup 3.0.9.exe", "SalesDesktop Setup 3.0.9.exe.blockmap", "latest.yml"}
+    allowed = {"SalesDesktop Setup 3.1.1.exe", "SalesDesktop Setup 3.1.1.exe.blockmap", "latest.yml"}
     if filename not in allowed:
         return jsonify({"error": "not_found"}), 404
     filepath = PROJECT_ROOT.parent / "SalesDesktop" / filename

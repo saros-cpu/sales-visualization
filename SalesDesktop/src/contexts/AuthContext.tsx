@@ -24,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem('accessToken');
     if (!token) { setLoading(false); return; }
     client.get('/auth/me').then((res) => {
-      setUser(res.data.data);
+      setUser(res.data);
     }).catch(() => {
       localStorage.removeItem('accessToken');
     }).finally(() => setLoading(false));
@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const res = await client.post('/auth/login', { username, password });
-    const { accessToken, user: userData } = res.data.data;
+    const { accessToken, user: userData } = res.data;
     localStorage.setItem('accessToken', accessToken);
     setUser(userData);
   };

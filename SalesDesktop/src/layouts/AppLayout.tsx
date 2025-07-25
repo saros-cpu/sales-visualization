@@ -100,15 +100,36 @@ export default function AppLayout() {
           />
         </div>
       </Sider>
-      <Layout style={{ marginLeft: siderWidth, height: '100vh', overflow: 'hidden' }}>
-        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16, height: 64, lineHeight: '64px' }}>
-          <Button icon={<GlobalOutlined />} onClick={() => switchLang(i18n.language === 'zh' ? 'ru' : 'zh')}>
-            {i18n.language === 'ru' ? '中文' : 'Русский'}
-          </Button>
-          <Text>{user?.username}</Text>
-          <Button icon={<LogoutOutlined />} onClick={logout}>{t('nav.logout')}</Button>
+      <Layout style={{ marginLeft: siderWidth, height: '100%' }}>
+        <Header style={{ 
+          background: '#fff', 
+          padding: 0, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between', 
+          height: 36, 
+          lineHeight: '36px',
+          borderBottom: '1px solid #f0f0f0'
+        }}>
+          <div style={{ flex: 1, height: '100%', WebkitAppRegion: 'drag', display: 'flex', alignItems: 'center', padding: '0 16px' }}>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>销售管理系统</span>
+          </div>
+          <div style={{ WebkitAppRegion: 'no-drag', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Button icon={<GlobalOutlined />} size="small" onClick={() => switchLang(i18n.language === 'zh' ? 'ru' : 'zh')}>
+              {i18n.language === 'ru' ? '中文' : 'Русский'}
+            </Button>
+            <Text style={{ fontSize: 14 }}>{user?.username}</Text>
+            <Button icon={<LogoutOutlined />} size="small" onClick={logout}>
+              {t('nav.logout')}
+            </Button>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button style={{ width: 12, height: 12, border: 'none', borderRadius: '50%', background: '#ff5f57', cursor: 'pointer', WebkitAppRegion: 'no-drag' }} onClick={() => window.electronAPI?.close()} title="关闭" />
+              <button style={{ width: 12, height: 12, border: 'none', borderRadius: '50%', background: '#febc2e', cursor: 'pointer', WebkitAppRegion: 'no-drag' }} onClick={() => window.electronAPI?.minimize()} title="最小化" />
+              <button style={{ width: 12, height: 12, border: 'none', borderRadius: '50%', background: '#28c840', cursor: 'pointer', WebkitAppRegion: 'no-drag' }} onClick={() => window.electronAPI?.maximize()} title="最大化/还原" />
+            </div>
+          </div>
         </Header>
-        <Content style={{ padding: 24, overflow: 'auto' }}>
+        <Content style={{ padding: 24 }}>
           <Outlet />
         </Content>
       </Layout>

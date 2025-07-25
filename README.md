@@ -6,6 +6,17 @@
 
 ## 版本更新记录
 
+### 2026-07-11 (v3.1.3)
+
+- 客户端：无边框窗口 + 自定义标题栏（Electron frame: false + 拖拽区 + 窗口控制按钮）
+- 客户端：修复批发查询页面无数据（res.data.items → res.items）
+- 客户端：修复零售区域页面无数据（ZH_REGION_KEY 反向映射）
+- 客户端：修复站点同区域对比图（从 stations 筛选同区域）
+- 客户端：修复站点刷卡比例（从 summary.cardSales/amount 计算）
+- 客户端：修复油品排行无数据（yoyAmount/momAmount → yoySales/momSales）
+- 客户端：去除外层容器嵌套，统一视口高度（AppLayout/Content 布局优化）
+- 客户端：添加 CSS 重置消除 body margin/padding
+
 ### 2026-07-11 (v3.1.0)
 
 - 基础设施：Typer CLI + Loguru + pydantic-settings 替代原生 logging + argparse

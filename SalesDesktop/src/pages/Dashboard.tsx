@@ -55,7 +55,7 @@ export default function Dashboard() {
       getCurrentExchange(),
       client.get('/dashboard/market-watch'),
     ]).then(([overview, kpiRes, results, rateRes, mwRes]) => {
-      setData(overview.data.data);
+      setData(overview.data);
       const ks = kpiRes.summary || kpiRes.data?.summary || {};
       setKpi({
         totalSales: ks.totalSales || 0,
@@ -76,7 +76,7 @@ export default function Dashboard() {
       });
       setTrend(monthlyTrend);
       setRate(rateRes);
-      setMarketWatch(mwRes.data.data);
+      setMarketWatch(mwRes.data);
     }).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, [year]);
 

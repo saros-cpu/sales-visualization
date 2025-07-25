@@ -1,7 +1,7 @@
 ﻿appId: com.sales.desktop
 productName: SalesDesktop
 directories:
-  output: release_v21
+  output: release_build
 files:
   - dist/**/*
   - electron/**/*
