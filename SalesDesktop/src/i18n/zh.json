@@ -223,7 +223,7 @@
   },
   "retail": {
     "overview": "总览", "region": "区域", "station": "站点", "monthly": "月度",
-    "resource": "油品", "report": "报表", "alert": "预警",
+    "resource": "油品", "report": "报表", "alert": "预警", "selfUse": "自用油",
     "year": "年份", "month": "月份", "totalSales": "累计销售额", "totalLiters": "累计销量",
     "amount": "金额", "volume": "销量",
     "activeShops": "活跃站点", "inventory": "期末库存", "generateReport": "生成分析报告",
@@ -250,8 +250,16 @@
     "resourceRank": "油品销售排行", "payMethod": "支付方式",
     "stationAnalysis": "站点分析", "stationList": "站点列表",
     "resourceMix": "油品结构", "productAnalysis": "油品分析",
-    "volumeProportion": "销量占比", "productDetail": "油品明细", "product": "油品",
-    "bestDay": "最高日", "worstDay": "最低日", "halfCompare": "下半月环比"
+    "volumeProportion": "销量占比",     "productDetail": "油品明细", "product": "油品", "plateNumber": "车牌号", "searchPlate": "搜索车牌号...",
+    "bestDay": "最高日", "worstDay": "最低日", "halfCompare": "下半月环比",
+    "payTrend": "支付方式趋势",
+    "insightTopStation": "{{name}}（{{short}}）单站销售额 {{amount}}，位居全网第 1 名。",
+    "insightTopRegion": "{{region}} 销售金额 {{amount}}，占全网 {{pct}}，持续领跑。",
+    "insightCardPct": "全网刷卡支付占比 {{card}}，现金支付占 {{cash}}。",
+    "insightInactive": "共 {{count}} 站本月无销售：{{names}}。",
+    "insightDailyAvg": "日均销量 {{volume}}，日均销售额 {{amount}}。",
+    "insightMom": "环比上月（{{month}}）：销售额 {{sales}}，销量 {{volume}}。",
+    "insightYoy": "同比去年（{{month}}）：销售额 {{sales}}，销量 {{volume}}。"
   },
   "wholesale": {
     "overview": "总览", "products": "油品统计", "customers": "客户排行", "transfer": "外运详情",

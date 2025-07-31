@@ -60,6 +60,68 @@ def register_analytics_routes(app):
     app.register_blueprint(analytics_api)
 
 
+@analytics_api.route('/api/retail/self-use/<year_month>')
+def api_retail_self_use(year_month):
+    parts = year_month.split('-')
+    if len(parts) != 2 or len(parts[0]) != 4 or len(parts[1]) != 2:
+        return jsonify({'error': 'invalid year_month format, expected YYYY-MM'}), 400
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        y, m = int(year_month.split('-')[0]), int(year_month.split('-')[1])
+        ym_start = f'{year_month}-01'
+        if m == 12:
+            ym_end = f'{y + 1}-01-01'
+        else:
+            ym_end = f'{y}-{m + 1:02d}-01'
+
+        cur.execute("""
+            SELECT s.TransactionKey, s.ShopKey, s.ResourceKey, s.Volume, s.ShopCost,
+                   DATE(s.TransactionDatetime) as trx_date,
+                   CONVERT(p.Name USING utf8mb4) as plate_number
+            FROM selling s
+            LEFT JOIN person p ON s.PersonKey = p.PersonKey
+            WHERE s.DerivedPaymentTypeKey = 2
+              AND s.TransactionDatetime >= %s AND s.TransactionDatetime < %s
+            ORDER BY s.TransactionDatetime DESC
+        """, (ym_start, ym_end))
+
+        records = []
+        total_volume = 0.0
+        total_amount = 0.0
+        for r in cur.fetchall():
+            sk = int(r[1]) if r[1] else 0
+            rk = int(r[2]) if r[2] else 0
+            vol = float(r[3] or 0)
+            amt = float(r[4] or 0)
+            total_volume += vol
+            total_amount += amt
+            info = SHOP_KEY_MAP.get(sk, {'name': f'Station-{sk}', 'short': '', 'region': ''})
+            records.append({
+                'transactionKey': int(r[0]),
+                'date': str(r[5]) if r[5] else '',
+                'shopKey': sk,
+                'stationName': info['name'],
+                'resourceKey': rk,
+                'productName': RESOURCE_NAMES.get(rk, f'Other-{rk}'),
+                'volume': round(vol, 3),
+                'amount': round(amt, 2),
+                'plateNumber': r[6] if r[6] else '',
+            })
+
+        return jsonify({
+            'month': year_month,
+            'records': records,
+            'summary': {
+                'totalVolume': round(total_volume, 2),
+                'totalAmount': round(total_amount, 2),
+                'totalRecords': len(records),
+            },
+        })
+    finally:
+        conn.close()
+
+
 @analytics_api.route('/api/dashboard/yearly')
 def api_dashboard_yearly():
     """Dashboard yearly cumulative data for map, rankings, regions, oil mix, and payment charts."""
@@ -976,7 +1038,9 @@ def api_station_monthly(year_month, shop_key):
             SELECT
                 {business_day} as day,
                 {report_volume_expr("s")} as total_liters,
-                {report_amount_expr("s")} as total_sales
+                {report_amount_expr("s")} as total_sales,
+                {report_cash_amount_expr("s")} as cash_sales,
+                {report_card_amount_expr("s")} as card_sales
             FROM selling s
             {shift_join("s", "sh")}
             WHERE s.ShopKey = %s
@@ -985,7 +1049,13 @@ def api_station_monthly(year_month, shop_key):
             GROUP BY day
             ORDER BY day
         """, (shop_key, *business_period_params(ym_start, ym_end)))
-        daily = [{'date': str(r2[0]), 'volume': round(float(r2[1] or 0), 2), 'amount': round(float(r2[2] or 0), 2)} for r2 in cur.fetchall()]
+        daily = [{
+            'date': str(r2[0]),
+            'volume': round(float(r2[1] or 0), 2),
+            'amount': round(float(r2[2] or 0), 2),
+            'cashSales': round(float(r2[3] or 0), 2),
+            'cardSales': round(float(r2[4] or 0), 2),
+        } for r2 in cur.fetchall()]
 
         resource_key = resource_key_expr("s")
         total_volume = report_volume_expr("s")

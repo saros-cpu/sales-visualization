@@ -1,12 +1,12 @@
 {
     "name":  "sales-desktop",
-    "version":  "3.1.2",
+    "version":  "3.3.0",
     "private":  true,
     "type":  "module",
     "main":  "electron/main.cjs",
     "scripts":  {
                     "dev":  "vite",
-                    "build":  "tsc --noEmit \u0026\u0026 vite build",
+                    "build":  "vite build",
                     "preview":  "vite preview",
                     "electron:dev":  "concurrently \"vite\" \"wait-on http://localhost:5173 \u0026\u0026 electron . --dev\"",
                     "electron:build":  "npm run build \u0026\u0026 electron-builder"

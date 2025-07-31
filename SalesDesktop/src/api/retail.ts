@@ -17,6 +17,7 @@ interface ResourceData {
 
 interface DailyData {
   date: string; volume: number; amount: number;
+  cashSales?: number; cardSales?: number;
 }
 
 interface MonthlySummary {
@@ -141,4 +142,31 @@ export async function getStationStatuses() {
 export async function exportMonthlyExcel(ym: string) {
   const res = await api.get(`/export/monthly/${ym}`);
   return res.data;
+}
+
+export interface SelfUseRecord {
+  transactionKey: number;
+  date: string;
+  shopKey: number;
+  stationName: string;
+  resourceKey: number;
+  productName: string;
+  volume: number;
+  amount: number;
+  plateNumber: string;
+}
+
+export interface SelfUseData {
+  month: string;
+  records: SelfUseRecord[];
+  summary: {
+    totalVolume: number;
+    totalAmount: number;
+    totalRecords: number;
+  };
+}
+
+export async function getSelfUse(yearMonth: string) {
+  const res = await api.get(`/retail/self-use/${yearMonth}`);
+  return res.data as SelfUseData;
 }

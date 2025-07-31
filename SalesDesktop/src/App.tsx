@@ -17,6 +17,7 @@ const RetailMonthly = lazy(() => import('@/pages/retail/Monthly'));
 const RetailResource = lazy(() => import('@/pages/retail/Resource'));
 const RetailReport = lazy(() => import('@/pages/retail/Report'));
 const RetailAlert = lazy(() => import('@/pages/retail/Alert'));
+const RetailSelfUse = lazy(() => import('@/pages/retail/SelfUse'));
 const WholesaleLayout = lazy(() => import('@/layouts/WholesaleLayout'));
 const WholesaleOverview = lazy(() => import('@/pages/wholesale/Overview'));
 const WholesaleProducts = lazy(() => import('@/pages/wholesale/Products'));
@@ -57,6 +58,7 @@ function AppRoutes() {
           <Route path="resource" element={<ErrorBoundary><Suspense fallback={loading}><RetailResource /></Suspense></ErrorBoundary>} />
           <Route path="report" element={<ErrorBoundary><Suspense fallback={loading}><RetailReport /></Suspense></ErrorBoundary>} />
           <Route path="alert" element={<ErrorBoundary><Suspense fallback={loading}><RetailAlert /></Suspense></ErrorBoundary>} />
+          <Route path="self-use" element={<ErrorBoundary><Suspense fallback={loading}><RetailSelfUse /></Suspense></ErrorBoundary>} />
         </Route>
         <Route path="wholesale" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleLayout /></Suspense></ErrorBoundary>}>
           <Route index element={<Navigate to="/wholesale/overview" replace />} />

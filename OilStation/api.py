@@ -273,6 +273,8 @@ if __name__ == '__main__':
     logger.info("    GET /api/stations/YYYY-MM        - All stations for map/rank")
     logger.info("    GET /api/regions/YYYY-MM         - Regional summary")
     logger.info("    GET /api/station/YYYY-MM/ShopKey - Station detail")
+    logger.info("    GET /api/retail/self-use/YYYY-MM - Self-use oil details with plate numbers")
+    logger.info("    GET /api/export/self-use/YYYY-MM - Export self-use oil to Excel")
     logger.info("=" * 50)
     start_background_warmup()
     app.run(host=SERVER_HOST, port=SERVER_PORT, debug=False)

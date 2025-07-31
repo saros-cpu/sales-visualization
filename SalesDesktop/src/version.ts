@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.1.3';
-export const BUILD_DATE = '2026-07-11';
+export const VERSION = '3.3.0';
+export const BUILD_DATE = '2026-07-13';
 
 export interface ChangelogEntry {
   version: string;
@@ -14,6 +14,55 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.3.0',
+    date: '2026-07-13',
+    type: 'minor',
+    changes: [
+      '新增：零售菜单新增"自用油"子页面，展示自用油每日交易明细（含车牌号），支持车牌号搜索与 Excel 导出',
+    ],
+  },
+  {
+    version: '3.2.0',
+    date: '2026-07-13',
+    type: 'minor',
+    changes: [
+      '新增：批量编辑功能（Excel 表格样式，支持键盘快捷键、实时保存、批量提交）',
+      '新增：通用 ExcelTable 组件（支持虚拟滚动、动态行高、批量操作）',
+      '优化：所有数据录入页面改为批量编辑模式（TrainEntry/Procurement/Materials/Aliases/Contracts）',
+      '新增：键盘快捷键（Enter 新增、Delete 删除、Esc 退出、Ctrl+S 保存）',
+      '新增：实时保存（防抖1秒，每个单元格修改后立即保存）',
+      '新增：批量提交（防抖3秒，用户修改后自动提交所有修改）',
+      '新增：虚拟滚动（数据量 > 50 行时启用，动态行高）',
+      '优化：权限控制（仅管理员可删除数据）',
+    ],
+  },
+  {
+    version: '3.1.5',
+    date: '2026-07-13',
+    type: 'patch',
+    changes: [
+      '客户端：区域页新增"当月日销趋势"图（按区域内站点每日销量/金额聚合，柱线双轴）',
+      '客户端：站点页刷卡比例改为每日真实占比（后端返回每日现金/刷卡，缺失时按月度比例兜底）',
+      '客户端：月度洞察改为 7 条句式关键洞察（对齐 Web 版），并修复环比/同比计算（calc_change 已是百分比值）',
+      '客户端：油品分析新增 normalizeResources 归一（109→106 别名、固定油品顺序、剔除"其他"、同环比取均值），对比图改为纵向柱状（%轴）',
+      '客户端：批发查询/称重列表补全分类标签与颜色（本地/出口批发、外运、代加工、采购、外运、加工等），收货/发货单位为空显示占位符 --',
+      '后端：站点每日查询新增 cashSales/cardSales 列（report_cash/card_amount_expr），供客户端刷卡比例趋势使用',
+    ],
+  },
+  {
+    version: '3.1.4',
+    date: '2026-07-12',
+    type: 'patch',
+    changes: [
+      '客户端：新增独立窗口标题栏（Windows 风格最小化/最大化/关闭），去除重复的语言切换与退出登录',
+      '客户端：内容区头部只保留语言切换 + 退出登录，移除红/黄/绿圆形窗口按钮',
+      '客户端：删除零售/批发布局重复的顶部栏',
+      '客户端：内容区改为可滚动容器（Content overflow:auto），支持鼠标上下滑动',
+      '客户端：登录页添加窗口标题栏（无边框窗口可移动/关闭）',
+      '客户端：修复称重审核无数据（res.data.items → res.items）',
+    ],
+  },
   {
     version: '3.1.3',
     date: '2026-07-11',

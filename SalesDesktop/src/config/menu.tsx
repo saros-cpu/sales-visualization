@@ -25,6 +25,7 @@ export const menuConfig: MenuItem[] = [
       { key: '/retail/resource', labelKey: 'retail.resource' },
       { key: '/retail/report', labelKey: 'retail.report' },
       { key: '/retail/alert', labelKey: 'retail.alert' },
+      { key: '/retail/self-use', labelKey: 'retail.selfUse' },
     ],
   },
   {
