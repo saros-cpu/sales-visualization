@@ -11,6 +11,9 @@ for (const [en, zh] of Object.entries(REGION_KEY_ZH)) {
   ZH_REGION_KEY[zh] = en;
 }
 
+// 英文 key → 中文（用于 Region.tsx 根据 activeRegion 英文 key 查 API 数据）
+const EN_REGION_KEY: Record<string, string> = { ...REGION_KEY_ZH };
+
 const REGION_ZH_RU: Record<string, string> = {
   'REG-03': 'CTY-18 область', 'REG-01': 'CTY-01',
   'CTY-20': 'CTY-14 область', 'REG-05': 'CTY-16 область',
@@ -33,7 +36,7 @@ const PRODUCT_ZH_RU: Record<string, string> = {
   '催柴': 'ДТ',
 };
 
-export { ZH_REGION_KEY };
+export { ZH_REGION_KEY, EN_REGION_KEY };
 export function useNameI18n() {
   const { i18n } = useTranslation();
   const isRu = i18n.language === 'ru';

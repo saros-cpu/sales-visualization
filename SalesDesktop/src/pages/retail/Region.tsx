@@ -5,7 +5,7 @@ import { useApiQuery } from '@/hooks/useApi';
 import { getRegions, getStations, getDaily } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
-import { useNameI18n, ZH_REGION_KEY } from '@/utils/i18nNames';
+import { useNameI18n, EN_REGION_KEY } from '@/utils/i18nNames';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 const REGION_ORDER = ['CTY-31', 'chu', 'CTY-30', 'CTY-29', 'CTY-33', 'CTY-35'];
@@ -22,6 +22,7 @@ export default function Region() {
 
   const regQ = useApiQuery(['retail', 'regions', ym], () => getRegions(ym));
   const staQ = useApiQuery(['retail', 'stations', ym], () => getStations(ym));
+  const dailyQ = useApiQuery(['retail', 'daily', ym], () => getDaily(ym));
 
   const data = regQ.data;
   const stations = (staQ.data as any)?.stations ?? [];
@@ -41,10 +42,29 @@ export default function Region() {
     }
   }, [regionKeys]);
 
-  const regionData = activeRegion && data?.regions ? data.regions[ZH_REGION_KEY[activeRegion] ?? activeRegion] : null;
+  const regionData = activeRegion && data?.regions ? data.regions[EN_REGION_KEY[activeRegion] ?? activeRegion] : null;
   const regionStations = regionData
     ? stations.filter((s: any) => s.region === activeRegion).sort((a: any, b: any) => b.amount - a.amount)
     : [];
+
+  // 当月日销趋势：按区域内站点聚合每日 volume/amount
+  const regionDaily = useMemo(() => {
+    const dd = dailyQ.data as any;
+    if (!dd?.daily || !activeRegion) return [];
+    const shopKeys = stations.filter((s: any) => s.region === activeRegion).map((s: any) => String(s.shopKey));
+    const dayMap: Record<string, { date: string; volume: number; amount: number }> = {};
+    for (const d of dd.daily) dayMap[d.date] = { date: d.date, volume: 0, amount: 0 };
+    for (const sk of shopKeys) {
+      const sDaily = dd.stations?.[sk] ?? [];
+      for (const d of sDaily) {
+        if (dayMap[d.date]) {
+          dayMap[d.date].volume += d.volume || 0;
+          dayMap[d.date].amount += d.amount || 0;
+        }
+      }
+    }
+    return Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
+  }, [dailyQ.data, activeRegion, stations]);
 
   return (
     <div>
@@ -62,6 +82,34 @@ export default function Region() {
             <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(regionData.volume)} suffix="L" /></Card></Col>
             <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
             <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>
+          </Row>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={24}>
+              <ChartCard title={t('retail.dailyTrend')} loading={dailyQ.isLoading}
+                option={{
+                  color: CHART_PALETTE,
+                  tooltip: { trigger: 'axis', formatter: (p: any) => {
+                    const list = Array.isArray(p) ? p : [p];
+                    let html = `<b>${list[0]?.axisValue || ''}</b>`;
+                    list.forEach((item: any) => {
+                      const val = item.seriesName === t('retail.volume') ? item.value.toLocaleString() + 'L' : item.value + t('common.wan');
+                      html += `<br/>${item.marker} ${item.seriesName}: ${val}`;
+                    });
+                    return html;
+                  } },
+                  legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
+                  xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: regionDaily.map((d) => d.date.slice(5)) },
+                  yAxis: [
+                    { type: 'value', name: 'L' },
+                    { type: 'value', name: t('common.wan') },
+                  ],
+                  series: [
+                    { name: t('retail.volume'), type: 'bar', data: regionDaily.map((d) => Math.round(d.volume)) },
+                    { name: t('retail.amount'), type: 'line', yAxisIndex: 1, data: regionDaily.map((d) => Math.round(d.amount / 10000)) },
+                  ],
+                }}
+              />
+            </Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} lg={12}>

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Table, Card, Tabs, Tag, Space, Spin, Alert, Button, Modal, Form, Select, Input, message, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Card, Tabs, Tag, Space, Spin, Alert, Button, Popconfirm, message } from 'antd';
+import { PlusOutlined, DeleteOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import client, { getProductAliasesList, getEntityAliasesList, createProductAlias, deleteProductAlias, createEntityAlias, deleteEntityAlias } from '@/api/client';
+import ExcelTable from '@/components/common/ExcelTable';
 
 export default function Aliases() {
   const { t } = useTranslation();
@@ -16,8 +17,10 @@ export default function Aliases() {
   ]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [addModal, setAddModal] = useState<'product' | 'entity' | null>(null);
-  const [form] = Form.useForm();
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState<Record<number, any>>({});
+  const tempIdCounter = useRef(0);
+  const [saving, setSaving] = useState(false);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -42,110 +45,103 @@ export default function Aliases() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  const handleAdd = async () => {
-    const vals = await form.validateFields();
-    const type = addModal;
+  const handleBatchSave = async (changes: Array<{ id: number; data: any }>) => {
+    setSaving(true);
     try {
-      if (type === 'product') {
-        await createProductAlias(vals.productId, vals.aliasName);
-      } else {
-        await createEntityAlias(vals.entityType, '', vals.standardName, vals.aliasName);
+      for (const change of changes) {
+        if (change.id > 0) {
+          if (change.data._type === 'product') {
+            await deleteProductAlias(change.id);
+          } else {
+            await deleteEntityAlias(change.id);
+          }
+        } else {
+          if (change.data._type === 'product') {
+            await createProductAlias(change.data.productId, change.data.aliasName);
+          } else {
+            await createEntityAlias(change.data.entityType, '', change.data.standardName, change.data.aliasName);
+          }
+        }
       }
-      message.success(t('common.save'));
-      setAddModal(null);
-      form.resetFields();
+      message.success('保存成功');
+      setEditing(false);
       fetchAll();
-    } catch (e: any) {
-      message.error(e.response?.data?.message || t('common.error'));
+    } catch {
+      message.error('保存失败');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDelete = async (type: 'product' | 'entity', id: number) => {
-    try {
-      if (type === 'product') await deleteProductAlias(id);
-      else await deleteEntityAlias(id);
-      message.success(t('common.delete'));
-      fetchAll();
-    } catch {
-      message.error(t('common.error'));
+  const handleRealTimeSave = async (id: number, field: string, value: any) => {
+    setEditData(prev => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value }
+    }));
+
+    if (id > 0) {
+      if (field === 'displayName') {
+        await deleteProductAlias(id);
+      } else if (field === 'aliasName') {
+        const record = productList.find(p => p.id === id);
+        if (record) {
+          await createProductAlias(id, value);
+        }
+      }
     }
   };
+
+  const addNewRow = useCallback(() => {
+    const tempId = --tempIdCounter.current;
+    const blankRow: any = {
+      id: tempId,
+      _type: 'product',
+      productId: undefined,
+      displayName: '',
+      aliasName: '',
+      entityType: 'retail_station',
+      standardName: '',
+    };
+
+    setEditData(prev => ({ ...prev, [tempId]: blankRow }));
+  }, [tempIdCounter]);
+
+  const columns = [
+    { title: t('common.product'), dataIndex: 'displayName', key: 'displayName', width: 200, editable: true },
+    { title: t('aliases.aliasName'), dataIndex: 'aliasName', key: 'aliasName', width: 200, editable: true },
+  ];
 
   if (loading) return <Spin style={{ display: 'block', margin: '100px auto' }} />;
   if (error) return <Alert type="error" message={t('common.error')} description={error} showIcon />;
 
-  const actionCol = {
-    title: t('common.action'), key: 'action', width: 80,
-    render: (_: unknown, record: any) => (
-      <Popconfirm title={t('common.confirm')} onConfirm={() => handleDelete(record._type, record.id)}>
-        <Button type="link" danger size="small" icon={<DeleteOutlined />} />
-      </Popconfirm>
-    ),
-  };
-
-  const productColumns = [
-    { title: t('common.product'), dataIndex: 'displayName', key: 'displayName', width: 200 },
-    { title: t('aliases.aliasName'), dataIndex: 'aliasName', key: 'aliasName' },
-    actionCol,
-  ];
-
-  const entityColumns = [
-    { title: t('common.name'), dataIndex: 'standardName', key: 'standardName', width: 200 },
-    { title: t('common.type'), dataIndex: 'entityType', key: 'entityType', width: 150, render: (v: string) => {
-      const labels: Record<string, string> = { retail_station: t('aliases.retailStation'), own_depot: t('aliases.ownDepot'), wholesale_customer: t('aliases.wholesaleCustomer') };
-      return labels[v] || v;
-    }},
-    { title: t('aliases.aliasName'), dataIndex: 'aliasName', key: 'aliasName' },
-    actionCol,
-  ];
-
   return (
-    <Card title={t('nav.aliases')} extra={<Space>
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => { setAddModal('product'); form.resetFields(); }}>
-        {t('aliases.addProductAlias')}
-      </Button>
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => { setAddModal('entity'); form.resetFields(); }}>
-        {t('aliases.addEntityAlias')}
-      </Button>
-    </Space>}>
-      <Tabs items={[
-        { key: 'products', label: t('aliases.productAliases'), children: (
-          <Table dataSource={productList.map((r) => ({ ...r, _type: 'product' }))} columns={productColumns} rowKey="id" pagination={false} size="small" />
-        )},
-        { key: 'entities', label: t('aliases.entityAliases'), children: (
-          <Table dataSource={entityList.map((r) => ({ ...r, _type: 'entity' }))} columns={entityColumns} rowKey="id" pagination={false} size="small" />
-        )},
-      ]} />
-
-      <Modal title={addModal === 'product' ? t('aliases.addProductAlias') : t('aliases.addEntityAlias')} open={!!addModal} onOk={handleAdd} onCancel={() => setAddModal(null)}
-        okText={t('common.save')} cancelText={t('common.cancel')}>
-        <Form form={form} layout="vertical">
-          {addModal === 'product' ? (
-            <>
-              <Form.Item name="productId" label={t('common.product')} rules={[{ required: true }]}>
-                <Select showSearch placeholder={t('common.select')} options={productOpts} filterOption={(input, option) =>
-                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                } />
-              </Form.Item>
-              <Form.Item name="aliasName" label={t('aliases.aliasName')} rules={[{ required: true }]}>
-                <Input placeholder={t('common.input')} />
-              </Form.Item>
-            </>
-          ) : (
-            <>
-              <Form.Item name="entityType" label={t('common.type')} rules={[{ required: true }]}>
-                <Select placeholder={t('common.select')} options={entityTypeOpts} />
-              </Form.Item>
-              <Form.Item name="standardName" label={t('common.name')} rules={[{ required: true }]}>
-                <Input placeholder={t('common.input')} />
-              </Form.Item>
-              <Form.Item name="aliasName" label={t('aliases.aliasName')} rules={[{ required: true }]}>
-                <Input placeholder={t('common.input')} />
-              </Form.Item>
-            </>
-          )}
-        </Form>
-      </Modal>
-    </Card>
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button icon={<PlusOutlined />} type="primary" onClick={addNewRow} disabled={editing}>
+          {editing ? t('common.add') : t('common.edit')}
+        </Button>
+        {editing && (
+          <>
+            <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
+              {t('common.save')}
+            </Button>
+            <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
+              {t('common.cancel')}
+            </Button>
+          </>
+        )}
+      </Space>
+      <ExcelTable
+        dataSource={productList}
+        columns={columns}
+        editing={editing}
+        setEditing={setEditing}
+        isAdmin={false}
+        onBatchSave={handleBatchSave}
+        onRealTimeSave={handleRealTimeSave}
+        rowHeight={40}
+        height={600}
+      />
+    </div>
   );
 }

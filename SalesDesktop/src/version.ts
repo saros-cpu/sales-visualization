@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.3.0';
+export const VERSION = '3.3.1';
 export const BUILD_DATE = '2026-07-13';
 
 export interface ChangelogEntry {
@@ -14,6 +14,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.3.1',
+    date: '2026-07-13',
+    type: 'patch',
+    changes: [
+      '修复：批量编辑页面加载报错（RangePicker/tempIdCounter/setData递归/缺失导入等8处运行时崩溃）',
+      '修复：零售区域页面无数据（EN_REGION_KEY 查表方向错误）',
+      '修复：自用油页面无数据（Sales/api.py RETAIL_API_PREFIXES 缺少 retail，导致 proxy 404）',
+      '修复：自用油站名显示空白（station(r) 收到 record 而非 {name,short}）',
+    ],
+  },
   {
     version: '3.3.0',
     date: '2026-07-13',

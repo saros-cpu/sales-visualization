@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Card, Table, DatePicker, Button, Space, Tag } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { Card, Space, DatePicker, Button, message } from 'antd';
+import { SearchOutlined, ReloadOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { getProcurementDetails, ProcurementItem } from '@/api/procurement';
+import ExcelTable from '@/components/common/ExcelTable';
 
 const { RangePicker } = DatePicker;
 
@@ -12,8 +13,9 @@ export default function Procurement() {
   const [data, setData] = useState<ProcurementItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
   const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('month'), dayjs()]);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -21,37 +23,92 @@ export default function Procurement() {
       const res = await getProcurementDetails({
         date_from: dates[0].format('YYYY-MM-DD'),
         date_to: dates[1].format('YYYY-MM-DD'),
-        page, page_size: 50,
+        page: 1, page_size: 1000,
       });
       setData(res.data.items);
       setTotal(res.data.total);
     } finally { setLoading(false); }
-  }, [dates, page]);
+  }, [dates]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const handleBatchSave = async (changes: Array<{ id: number; data: Partial<ProcurementItem> }>) => {
+    setSaving(true);
+    try {
+      for (const change of changes) {
+        await updateProcurementDetails(change.id, change.data);
+      }
+      message.success('保存成功');
+      setEditing(false);
+      fetchData();
+    } catch {
+      message.error('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRealTimeSave = async (id: number, field: string, value: any) => {
+    setData(prev => prev.map(r =>
+      r.id === id ? { ...r, [field]: value } : r
+    ));
+
+    await updateProcurementDetails(id, { [field]: value });
+  };
+
+  const updateProcurementDetails = async (id: number, data: Partial<ProcurementItem>) => {
+    // 这里需要调用后端 API
+    // await client.put(`/procurement/${id}`, data);
+    console.log('Updating procurement:', id, data);
+  };
+
   const columns = [
-    { title: t('common.date'), dataIndex: 'businessDate', key: 'businessDate', ellipsis: true },
-    { title: t('retail.product'), dataIndex: 'productName', key: 'productName', ellipsis: true, render: (v: string) => t(`product.${v}`, { defaultValue: v }) },
-    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', ellipsis: true },
-    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 80, render: (v: number) => v != null ? `${Math.round(v * 1000).toLocaleString()} kg` : '-' },
-    { title: t('common.source'), dataIndex: 'weighSource', key: 'weighSource', ellipsis: true },
-    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', ellipsis: true },
+    { title: t('common.date'), dataIndex: 'businessDate', key: 'businessDate', width: 140, editable: true },
+    { title: t('retail.product'), dataIndex: 'productName', key: 'productName', width: 110, editable: true },
+    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: 140, editable: true },
+    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 110, editable: true },
+    { title: t('common.source'), dataIndex: 'weighSource', key: 'weighSource', width: 120, editable: true },
+    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', width: 150, editable: true },
   ];
 
   return (
     <Card
       title={t('nav.procurement')}
       extra={
-        <Space>
+        <Space wrap>
           <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
           <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => { fetchData(); }}>{t('common.reset')}</Button>
+          <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(true)} disabled={editing}>
+            {t('common.edit')}
+          </Button>
+          <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} disabled={!editing}>
+            {t('common.add')}
+          </Button>
+          {editing && (
+            <>
+              <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
+                {t('common.save')}
+              </Button>
+              <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
+                {t('common.cancel')}
+              </Button>
+            </>
+          )}
         </Space>
       }
     >
-      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small"
-        pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
-        scroll={{ x: 900 }} />
+      <ExcelTable
+        dataSource={data}
+        columns={columns}
+        editing={editing}
+        setEditing={setEditing}
+        isAdmin={false}
+        onBatchSave={handleBatchSave}
+        onRealTimeSave={handleRealTimeSave}
+        rowHeight={40}
+        height={600}
+      />
     </Card>
   );
 }

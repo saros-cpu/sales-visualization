@@ -112,6 +112,7 @@ RETAIL_API_PREFIXES = (
     "stations",
     "daily",
     "regions",
+    "retail",
     "export",
     "integration",
     "assistant",
