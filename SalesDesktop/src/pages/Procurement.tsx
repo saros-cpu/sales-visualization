@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Card, Space, DatePicker, Button, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { SearchOutlined, ReloadOutlined, PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { getProcurementDetails, ProcurementItem } from '@/api/procurement';
-import ExcelTable from '@/components/common/ExcelTable';
+import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
 
 const { RangePicker } = DatePicker;
 
@@ -16,6 +16,7 @@ export default function Procurement() {
   const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('month'), dayjs()]);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -79,15 +80,12 @@ export default function Procurement() {
           <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
           <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
           <Button icon={<ReloadOutlined />} onClick={() => { fetchData(); }}>{t('common.reset')}</Button>
-          <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(true)} disabled={editing}>
-            {t('common.edit')}
-          </Button>
-          <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} disabled={!editing}>
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
             {t('common.add')}
           </Button>
           {editing && (
             <>
-              <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
+              <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
                 {t('common.save')}
               </Button>
               <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
@@ -95,10 +93,16 @@ export default function Procurement() {
               </Button>
             </>
           )}
+          {!editing && (
+            <Button onClick={() => setEditing(true)}>
+              {t('common.edit')}
+            </Button>
+          )}
         </Space>
       }
     >
       <ExcelTable
+        ref={tableRef}
         dataSource={data}
         columns={columns}
         editing={editing}

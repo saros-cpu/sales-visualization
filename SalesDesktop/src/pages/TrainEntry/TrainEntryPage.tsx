@@ -1,12 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Card, Space, DatePicker, Button, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, UploadOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { SearchOutlined, ReloadOutlined, UploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import { getTrainEntryList, createTrainEntry, updateTrainEntry, deleteTrainEntry, batchCreateTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
 import { getProductOptions, getEntityOptions } from '@/api/client';
-import ExcelTable from '@/components/common/ExcelTable';
+import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
 
 const { RangePicker } = DatePicker;
 
@@ -23,6 +23,7 @@ export default function TrainEntryPage() {
   const [uploadRecords, setUploadRecords] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -157,15 +158,12 @@ export default function TrainEntryPage() {
           </Button>
           <input id="train-upload-input" type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
             onChange={(e) => e.target.files?.[0] && handleUploadFile(e.target.files[0])} />
-          <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(true)} disabled={editing}>
-            {t('common.edit')}
-          </Button>
-          <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} disabled={!editing}>
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
             {t('common.add')}
           </Button>
           {editing && (
             <>
-              <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
+              <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
                 {t('common.save')}
               </Button>
               <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
@@ -173,10 +171,16 @@ export default function TrainEntryPage() {
               </Button>
             </>
           )}
+          {!editing && (
+            <Button onClick={() => setEditing(true)}>
+              {t('common.edit')}
+            </Button>
+          )}
         </Space>
       }
     >
       <ExcelTable
+        ref={tableRef}
         dataSource={data}
         columns={columns}
         editing={editing}

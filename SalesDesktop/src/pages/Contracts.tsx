@@ -1,19 +1,18 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Card, Button, Space, message } from 'antd';
+import { Button, Space, message } from 'antd';
 import { PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { getContracts, createContract, updateContract, Contract } from '@/api/contracts';
-import ExcelTable from '@/components/common/ExcelTable';
+import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
 
 export default function Contracts() {
   const { t } = useTranslation();
   const [data, setData] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState<Record<number, any>>({});
-  const tempIdCounter = useRef(0);
   const [saving, setSaving] = useState(false);
+  const tableRef = useRef<ExcelTableHandle>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -44,11 +43,6 @@ export default function Contracts() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
-    setEditData(prev => ({
-      ...prev,
-      [id]: { ...prev[id], [field]: value }
-    }));
-
     setData(prev => prev.map(r =>
       r.id === id ? { ...r, [field]: value } : r
     ));
@@ -58,22 +52,15 @@ export default function Contracts() {
     }
   };
 
-  const addNewRow = useCallback(() => {
-    const tempId = --tempIdCounter.current;
-    const blankRow: any = {
-      id: tempId,
-      contractNo: '',
-      customerName: '',
-      productName: '',
+  const handleAddNew = useCallback((row: any) => {
+    const newRow: Contract = {
+      ...row,
       signedDate: dayjs().format('YYYY-MM-DD'),
       effectiveStart: dayjs().format('YYYY-MM-DD'),
       effectiveEnd: dayjs().add(1, 'year').format('YYYY-MM-DD'),
-      quantityTons: 0,
-      executedTons: 0,
-    };
-
-    setEditData(prev => ({ ...prev, [tempId]: blankRow }));
-  }, [tempIdCounter]);
+    } as Contract;
+    setData(prev => [...prev, newRow]);
+  }, []);
 
   const columns = [
     { title: t('common.contractNo'), dataIndex: 'contractNo', key: 'contractNo', width: 150, editable: true },
@@ -87,27 +74,30 @@ export default function Contracts() {
   ];
 
   return (
-    <Card
-      title={t('nav.contracts')}
-      extra={
-        <Space>
-          <Button icon={<PlusOutlined />} type="primary" onClick={addNewRow} disabled={editing}>
-            {editing ? t('common.add') : t('common.edit')}
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, flex: 1 }}>{t('nav.contracts')}</h2>
+        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+          {t('common.add')}
+        </Button>
+        {editing && (
+          <>
+            <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
+              {t('common.save')}
+            </Button>
+            <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
+              {t('common.cancel')}
+            </Button>
+          </>
+        )}
+        {!editing && (
+          <Button onClick={() => setEditing(true)}>
+            {t('common.edit')}
           </Button>
-          {editing && (
-            <>
-              <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
-                {t('common.save')}
-              </Button>
-              <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
-                {t('common.cancel')}
-              </Button>
-            </>
-          )}
-        </Space>
-      }
-    >
+        )}
+      </Space>
       <ExcelTable
+        ref={tableRef}
         dataSource={data}
         columns={columns}
         editing={editing}
@@ -115,9 +105,10 @@ export default function Contracts() {
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
+        onAddNew={handleAddNew}
         rowHeight={40}
         height={600}
       />
-    </Card>
+    </div>
   );
 }

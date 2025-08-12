@@ -5,7 +5,7 @@ import { useApiQuery } from '@/hooks/useApi';
 import { getRegions, getStations, getDaily } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
-import { useNameI18n, EN_REGION_KEY } from '@/utils/i18nNames';
+import { useNameI18n, EN_REGION_KEY, ZH_REGION_KEY } from '@/utils/i18nNames';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 const REGION_ORDER = ['CTY-31', 'chu', 'CTY-30', 'CTY-29', 'CTY-33', 'CTY-35'];

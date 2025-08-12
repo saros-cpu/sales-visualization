@@ -1,7 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Table, Button, Space, message, Popconfirm, Input, InputNumber } from 'antd';
-import { PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
-import { useAuth } from '@/contexts/AuthContext';
+import React, { useState, useCallback, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import { Table, message, Input, InputNumber } from 'antd';
+
+export interface ExcelTableHandle {
+  saveAllChanges: () => Promise<void>;
+  addNewRow: () => void;
+}
 
 interface ColumnDefinition<T> {
   title: string;
@@ -20,31 +23,30 @@ interface ExcelTableProps<T extends { id: number }> {
   isAdmin: boolean;
   onBatchSave: (changes: Array<{ id: number; data: Partial<T> }>) => Promise<void>;
   onRealTimeSave?: (id: number, field: string, value: any) => Promise<void>;
+  onAddNew?: (row: T) => void;
   rowHeight?: number;
   height?: number;
   onKeyDown?: (e: KeyboardEvent) => void;
 }
 
-export default function ExcelTable<T extends { id: number }>({
-  dataSource,
-  columns,
-  editing,
-  setEditing,
-  isAdmin,
-  onBatchSave,
-  onRealTimeSave,
-  rowHeight = 40,
-  height = 600,
-  onKeyDown,
-}: ExcelTableProps<T>) {
-  const { user } = useAuth();
+const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps<T>, ref: React.Ref<ExcelTableHandle>) => {
+  const {
+    dataSource,
+    columns,
+    editing,
+    setEditing,
+    isAdmin,
+    onBatchSave,
+    onRealTimeSave,
+    onAddNew,
+    rowHeight = 40,
+    height = 600,
+    onKeyDown,
+  } = props;
   const [editData, setEditData] = useState<Record<number, any>>({});
-  const tempIdCounter = useRef(0);
   const [saving, setSaving] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
-
-  const tableRef = useRef<any>(null);
 
   const [cellSaveStatus, setCellSaveStatus] = useState<Record<string, 'saving' | 'saved' | 'error'>>({});
   const [batchSaveStatus, setBatchSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -55,7 +57,7 @@ export default function ExcelTable<T extends { id: number }>({
 
       if (e.key === 'Enter') {
         e.preventDefault();
-        addNewRow();
+        handleAddNew();
       }
 
       if (e.key === 'Delete' && isAdmin && selectedRowKeys.length > 0) {
@@ -91,28 +93,15 @@ export default function ExcelTable<T extends { id: number }>({
   const visibleDataSource = dataSource.slice(visibleRange.start, visibleRange.end);
   const tableHeight = dataSource.length * rowHeight;
 
-  const addNewRow = useCallback(() => {
-    const tempId = --tempIdCounter.current;
+  const handleAddNew = useCallback(() => {
     const blankRow: any = {};
     columns.forEach(col => {
       if (col.editable) {
         blankRow[col.dataIndex] = '';
       }
     });
-
-    const newRow: T = {
-      id: tempId,
-      ...blankRow
-    } as T;
-
-    setEditData(prev => ({ ...prev, [tempId]: newRow }));
-    setTimeout(() => {
-      const rows = document.querySelectorAll('.ant-table-row');
-      if (rows[-tempId]) {
-        rows[-tempId].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 100);
-  }, [columns]);
+    onAddNew?.(blankRow as T);
+  }, [columns, onAddNew]);
 
   const updateCell = (id: number, field: string, value: any) => {
     setEditData(prev => ({
@@ -141,8 +130,9 @@ export default function ExcelTable<T extends { id: number }>({
     try {
       setEditData(prev => {
         const newEditData = { ...prev };
-        selectedRowKeys.forEach(key => {
-          delete newEditData[key];
+        selectedRowKeys.forEach(k => {
+          const id = Number(k);
+          if (!isNaN(id)) delete newEditData[id];
         });
         return newEditData;
       });
@@ -193,6 +183,16 @@ export default function ExcelTable<T extends { id: number }>({
     }
   };
 
+  const saveAllChangesRef = useRef(saveAllChanges);
+  saveAllChangesRef.current = saveAllChanges;
+  const handleAddNewRef = useRef(handleAddNew);
+  handleAddNewRef.current = handleAddNew;
+
+  useImperativeHandle(ref, () => ({
+    saveAllChanges: () => saveAllChangesRef.current(),
+    addNewRow: () => handleAddNewRef.current(),
+  }), []);
+
   const renderCell = (id: number, field: string, value: any) => {
     if (!editing) return value || '-';
 
@@ -223,7 +223,7 @@ export default function ExcelTable<T extends { id: number }>({
     ...col,
     render: (value: any, record: T, index: number) => {
       if (col.editable) {
-        return renderCell(record.id, col.dataIndex as string, value, record);
+        return renderCell(record.id, col.dataIndex as string, value);
       }
       if (col.render) {
         return col.render(value, record, index);
@@ -234,37 +234,6 @@ export default function ExcelTable<T extends { id: number }>({
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button
-          icon={<PlusOutlined />}
-          type="primary"
-          onClick={addNewRow}
-        >
-          新增
-        </Button>
-        {editing && (
-          <>
-            <Button icon={<SaveOutlined />} type="primary" onClick={saveAllChanges} loading={saving || batchSaveStatus === 'saving'}>
-              保存
-            </Button>
-            <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
-              取消
-            </Button>
-            {isAdmin && selectedRowKeys.length > 0 && (
-              <Popconfirm title="确认删除" onConfirm={deleteSelectedRows}>
-                <Button
-                  danger
-                  icon={<DeleteOutlined />}
-                  loading={saving}
-                >
-                  删除 ({selectedRowKeys.length})
-                </Button>
-              </Popconfirm>
-            )}
-          </>
-        )}
-      </Space>
-
       <div
         style={{
           height: `${height}px`,
@@ -307,4 +276,5 @@ export default function ExcelTable<T extends { id: number }>({
       )}
     </div>
   );
-}
+});
+export default ExcelTable;

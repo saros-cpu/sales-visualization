@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.3.1';
+export const VERSION = '3.3.2';
 export const BUILD_DATE = '2026-07-13';
 
 export interface ChangelogEntry {
@@ -14,6 +14,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.3.2',
+    date: '2026-07-13',
+    type: 'patch',
+    changes: [
+      '修复：区域页加载报错（ZH_REGION_KEY 未导入导致 ReferenceError）',
+      '修复：批量录入页按钮重复 + 新增不可用 + 保存不生效（ExcelTable 重构：移除内置按钮，暴露 ref handle，新增 onAddNew 回调）',
+      '修复：合同管理页容器嵌套过深（移除 Card 包裹，改为 div 布局）',
+      '重构：ExcelTable 改用 forwardRef + useImperativeHandle 暴露 saveAllChanges/addNewRow',
+    ],
+  },
   {
     version: '3.3.1',
     date: '2026-07-13',

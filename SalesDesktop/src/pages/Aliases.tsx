@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Card, Tabs, Tag, Space, Spin, Alert, Button, Popconfirm, message } from 'antd';
-import { PlusOutlined, DeleteOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { Card, Tabs, Tag, Space, Spin, Alert, Button, message } from 'antd';
+import { PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import client, { getProductAliasesList, getEntityAliasesList, createProductAlias, deleteProductAlias, createEntityAlias, deleteEntityAlias } from '@/api/client';
-import ExcelTable from '@/components/common/ExcelTable';
+import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
 
 export default function Aliases() {
   const { t } = useTranslation();
@@ -18,9 +18,8 @@ export default function Aliases() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState<Record<number, any>>({});
-  const tempIdCounter = useRef(0);
   const [saving, setSaving] = useState(false);
+  const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -74,11 +73,6 @@ export default function Aliases() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
-    setEditData(prev => ({
-      ...prev,
-      [id]: { ...prev[id], [field]: value }
-    }));
-
     if (id > 0) {
       if (field === 'displayName') {
         await deleteProductAlias(id);
@@ -91,20 +85,16 @@ export default function Aliases() {
     }
   };
 
-  const addNewRow = useCallback(() => {
-    const tempId = --tempIdCounter.current;
-    const blankRow: any = {
-      id: tempId,
+  const handleAddNew = useCallback((row: any) => {
+    const newRow = {
+      ...row,
       _type: 'product',
       productId: undefined,
-      displayName: '',
-      aliasName: '',
       entityType: 'retail_station',
       standardName: '',
     };
-
-    setEditData(prev => ({ ...prev, [tempId]: blankRow }));
-  }, [tempIdCounter]);
+    setProductList(prev => [...prev, newRow]);
+  }, []);
 
   const columns = [
     { title: t('common.product'), dataIndex: 'displayName', key: 'displayName', width: 200, editable: true },
@@ -117,12 +107,12 @@ export default function Aliases() {
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={addNewRow} disabled={editing}>
-          {editing ? t('common.add') : t('common.edit')}
+        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+          {t('common.add')}
         </Button>
         {editing && (
           <>
-            <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
+            <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
               {t('common.save')}
             </Button>
             <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
@@ -130,8 +120,14 @@ export default function Aliases() {
             </Button>
           </>
         )}
+        {!editing && (
+          <Button onClick={() => setEditing(true)}>
+            {t('common.edit')}
+          </Button>
+        )}
       </Space>
       <ExcelTable
+        ref={tableRef}
         dataSource={productList}
         columns={columns}
         editing={editing}
@@ -139,6 +135,7 @@ export default function Aliases() {
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
+        onAddNew={handleAddNew}
         rowHeight={40}
         height={600}
       />

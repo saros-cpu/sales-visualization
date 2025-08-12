@@ -9,7 +9,7 @@ import {
   getTransferOrders, createTransferOrder, updateOrderStatus, TransferOrder,
   getInventory, InventoryItem,
 } from '@/api/materials';
-import ExcelTable from '@/components/common/ExcelTable';
+import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
 
 function MaterialDictTab() {
   const { t } = useTranslation();
@@ -17,9 +17,8 @@ function MaterialDictTab() {
   const [cats, setCats] = useState<MaterialCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState<Record<number, any>>({});
-  const tempIdCounter = useRef(0);
   const [saving, setSaving] = useState(false);
+  const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -52,11 +51,6 @@ function MaterialDictTab() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
-    setEditData(prev => ({
-      ...prev,
-      [id]: { ...prev[id], [field]: value }
-    }));
-
     setData(prev => prev.map(r =>
       r.id === id ? { ...r, [field]: value } : r
     ));
@@ -70,22 +64,9 @@ function MaterialDictTab() {
     await client.put(`/materials/${id}`, data);
   };
 
-  const addNewRow = useCallback(() => {
-    const tempId = --tempIdCounter.current;
-    const blankRow: any = {};
-    columns.forEach(col => {
-      if (col.editable) {
-        blankRow[col.dataIndex] = '';
-      }
-    });
-
-    const newRow: Material = {
-      id: tempId,
-      ...blankRow
-    } as Material;
-
-    setEditData(prev => ({ ...prev, [tempId]: newRow }));
-  }, [columns, tempIdCounter]);
+  const handleAddNew = useCallback((row: any) => {
+    setData(prev => [...prev, row as Material]);
+  }, []);
 
   const columns = [
     { title: t('common.code'), dataIndex: 'material_code', key: 'material_code', width: 100, editable: true },
@@ -101,12 +82,12 @@ function MaterialDictTab() {
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={addNewRow} disabled={editing}>
-          {editing ? t('common.add') : t('common.edit')}
+        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+          {t('common.add')}
         </Button>
         {editing && (
           <>
-            <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
+            <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
               {t('common.save')}
             </Button>
             <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
@@ -114,8 +95,14 @@ function MaterialDictTab() {
             </Button>
           </>
         )}
+        {!editing && (
+          <Button onClick={() => setEditing(true)}>
+            {t('common.edit')}
+          </Button>
+        )}
       </Space>
       <ExcelTable
+        ref={tableRef}
         dataSource={data}
         columns={columns}
         editing={editing}
@@ -123,6 +110,7 @@ function MaterialDictTab() {
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
+        onAddNew={handleAddNew}
         rowHeight={40}
         height={600}
       />
@@ -136,9 +124,8 @@ function InboundTab() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState<Record<number, any>>({});
-  const tempIdCounter = useRef(0);
   const [saving, setSaving] = useState(false);
+  const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -171,11 +158,6 @@ function InboundTab() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
-    setEditData(prev => ({
-      ...prev,
-      [id]: { ...prev[id], [field]: value }
-    }));
-
     setData(prev => prev.map(r =>
       r.id === id ? { ...r, [field]: value } : r
     ));
@@ -189,22 +171,9 @@ function InboundTab() {
     await client.put(`/materials/inbound/${id}`, data);
   };
 
-  const addNewRow = useCallback(() => {
-    const tempId = --tempIdCounter.current;
-    const blankRow: any = {};
-    columns.forEach(col => {
-      if (col.editable) {
-        blankRow[col.dataIndex] = '';
-      }
-    });
-
-    const newRow: InboundRecord = {
-      id: tempId,
-      ...blankRow
-    } as InboundRecord;
-
-    setEditData(prev => ({ ...prev, [tempId]: newRow }));
-  }, [columns, tempIdCounter]);
+  const handleAddNew = useCallback((row: any) => {
+    setData(prev => [...prev, row as InboundRecord]);
+  }, []);
 
   const columns = [
     { title: t('common.date'), dataIndex: 'inbound_date', key: 'inbound_date', width: 100, editable: true },
@@ -221,12 +190,12 @@ function InboundTab() {
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={addNewRow} disabled={editing}>
-          {editing ? t('common.add') : t('common.edit')}
+        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+          {t('common.add')}
         </Button>
         {editing && (
           <>
-            <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
+            <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
               {t('common.save')}
             </Button>
             <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
@@ -234,8 +203,14 @@ function InboundTab() {
             </Button>
           </>
         )}
+        {!editing && (
+          <Button onClick={() => setEditing(true)}>
+            {t('common.edit')}
+          </Button>
+        )}
       </Space>
       <ExcelTable
+        ref={tableRef}
         dataSource={data}
         columns={columns}
         editing={editing}
@@ -243,6 +218,7 @@ function InboundTab() {
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
+        onAddNew={handleAddNew}
         rowHeight={40}
         height={600}
       />
@@ -256,9 +232,8 @@ function TransferOrdersTab() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState<Record<number, any>>({});
-  const tempIdCounter = useRef(0);
   const [saving, setSaving] = useState(false);
+  const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -291,11 +266,6 @@ function TransferOrdersTab() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
-    setEditData(prev => ({
-      ...prev,
-      [id]: { ...prev[id], [field]: value }
-    }));
-
     setData(prev => prev.map(r =>
       r.id === id ? { ...r, [field]: value } : r
     ));
@@ -309,22 +279,9 @@ function TransferOrdersTab() {
     await client.put(`/materials/orders/${id}`, data);
   };
 
-  const addNewRow = useCallback(() => {
-    const tempId = --tempIdCounter.current;
-    const blankRow: any = {};
-    columns.forEach(col => {
-      if (col.editable) {
-        blankRow[col.dataIndex] = '';
-      }
-    });
-
-    const newRow: TransferOrder = {
-      id: tempId,
-      ...blankRow
-    } as TransferOrder;
-
-    setEditData(prev => ({ ...prev, [tempId]: newRow }));
-  }, [columns, tempIdCounter]);
+  const handleAddNew = useCallback((row: any) => {
+    setData(prev => [...prev, row as TransferOrder]);
+  }, []);
 
   const columns = [
     { title: t('common.orderNo'), dataIndex: 'order_no', key: 'order_no', width: 130, editable: true },
@@ -341,12 +298,12 @@ function TransferOrdersTab() {
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={addNewRow} disabled={editing}>
-          {editing ? t('common.add') : t('common.edit')}
+        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+          {t('common.add')}
         </Button>
         {editing && (
           <>
-            <Button icon={<SaveOutlined />} type="primary" onClick={() => setEditing(false)} loading={saving}>
+            <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
               {t('common.save')}
             </Button>
             <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
@@ -354,8 +311,14 @@ function TransferOrdersTab() {
             </Button>
           </>
         )}
+        {!editing && (
+          <Button onClick={() => setEditing(true)}>
+            {t('common.edit')}
+          </Button>
+        )}
       </Space>
       <ExcelTable
+        ref={tableRef}
         dataSource={data}
         columns={columns}
         editing={editing}
@@ -363,6 +326,7 @@ function TransferOrdersTab() {
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
+        onAddNew={handleAddNew}
         rowHeight={40}
         height={600}
       />
