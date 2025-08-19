@@ -4,9 +4,14 @@ import { PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import client, { getProductAliasesList, getEntityAliasesList, createProductAlias, deleteProductAlias, createEntityAlias, deleteEntityAlias } from '@/api/client';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Aliases() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const canCreate = can('aliases:create');
+  const canDelete = can('aliases:delete');
+  const canEdit = canCreate || canDelete;
   const [productList, setProductList] = useState<any[]>([]);
   const [entityList, setEntityList] = useState<any[]>([]);
   const [productOpts, setProductOpts] = useState<{value: number; label: string}[]>([]);
@@ -45,6 +50,13 @@ export default function Aliases() {
   useEffect(() => { fetchAll(); }, []);
 
   const handleBatchSave = async (changes: Array<{ id: number; data: any }>) => {
+    if (
+      (changes.some((change) => change.id < 0) && !canCreate) ||
+      (changes.some((change) => change.id > 0) && !canDelete)
+    ) {
+      message.error(t('common.noPermission'));
+      return;
+    }
     setSaving(true);
     try {
       for (const change of changes) {
@@ -73,6 +85,7 @@ export default function Aliases() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
+    if (!canEdit) return;
     if (id > 0) {
       if (field === 'displayName') {
         await deleteProductAlias(id);
@@ -106,11 +119,13 @@ export default function Aliases() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
-          {t('common.add')}
-        </Button>
-        {editing && (
+      <Space wrap style={{ marginBottom: 16 }}>
+        {canCreate && (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+            {t('common.add')}
+          </Button>
+        )}
+        {editing && canEdit && (
           <>
             <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
               {t('common.save')}
@@ -120,7 +135,7 @@ export default function Aliases() {
             </Button>
           </>
         )}
-        {!editing && (
+        {!editing && canEdit && (
           <Button onClick={() => setEditing(true)}>
             {t('common.edit')}
           </Button>
@@ -131,7 +146,7 @@ export default function Aliases() {
         dataSource={productList}
         columns={columns}
         editing={editing}
-        setEditing={setEditing}
+        setEditing={(value) => setEditing(canEdit && value)}
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}

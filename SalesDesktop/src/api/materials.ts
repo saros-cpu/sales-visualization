@@ -5,6 +5,11 @@ export interface MaterialCategory {
   sort_order: number; is_active: boolean;
 }
 
+export interface DepotOption {
+  id: number; depot_code: string; name_zh: string; name_ru: string;
+  depot_type: string; is_active: boolean;
+}
+
 export interface Material {
   id: number; material_code: string; category_id: number; category_name: string;
   name_zh: string; name_ru: string; specification: string; unit: string;
@@ -33,8 +38,30 @@ export interface InventoryItem {
   quantity: number; last_inbound_at: string; updated_at: string;
 }
 
+type MaterialCreateInput = Partial<Material> & {
+  materialCode?: string; categoryId?: number; nameZh?: string;
+  nameRu?: string; unitPrice?: number;
+};
+
+type InboundCreateInput = Partial<InboundRecord> & {
+  inboundDate?: string; materialId?: number; depotId?: number;
+  supplierName?: string; unitPrice?: number; totalAmount?: number;
+  invoiceNo?: string;
+};
+
+type TransferOrderCreateInput = Partial<TransferOrder> & {
+  orderNo?: string; materialId?: number; fromDepotId?: number;
+  toDepotId?: number; requestedQty?: number; transportMode?: string;
+  vehicleNo?: string; driverName?: string;
+};
+
 export async function getCategories() {
   const res = await client.get('/materials/categories');
+  return res.data;
+}
+
+export async function getDepots() {
+  const res = await client.get('/materials/depots');
   return res.data;
 }
 
@@ -43,11 +70,17 @@ export async function getMaterials() {
   return res.data;
 }
 
-export async function createMaterial(data: {
-  materialCode: string; categoryId: number; nameZh: string;
-  nameRu?: string; specification?: string; unit?: string; unitPrice?: number;
-}) {
-  const res = await client.post('/materials', data);
+export async function createMaterial(data: MaterialCreateInput) {
+  const payload = {
+    materialCode: data.materialCode ?? data.material_code,
+    categoryId: data.categoryId ?? data.category_id,
+    nameZh: data.nameZh ?? data.name_zh,
+    nameRu: data.nameRu ?? data.name_ru,
+    specification: data.specification,
+    unit: data.unit,
+    unitPrice: data.unitPrice ?? data.unit_price,
+  };
+  const res = await client.post('/materials', payload);
   return res.data;
 }
 
@@ -56,12 +89,19 @@ export async function getInboundList(params: { page?: number; page_size?: number
   return res.data;
 }
 
-export async function createInbound(data: {
-  inboundDate: string; materialId: number; quantity: number;
-  depotId?: number; supplierName?: string; unitPrice?: number;
-  totalAmount?: number; invoiceNo?: string; remark?: string;
-}) {
-  const res = await client.post('/materials/inbound', data);
+export async function createInbound(data: InboundCreateInput) {
+  const payload = {
+    inboundDate: data.inboundDate ?? data.inbound_date,
+    materialId: data.materialId ?? data.material_id,
+    quantity: data.quantity,
+    depotId: data.depotId ?? data.depot_id,
+    supplierName: data.supplierName ?? data.supplier_name,
+    unitPrice: data.unitPrice ?? data.unit_price,
+    totalAmount: data.totalAmount ?? data.total_amount,
+    invoiceNo: data.invoiceNo ?? data.invoice_no,
+    remark: data.remark,
+  };
+  const res = await client.post('/materials/inbound', payload);
   return res.data;
 }
 
@@ -70,12 +110,19 @@ export async function getTransferOrders(params: { status?: string; page?: number
   return res.data;
 }
 
-export async function createTransferOrder(data: {
-  orderNo: string; materialId: number; fromDepotId: number; toDepotId: number;
-  requestedQty: number; transportMode?: string; vehicleNo?: string;
-  driverName?: string; remark?: string;
-}) {
-  const res = await client.post('/materials/orders', data);
+export async function createTransferOrder(data: TransferOrderCreateInput) {
+  const payload = {
+    orderNo: data.orderNo ?? data.order_no,
+    materialId: data.materialId ?? data.material_id,
+    fromDepotId: data.fromDepotId ?? data.from_depot_id,
+    toDepotId: data.toDepotId ?? data.to_depot_id,
+    requestedQty: data.requestedQty ?? data.requested_qty,
+    transportMode: data.transportMode ?? data.transport_mode,
+    vehicleNo: data.vehicleNo ?? data.vehicle_no,
+    driverName: data.driverName ?? data.driver_name,
+    remark: data.remark,
+  };
+  const res = await client.post('/materials/orders', payload);
   return res.data;
 }
 

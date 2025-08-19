@@ -3,6 +3,8 @@ import client from './client';
 export interface UserRecord {
   id: number; username: string; displayName: string; role: string;
   isActive: boolean; lastLoginAt: string; createdAt: string;
+  roles?: Array<{ id: number; roleCode: string; roleName: string; isPrimary: boolean }>;
+  departments?: Array<{ id: number; deptCode: string; deptName: string; isPrimary: boolean }>;
 }
 
 export interface ModulePermission {
@@ -16,13 +18,15 @@ export async function getUsers() {
 
 export async function createUser(data: {
   username: string; password: string; displayName?: string; role?: string;
+  roleCodes?: string[]; departmentIds?: number[];
 }) {
   const res = await client.post('/users', data);
   return res.data;
 }
 
 export async function updateUser(id: number, data: Partial<{
-  displayName: string; role: string; isActive: boolean;
+  displayName: string; role: string; roleCodes: string[];
+  departmentIds: number[]; isActive: boolean;
 }>) {
   const res = await client.put(`/users/${id}`, data);
   return res.data;

@@ -43,7 +43,7 @@ def retail_region_lookup():
     station_regions = {str(shop_key): info.get("region") or "未识别区域" for shop_key, info in SHOP_KEY_MAP.items()}
     depot_regions = {
         "north_CTY-22-LAT_depot": DEPOT_COORDS.get("DemoDepotNorth", {}).get("region", "REG-06"),
-        "south_CTY-30_depot": DEPOT_COORDS.get("DemoDepotSouth", {}).get("region", "REG-07"),
+        "south_CTY-30_depot": "南方STN-63",
     }
     return station_regions, depot_regions
 

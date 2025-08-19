@@ -13,6 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from calculations import recalculate_wholesale_batch
 from db import get_connection
 from import_helpers import (
+    classify_wholesale_movement,
     get_or_create_batch,
     get_or_create_customer,
     load_entity_lookup,
@@ -131,17 +132,16 @@ def import_summary_rows(cur, batch_id, summary_rows, product_lookup):
     return imported
 
 
-def classify_detail(entity_name, product_name, entity, sales_pairs, transfer_pairs, processing_pairs):
-    if entity and entity.get("entity_type") in ("retail_station", "own_depot"):
-        return "transfer"
+def classify_detail(cur, entity_lookup, entity_name, product_name, sender_name, sales_pairs, transfer_pairs, processing_pairs):
     key = pair_key(entity_name, product_name)
+    fallback = None
     if key in transfer_pairs:
         return "transfer"
     if key in processing_pairs:
         return "processing"
     if key in sales_pairs:
-        return "unknown"
-    return "other"
+        fallback = "unknown"
+    return classify_wholesale_movement(cur, entity_lookup, entity_name, sender_name, fallback)
 
 
 def import_detail_rows(cur, batch_id, path, product_lookup, entity_lookup, sales_pairs, transfer_pairs, processing_pairs):
@@ -174,8 +174,8 @@ def import_detail_rows(cur, batch_id, path, product_lookup, entity_lookup, sales
         dates.append(business_date)
         product = lookup_product(product_lookup, raw_product)
         entity = lookup_entity(entity_lookup, raw_entity)
-        classification = classify_detail(raw_entity, raw_product, entity, sales_pairs, transfer_pairs, processing_pairs)
-        match_status = "matched" if classification in ("transfer", "processing", "other") else "unmatched"
+        classification = classify_detail(cur, entity_lookup, raw_entity, raw_product, sender_name, sales_pairs, transfer_pairs, processing_pairs)
+        match_status = "matched" if classification in ("transfer", "processing", "procurement") else "unmatched"
 
         if not product:
             unknown_products += 1

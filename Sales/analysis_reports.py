@@ -22,7 +22,7 @@ EXPORT_DIR = Path(__file__).resolve().parent / "exports"
 CLASS_LABELS = {
     "export_wholesale": "出口批发",
     "local_wholesale": "本地批发",
-    "unknown": "待审核批发",
+    "unknown": "待识别",
     "transfer": "外运",
 }
 
@@ -239,7 +239,7 @@ def _make_wholesale_report(year, month=None):
     period = _period_label(year, month)
     title = f"批发{period}分析报告"
     cards = [
-        ("批发销售量", f"{_fmt(sales_tons, 3)} 吨", "出口批发 + 本地批发 + 待审核批发"),
+        ("批发销售量", f"{_fmt(sales_tons, 3)} 吨", "出口批发 + 本地批发 + 待识别"),
         ("批发销售金额", f"{_fmt(sales_amount, 2)} 元", "仅统计已匹配合同金额"),
         ("外运数量", f"{_fmt(transfer_tons, 3)} 吨", "外运只统计数量"),
         ("待复核", f"{_fmt(sum((data.get('review', {}).get('status', {}).get(k, {}).get('rows') or 0) for k in ('needs_review', 'unmatched')), 0)} 条", "合同、客户、油品或重复数据审核"),
@@ -274,7 +274,7 @@ def _make_wholesale_report(year, month=None):
     note = (
         f"<div class=\"note\">{period}批发销售量合计 {_fmt(sales_tons, 3)} 吨，"
         f"已计算合同金额 {_fmt(sales_amount, 2)} 元；外运 {_fmt(transfer_tons, 3)} 吨，仅做数量统计。"
-        "待审核批发先计入数量，不提前计算金额。</div>"
+        "待识别数据先计入数量，不提前计算金额。</div>"
     )
     sections = [
         ("一、经营概览", note),
@@ -325,7 +325,7 @@ def _make_sales_report(year, month=None):
     product_rows.append(["合计", "--", _fmt(combined.get("salesTons"), 3), _fmt(combined.get("salesAmountCny"), 2)])
     note = (
         f"<div class=\"note\">{period}合并销售量 {_fmt(combined.get('salesTons'), 3)} 吨，"
-        f"销售金额 {_fmt(combined.get('salesAmountCny'), 2)} 元。批发外运 {_fmt(wholesale.get('transferTons'), 3)} 吨单独列示，不计入销售金额。</div>"
+        f"销售金额 {_fmt(combined.get('salesAmountCny'), 2)} 元。外运 {_fmt(wholesale.get('transferTons'), 3)} 吨单独列示，不计入销售金额。</div>"
     )
     sections = [
         ("一、综合经营概览", note),

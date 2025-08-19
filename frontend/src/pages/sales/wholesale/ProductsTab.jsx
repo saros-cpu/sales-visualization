@@ -14,7 +14,7 @@ export default function ProductsTab({ data }) {
         <BarList rows={groups.local_wholesale || []} showAmount />
       </section>
       <section className="panel">
-        <div className="panel-head"><h2>待审核批发油品</h2><span>吨数已统计</span></div>
+        <div className="panel-head"><h2>待识别油品</h2><span>吨数已统计</span></div>
         <BarList rows={groups.unknown || []} />
       </section>
       <section className="panel">
@@ -22,7 +22,7 @@ export default function ProductsTab({ data }) {
         <BarList rows={groups.transfer || []} />
       </section>
       <section className="panel">
-        <div className="panel-head"><h2>采购入库油品</h2><span>只统计吨数</span></div>
+        <div className="panel-head"><h2>采购油品</h2><span>只统计吨数</span></div>
         <BarList rows={groups.procurement || []} />
       </section>
       <section className="panel">

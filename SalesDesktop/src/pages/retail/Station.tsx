@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Row, Col, Card, Statistic, Select, Typography, Tag, Button } from 'antd';
+import { Row, Col, Card, Statistic, Select, Typography, Tag, Button, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
 import { getStations, getStationMonthly } from '@/api/retail';
@@ -58,30 +58,32 @@ export default function Station() {
 
   return (
     <div>
-      <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
-      <Select
-        showSearch placeholder={t('retail.stationSelector')}
-        value={shopKey} onChange={setShopKey}
-        options={options}
-        style={{ width: 300, marginLeft: 16 }}
-        allowClear
-      />
+      <Space wrap style={{ marginBottom: 16 }}>
+        <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
+        <Select
+          showSearch placeholder={t('retail.stationSelector')}
+          value={shopKey} onChange={setShopKey}
+          options={options}
+          style={{ width: 300 }}
+          allowClear
+        />
+      </Space>
       {detail && (
         <>
-          <Row gutter={16} style={{ marginTop: 16, marginBottom: 16 }}>
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col span={24}>
-              <Card size="small" title={detail.name}>
+              <Card size="small" title={station(detail as any)}>
                 <Text>{t('retail.ruName')}: {(detail as any).short}</Text> | <Text>{t('retail.region')}: {region((detail as any).region)}</Text>
               </Card>
             </Col>
           </Row>
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(((detail.summary as any).amount ?? detail.summary.totalSales ?? 0) / 10000)} suffix={t('common.wan')} /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round((detail.summary as any).volume ?? detail.summary.totalLiters ?? 0)} suffix="L" /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters ?? 0)} suffix="L" /></Card></Col>
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(((detail.summary as any).amount ?? detail.summary.totalSales ?? 0) / 10000)} suffix={t('common.wan')} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round((detail.summary as any).volume ?? detail.summary.totalLiters ?? 0)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters ?? 0)} suffix="L" /></Card></Col>
           </Row>
-          <Row gutter={16}>
+          <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <ChartCard title={t('retail.trend30')} loading={detailQ.isLoading}
                 option={{
@@ -123,7 +125,7 @@ export default function Station() {
               />
             </Col>
           </Row>
-          <Row gutter={16}>
+          <Row gutter={[16, 16]}>
             <Col xs={24} lg={8}>
               <ChartCard title={t('retail.productStruct')} loading={detailQ.isLoading}
                 option={{
@@ -152,10 +154,18 @@ export default function Station() {
                   xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
                   yAxis: { type: 'value', max: 100, name: CHART_AXIS.percent },
                   series: [{
-                    type: 'line', data: (detail.daily ?? []).map((d: any) => {
-                      const amount = (detail.summary as any).amount || 0;
-                      const cardSales = (detail.summary as any).cardSales || 0;
-                      return amount > 0 ? Math.round((cardSales / amount) * 100) : 0;
+                    type: 'line',
+                    data: (detail.daily ?? []).map((d: any) => {
+                      const sumAmount = (detail.summary as any).amount || 0;
+                      const sumCard = (detail.summary as any).cardSales || 0;
+                      const monthRatio = sumAmount > 0 ? sumCard / sumAmount : 0;
+                      // 优先使用后端返回的每日现金/刷卡数据，缺失时按月度比例折算兜底
+                      const cash = d.cashSales;
+                      const card = d.cardSales;
+                      if (cash != null && card != null && (cash + card) > 0) {
+                        return Math.round((card / (cash + card)) * 100);
+                      }
+                      return Math.round(monthRatio * 100);
                     }),
                     areaStyle: { opacity: 0.3 },
                   }],
@@ -168,7 +178,7 @@ export default function Station() {
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 120, right: 20 },
                   xAxis: { type: 'value' },
-                  yAxis: { type: 'category', data: regionStations.map((s: any) => s.name).reverse(), axisLabel: { fontSize: 11 } },
+                  yAxis: { type: 'category', data: regionStations.map((s: any) => station(s)).reverse(), axisLabel: { fontSize: 11 } },
                   series: [{ type: 'bar', data: regionStations.map((s: any) => s.amount).reverse() }],
                 }}
               />

@@ -171,6 +171,101 @@ def lookup_entity(entity_lookup, raw_name):
     return entity_lookup.get(normalize_station_name(raw_name))
 
 
+def lookup_customer_type(cur, *names):
+    for name in names:
+        normalized = normalize_text(name)
+        if not normalized:
+            continue
+        cur.execute(
+            """
+            SELECT customer_type
+            FROM customers
+            WHERE normalized_name = %s OR standard_name = %s
+            LIMIT 1
+            """,
+            (normalized, name),
+        )
+        row = cur.fetchone()
+        if row and row[0] in ("export_wholesale", "local_wholesale"):
+            return row[0]
+    return None
+
+
+def _classification_from_customer_type(customer_type):
+    if customer_type == "export_wholesale":
+        return "export_wholesale"
+    if customer_type == "local_wholesale":
+        return "local_wholesale"
+    return None
+
+
+def is_internal_entity_name(name):
+    normalized = normalize_text(name)
+    if not normalized:
+        return False
+    internal_keywords = (
+        "Example",
+        "CUSTOMER-S-АББР",
+        "ExampleCo ПЕТРОЛ",
+        "ГЛАВНЫЙ СКЛАД",
+        "DemoDepot",
+        "CTY-05",
+        "CTY-22-АЛЬТ",
+    )
+    return any(keyword in normalized for keyword in internal_keywords)
+
+
+def normalize_wholesale_classification(value):
+    if value in ("export_wholesale", "local_wholesale", "transfer", "processing", "procurement", "unknown"):
+        return value
+    if value == "external_transport":
+        return "transfer"
+    if value == "toll_processing":
+        return "processing"
+    return "unknown"
+
+
+def classify_wholesale_movement(cur, entity_lookup, raw_entity, sender_name=None, current=None):
+    receiver = lookup_entity(entity_lookup, raw_entity)
+    sender = lookup_entity(entity_lookup, sender_name) if sender_name else None
+    receiver_type = receiver.get("entity_type") if receiver else "unknown"
+    sender_type = sender.get("entity_type") if sender else "unknown"
+
+    sender_internal = sender_type in ("retail_station", "own_depot") or is_internal_entity_name(sender_name)
+    receiver_internal = receiver_type in ("retail_station", "own_depot")
+
+    if current == "processing":
+        return "processing"
+
+    if receiver_type == "retail_station":
+        return "transfer"
+
+    if receiver_type == "own_depot":
+        if sender_name and not sender_internal:
+            return "procurement"
+        return "transfer"
+
+    if receiver_type == "wholesale_customer":
+        if current in ("export_wholesale", "local_wholesale"):
+            return current
+        if sender_name and not sender_internal:
+            return "processing"
+        customer_type = lookup_customer_type(
+            cur,
+            receiver.get("standard_name"),
+            raw_entity,
+        )
+        classified = _classification_from_customer_type(customer_type)
+        if classified:
+            return classified
+        return normalize_wholesale_classification(current)
+
+    if receiver_internal and not sender_internal:
+        return "procurement"
+
+    return normalize_wholesale_classification(current)
+
+
 def get_or_create_customer(cur, raw_name, customer_type="unknown"):
     normalized = normalize_text(raw_name)
     cur.execute(

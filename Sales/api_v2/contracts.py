@@ -1,13 +1,20 @@
+import logging
+import traceback
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api_v2 import bp_v2
+from .authz import permission_required
+from .data_scope import custom_resource_filter
 from db import get_connection
 import pymysql
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 
 @bp_v2.route('/contracts', methods=['GET'])
 @jwt_required()
+@permission_required('contracts:view')
 def contract_list():
     company = request.args.get('company', '')
     sort_by = request.args.get('sort_by', 'contractNo')
@@ -64,8 +71,16 @@ def contract_list():
             elif sort_by == 'executedTons':
                 order_expr = 'executed_tons'
             order_dir = 'DESC' if sort_dir.lower() == 'desc' else 'ASC'
+            scope_clause, scope_params = custom_resource_filter(
+                cur,
+                int(get_jwt_identity()),
+                'contracts',
+                {'customer': {'ids': ['c.customer_id'], 'labels': ['c.raw_customer_name']}},
+            )
+            scoped_where = f'{where_clause}{scope_clause}'
+            scoped_params = params + scope_params
 
-            cur.execute(f'''SELECT COUNT(DISTINCT c.id) FROM contracts c LEFT JOIN contract_monthly_volumes cm ON c.id = cm.contract_id WHERE 1=1{where_clause}''', params)
+            cur.execute(f'''SELECT COUNT(DISTINCT c.id) FROM contracts c LEFT JOIN contract_monthly_volumes cm ON c.id = cm.contract_id WHERE 1=1{scoped_where}''', scoped_params)
             total = cur.fetchone()['COUNT(DISTINCT c.id)']
 
             cur.execute(f'''
@@ -76,11 +91,11 @@ def contract_list():
                        COALESCE(SUM(cm.volume_tons), 0) AS executed_tons
                 FROM contracts c
                 LEFT JOIN contract_monthly_volumes cm ON c.id = cm.contract_id
-                WHERE 1=1{where_clause}
+                WHERE 1=1{scoped_where}
                 GROUP BY c.id
                 ORDER BY {order_expr} {order_dir}
                 LIMIT {page_size} OFFSET {offset}
-            ''', params)
+            ''', scoped_params)
             items = []
             for row in cur.fetchall():
                 items.append({
@@ -105,6 +120,7 @@ def contract_list():
 
 @bp_v2.route('/contracts', methods=['POST'])
 @jwt_required()
+@permission_required('contracts:create')
 def create_contract():
     data = request.get_json() or {}
     required = ['contractNo', 'customerName', 'productName']
@@ -136,12 +152,16 @@ def create_contract():
             ))
             conn.commit()
             return jsonify({'code': 0, 'message': 'success', 'data': {'id': cur.lastrowid}})
+    except Exception:
+        logger.error('create_contract failed: data=%s error=%s', data, traceback.format_exc())
+        return jsonify({'code': 500, 'message': '创建合同失败', 'data': None}), 500
     finally:
         conn.close()
 
 
 @bp_v2.route('/contracts/<int:contract_id>', methods=['PUT'])
 @jwt_required()
+@permission_required('contracts:update')
 def update_contract(contract_id):
     data = request.get_json() or {}
     conn = get_connection()
@@ -178,6 +198,7 @@ def update_contract(contract_id):
 
 @bp_v2.route('/contracts/<int:contract_id>/execution', methods=['GET'])
 @jwt_required()
+@permission_required('contracts:view')
 def contract_execution(contract_id):
     conn = get_connection()
     try:
@@ -219,6 +240,7 @@ def contract_execution(contract_id):
 
 @bp_v2.route('/contracts/<int:contract_id>/auto-volume', methods=['GET'])
 @jwt_required()
+@permission_required('contracts:view')
 def contract_auto_volume(contract_id):
     """根据称重数据自动统计月拉运量"""
     conn = get_connection()
@@ -234,5 +256,19 @@ def contract_auto_volume(contract_id):
             ''', (contract_id,))
             monthly = [{'yearMonth': r['year_month'], 'volumeTons': round(float(r['volume_tons']), 3)} for r in cur.fetchall()]
             return jsonify({'code': 0, 'message': 'success', 'data': monthly})
+    finally:
+        conn.close()
+
+
+@bp_v2.route('/contracts/<int:contract_id>', methods=['DELETE'])
+@jwt_required()
+@permission_required('contracts:delete')
+def delete_contract(contract_id):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('DELETE FROM contracts WHERE id = %s', (contract_id,))
+            conn.commit()
+            return jsonify({'code': 0, 'message': 'success', 'data': None})
     finally:
         conn.close()

@@ -34,7 +34,7 @@ export default function TransferLoss() {
 
   return (
     <div>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col>
           <Select value={year} onChange={setYear} style={{ width: 100 }}>
             {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
@@ -50,13 +50,13 @@ export default function TransferLoss() {
           </Select>
         </Col>
       </Row>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}><Card size="small"><Statistic title={t('transferLoss.stationCount')} value={data.length} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title={t('transferLoss.totalLoss')} value={totalLoss.toFixed(2)} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title={t('transferLoss.avgLossRate')} value={`${(avgRate * 100).toFixed(2)}%`} /></Card></Col>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.stationCount')} value={data.length} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.totalLoss')} value={totalLoss.toFixed(2)} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.avgLossRate')} value={`${(avgRate * 100).toFixed(2)}%`} /></Card></Col>
       </Row>
       <Card title={t('nav.transferLoss')}>
-        <Table dataSource={data} columns={columns} rowKey={(r) => `${r.station_name}-${r.report_date}`} loading={loading} size="small" pagination={false} />
+        <Table dataSource={data} columns={columns} rowKey={(r) => `${r.station_name}-${r.report_date}`} loading={loading} size="small" pagination={false} scroll={{ x: 900, y: 'calc(100vh - 360px)' }} />
       </Card>
     </div>
   );

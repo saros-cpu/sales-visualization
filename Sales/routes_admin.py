@@ -35,7 +35,7 @@ from calculations import recalculate_wholesale_batch
 from routes_data import run_exchange_maintenance, run_market_watch_maintenance
 from summary_service import period_bounds
 from db import get_connection
-from import_helpers import load_entity_lookup, load_product_lookup, lookup_entity
+from import_helpers import classify_wholesale_movement, load_entity_lookup, load_product_lookup, lookup_entity
 from retail_internal import open_oilstation
 from summary_service import available_periods, period_bounds
 from text_utils import clean_str, normalize_station_name, normalize_text, parse_date, parse_decimal
@@ -2633,14 +2633,16 @@ def register_admin_routes(app):
                         auto_product += 1
                         product_lookup = load_product_lookup(cur)  # refresh
 
-                if entity_type == "retail_station":
-                    classification = "transfer"
-                elif entity_type == "wholesale_customer" and standard_name:
-                    classification = "local_wholesale"
-
                 weigh_serial_no = str(record.get("编号") or "")
                 sender_name = (record.get("发货单位") or "").strip()
                 remark = (record.get("备注") or "").strip()
+                classification = classify_wholesale_movement(
+                    cur,
+                    entity_lookup,
+                    raw_entity,
+                    sender_name=sender_name,
+                    current=classification,
+                )
 
                 auto_approve = (entity_code is not None and product_id is not None
                                 and classification not in ("unknown", "", None))

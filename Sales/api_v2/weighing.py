@@ -1,6 +1,7 @@
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api_v2 import bp_v2
+from .authz import permission_required
 from services.weighing_service import get_weighing_list, verify_weighing
 import pymysql
 from db import get_connection
@@ -9,6 +10,7 @@ from datetime import datetime
 
 @bp_v2.route('/weighing/list', methods=['GET'])
 @jwt_required()
+@permission_required('weighing:view')
 def weighing_list():
     date_from = request.args.get('date_from')
     date_to = request.args.get('date_to')
@@ -40,6 +42,7 @@ def weighing_list():
 
 @bp_v2.route('/weighing/verify', methods=['POST'])
 @jwt_required()
+@permission_required('weighing:verify')
 def weighing_verify():
     data = request.get_json() or {}
     weighing_source = data.get('source')
@@ -69,6 +72,7 @@ def weighing_verify():
 
 @bp_v2.route('/weighing/batch-verify', methods=['POST'])
 @jwt_required()
+@permission_required('weighing:verify')
 def weighing_batch_verify():
     data = request.get_json() or {}
     records = data.get('records', [])
@@ -107,6 +111,7 @@ def weighing_batch_verify():
 
 @bp_v2.route('/weighing/history', methods=['GET'])
 @jwt_required()
+@permission_required('weighing:view')
 def weighing_history():
     conn = get_connection()
     try:

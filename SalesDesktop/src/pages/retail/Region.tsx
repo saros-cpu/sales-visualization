@@ -43,15 +43,17 @@ export default function Region() {
   }, [regionKeys]);
 
   const regionData = activeRegion && data?.regions ? data.regions[EN_REGION_KEY[activeRegion] ?? activeRegion] : null;
+  const stationInRegion = (s: any) => (ZH_REGION_KEY[s.region] || s.region) === activeRegion;
+
   const regionStations = regionData
-    ? stations.filter((s: any) => s.region === activeRegion).sort((a: any, b: any) => b.amount - a.amount)
+    ? stations.filter(stationInRegion).sort((a: any, b: any) => b.amount - a.amount)
     : [];
 
   // 当月日销趋势：按区域内站点聚合每日 volume/amount
   const regionDaily = useMemo(() => {
     const dd = dailyQ.data as any;
     if (!dd?.daily || !activeRegion) return [];
-    const shopKeys = stations.filter((s: any) => s.region === activeRegion).map((s: any) => String(s.shopKey));
+    const shopKeys = stations.filter(stationInRegion).map((s: any) => String(s.shopKey));
     const dayMap: Record<string, { date: string; volume: number; amount: number }> = {};
     for (const d of dd.daily) dayMap[d.date] = { date: d.date, volume: 0, amount: 0 };
     for (const sk of shopKeys) {
@@ -77,13 +79,13 @@ export default function Region() {
       />
       {regionData && (
         <>
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(regionData.amount / 10000)} suffix={t('common.wan')} /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(regionData.volume)} suffix="L" /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
-            <Col xs={12} lg={3}><Card size="small"><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(regionData.amount / 10000)} suffix={t('common.wan')} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(regionData.volume)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>
           </Row>
-          <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col span={24}>
               <ChartCard title={t('retail.dailyTrend')} loading={dailyQ.isLoading}
                 option={{
@@ -111,7 +113,7 @@ export default function Region() {
               />
             </Col>
           </Row>
-          <Row gutter={16}>
+          <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <ChartCard title={t('retail.topStations')} loading={staQ.isLoading}
                 option={{
@@ -136,7 +138,7 @@ export default function Region() {
               />
             </Col>
           </Row>
-          <Row gutter={16}>
+          <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <ChartCard title={t('retail.productStruct')} loading={regQ.isLoading}
                 option={{
@@ -144,8 +146,8 @@ export default function Region() {
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 80, right: 20, top: 10, bottom: 30 },
                   xAxis: { type: 'value', name: CHART_AXIS.liters },
-                  yAxis: { type: 'category', data: (data?.byResourceByRegion?.[activeRegion] ?? data?.byResource ?? []).map((r: any) => product(r.name)).reverse(), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: (data?.byResourceByRegion?.[activeRegion] ?? data?.byResource ?? []).map((r: any) => r.volume).reverse() }],
+                  yAxis: { type: 'category', data: (data?.byResourceByRegion?.[EN_REGION_KEY[activeRegion] || activeRegion] ?? data?.byResource ?? []).map((r: any) => product(r.name)).reverse(), axisLabel: { fontSize: 11 } },
+                  series: [{ type: 'bar', data: (data?.byResourceByRegion?.[EN_REGION_KEY[activeRegion] || activeRegion] ?? data?.byResource ?? []).map((r: any) => r.volume).reverse() }],
                 }}
               />
             </Col>

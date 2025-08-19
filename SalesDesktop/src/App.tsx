@@ -28,11 +28,12 @@ const WholesaleQuery = lazy(() => import('@/pages/wholesale/Query'));
 const WeighingList = lazy(() => import('@/pages/WeighingList'));
 const TrainEntry = lazy(() => import('@/pages/TrainEntry'));
 const Procurement = lazy(() => import('@/pages/Procurement'));
-const Contracts = lazy(() => import('@/pages/Contracts'));
+const Contracts = lazy(() => import('@/pages/Contracts/ContractView'));
+const ContractAdd = lazy(() => import('@/pages/Contracts/ContractAdd'));
 const Materials = lazy(() => import('@/pages/Materials'));
 const TransferLoss = lazy(() => import('@/pages/TransferLoss'));
 const Users = lazy(() => import('@/pages/Users'));
-const UserRoles = lazy(() => import('@/pages/UserRoles'));
+const OrganizationPermissions = lazy(() => import('@/pages/OrganizationPermissions'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const MapPage = lazy(() => import('@/pages/MapPage'));
 const ExchangeRates = lazy(() => import('@/pages/ExchangeRates'));
@@ -72,12 +73,17 @@ function AppRoutes() {
         <Route path="exchange" element={<ErrorBoundary><Suspense fallback={loading}><ExchangeRates /></Suspense></ErrorBoundary>} />
         <Route path="train-entry" element={<ErrorBoundary><Suspense fallback={loading}><TrainEntry /></Suspense></ErrorBoundary>} />
         <Route path="procurement" element={<ErrorBoundary><Suspense fallback={loading}><Procurement /></Suspense></ErrorBoundary>} />
-        <Route path="contracts" element={<ErrorBoundary><Suspense fallback={loading}><Contracts /></Suspense></ErrorBoundary>} />
+        <Route path="contracts">
+          <Route index element={<Navigate to="/contracts/view" replace />} />
+          <Route path="view" element={<ErrorBoundary><Suspense fallback={loading}><Contracts /></Suspense></ErrorBoundary>} />
+          <Route path="add" element={<ErrorBoundary><Suspense fallback={loading}><ContractAdd /></Suspense></ErrorBoundary>} />
+        </Route>
         <Route path="materials" element={<ErrorBoundary><Suspense fallback={loading}><Materials /></Suspense></ErrorBoundary>} />
         <Route path="transfer-loss" element={<ErrorBoundary><Suspense fallback={loading}><TransferLoss /></Suspense></ErrorBoundary>} />
         <Route path="map" element={<ErrorBoundary><Suspense fallback={loading}><MapPage /></Suspense></ErrorBoundary>} />
         <Route path="users" element={<ErrorBoundary><Suspense fallback={loading}><Users /></Suspense></ErrorBoundary>} />
-        <Route path="users/roles" element={<ErrorBoundary><Suspense fallback={loading}><UserRoles /></Suspense></ErrorBoundary>} />
+        <Route path="users/roles" element={<Navigate to="/users/organization" replace />} />
+        <Route path="users/organization" element={<ErrorBoundary><Suspense fallback={loading}><OrganizationPermissions /></Suspense></ErrorBoundary>} />
         <Route path="aliases" element={<ErrorBoundary><Suspense fallback={loading}><Aliases /></Suspense></ErrorBoundary>} />
         <Route path="weighing" element={<ErrorBoundary><Suspense fallback={loading}><WeighingList /></Suspense></ErrorBoundary>} />
         <Route path="settings" element={<ErrorBoundary><Suspense fallback={loading}><Settings /></Suspense></ErrorBoundary>} />

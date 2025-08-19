@@ -23,11 +23,162 @@ from constants import (
     SHOP_KEY_MAP,
 )
 from db import get_connection
-from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, SK29_RSK_MAP, STATION_RK_CORRECTIONS
+from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, SK29_RSK_MAP, SK30_RSK_MAP, STATION_RK_CORRECTIONS
 
-from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, query_month_summary
+from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, get_report_month_inventory, query_month_summary
 from flask import Blueprint, jsonify, request
 from loguru import logger
+
+
+# Self-use plate mapping exported from the retail server software
+# (desktop 车牌对照.xlsx). 9001 = ExampleCo ХОЗ-НУЖДЫ, and person.COD_OWN
+# stores this 1-69 number. selling.PersonKey is only the database row id and
+# must not be treated as the plate number because it diverges after row 21.
+SELF_USE_HOZ_NEEDS_GROUP = 9001
+SELF_USE_GENERATOR_GROUP = 9002
+SELF_USE_PERSON_OVERRIDES = {
+    1: '01KG000AA',
+    2: '01KG000AA',
+    3: '01KG000AA',
+    4: '01KG000AA',
+    5: '01KG000AA',
+    6: '01KG000AA',
+    7: '01KG000AA',
+    8: '01KG000AA',
+    9: '01KG000AA',
+    10: '01KG000AA',
+    11: '01KG000AA',
+    12: '01KG000AA',
+    13: '01KG000AA',
+    14: '01KG000AA',
+    15: '01KG000AA',
+    16: '01KG000AA',
+    17: '01KG000AA',
+    18: '01KG000AA',
+    19: '01KG000AA',
+    20: '01KG000AA',
+    21: 'Генератор',
+    22: '01KG000AA-Водитель',
+    23: '01KG000AA-Водитель',
+    24: '01KG000AA-Водитель',
+    25: '01KG000AA-Водитель',
+    26: '01KG000AA-Водитель',
+    27: '01KG000AA-Водитель',
+    28: '01KG000AA-Водитель S-10',
+    29: '01KG000AA - Водитель',
+    30: '01KG000AA-Водитель',
+    31: '01KG000AA-Водитель',
+    32: '01KG000AA-Водитель',
+    33: '01KG000AA-Водитель',
+    34: '01KG000AA-Водитель',
+    35: '01KG000AA',
+    36: '01KG000AA-Водитель',
+    37: '01KG000AA-Водитель',
+    38: '01KG000AA-Водитель',
+    39: '01KG000AA-Водитель',
+    40: '01KG000AA',
+    41: '01KG000AA',
+    42: '01KG000AA - Водитель',
+    43: '01KG000AA',
+    44: '01KG000AA',
+    45: '01KG000AA',
+    46: '01KG000AA',
+    47: '01KG000AA-Бухгалтерия',
+    48: '01KG000AA-Водитель',
+    49: '01KG000AA-Водитель',
+    50: '01KG000AA-Водитель',
+    51: '01KG000AA',
+    52: '01KG000AA-Водитель',
+    53: '01KG000AA-Водитель',
+    54: '01KG000AA-Водитель',
+    55: '01KG000AA',
+    56: '01KG000AA',
+    57: '01KG000AA-Водитель',
+    58: '01KG000AA - Водитель',
+    59: '01KG000AA-Водитель',
+    60: '01KG000AA-Водитель',
+    61: '01KG000AA-Водитель',
+    62: '08G617ASK-Водитель',
+    63: '01KG000AA-Водитель',
+    64: '01KG000AA-Б.Водитель.А',
+    65: '01KG000AA-Б.Водитель.Б',
+    66: '01KG000AA-И.Водитель.Д',
+    67: '01KG000AA-Водитель',
+    68: '01KG000AA-Водитель',
+    69: '01KG000AA-Водитель',
+}
+
+# Self-use transactions whose PersonKey is wrong in the read-only ocw DB
+# (the retail software records a different self-use number). Keyed by
+# TransactionKey; value is the correct plate+driver per the retail software.
+SELF_USE_TXN_OVERRIDES = {
+    9422896: 'Генератор',
+    9482235: 'Генератор',
+    9507306: 'Генератор',
+}
+
+SELF_USE_GENERATOR_OVERRIDES = {
+    1: 'Генератор',
+}
+
+
+def _map_resource_key_to_name(rk, shop_key, price=0.0, rsk=None):
+    # Mirror export_excel._infer_resource_code. Shop-6/28 etc. renumbered
+    # ResourceKey after mid-April, so the raw low ResourceKey is unreliable;
+    # map via ResourceShopKey and fall back to unit-price inference.
+    rk = _safe_int(rk)
+    shop_key = _safe_int(shop_key, None)
+    rsk = _safe_int(rsk, None)
+    if rsk == 0:
+        rsk = None
+    if rk >= 100:
+        if shop_key is not None:
+            corrected = STATION_RK_CORRECTIONS.get((shop_key, rk))
+            if corrected:
+                return RESOURCE_NAMES.get(corrected, f'Other-{corrected}')
+        return RESOURCE_NAMES.get(rk, f'Other-{rk}')
+    if shop_key == 6 and rsk is not None:
+        mapped = SK6_RSK_MAP.get(int(rsk))
+        if mapped:
+            return RESOURCE_NAMES.get(mapped, f'Other-{mapped}')
+    if shop_key == 4 and rsk is not None:
+        mapped = SK4_RSK_MAP.get(int(rsk))
+        if mapped:
+            return RESOURCE_NAMES.get(mapped, f'Other-{mapped}')
+    if shop_key == 30 and rsk is not None:
+        mapped = SK30_RSK_MAP.get(int(rsk))
+        if mapped:
+            return RESOURCE_NAMES.get(mapped, f'Other-{mapped}')
+    if shop_key == 29 and rsk is not None:
+        mapped = SK29_RSK_MAP.get(int(rsk))
+        if mapped:
+            return RESOURCE_NAMES.get(mapped, f'Other-{mapped}')
+    if shop_key is not None:
+        corrected = STATION_RK_CORRECTIONS.get((shop_key, rk))
+        if corrected:
+            return RESOURCE_NAMES.get(corrected, f'Other-{corrected}')
+    if shop_key == 28 and rsk is not None:
+        mapped = SK28_RSK_MAP.get(int(rsk), rk)
+        return RESOURCE_NAMES.get(mapped, f'Other-{mapped}')
+    p = float(price or 0)
+    if shop_key == 28 and p > 0:
+        if abs(p - 95.0) < 1.0:
+            return RESOURCE_NAMES.get(110, 'ДТ -35')
+        if p > 83:
+            return RESOURCE_NAMES.get(106, 'Д/Т')
+        if p <= 45:
+            return RESOURCE_NAMES.get(108, 'СПБТ')
+    if p <= 0:
+        return RESOURCE_NAMES.get(rk, f'Other-{rk}')
+    if p <= 45:
+        return RESOURCE_NAMES.get(108, 'СПБТ')
+    if p <= 65:
+        return RESOURCE_NAMES.get(102, 'АИ 80')
+    if p <= 78:
+        return RESOURCE_NAMES.get(103, 'АИ 92')
+    if p <= 83:
+        return RESOURCE_NAMES.get(104, 'АИ 95')
+    return RESOURCE_NAMES.get(106, 'Д/Т')
 from cache_store import get_cached, set_cached
 from constants import *
 from db import get_connection
@@ -40,7 +191,7 @@ from endpoints.v1.retail.analytics.service.core import (
     _attach_region_snapshot_comparisons,
 )
 from endpoints.v1.retail.analytics.service.core import *
-from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, query_month_summary
+from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, get_report_month_inventory, query_month_summary
 
 analytics_api = Blueprint("analytics_api_v2", __name__)
 
@@ -60,25 +211,29 @@ def register_analytics_routes(app):
     app.register_blueprint(analytics_api)
 
 
-@analytics_api.route('/api/retail/self-use/<year_month>')
-def api_retail_self_use(year_month):
+def _build_self_use_month_response(year_month):
     parts = year_month.split('-')
     if len(parts) != 2 or len(parts[0]) != 4 or len(parts[1]) != 2:
-        return jsonify({'error': 'invalid year_month format, expected YYYY-MM'}), 400
+        return None
+
+    cache_key = f'self_use:{year_month}'
+    cached = get_cached(cache_key)
+    if cached and isinstance(cached.get('records'), list) and _self_use_snapshot_has_group_fields(cached):
+        return _normalize_self_use_snapshot(cached)
+
     conn = get_connection()
     try:
         cur = conn.cursor()
         y, m = int(year_month.split('-')[0]), int(year_month.split('-')[1])
         ym_start = f'{year_month}-01'
-        if m == 12:
-            ym_end = f'{y + 1}-01-01'
-        else:
-            ym_end = f'{y}-{m + 1:02d}-01'
+        ym_end = f'{y + 1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
 
         cur.execute("""
             SELECT s.TransactionKey, s.ShopKey, s.ResourceKey, s.Volume, s.ShopCost,
                    DATE(s.TransactionDatetime) as trx_date,
-                   CONVERT(p.Name USING utf8mb4) as plate_number
+                   TIME(s.TransactionDatetime) as trx_time,
+                   s.PersonKey, CAST(p.Name AS BINARY) as plate_number,
+                   s.ResourceShopKey, p.COD_A, p.COD_OWN
             FROM selling s
             LEFT JOIN person p ON s.PersonKey = p.PersonKey
             WHERE s.DerivedPaymentTypeKey = 2
@@ -94,22 +249,50 @@ def api_retail_self_use(year_month):
             rk = int(r[2]) if r[2] else 0
             vol = float(r[3] or 0)
             amt = float(r[4] or 0)
+            rsk = int(r[9]) if r[9] else 0
+            group_key = _safe_int(r[10])
+            pk = int(r[7]) if r[7] else 0
+            self_use_number = _self_use_number_for_record(pk, group_key, _safe_int(r[11]))
             total_volume += vol
             total_amount += amt
             info = SHOP_KEY_MAP.get(sk, {'name': f'Station-{sk}', 'short': '', 'region': ''})
+            product_name = _map_resource_key_to_name(rk, sk, amt / vol if vol else 0, rsk)
+            raw_name = r[8]
+            if raw_name:
+                if isinstance(raw_name, bytes):
+                    plate_number = raw_name.decode('cp1251', errors='replace').strip()
+                else:
+                    plate_number = raw_name.strip()
+            else:
+                plate_number = ''
+            tk = int(r[0])
+            plate_number = _normalize_self_use_plate(
+                plate_number,
+                person_key=pk,
+                transaction_key=tk,
+                group_key=group_key,
+                self_use_number=self_use_number,
+            )
+
             records.append({
                 'transactionKey': int(r[0]),
                 'date': str(r[5]) if r[5] else '',
+                'time': str(r[6]) if r[6] else '',
                 'shopKey': sk,
                 'stationName': info['name'],
+                'stationShort': info.get('short', ''),
                 'resourceKey': rk,
-                'productName': RESOURCE_NAMES.get(rk, f'Other-{rk}'),
+                'resourceShopKey': rsk,
+                'productName': product_name,
                 'volume': round(vol, 3),
                 'amount': round(amt, 2),
-                'plateNumber': r[6] if r[6] else '',
+                'plateNumber': plate_number,
+                'personKey': pk,
+                'personGroup': group_key,
+                'selfUseNumber': self_use_number,
             })
 
-        return jsonify({
+        result = {
             'month': year_month,
             'records': records,
             'summary': {
@@ -117,9 +300,215 @@ def api_retail_self_use(year_month):
                 'totalAmount': round(total_amount, 2),
                 'totalRecords': len(records),
             },
-        })
+            'comparison': {},
+            'byStation': [],
+            'byResource': [],
+            'byRegion': {},
+            'daily': [],
+        }
+
+        if cache_allowed():
+            set_cached(cache_key, result)
+
+        return result
     finally:
         conn.close()
+
+
+def _normalize_self_use_snapshot(snapshot):
+    changed = False
+    records = snapshot.get('records', [])
+    product_fallbacks = _self_use_snapshot_product_fallbacks(records)
+    for rec in records:
+        old_values = dict(rec)
+        tk = _safe_int(rec.get('transactionKey'))
+        sk = _safe_int(rec.get('shopKey'))
+        rk = _safe_int(rec.get('resourceKey'))
+        rsk = _safe_int(rec.get('resourceShopKey'))
+        volume = round(float(rec.get('volume') or 0), 3)
+        amount = round(float(rec.get('amount') or 0), 2)
+        person_key = _safe_int(rec.get('personKey'))
+        group_key = _safe_int(rec.get('personGroup'))
+        self_use_number = _self_use_number_for_record(
+            person_key,
+            group_key,
+            _safe_int(rec.get('selfUseNumber')),
+        )
+
+        rec['time'] = str(rec.get('time') or '')
+        rec['plateNumber'] = _normalize_self_use_plate(
+            rec.get('plateNumber'),
+            person_key=person_key,
+            transaction_key=tk,
+            group_key=group_key,
+            self_use_number=self_use_number,
+        )
+        product_name = _map_resource_key_to_name(rk, sk, amount / volume if volume else 0, rsk)
+        if product_name.startswith('Other-') and volume == 0 and amount == 0:
+            product_name = product_fallbacks.get((sk, rk), product_name)
+        rec['productName'] = product_name
+        rec['personKey'] = person_key
+        rec['personGroup'] = group_key
+        rec['selfUseNumber'] = self_use_number
+        rec['volume'] = volume
+        rec['amount'] = amount
+        if old_values != rec:
+            changed = True
+    if changed and snapshot.get('month'):
+        set_cached(f"self_use:{snapshot['month']}", snapshot)
+    return snapshot
+
+
+def _self_use_snapshot_has_group_fields(snapshot):
+    records = snapshot.get('records', [])
+    return all('personGroup' in rec and 'selfUseNumber' in rec for rec in records)
+
+
+def _self_use_number_for_record(person_key, group_key=0, cod_own=0):
+    person_key = _safe_int(person_key)
+    group_key = _safe_int(group_key)
+    cod_own = _safe_int(cod_own)
+    if group_key == SELF_USE_GENERATOR_GROUP:
+        return cod_own
+    if 1 <= person_key <= 69:
+        return person_key
+    return cod_own
+
+
+def _self_use_snapshot_product_fallbacks(records):
+    counts = {}
+    for rec in records:
+        sk = _safe_int(rec.get('shopKey'))
+        rk = _safe_int(rec.get('resourceKey'))
+        rsk = _safe_int(rec.get('resourceShopKey'))
+        volume = round(float(rec.get('volume') or 0), 3)
+        amount = round(float(rec.get('amount') or 0), 2)
+        if volume == 0 and amount == 0:
+            continue
+        product_name = _map_resource_key_to_name(rk, sk, amount / volume if volume else 0, rsk)
+        if product_name.startswith('Other-'):
+            continue
+        bucket = counts.setdefault((sk, rk), {})
+        bucket[product_name] = bucket.get(product_name, 0) + 1
+    return {key: next(iter(bucket)) for key, bucket in counts.items() if len(bucket) == 1}
+
+
+def _safe_int(value, default=0):
+    try:
+        if value is None or value == '':
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_self_use_plate(value, person_key=0, transaction_key=0, group_key=0, self_use_number=0):
+    if transaction_key in SELF_USE_TXN_OVERRIDES:
+        return SELF_USE_TXN_OVERRIDES[transaction_key]
+
+    group_key = _safe_int(group_key)
+    self_use_number = _safe_int(self_use_number)
+    person_key = _safe_int(person_key)
+    if group_key == SELF_USE_GENERATOR_GROUP:
+        mapped = SELF_USE_GENERATOR_OVERRIDES.get(self_use_number)
+        return mapped or 'Генератор'
+    if group_key in (0, SELF_USE_HOZ_NEEDS_GROUP) and self_use_number in SELF_USE_PERSON_OVERRIDES:
+        return SELF_USE_PERSON_OVERRIDES[self_use_number]
+
+    plate = str(value or '').strip()
+    numeric_plate = _safe_int(plate, None)
+    if group_key in (0, SELF_USE_HOZ_NEEDS_GROUP) and numeric_plate in SELF_USE_PERSON_OVERRIDES:
+        return SELF_USE_PERSON_OVERRIDES[numeric_plate]
+
+    plate = _repair_cp1251_mojibake(plate)
+    canonical = _canonical_self_use_plate(plate)
+    if canonical:
+        return canonical
+    if group_key == 0 and self_use_number == 0 and person_key in SELF_USE_PERSON_OVERRIDES:
+        return SELF_USE_PERSON_OVERRIDES[person_key]
+    return canonical
+
+
+def _repair_cp1251_mojibake(value):
+    if not value:
+        return ''
+    try:
+        return value.encode('latin1').decode('cp1251').strip()
+    except UnicodeError:
+        return value.strip()
+
+
+def _compact_plate(value):
+    return ''.join(str(value or '').upper().split())
+
+
+def _canonical_self_use_plate(value):
+    compact = _compact_plate(value)
+    if not compact:
+        return ''
+    for mapped in SELF_USE_PERSON_OVERRIDES.values():
+        if _compact_plate(mapped) == compact:
+            return mapped
+    for mapped in SELF_USE_TXN_OVERRIDES.values():
+        if _compact_plate(mapped) == compact:
+            return mapped
+    return value
+
+
+@analytics_api.route('/api/retail/self-use/<year_month>')
+def api_retail_self_use(year_month):
+    result = _build_self_use_month_response(year_month)
+    if result is None:
+        return jsonify({'error': 'invalid year_month format, expected YYYY-MM'}), 400
+    return jsonify(result)
+
+
+@analytics_api.route('/api/retail/self-use')
+def api_retail_self_use_range():
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    if not date_from or not date_to:
+        return jsonify({'error': 'date_from and date_to are required'}), 400
+
+    try:
+        d = datetime.strptime(date_from, '%Y-%m-%d')
+        end_dt = datetime.strptime(date_to, '%Y-%m-%d') + timedelta(days=1)
+    except ValueError:
+        return jsonify({'error': 'invalid date format, expected YYYY-MM-DD'}), 400
+
+    months = []
+    while d < end_dt:
+        months.append(d.strftime('%Y-%m'))
+        if d.month == 12:
+            d = d.replace(year=d.year + 1, month=1, day=1)
+        else:
+            d = d.replace(month=d.month + 1, day=1)
+
+    records = []
+    total_volume = 0.0
+    total_amount = 0.0
+    for ym in months:
+        snap = _build_self_use_month_response(ym)
+        if not snap:
+            continue
+        for rec in snap.get('records', []):
+            if date_from <= rec['date'] <= date_to:
+                records.append(rec)
+                total_volume += rec['volume']
+                total_amount += rec['amount']
+
+    records.sort(key=lambda r: (r['date'], r['time']), reverse=True)
+
+    return jsonify({
+        'date_from': date_from,
+        'date_to': date_to,
+        'records': records,
+        'summary': {
+            'totalVolume': round(total_volume, 2),
+            'totalAmount': round(total_amount, 2),
+            'totalRecords': len(records),
+        },
+    })
 
 
 @analytics_api.route('/api/dashboard/yearly')
@@ -700,13 +1089,43 @@ def api_assistant_retail_summary():
         conn.close()
 
 
+def _monthly_inventory_needs_refresh(payload):
+    summary = (payload or {}).get("summary") or {}
+    return "inventory" not in summary or "inventoryMonth" not in summary
+
+
+def _attach_monthly_inventory(year_month, payload, cur=None):
+    summary = payload.setdefault("summary", {})
+    if not _monthly_inventory_needs_refresh(payload):
+        return False
+
+    if cur is not None:
+        summary["inventory"] = get_report_month_inventory(cur, year_month)
+        summary["inventoryMonth"] = year_month
+        return True
+
+    conn = get_connection()
+    try:
+        local_cur = conn.cursor()
+        summary["inventory"] = get_report_month_inventory(local_cur, year_month)
+        summary["inventoryMonth"] = year_month
+        return True
+    finally:
+        conn.close()
+
+
 @analytics_api.route('/api/monthly/<year_month>')
 def api_monthly(year_month):
     cache_key = f'monthly:{year_month}'
     cached = get_cached(cache_key)
     if cached and cache_allowed():
+        cache_changed = False
         if "totalTons" not in (cached.get("summary") or {}) or "totalSalesCny" not in (cached.get("summary") or {}):
             cached = _attach_monthly_finance_metrics(cached)
+            cache_changed = True
+        if _attach_monthly_inventory(year_month, cached):
+            cache_changed = True
+        if cache_changed:
             set_cached(cache_key, cached)
         return jsonify(cached)
 
@@ -718,6 +1137,8 @@ def api_monthly(year_month):
 
         # ---- 当月全网汇总 ----
         summary = query_month_summary(cur, year_month)
+        summary['inventory'] = get_report_month_inventory(cur, year_month)
+        summary['inventoryMonth'] = year_month
         # activeShops 已在 query_month_summary 中合并计算，无需额外查询
 
         # ---- 同比环比数据 ----

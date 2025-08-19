@@ -20,7 +20,7 @@ export default function TrendTab({ data }) {
     const labels = items.map(i => i.date.slice(5));
     chart.setOption({
       backgroundColor: 'transparent',
-      color: ['#00d4ff', '#00e5a0', '#ffcc66', '#ffa726', '#a78bfa'],
+      color: ['#00d4ff', '#00e5a0', '#ffa726', '#9c27b0', '#ffcc66', '#a78bfa'],
       tooltip: {
         trigger: 'axis',
         backgroundColor: 'rgba(5, 12, 24, 0.92)',
@@ -56,8 +56,10 @@ export default function TrendTab({ data }) {
       series: [
         { name: '出口批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.exportTons || 0), lineStyle: { width: 3 } },
         { name: '本地批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.localTons || 0), lineStyle: { width: 3 } },
-        { name: '待审核批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.pendingTons || 0), lineStyle: { width: 3, type: 'dashed' } },
         { name: '外运', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.transferTons || 0), lineStyle: { width: 3 } },
+        { name: '代加工', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.processingTons || 0), lineStyle: { width: 3 } },
+        { name: '采购', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.procurementTons || 0), lineStyle: { width: 3 } },
+        { name: '待识别', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.pendingTons || 0), lineStyle: { width: 3, type: 'dashed' } },
         {
           name: '销售额', type: 'bar', yAxisIndex: 1, barMaxWidth: 18,
           data: items.map(i => i.amountCny || 0),
@@ -70,14 +72,14 @@ export default function TrendTab({ data }) {
   return (
     <section className="content-grid">
       <section className="panel panel-wide">
-        <div className="panel-head"><h2>每日批发趋势</h2><span>出口 / 本地 / 待审核 / 外运</span></div>
+        <div className="panel-head"><h2>每日批发趋势</h2><span>出口批发 / 本地批发 / 外运 / 代加工 / 采购</span></div>
         <div id="wholesaleTrendChart" className="trend-chart" />
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>日期</th><th>出口吨数</th><th>本地吨数</th>
-                <th>待审核吨数</th><th>外运吨数</th><th>销售额</th>
+                <th>外运吨数</th><th>代加工吨数</th><th>采购吨数</th><th>待识别吨数</th><th>销售额</th>
               </tr>
             </thead>
             <tbody>
@@ -86,11 +88,13 @@ export default function TrendTab({ data }) {
                   <td>{item.date}</td>
                   <td>{num.format(item.exportTons || 0)}</td>
                   <td>{num.format(item.localTons || 0)}</td>
-                  <td>{num.format(item.pendingTons || 0)}</td>
                   <td>{num.format(item.transferTons || 0)}</td>
+                  <td>{num.format(item.processingTons || 0)}</td>
+                  <td>{num.format(item.procurementTons || 0)}</td>
+                  <td>{num.format(item.pendingTons || 0)}</td>
                   <td>{yuan.format(item.amountCny || 0)}</td>
                 </tr>
-              )) : <tr><td colSpan="6">暂无数据</td></tr>}
+              )) : <tr><td colSpan="8">暂无数据</td></tr>}
             </tbody>
           </table>
         </div>

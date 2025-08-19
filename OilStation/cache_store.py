@@ -18,6 +18,7 @@ CACHE_TTL = {
     "dashboard": 3600,
     "dashboard_yearly": 3600,
     "resources_yearly": 3600,
+    "self_use": 1800,
 }
 CURRENT_MONTH_MAX_TTL = 108000
 
@@ -33,6 +34,7 @@ SNAPSHOT_PREFIXES = {
     "dashboard_yearly",
     "resources_yearly",
     "kpi_yearly",
+    "self_use",
 }
 YEARLY_SNAPSHOT_PREFIXES = {"dashboard_yearly", "resources_yearly", "kpi_yearly"}
 
@@ -81,7 +83,7 @@ def _is_current_month_key(key):
         return False
     today = date.today()
     prefix = parts[0]
-    if prefix in {"monthly", "stations", "regions", "daily", "station"}:
+    if prefix in {"monthly", "stations", "regions", "daily", "station", "self_use"}:
         ym = parts[1]
     elif prefix == "resources" and len(parts) >= 4:
         ym = f"{parts[2]}-{int(parts[3]):02d}" if parts[3].isdigit() else ""
@@ -130,9 +132,13 @@ def _is_fresh_current_snapshot(key, path):
 
 def _read_snapshot(key):
     path = _snapshot_path(key)
-    if key.split(":", 1)[0] in YEARLY_SNAPSHOT_PREFIXES:
+    prefix = key.split(":", 1)[0]
+
+    if prefix in YEARLY_SNAPSHOT_PREFIXES:
         if not _is_completed_year(key) and not _is_fresh_current_snapshot(key, path):
             return None
+    elif prefix == "self_use":
+        pass
     elif not _is_completed_month(key) and not _is_fresh_current_snapshot(key, path):
         return None
     if not path.exists():
@@ -158,6 +164,7 @@ def _snapshot_shape_is_valid(key, data):
         "dashboard_yearly": {"stations", "regions", "byResource"},
         "resources_yearly": {"resources", "summary"},
         "kpi_yearly": {"summary"},
+        "self_use": {"records", "summary", "comparison", "byStation", "byResource", "byRegion", "daily"},
     }.get(prefix)
     if not required:
         return True
@@ -170,7 +177,7 @@ def _write_snapshot(key, data):
     if key.split(":", 1)[0] in YEARLY_SNAPSHOT_PREFIXES:
         if not _is_completed_year(key) and not _is_current_year_key(key):
             return
-    elif not _is_completed_month(key) and not _is_current_month_key(key):
+    elif not _is_completed_month(key) and not _is_current_month_key(key) and not key.startswith("self_use:"):
         return
     try:
         path = _snapshot_path(key)

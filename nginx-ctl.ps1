@@ -7,7 +7,7 @@ $action = if ($args[0]) { $args[0] } else { "status" }
 
 # Sync project nginx.conf to nginx home before any action
 if ($action -ne "status" -and (Test-Path $projectConf)) {
-    Copy-Item $projectConf "$nginxHome\conf\nginx.conf" -Force
+    (Get-Content $projectConf -Raw) -replace "__PROJECT_ROOT__", $PSScriptRoot.Replace("\", "/") | Set-Content "$nginxHome\conf\nginx.conf" -Force
     if (Test-Path "$PSScriptRoot\mime.types") {
         Copy-Item "$PSScriptRoot\mime.types" "$nginxHome\conf\mime.types" -Force
     }

@@ -395,7 +395,7 @@ Windows Server (物理机)
 - 普通用户：查看销售/批发/零售页面
 - 管理员：额外访问后台管理（汇率/字典/合同/审核/健康）
 - 401 未登录自动跳转 `/login`
-- 未上 HTTPS，`SALES_COOKIE_SECURE=1` 待域名配置后启用
+- 未上 HTTPS；账号、密钥、Cookie 时效等隐私配置统一登记于 `docs/配置文档.md`
 
 ## 运行方式
 
@@ -715,7 +715,7 @@ D:\SalesVisualization\backups
 - `sales_visualization` 数据库 SQL 备份。
 - `OilStation/exports` 报表与分析报告。
 - `OilStation/cache_snapshots` 快照。
-- `Sales/.runtime` 运行密钥。
+- `Sales/.runtime` 运行密钥（详见 `docs/配置文档.md`）。
 - README 和docs。
 
 默认清理 30 天以前的同类备份，可通过 `--keep-days` 调整。

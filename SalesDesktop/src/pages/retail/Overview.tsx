@@ -9,6 +9,7 @@ import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n, ZH_REGION_KEY } from '@/utils/i18nNames';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
+import { useAuth } from '@/contexts/AuthContext';
 
 const REGION_COLORS: Record<string, string> = {
   CTY-30: '#722ed1', chu: '#1677ff', CTY-29: '#13c2c2',
@@ -17,6 +18,8 @@ const REGION_COLORS: Record<string, string> = {
 
 export default function Overview() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const canExport = can('retail:export');
   const { region, station, product } = useNameI18n();
   const [year, setYear] = useState(new Date().getFullYear());
 
@@ -26,6 +29,7 @@ export default function Overview() {
 
   const dash = dashQ.data;
   const kpi = kpiQ.data?.summary as Record<string, number> | undefined;
+  const activeShopValue = kpi ? `${kpi.activeShops ?? 0}/${kpi.totalShops ?? '-'}` : '0/-';
 
   const onGenerate = async () => {
     try {
@@ -73,11 +77,11 @@ export default function Overview() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <PeriodPicker value={year} onChange={(y) => setYear(y)} picker="year" />
-        <Button type="primary" onClick={onGenerate}>{t('retail.generateReport')}</Button>
+        {canExport && <Button type="primary" onClick={onGenerate}>{t('retail.generateReport')}</Button>}
       </Space>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} lg={6}>
           <KpiCard title={t('retail.totalSales')} value={kpi?.totalSales ?? 0} precision={0} suffix="сом" />
         </Col>
@@ -85,13 +89,13 @@ export default function Overview() {
           <KpiCard title={t('retail.totalLiters')} value={kpi?.totalLiters ?? 0} precision={0} suffix="L" />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <KpiCard title={t('retail.activeShops')} value={kpi?.activeShops ?? 0} />
+          <KpiCard title={t('retail.activeShops')} value={activeShopValue} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <KpiCard title={t('retail.inventory')} value={kpi?.inventory ?? 0} precision={0} />
         </Col>
       </Row>
-      <Row gutter={16}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <ChartCard title={t('retail.regionSales')} loading={dashQ.isLoading} option={regionOption} />
         </Col>
@@ -99,7 +103,7 @@ export default function Overview() {
           <ChartCard title={t('retail.productRank')} loading={resQ.isLoading} option={productOption} />
         </Col>
       </Row>
-      <Row gutter={16}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <ChartCard title={t('retail.topStations')} loading={dashQ.isLoading} option={top10Option} />
         </Col>

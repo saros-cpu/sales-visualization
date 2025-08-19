@@ -1,7 +1,6 @@
 import { message } from 'antd';
-
-const API_BASE = 'http://198.51.100.10:8080/api';
-const BASE_URL = 'http://198.51.100.10:8080';
+const BASE_URL = 'http://localhost:8900';
+const API_BASE = `${BASE_URL}/api`;
 
 async function getToken() {
   return localStorage.getItem('accessToken') || '';

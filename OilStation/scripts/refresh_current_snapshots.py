@@ -21,6 +21,11 @@ from business_time import business_period_condition_with_pruning, business_perio
 from cache_store import set_cached  # noqa: E402
 from constants import CLOSED_STATIONS, DEPOT_COORDS, SHOP_COORDS, SHOP_KEY_MAP  # noqa: E402
 from db import get_connection  # noqa: E402
+from endpoints.v1.retail.analytics.controller import (  # noqa: E402
+    _map_resource_key_to_name as _self_use_resource_name,
+    _self_use_number_for_record,
+    _normalize_self_use_plate,
+)
 from export_excel import EXPORT_DIR, RESOURCE_DENSITY  # noqa: E402
 from routes.analysis_report import _inventory_contract_totals  # noqa: E402
 from routes.analysis_report import _find_report_workbook_for_ym, _station_key_from_cell, _to_float  # noqa: E402
@@ -44,6 +49,50 @@ from routes.kpi import _yearly_kpi_from_monthly_snapshots  # noqa: E402
 
 DAY_SNAPSHOT_DIR = ROOT / "cache_snapshots" / "daily"
 REFRESH_LOCK_PATH = ROOT / "cache_snapshots" / ".refresh_current_snapshots.lock"
+
+
+def _map_resource_key_to_name(rk, shop_key, base_price=None):
+    """将ResourceKey映射为油品名称，使用与export_excel.py相同的映射逻辑"""
+    # STN-55(SK=28)特殊油罐映射
+    if shop_key == 28:
+        from export_excel import SK28_RSK_MAP
+        return SK28_RSK_MAP.get(rk, f'Other-{rk}')
+    
+    # STN-11(SK=6)映射
+    if shop_key == 6:
+        from export_excel import SK6_RSK_MAP
+        return SK6_RSK_MAP.get(rk, f'Other-{rk}')
+    
+    # STN-07(SK=4)映射
+    if shop_key == 4:
+        from export_excel import SK4_RSK_MAP
+        return SK4_RSK_MAP.get(rk, f'Other-{rk}')
+    
+    # 特殊站点映射
+    if shop_key in (7, 15) and rk == 104:
+        return 'АИ 80'
+    if shop_key == 29:
+        from export_excel import SK29_RSK_MAP
+        return SK29_RSK_MAP.get(rk, f'Other-{rk}')
+    
+    # ResourceKey >= 100 的直接返回
+    if rk >= 100:
+        return f'Other-{rk}'
+    
+    # 基于价格的映射
+    if base_price is not None:
+        if base_price <= 45:
+            return 'Д/Т'
+        if base_price <= 65:
+            return 'АИ 92'
+        if base_price <= 78:
+            return 'АИ 92'
+        if base_price <= 83:
+            return 'АИ 95'
+    
+    # 默认映射
+    from export_excel import RESOURCE_NAMES
+    return RESOURCE_NAMES.get(rk, f'Other-{rk}')
 
 
 @contextmanager
@@ -735,6 +784,10 @@ def _refresh_snapshots() -> int:
 
     ok = _request(client, f"/api/export/monthly/{ym}", {"refresh": "1"}) and ok
     ok = _report_snapshots_from_workbook(ym) and ok
+    self_use_snapshot = _build_self_use_monthly_snapshot(ym)
+    if self_use_snapshot:
+        set_cached(f"self_use:{ym}", self_use_snapshot)
+        print(f"ok self_use snapshot {ym}: {len(self_use_snapshot['records'])} records")
     ok = _rebuild_yearly_snapshots(completed_day.year, completed_day.month) and ok
     requests = [
         (f"/api/regions/{ym}", {}),
@@ -745,6 +798,7 @@ def _refresh_snapshots() -> int:
             "/api/resources/yearly",
             {"year": str(completed_day.year), "month": str(completed_day.month)},
         ),
+        (f"/api/retail/self-use/{ym}", {}),
     ]
     for path, query in requests:
         ok = _request(client, path, query) and ok
@@ -759,6 +813,166 @@ def _refresh_snapshots() -> int:
         f"contract={extras.get('totalContractVolume', 0):.2f}, elapsed={elapsed:.2f}s"
     )
     return 0 if ok else 1
+
+
+def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
+    """构建自用油月度快照"""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        y, m = int(ym.split('-')[0]), int(ym.split('-')[1])
+        ym_start = f'{ym}-01'
+        ym_end = f'{y + 1}-01-01' if m == 12 else f'{y}-{m + 1:02d}-01'
+
+        cur.execute("""
+            SELECT s.TransactionKey, s.ShopKey, s.ResourceKey, s.Volume, s.ShopCost,
+                   DATE(s.TransactionDatetime) as trx_date,
+                   TIME(s.TransactionDatetime) as trx_time,
+                   s.PersonKey, CAST(p.Name AS BINARY) as plate_number,
+                   s.ResourceShopKey, s.BasePrice, p.COD_A, p.COD_OWN
+            FROM selling s
+            LEFT JOIN person p ON s.PersonKey = p.PersonKey
+            WHERE s.DerivedPaymentTypeKey = 2
+              AND s.TransactionDatetime >= %s AND s.TransactionDatetime < %s
+            ORDER BY s.TransactionDatetime DESC
+        """, (ym_start, ym_end))
+
+        records = []
+        total_volume = 0.0
+        total_amount = 0.0
+        by_station = {}
+        by_resource = {}
+        by_region = {}
+        daily = {}
+
+        for r in cur.fetchall():
+            sk = int(r[1]) if r[1] else 0
+            rk = int(r[2]) if r[2] else 0
+            vol = float(r[3] or 0)
+            amt = float(r[4] or 0)
+            date_str = str(r[5]) if r[5] else ''
+            time_str = str(r[6]) if r[6] else ''
+            pk = int(r[7]) if r[7] else 0
+            rsk = int(r[9]) if r[9] else 0
+            base_price = float(r[10]) if len(r) > 10 and r[10] else None
+            group_key = int(r[11]) if len(r) > 11 and r[11] else 0
+            self_use_number = _self_use_number_for_record(pk, group_key, int(r[12]) if len(r) > 12 and r[12] else 0)
+            price = amt / vol if vol else base_price
+
+            total_volume += vol
+            total_amount += amt
+
+            info = SHOP_KEY_MAP.get(sk, {'name': f'Station-{sk}', 'short': '', 'region': ''})
+            region = info.get('region', '')
+            product_name = _self_use_resource_name(rk, sk, price, rsk)
+            raw_name = r[8]
+            if raw_name:
+                if isinstance(raw_name, bytes):
+                    plate_number = raw_name.decode('cp1251', errors='replace').strip()
+                else:
+                    plate_number = str(raw_name).strip()
+            else:
+                plate_number = ''
+            tk = int(r[0])
+            plate_number = _normalize_self_use_plate(plate_number, pk, tk, group_key, self_use_number)
+
+            records.append({
+                'transactionKey': int(r[0]),
+                'date': date_str,
+                'time': time_str,
+                'shopKey': sk,
+                'stationName': info['name'],
+                'stationShort': info.get('short', ''),
+                'resourceKey': rk,
+                'resourceShopKey': rsk,
+                'productName': product_name,
+                'volume': round(vol, 3),
+                'amount': round(amt, 2),
+                'plateNumber': plate_number,
+                'personKey': pk,
+                'personGroup': group_key,
+                'selfUseNumber': self_use_number,
+            })
+
+            by_station.setdefault(sk, {'shopKey': sk, 'name': info['name'], 'volume': 0.0, 'amount': 0.0, 'txnCount': 0})
+            by_station[sk]['volume'] += vol
+            by_station[sk]['amount'] += amt
+            by_station[sk]['txnCount'] += 1
+
+            by_resource.setdefault(rk, {'resourceKey': rk, 'name': product_name, 'volume': 0.0, 'amount': 0.0})
+            by_resource[rk]['volume'] += vol
+            by_resource[rk]['amount'] += amt
+
+            by_region.setdefault(region, {'volume': 0.0, 'amount': 0.0, 'activeCount': 0})
+            by_region[region]['volume'] += vol
+            by_region[region]['amount'] += amt
+
+            daily.setdefault(date_str, {'volume': 0.0, 'amount': 0.0})
+            daily[date_str]['volume'] += vol
+            daily[date_str]['amount'] += amt
+
+        station_rows = [
+            {'shopKey': sk, 'name': item['name'], 'volume': round(item['volume'], 2), 'amount': round(item['amount'], 2), 'txnCount': item['txnCount']}
+            for sk, item in sorted(by_station.items())
+        ]
+
+        resource_rows = [
+            {'resourceKey': rk, 'name': item['name'], 'volume': round(item['volume'], 2), 'amount': round(item['amount'], 2)}
+            for rk, item in sorted(by_resource.items())
+        ]
+
+        region_rows = {
+            region: {'volume': round(item['volume'], 2), 'amount': round(item['amount'], 2), 'activeCount': item['activeCount']}
+            for region, item in sorted(by_region.items())
+        }
+
+        daily_rows = [
+            {'date': date_str, 'volume': round(item['volume'], 2), 'amount': round(item['amount'], 2)}
+            for date_str, item in sorted(daily.items())
+        ]
+
+        dates = calc_yoy_mom(y, m)
+        prev_summary = query_month_summary(cur, dates['prev'])
+        yoy_summary = query_month_summary(cur, dates['yoy'])
+
+        def calc_change(current, previous):
+            if not previous or previous <= 0:
+                return None
+            return round((current - previous) / previous * 100, 1)
+
+        comparison = {
+            'mom': {
+                'volume': calc_change(total_volume, prev_summary.get('totalVolume', 0)),
+                'amount': calc_change(total_amount, prev_summary.get('totalAmount', 0)),
+                'prevMonth': dates['prev']
+            },
+            'yoy': {
+                'volume': calc_change(total_volume, yoy_summary.get('totalVolume', 0)),
+                'amount': calc_change(total_amount, yoy_summary.get('totalAmount', 0)),
+                'yoyMonth': dates['yoy']
+            }
+        }
+
+        return {
+            'month': ym,
+            'records': records,
+            'summary': {
+                'totalVolume': round(total_volume, 2),
+                'totalAmount': round(total_amount, 2),
+                'totalRecords': len(records),
+                'activeStations': len(station_rows)
+            },
+            'comparison': comparison,
+            'byStation': station_rows,
+            'byResource': resource_rows,
+            'byRegion': region_rows,
+            'daily': daily_rows
+        }
+    except Exception as e:
+        print(f"error building self_use snapshot for {ym}: {e}")
+        return None
+    finally:
+        conn.close()
 
 
 def main() -> int:

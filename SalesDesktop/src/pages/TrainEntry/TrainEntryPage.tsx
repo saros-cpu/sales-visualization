@@ -7,11 +7,16 @@ import * as XLSX from 'xlsx';
 import { getTrainEntryList, createTrainEntry, updateTrainEntry, deleteTrainEntry, batchCreateTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
 import { getProductOptions, getEntityOptions } from '@/api/client';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
+import { useAuth } from '@/contexts/AuthContext';
 
 const { RangePicker } = DatePicker;
 
 export default function TrainEntryPage() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const canCreate = can('train_entry:create');
+  const canUpdate = can('train_entry:update');
+  const canEdit = canCreate || canUpdate;
   const [data, setData] = useState<TrainEntryRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -33,8 +38,8 @@ export default function TrainEntryPage() {
         date_to: dates[1].format('YYYY-MM-DD'),
         page: 1, page_size: 1000,
       });
-      setData(res.data.items);
-      setTotal(res.data.total);
+      setData(res?.items ?? []);
+      setTotal(res?.total ?? 0);
     } finally { setLoading(false); }
   }, [dates]);
 
@@ -56,6 +61,10 @@ export default function TrainEntryPage() {
         creates.push(change.data);
       }
     }
+    if ((creates.length > 0 && !canCreate) || (updates.length > 0 && !canUpdate)) {
+      message.error(t('common.noPermission'));
+      return;
+    }
 
     setSaving(true);
     try {
@@ -76,6 +85,7 @@ export default function TrainEntryPage() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
+    if (id > 0 && !canUpdate) return;
     setData(prev => prev.map(r =>
       r.id === id ? { ...r, [field]: value } : r
     ));
@@ -86,6 +96,10 @@ export default function TrainEntryPage() {
   };
 
   const handleUploadFile = (file: File) => {
+    if (!canCreate) {
+      message.error(t('common.noPermission'));
+      return false;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -122,6 +136,10 @@ export default function TrainEntryPage() {
   };
 
   const handleUploadConfirm = async () => {
+    if (!canCreate) {
+      message.error(t('common.noPermission'));
+      return;
+    }
     setUploading(true);
     try {
       const res = await batchCreateTrainEntry(uploadRecords);
@@ -153,15 +171,19 @@ export default function TrainEntryPage() {
           <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
           <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
           <Button icon={<ReloadOutlined />} onClick={() => { fetchData(); }}>{t('common.reset')}</Button>
-          <Button icon={<UploadOutlined />} onClick={() => document.getElementById('train-upload-input')?.click()}>
-            {t('common.import')}
-          </Button>
-          <input id="train-upload-input" type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
-            onChange={(e) => e.target.files?.[0] && handleUploadFile(e.target.files[0])} />
-          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
-            {t('common.add')}
-          </Button>
-          {editing && (
+          {canCreate && (
+            <>
+              <Button icon={<UploadOutlined />} onClick={() => document.getElementById('train-upload-input')?.click()}>
+                {t('common.import')}
+              </Button>
+              <input id="train-upload-input" type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
+                onChange={(e) => e.target.files?.[0] && handleUploadFile(e.target.files[0])} />
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+                {t('common.add')}
+              </Button>
+            </>
+          )}
+          {editing && canEdit && (
             <>
               <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
                 {t('common.save')}
@@ -171,7 +193,7 @@ export default function TrainEntryPage() {
               </Button>
             </>
           )}
-          {!editing && (
+          {!editing && canEdit && (
             <Button onClick={() => setEditing(true)}>
               {t('common.edit')}
             </Button>
@@ -184,7 +206,7 @@ export default function TrainEntryPage() {
         dataSource={data}
         columns={columns}
         editing={editing}
-        setEditing={setEditing}
+        setEditing={(value) => setEditing(canEdit && value)}
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}

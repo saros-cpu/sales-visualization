@@ -115,7 +115,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <Row justify="space-between" style={{ marginBottom: 16 }}>
+      <Row justify="space-between" className="page-toolbar">
         <Col><h2>{t('nav.dashboard')}</h2></Col>
         <Col>
           <Select value={year} onChange={setYear} style={{ width: 100 }}>
@@ -125,7 +125,7 @@ export default function Dashboard() {
           </Select>
         </Col>
       </Row>
-      <Row gutter={16} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch' }}>
+      <Row gutter={[16, 16]} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch' }}>
         <Col xs={24} lg={12} style={{ display: 'flex' }}>
           <Row gutter={[16, 16]} style={{ flex: 1, width: '100%', alignContent: 'flex-start' }}>
             <Col span={12}><KpiCard title={t('dashboard.yearlyWholesaleTons')} value={data.yearlyWholesaleTons} precision={1} suffix="т" /></Col>
@@ -141,11 +141,11 @@ export default function Dashboard() {
             <Col span={24} style={{ display: 'flex', flex: 1 }}>
               <Card size="small" title={<><DollarOutlined /> {t('exchange.today')}</>} style={{ width: '100%' }}>
                 {rate ? (
-                  <Row gutter={16}>
-                    <Col span={6}><Statistic title="USD/KGS" value={rate.usdKgs} precision={4} valueStyle={{ color: '#22d3ee', fontSize: 18 }} /></Col>
-                    <Col span={6}><Statistic title="CNY/KGS" value={rate.cnyKgs} precision={4} valueStyle={{ color: '#facc15', fontSize: 18 }} /></Col>
-                    <Col span={6}><Statistic title="KGS/CNY" value={+(1 / rate.cnyKgs).toFixed(6)} precision={6} valueStyle={{ fontSize: 18 }} /></Col>
-                    <Col span={6}>
+                  <Row gutter={[16, 12]} align="middle">
+                    <Col xs={12} sm={6}><Statistic title="USD/KGS" value={rate.usdKgs} precision={4} valueStyle={{ color: '#22d3ee', fontSize: 18 }} /></Col>
+                    <Col xs={12} sm={6}><Statistic title="CNY/KGS" value={rate.cnyKgs} precision={4} valueStyle={{ color: '#facc15', fontSize: 18 }} /></Col>
+                    <Col xs={12} sm={6}><Statistic title="KGS/CNY" value={+(1 / rate.cnyKgs).toFixed(6)} precision={6} valueStyle={{ fontSize: 18 }} /></Col>
+                    <Col xs={12} sm={6}>
                       <div style={{ fontSize: 12, color: '#999' }}>
                         <div>{rate.date}</div>
                         <div style={{ marginTop: 4 }}>{t('exchange.source')}: {rate.source}</div>

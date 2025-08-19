@@ -20,20 +20,20 @@ export default function Products() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
           onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
       </Space>
       {q.data && ORDER.every(k => !q.data?.productRankings?.[k]?.length) && (
         <Alert type="info" message={t('common.noData')} showIcon style={{ marginBottom: 16 }} />
       )}
-      <Row gutter={16}>
+      <Row gutter={[16, 16]}>
         {ORDER.map((key) => {
           const items = q.data?.productRankings[key];
           if (!items || items.length === 0) return null;
           return (
             <Col xs={24} lg={12} key={key}>
-              <Card size="small" title={t(`wholesale.${key}`)} style={{ marginBottom: 16 }}>
+              <Card size="small" title={t(`wholesale.${key}`)} className="scroll-card" style={{ marginBottom: 16 }}>
                 <BarList rows={items} showAmount={SHOW_AMOUNT[key]} />
               </Card>
             </Col>

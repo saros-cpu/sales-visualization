@@ -13,7 +13,7 @@ interface Props {
 export default function KpiCard({ title, value, precision, prefix, suffix, delta }: Props) {
   const color = delta === undefined ? undefined : delta >= 0 ? '#3f8600' : '#cf1322';
   return (
-    <Card size="small" style={{ height: 120 }}>
+    <Card size="small" className="kpi-card">
       <Statistic
         title={title}
         value={value}
@@ -23,7 +23,7 @@ export default function KpiCard({ title, value, precision, prefix, suffix, delta
         valueStyle={{ color }}
       />
       {delta !== undefined && (
-        <span style={{ color, fontSize: 12 }}>
+        <span className="kpi-delta" style={{ color }}>
           {delta >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />} {Math.abs(delta)}%
         </span>
       )}

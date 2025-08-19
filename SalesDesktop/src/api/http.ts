@@ -1,6 +1,31 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError, AxiCTY-30eaders } from 'axios';
 
-const API_HOST = 'http://198.51.100.10:8080';
+export const API_HOST = 'http://localhost:8900';
+
+export function clearAuthTokens() {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem('refreshToken');
+  if (!refreshToken) return null;
+
+  try {
+    const res = await axios.post(
+      `${API_HOST}/api/v2/auth/refresh`,
+      null,
+      { headers: { Authorization: `Bearer ${refreshToken}` } },
+    );
+    const accessToken = res.data?.data?.accessToken;
+    if (!accessToken) return null;
+    localStorage.setItem('accessToken', accessToken);
+    return accessToken;
+  } catch {
+    clearAuthTokens();
+    return null;
+  }
+}
 
 export function createApi(basePath: string): AxiosInstance {
   const instance = axios.create({
@@ -22,9 +47,22 @@ export function createApi(basePath: string): AxiosInstance {
       }
       return res;
     },
-    (err: AxiosError) => {
+    async (err: AxiosError) => {
       if (err.response?.status === 401) {
-        localStorage.removeItem('accessToken');
+        const config = err.config as (typeof err.config & { _retry?: boolean }) | undefined;
+        const url = String(config?.url || '');
+        const canRefresh = !config?._retry && !url.includes('/auth/login') && !url.includes('/auth/refresh');
+        if (config && canRefresh) {
+          config._retry = true;
+          const accessToken = await refreshAccessToken();
+          if (accessToken) {
+            const headers = AxiCTY-30eaders.from(config.headers);
+            headers.set('Authorization', `Bearer ${accessToken}`);
+            config.headers = headers;
+            return instance(config);
+          }
+        }
+        clearAuthTokens();
         if (window.location.hash !== '#/login') window.location.hash = '#/login';
       }
       const body = err.response?.data as Record<string, unknown> | undefined;

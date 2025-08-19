@@ -1,6 +1,8 @@
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api_v2 import bp_v2
+from .authz import permission_required
+from .data_scope import owner_scope_filter
 from db import get_connection
 import pymysql
 from datetime import datetime
@@ -8,6 +10,7 @@ from datetime import datetime
 
 @bp_v2.route('/train-entry', methods=['POST'])
 @jwt_required()
+@permission_required('train_entry:create')
 def create_train_entry():
     """新增单条火车数据"""
     data = request.get_json() or {}
@@ -41,6 +44,7 @@ def create_train_entry():
 
 @bp_v2.route('/train-entry/batch', methods=['POST'])
 @jwt_required()
+@permission_required('train_entry:create')
 def batch_create_train_entry():
     """批量新增火车数据"""
     data = request.get_json() or {}
@@ -78,6 +82,7 @@ def batch_create_train_entry():
 
 @bp_v2.route('/train-entry/list', methods=['GET'])
 @jwt_required()
+@permission_required('train_entry:view')
 def list_train_entries():
     date_from = request.args.get('date_from')
     date_to = request.args.get('date_to')
@@ -95,6 +100,9 @@ def list_train_entries():
             if date_to:
                 where.append('entry_date <= %s')
                 params.append(date_to)
+            scope_clause, scope_params = owner_scope_filter(cur, int(get_jwt_identity()), 'train_entry', 'created_by')
+            where.append(f'1=1{scope_clause}')
+            params.extend(scope_params)
 
             cur.execute(f'SELECT COUNT(*) AS total FROM train_entry WHERE {" AND ".join(where)}', params)
             total = cur.fetchone()['total']
@@ -129,11 +137,13 @@ def list_train_entries():
 
 @bp_v2.route('/train-entry/<int:entry_id>', methods=['PUT'])
 @jwt_required()
+@permission_required('train_entry:update')
 def update_train_entry(entry_id):
     data = request.get_json() or {}
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            scope_clause, scope_params = owner_scope_filter(cur, int(get_jwt_identity()), 'train_entry', 'created_by')
             updates = []
             params = []
             field_map = {
@@ -152,7 +162,8 @@ def update_train_entry(entry_id):
 
             if updates:
                 params.append(entry_id)
-                cur.execute(f'UPDATE train_entry SET {", ".join(updates)} WHERE id = %s', params)
+                params.extend(scope_params)
+                cur.execute(f'UPDATE train_entry SET {", ".join(updates)} WHERE id = %s{scope_clause}', params)
                 conn.commit()
             return jsonify({'code': 0, 'message': 'success', 'data': None})
     finally:
@@ -161,11 +172,13 @@ def update_train_entry(entry_id):
 
 @bp_v2.route('/train-entry/<int:entry_id>', methods=['DELETE'])
 @jwt_required()
+@permission_required('train_entry:delete')
 def delete_train_entry(entry_id):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute('DELETE FROM train_entry WHERE id = %s', (entry_id,))
+            scope_clause, scope_params = owner_scope_filter(cur, int(get_jwt_identity()), 'train_entry', 'created_by')
+            cur.execute(f'DELETE FROM train_entry WHERE id = %s{scope_clause}', [entry_id] + scope_params)
             conn.commit()
             return jsonify({'code': 0, 'message': 'success', 'data': None})
     finally:

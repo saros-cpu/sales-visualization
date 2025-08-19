@@ -60,13 +60,13 @@ export default function Settings() {
       <Card title={t('common.settings')}>
       <Descriptions column={1} bordered size="small" style={{ marginBottom: 24 }}>
         <Descriptions.Item label={t('common.version')}>{VERSION}</Descriptions.Item>
-        <Descriptions.Item label={t('common.backendUrl')}>http://198.51.100.10:8080</Descriptions.Item>
+        <Descriptions.Item label={t('common.backendUrl')}>http://localhost:8900</Descriptions.Item>
         <Descriptions.Item label={t('common.currentUser')}>{user?.username} ({user?.role})</Descriptions.Item>
         <Descriptions.Item label={t('common.buildDate')}>{BUILD_DATE}</Descriptions.Item>
       </Descriptions>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Card size="small" title={t('common.langSwitch')}>
-          <Space>
+          <Space wrap>
             <Button icon={<GlobalOutlined />} type={i18n.language === 'zh' ? 'primary' : 'default'} onClick={() => switchLang('zh')}>{t('settings.chinese')}</Button>
             <Button icon={<GlobalOutlined />} type={i18n.language === 'ru' ? 'primary' : 'default'} onClick={() => switchLang('ru')}>Русский</Button>
           </Space>
@@ -102,7 +102,7 @@ export default function Settings() {
                 </Space>
               )}
               {updateStatus.status === 'error' && (
-                <Space>
+                <Space wrap>
                   <Typography.Text type="danger">{t('settings.updateError')}: {updateStatus.message}</Typography.Text>
                   <Button size="small" onClick={handleCheckUpdate}>{t('common.retry')}</Button>
                 </Space>

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 
-export default function ColumnFilter({ label, column, options, selected, onChange }) {
+export default function ColumnFilter({ label, column, options, selected, onChange, formatOption }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef(null);
@@ -64,7 +64,7 @@ export default function ColumnFilter({ label, column, options, selected, onChang
                   onChange={() => toggle(v)}
                   style={{ marginRight: 6 }}
                 />
-                {v}
+                {formatOption ? formatOption(v) : v}
               </label>
             ))}
             {filtered.length === 0 && <div style={{ padding: 8, color: '#999', fontSize: 12 }}>无匹配</div>}

@@ -1,4 +1,5 @@
 import { Kgz3DMap } from './Kgz3DMap.js';
+import { GlobeMap } from './GlobeMap.js';
 
 const BASE_OPTIONS = {
   basePath: '/assets/kgz-map/data/',
@@ -8,6 +9,12 @@ const BASE_OPTIONS = {
   showCities: true,
   showRegionLabels: false,
   showLegend: false
+};
+
+const GLOBE_OPTIONS = {
+  basePath: '/assets/kgz-map/data/',
+  radius: 10,
+  showRoads: false
 };
 
 function normalizeTarget(target) {
@@ -21,9 +28,9 @@ function showFallbackMessage(target, error) {
   console.error('[Kgz3DMap] load failed:', error);
 }
 
-async function mountWithFallback(target, options, fallback) {
+async function mountWithFallback(MapClass, target, options, fallback) {
   try {
-    return await Kgz3DMap.mount(target, options);
+    return await MapClass.mount(target, options);
   } catch (error) {
     console.error('[Kgz3DMap] mount failed:', error);
     if (typeof fallback === 'function') {
@@ -37,6 +44,7 @@ async function mountWithFallback(target, options, fallback) {
 
 export function mountHomeMap(target = '#mapChart', layers = {}, options = {}) {
   return mountWithFallback(
+    Kgz3DMap,
     target,
     {
       ...BASE_OPTIONS,
@@ -57,6 +65,7 @@ export function mountHomeMap(target = '#mapChart', layers = {}, options = {}) {
 
 export function mountRetailMap(target = '#mapChart', layers = {}, options = {}) {
   return mountWithFallback(
+    Kgz3DMap,
     target,
     {
       ...BASE_OPTIONS,
@@ -74,6 +83,18 @@ export function mountRetailMap(target = '#mapChart', layers = {}, options = {}) 
   });
 }
 
+export function mountGlobeMap(target = '#mapChart', options = {}) {
+  return mountWithFallback(
+    GlobeMap,
+    target,
+    {
+      ...GLOBE_OPTIONS,
+      ...options
+    },
+    options.fallback
+  ).then((map) => map);
+}
+
 export function resizeKgzMap(map) {
   map?.resize?.();
 }
@@ -81,5 +102,6 @@ export function resizeKgzMap(map) {
 window.KgzMapEntry = {
   mountHomeMap,
   mountRetailMap,
+  mountGlobeMap,
   resizeKgzMap
 };

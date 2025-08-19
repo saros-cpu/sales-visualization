@@ -59,6 +59,75 @@ def inventory_from_report_extras(year_month):
         return 0.0
 
 
+def _resolve_inventory(year_month, summary=None):
+    if not year_month:
+        return 0.0
+    summary = summary or {}
+    for key in ("inventory", "endInventory", "totalEndInventory"):
+        try:
+            value = float(summary.get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            return round(value, 3)
+
+    value = inventory_from_report_extras(year_month)
+    if value > 0:
+        return value
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        return round(float(get_report_month_inventory(cur, year_month) or 0), 3)
+    finally:
+        conn.close()
+
+
+def _latest_snapshot_month(year):
+    months = monthly_snapshots_for_year(year)
+    if months:
+        return months[-1].get("month")
+    return None
+
+
+def _attach_yearly_inventory(year, payload, include_inventory):
+    if not include_inventory or not payload:
+        return False
+    summary = payload.setdefault("summary", {})
+    changed = False
+    try:
+        current_inventory = float(summary.get("inventory") or 0)
+    except (TypeError, ValueError):
+        current_inventory = 0.0
+
+    latest_month = summary.get("inventoryMonth") or _latest_snapshot_month(year)
+    if not latest_month:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            latest_month = get_latest_month_in_year(cur, year)
+        finally:
+            conn.close()
+    latest_snapshot = get_cached(f"monthly:{latest_month}") if latest_month else None
+    latest_summary = (latest_snapshot or {}).get("summary") or {}
+    if latest_summary.get("activeShops") is not None and summary.get("activeShops") != latest_summary.get("activeShops"):
+        summary["activeShops"] = latest_summary.get("activeShops")
+        changed = True
+    if latest_summary.get("totalShops") is not None and summary.get("totalShops") != latest_summary.get("totalShops"):
+        summary["totalShops"] = latest_summary.get("totalShops")
+        changed = True
+    if summary.get("activeMonth") != latest_month:
+        summary["activeMonth"] = latest_month
+        changed = True
+    if current_inventory <= 0 or not summary.get("inventoryMonth"):
+        inventory = _resolve_inventory(latest_month, latest_summary) if latest_month else 0.0
+        if summary.get("inventory") != inventory or summary.get("inventoryMonth") != latest_month:
+            summary["inventory"] = inventory
+            summary["inventoryMonth"] = latest_month
+            changed = True
+    return changed
+
+
 def yearly_kpi_from_monthly_snapshots(year, include_inventory):
     months = monthly_snapshots_for_year(year)
     if not months:
@@ -99,19 +168,22 @@ def yearly_kpi_from_monthly_snapshots(year, include_inventory):
             return 0
         return round((current_value - previous_value) / previous_value * 100, 1)
 
-    latest_month = months[-1].get("month") if include_inventory else None
-    inventory = 0.0
+    latest_month = months[-1].get("month") if months else None
+    latest_summary = months[-1].get("summary") or {}
+    inventory = _resolve_inventory(latest_month, latest_summary) if latest_month else 0.0
 
     return {
         "year": year,
         "summary": {
-            "activeShops": current["activeShops"],
+            "activeShops": int(latest_summary.get("activeShops") or current["activeShops"]),
+            "totalShops": int(latest_summary.get("totalShops") or 0),
+            "activeMonth": latest_month,
             "totalVolume": round(current["totalVolume"], 2),
             "totalAmount": round(current["totalAmount"], 2),
             "totalSales": round(current["totalAmount"], 2),
             "totalLiters": round(current["totalVolume"], 2),
-            "inventory": inventory,
-            "inventoryMonth": latest_month,
+            "inventory": inventory if include_inventory else 0.0,
+            "inventoryMonth": latest_month if include_inventory else None,
             "queryStart": current["queryStart"],
             "queryEndExclusive": current["queryEnd"],
             "transactionCount": current["transactionCount"],
@@ -136,7 +208,7 @@ def get_current_kpi():
     snapshot = get_cached(f"monthly:{snapshot_month}")
     if snapshot:
         summary = dict(snapshot.get("summary") or {})
-        summary["inventory"] = inventory_from_report_extras(snapshot_month)
+        summary["inventory"] = _resolve_inventory(snapshot_month, summary)
         summary["inventoryMonth"] = snapshot_month
         result = {
             "month": snapshot_month,
@@ -187,11 +259,16 @@ def get_yearly_kpi(year, include_inventory):
     cache_key = f"kpi:yearly:{year}:{'with_inventory' if include_inventory else 'summary'}"
     cached = get_cached(cache_key)
     if cached:
+        if _attach_yearly_inventory(year, cached, include_inventory):
+            set_cached(cache_key, cached, ttl=CACHE_TTL["kpi_yearly"])
         return cached
 
     snapshot_cache_key = f"kpi_yearly:{year}:{'with_inventory' if include_inventory else 'summary'}"
     snapshot = get_cached(snapshot_cache_key)
     if snapshot:
+        if _attach_yearly_inventory(year, snapshot, include_inventory):
+            set_cached(cache_key, snapshot, ttl=CACHE_TTL["kpi_yearly"])
+            set_cached(snapshot_cache_key, snapshot, ttl=CACHE_TTL["kpi_yearly"])
         return snapshot
 
     snapshot = yearly_kpi_from_monthly_snapshots(year, include_inventory)
@@ -252,13 +329,16 @@ def get_yearly_kpi(year, include_inventory):
                 return 0
             return round((current - previous) / previous * 100, 1)
 
-        latest_month = get_latest_month_in_year(cur, year) if include_inventory else None
-        inventory = get_report_month_inventory(cur, latest_month) if latest_month else 0.0
+        latest_month = get_latest_month_in_year(cur, year)
+        latest_summary = query_month_summary(cur, latest_month, exclude_today=False) if latest_month else {}
+        inventory = get_report_month_inventory(cur, latest_month) if include_inventory and latest_month else 0.0
 
         result = {
             "year": year,
             "summary": {
-                "activeShops": int(summary[0] or 0),
+                "activeShops": int(latest_summary.get("activeShops") or summary[0] or 0),
+                "totalShops": int(latest_summary.get("totalShops") or 0),
+                "activeMonth": latest_month,
                 "totalVolume": round(float(summary[1] or 0), 2),
                 "totalAmount": round(float(summary[2] or 0), 2),
                 "totalSales": round(float(summary[2] or 0), 2),

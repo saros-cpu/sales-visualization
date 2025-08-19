@@ -31,7 +31,7 @@ def ensure_auth_schema(cur):
             username VARCHAR(64) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
             display_name VARCHAR(128) NOT NULL,
-            role ENUM('admin', 'user') NOT NULL DEFAULT 'user',
+            role VARCHAR(64) NOT NULL DEFAULT 'viewer',
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_by BIGINT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -41,6 +41,13 @@ def ensure_auth_schema(cur):
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
     )
+    cur.execute("SHOW COLUMNS FROM system_users LIKE 'role'")
+    row = cur.fetchone()
+    if row:
+        column_type = str(row[1] or "")
+        if column_type.lower().startswith("enum"):
+            cur.execute("ALTER TABLE system_users MODIFY role VARCHAR(64) NOT NULL DEFAULT 'viewer'")
+            cur.execute("UPDATE system_users SET role = 'viewer' WHERE role = 'user'")
 
 
 def ensure_operation_log_schema(cur):

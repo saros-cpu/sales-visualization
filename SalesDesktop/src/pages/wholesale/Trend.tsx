@@ -53,12 +53,12 @@ export default function Trend() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
           onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
       </Space>
       <ChartCard title={t('wholesale.dailyTrend')} loading={q.isLoading} option={trendOption} height={400} />
-      <TableCard title={t('wholesale.dailyTrend')} columns={trendColumns} data={trend} rowKey="date" loading={q.isLoading} />
+      <TableCard title={t('wholesale.dailyTrend')} columns={trendColumns} data={trend} rowKey="date" loading={q.isLoading} pageSize={31} scrollY={320} />
     </div>
   );
 }

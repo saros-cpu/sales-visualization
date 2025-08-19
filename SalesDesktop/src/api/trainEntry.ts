@@ -28,10 +28,7 @@ export async function createTrainEntry(data: {
   return res.data;
 }
 
-export async function batchCreateTrainEntry(records: Array<{
-  entryDate: string; productName: string; vehicleNo: string;
-  weighNo?: string; senderName?: string; receiverName?: string; weightKg?: number; remark?: string;
-}>) {
+export async function batchCreateTrainEntry(records: Array<Partial<TrainEntryRecord>>) {
   const res = await client.post('/train-entry/batch', { records });
   return res.data;
 }

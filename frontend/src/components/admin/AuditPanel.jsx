@@ -4,6 +4,15 @@ import { num } from '../../utils/format';
 import { getReviewDetails, applyReviewCorrection, getWeighAuditItems, applyWeighAudit, autoAuditWeigh } from '../../api/admin';
 import { getPeriods } from '../../api/sales';
 
+const classificationLabel = v => ({
+  transfer: '外运',
+  export_wholesale: '出口批发',
+  local_wholesale: '本地批发',
+  processing: '代加工',
+  procurement: '采购',
+  unknown: '待识别',
+}[v] || v || '--');
+
 export default function AuditPanel({ products, customerOptions, refresh }) {
   const [kind, setKind] = useState('contract');
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -69,7 +78,7 @@ export default function AuditPanel({ products, customerOptions, refresh }) {
                 {items.length ? items.map((item, i) => (
                   <tr key={i}>
                     <td><input className="review-check" type="checkbox" data-detail-id={item.detailId || item.id} data-issue-id={item.id} /></td>
-                    {isWeigh ? <><td>{item.date || '--'}</td><td>{item.entity || '--'}</td><td>{item.standardProduct || item.product || '--'}</td><td>{item.vehicleNo || '--'}</td><td>{item.classification || '--'}</td><td>{num.format(item.tons || 0)}</td><td>{item.matchStatus || '--'}</td><td>{item.weighSource || '储运区'}</td><td>{item.auditStatus === 'approved' ? '已通过' : item.auditStatus === 'rejected' ? '已拒绝' : '待审核'}</td></> : <><td>{item.date || '--'}</td><td>{item.entity || '--'}</td><td>{item.standardEntity || '--'}</td><td>{item.standardProduct || item.product || '--'}</td><td>{item.classification || '--'}</td><td>{num.format(item.tons || 0)}</td><td>{item.matchStatus || '--'}</td><td>{item.contractNo || '--'}</td><td>{item.amountCny == null ? '--' : num.format(item.amountCny)}</td></>}
+                    {isWeigh ? <><td>{item.date || '--'}</td><td>{item.entity || '--'}</td><td>{item.standardProduct || item.product || '--'}</td><td>{item.vehicleNo || '--'}</td><td>{classificationLabel(item.classification)}</td><td>{num.format(item.tons || 0)}</td><td>{item.matchStatus || '--'}</td><td>{item.weighSource || '储运区'}</td><td>{item.auditStatus === 'approved' ? '已通过' : item.auditStatus === 'rejected' ? '已拒绝' : '待审核'}</td></> : <><td>{item.date || '--'}</td><td>{item.entity || '--'}</td><td>{item.standardEntity || '--'}</td><td>{item.standardProduct || item.product || '--'}</td><td>{classificationLabel(item.classification)}</td><td>{num.format(item.tons || 0)}</td><td>{item.matchStatus || '--'}</td><td>{item.contractNo || '--'}</td><td>{item.amountCny == null ? '--' : num.format(item.amountCny)}</td></>}
                   </tr>
                 )) : <tr><td colSpan={10}>暂无数据</td></tr>}
               </tbody>
@@ -114,7 +123,7 @@ export default function AuditPanel({ products, customerOptions, refresh }) {
               </div>
             ) : (
               <form id="reviewFixForm" className="form-grid review-correction-form">
-                <label>分类<select name="classification"><option value="">不修改</option><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">加工</option><option value="procurement">采购</option><option value="unknown">待识别</option></select></label>
+                <label>分类<select name="classification"><option value="">不修改</option><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">代加工</option><option value="procurement">采购</option><option value="unknown">待识别</option></select></label>
                 <label>油品<select name="productCode"><option value="">不修改</option>{productOpts}</select></label>
                 <label>客户 / 去向<input name="entityName" list="auditCustomerOpts" /></label>
                 <label>提示状态<select name="issueStatus"><option value="">不修改</option><option value="resolved">已解决</option><option value="ignored">忽略</option></select></label>

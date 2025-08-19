@@ -24,6 +24,8 @@ interface MonthlySummary {
   totalTxn: number; totalShops: number; totalLiters: number; totalSales: number;
   cashSales: number; cardSales: number; cashLiters: number; cardLiters: number;
   activeShops: number;
+  inventory?: number; inventoryMonth?: string;
+  totalTons?: number; totalSalesCny?: number;
 }
 
 interface RegionData {
@@ -147,8 +149,10 @@ export async function exportMonthlyExcel(ym: string) {
 export interface SelfUseRecord {
   transactionKey: number;
   date: string;
+  time: string;
   shopKey: number;
   stationName: string;
+  stationShort?: string;
   resourceKey: number;
   productName: string;
   volume: number;
@@ -169,4 +173,19 @@ export interface SelfUseData {
 export async function getSelfUse(yearMonth: string) {
   const res = await api.get(`/retail/self-use/${yearMonth}`);
   return res.data as SelfUseData;
+}
+
+export interface SelfUseRangeData {
+  date_from: string;
+  date_to: string;
+  records: SelfUseRecord[];
+  summary: {
+    totalVolume: number;
+    totalRecords: number;
+  };
+}
+
+export async function getSelfUseByRange(date_from: string, date_to: string) {
+  const res = await api.get('/retail/self-use', { params: { date_from, date_to } });
+  return res.data as SelfUseRangeData;
 }

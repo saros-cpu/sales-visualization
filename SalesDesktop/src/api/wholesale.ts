@@ -5,9 +5,11 @@ const apiV1 = createApi('/api');
 const apiV2 = createApi('/api/v2');
 
 export interface WholesaleItem {
-  id: number; businessDate: string; productName: string; vehicleNo: string;
-  senderName: string; entityName: string; entityCode: string; entityType: string;
-  classification: string; weightTons: number; weighSource: string;
+  id: number | string; sourceId?: number | string; businessDate: string; productName: string; rawProductName?: string; standardProductName?: string;
+  vehicleNo: string; weighSerialNo?: string;
+  senderName: string; entityName: string; rawEntityName?: string; standardEntityName?: string;
+  entityCode: string; entityType: string;
+  classification: string; weightKg?: number; weightTons: number; matchStatus?: string; weighSource: string;
   transportMode: string; auditStatus: string; remark: string; createdAt: string;
 }
 

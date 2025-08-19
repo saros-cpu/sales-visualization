@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from db import get_connection
-from import_helpers import load_entity_lookup, load_product_lookup, lookup_entity, lookup_product
+from import_helpers import classify_wholesale_movement, load_entity_lookup, load_product_lookup, lookup_entity, lookup_product
 from text_utils import normalize_text
 
 WEIGH_COLUMNS = ["序号", "编号", "卡号", "车号", "服务区域", "运输单位", "发货单位",
@@ -107,10 +107,13 @@ def main():
                     auto_product += 1
                     product_lookup = load_product_lookup(cur)
 
-            if entity_type == "retail_station":
-                classification = "transfer"
-            elif entity_type == "wholesale_customer" and standard_name:
-                classification = "local_wholesale"
+            classification = classify_wholesale_movement(
+                cur,
+                entity_lookup,
+                raw_entity,
+                sender_name=sender_name,
+                current=classification,
+            )
 
             cur.execute("""
                 INSERT INTO wholesale_detail_records

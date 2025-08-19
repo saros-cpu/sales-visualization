@@ -1380,7 +1380,7 @@ def register_data_routes(app):
         raw_entity = clean_str(payload.get("entityName"))
         classification = payload.get("classification") or "unknown"
         weight_kg = parse_decimal(payload.get("weightKg"))
-        if classification not in ("local_wholesale", "export_wholesale", "transfer", "processing", "procurement", "other", "unknown"):
+        if classification not in ("local_wholesale", "export_wholesale", "transfer", "processing", "procurement", "unknown"):
             classification = "unknown"
         if not business_date or not raw_entity or weight_kg is None or (not raw_product and not product_code):
             return jsonify({"error": "日期、油品、客户/去向、重量必填"}), 400
@@ -1400,7 +1400,7 @@ def register_data_routes(app):
             if classification in ("local_wholesale", "export_wholesale", "unknown"):
                 get_or_create_customer(cur, raw_entity, classification if classification != "unknown" else "unknown")
             batch_id = create_manual_batch(cur, "Manual wholesale detail entry.", business_date)
-            match_status = "matched" if classification in ("transfer", "processing", "procurement", "other") else "unmatched"
+            match_status = "matched" if classification in ("transfer", "processing", "procurement") else "unmatched"
             weigh_serial_no = clean_str(payload.get("weighSerialNo"))
             sender_name = clean_str(payload.get("senderName"))
             cur.execute(
@@ -1668,8 +1668,8 @@ def register_data_routes(app):
             where.append("d.vehicle_no LIKE %s")
             params.append(f"%{vehicle}%")
         if entity:
-            where.append("(d.raw_entity_name LIKE %s OR d.standard_entity_name LIKE %s)")
-            params.extend([f"%{entity}%", f"%{entity}%"])
+            where.append("(d.raw_entity_name LIKE %s OR d.standard_entity_name LIKE %s OR d.sender_name LIKE %s)")
+            params.extend([f"%{entity}%", f"%{entity}%", f"%{entity}%"])
         if product:
             where.append("(d.raw_product_name LIKE %s OR p.display_name LIKE %s)")
             params.extend([f"%{product}%", f"%{product}%"])
@@ -1686,7 +1686,7 @@ def register_data_routes(app):
             vals = [v.strip() for v in col_product.split(",") if v.strip()]
             if vals:
                 placeholders = ",".join(["%s"] * len(vals))
-                where.append(f"p.display_name IN ({placeholders})")
+                where.append(f"d.raw_product_name IN ({placeholders})")
                 params.extend(vals)
         if col_sender:
             vals = [v.strip() for v in col_sender.split(",") if v.strip()]
@@ -1698,7 +1698,7 @@ def register_data_routes(app):
             vals = [v.strip() for v in col_receiver.split(",") if v.strip()]
             if vals:
                 placeholders = ",".join(["%s"] * len(vals))
-                where.append(f"d.standard_entity_name IN ({placeholders})")
+                where.append(f"d.raw_entity_name IN ({placeholders})")
                 params.extend(vals)
         if col_classification:
             vals = [v.strip() for v in col_classification.split(",") if v.strip()]
@@ -1713,7 +1713,10 @@ def register_data_routes(app):
             cur.execute(f"""
                 SELECT d.id, d.business_date, d.raw_product_name, p.display_name AS product_name,
                        d.vehicle_no, d.weigh_serial_no, d.raw_entity_name, d.sender_name,
-                       d.standard_entity_name, d.classification, d.weight_kg, d.weight_tons,
+                       d.standard_entity_name,
+                       COALESCE(NULLIF(p.display_name, ''), d.raw_product_name) AS display_product_name,
+                       COALESCE(NULLIF(d.standard_entity_name, ''), d.raw_entity_name) AS display_entity_name,
+                       d.classification, d.weight_kg, d.weight_tons,
                        d.match_status, d.audit_status, d.weigh_source, d.remark, d.created_at
                 FROM wholesale_detail_records d
                 LEFT JOIN products p ON p.id = d.product_id
@@ -1722,14 +1725,14 @@ def register_data_routes(app):
             """, params)
             items = [{
                 "id": r[0], "businessDate": r[1].isoformat() if r[1] else None,
-                "rawProductName": r[2], "productName": r[3],
+                "rawProductName": r[2], "productName": r[3], "displayProductName": r[9],
                 "vehicleNo": r[4], "weighSerialNo": r[5] or "",
                 "rawEntityName": r[6], "senderName": r[7] or "",
-                "standardEntityName": r[8],
-                "classification": r[9], "weightKg": float(r[10]) if r[10] else 0,
-                "weightTons": float(r[11]) if r[11] else 0, "matchStatus": r[12],
-                "auditStatus": r[13], "weighSource": r[14],
-                "remark": r[15] or "", "createdAt": r[16].isoformat() if r[16] else None,
+                "standardEntityName": r[8], "displayEntityName": r[10],
+                "classification": r[11], "weightKg": float(r[12]) if r[12] else 0,
+                "weightTons": float(r[13]) if r[13] else 0, "matchStatus": r[14],
+                "auditStatus": r[15], "weighSource": r[16],
+                "remark": r[17] or "", "createdAt": r[18].isoformat() if r[18] else None,
             } for r in cur.fetchall()]
             return jsonify({"items": items})
         finally:
@@ -1747,9 +1750,9 @@ def register_data_routes(app):
             cur = conn.cursor()
             cur.execute("""
                 SELECT
-                    COALESCE(GROUP_CONCAT(DISTINCT p.display_name ORDER BY p.display_name SEPARATOR '||'), ''),
+                    COALESCE(GROUP_CONCAT(DISTINCT d.raw_product_name ORDER BY d.raw_product_name SEPARATOR '||'), ''),
                     COALESCE(GROUP_CONCAT(DISTINCT d.sender_name ORDER BY d.sender_name SEPARATOR '||'), ''),
-                    COALESCE(GROUP_CONCAT(DISTINCT d.standard_entity_name ORDER BY d.standard_entity_name SEPARATOR '||'), ''),
+                    COALESCE(GROUP_CONCAT(DISTINCT d.raw_entity_name ORDER BY d.raw_entity_name SEPARATOR '||'), ''),
                     COALESCE(GROUP_CONCAT(DISTINCT d.classification ORDER BY d.classification SEPARATOR '||'), '')
                 FROM wholesale_detail_records d
                 LEFT JOIN products p ON p.id = d.product_id

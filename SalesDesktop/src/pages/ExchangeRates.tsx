@@ -83,10 +83,10 @@ export default function ExchangeRates() {
 
   return (
     <div>
-      <Row justify="space-between" style={{ marginBottom: 16 }}>
+      <Row justify="space-between" className="page-toolbar">
         <Col><h2>{t('nav.exchange')}</h2></Col>
         <Col>
-          <Space>
+          <Space wrap>
             <Select value={month} onChange={setMonth} style={{ width: 90 }}>
               {Array.from({ length: 12 }, (_, i) => (
                 <Select.Option key={i + 1} value={i + 1}>{i + 1}{t('common.month')}</Select.Option>
@@ -101,11 +101,11 @@ export default function ExchangeRates() {
           </Space>
         </Col>
       </Row>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}><Card size="small"><Statistic title={t('exchange.totalDays')} value={data?.total ?? 0} suffix={t('common.day')} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title={t('exchange.openGaps')} value={data?.openGaps ?? 0} valueStyle={{ color: (data?.openGaps ?? 0) > 0 ? '#ff4d4f' : undefined }} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title={t('exchange.missingUsd')} value={data?.missingUsd ?? 0} valueStyle={{ color: (data?.missingUsd ?? 0) > 0 ? '#faad14' : undefined }} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title={t('exchange.missingCny')} value={data?.missingCny ?? 0} valueStyle={{ color: (data?.missingCny ?? 0) > 0 ? '#faad14' : undefined }} /></Card></Col>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} lg={6}><Card size="small"><Statistic title={t('exchange.totalDays')} value={data?.total ?? 0} suffix={t('common.day')} /></Card></Col>
+        <Col xs={12} lg={6}><Card size="small"><Statistic title={t('exchange.openGaps')} value={data?.openGaps ?? 0} valueStyle={{ color: (data?.openGaps ?? 0) > 0 ? '#ff4d4f' : undefined }} /></Card></Col>
+        <Col xs={12} lg={6}><Card size="small"><Statistic title={t('exchange.missingUsd')} value={data?.missingUsd ?? 0} valueStyle={{ color: (data?.missingUsd ?? 0) > 0 ? '#faad14' : undefined }} /></Card></Col>
+        <Col xs={12} lg={6}><Card size="small"><Statistic title={t('exchange.missingCny')} value={data?.missingCny ?? 0} valueStyle={{ color: (data?.missingCny ?? 0) > 0 ? '#faad14' : undefined }} /></Card></Col>
       </Row>
       <Card size="small" style={{ marginBottom: 16 }}>
         <ReactEChartsCore echarts={echarts} option={chartOption} style={{ height: 320 }} />
@@ -117,7 +117,7 @@ export default function ExchangeRates() {
           rowKey="date"
           pagination={{ pageSize: 31, showTotal: (tot) => t('common.total', { count: tot }) }}
           size="small"
-          scroll={{ x: 600 }}
+          scroll={{ x: 600, y: 'calc(100vh - 470px)' }}
         />
       </Card>
     </div>

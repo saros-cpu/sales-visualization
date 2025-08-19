@@ -5,14 +5,20 @@ import { useTranslation } from 'react-i18next';
 import client from '@/api/client';
 import {
   getCategories, getMaterials, createMaterial, Material, MaterialCategory,
+  getDepots, DepotOption,
   getInboundList, createInbound, InboundRecord,
   getTransferOrders, createTransferOrder, updateOrderStatus, TransferOrder,
   getInventory, InventoryItem,
 } from '@/api/materials';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
+import { useAuth } from '@/contexts/AuthContext';
 
 function MaterialDictTab() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const canCreate = can('materials:create');
+  const canUpdate = can('materials:update');
+  const canEdit = canCreate || canUpdate;
   const [data, setData] = useState<Material[]>([]);
   const [cats, setCats] = useState<MaterialCategory[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,14 +29,21 @@ function MaterialDictTab() {
   const fetchData = async () => {
     setLoading(true);
     const [m, c] = await Promise.all([getMaterials(), getCategories()]);
-    setData(m.data);
-    setCats(c.data);
+    setData(Array.isArray(m) ? m : (m?.data ?? []));
+    setCats(Array.isArray(c) ? c : (c?.data ?? []));
     setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, []);
 
   const handleBatchSave = async (changes: Array<{ id: number; data: Partial<Material> }>) => {
+    if (
+      (changes.some((change) => change.id < 0) && !canCreate) ||
+      (changes.some((change) => change.id > 0) && !canUpdate)
+    ) {
+      message.error(t('common.noPermission'));
+      return;
+    }
     setSaving(true);
     try {
       for (const change of changes) {
@@ -51,6 +64,7 @@ function MaterialDictTab() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
+    if (id > 0 && !canUpdate) return;
     setData(prev => prev.map(r =>
       r.id === id ? { ...r, [field]: value } : r
     ));
@@ -72,7 +86,16 @@ function MaterialDictTab() {
     { title: t('common.code'), dataIndex: 'material_code', key: 'material_code', width: 100, editable: true },
     { title: t('common.nameZh'), dataIndex: 'name_zh', key: 'name_zh', editable: true },
     { title: t('common.nameRu'), dataIndex: 'name_ru', key: 'name_ru', editable: true },
-    { title: t('materials.category'), dataIndex: 'category_name', key: 'category_name', width: 100, editable: true },
+    {
+      title: t('materials.category'),
+      dataIndex: 'category_id',
+      key: 'category_id',
+      width: 140,
+      editable: true,
+      editorType: 'select' as const,
+      editorOptions: cats.map((cat) => ({ value: cat.id, label: cat.name_zh })),
+      render: (value: number, record: Material) => cats.find((cat) => cat.id === value)?.name_zh || record.category_name || '-',
+    },
     { title: t('common.spec'), dataIndex: 'specification', key: 'specification', editable: true },
     { title: t('materials.unit'), dataIndex: 'unit', key: 'unit', width: 60, editable: true },
     { title: t('common.unitPrice'), dataIndex: 'unit_price', key: 'unit_price', width: 80, editable: true },
@@ -81,11 +104,13 @@ function MaterialDictTab() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
-          {t('common.add')}
-        </Button>
-        {editing && (
+      <Space wrap style={{ marginBottom: 16 }}>
+        {canCreate && (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+            {t('common.add')}
+          </Button>
+        )}
+        {editing && canEdit && (
           <>
             <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
               {t('common.save')}
@@ -95,7 +120,7 @@ function MaterialDictTab() {
             </Button>
           </>
         )}
-        {!editing && (
+        {!editing && canEdit && (
           <Button onClick={() => setEditing(true)}>
             {t('common.edit')}
           </Button>
@@ -106,7 +131,7 @@ function MaterialDictTab() {
         dataSource={data}
         columns={columns}
         editing={editing}
-        setEditing={setEditing}
+        setEditing={(value) => setEditing(canEdit && value)}
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
@@ -120,6 +145,10 @@ function MaterialDictTab() {
 
 function InboundTab() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const canCreate = can('materials:create');
+  const canUpdate = can('materials:update');
+  const canEdit = canCreate || canUpdate;
   const [data, setData] = useState<InboundRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -130,14 +159,21 @@ function InboundTab() {
   const fetchData = async () => {
     setLoading(true);
     const res = await getInboundList({ page: 1, page_size: 1000 });
-    setData(res.data.items);
-    setTotal(res.data.total);
+      setData(res?.items ?? []);
+      setTotal(res?.total ?? 0);
     setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, []);
 
   const handleBatchSave = async (changes: Array<{ id: number; data: Partial<InboundRecord> }>) => {
+    if (
+      (changes.some((change) => change.id < 0) && !canCreate) ||
+      (changes.some((change) => change.id > 0) && !canUpdate)
+    ) {
+      message.error(t('common.noPermission'));
+      return;
+    }
     setSaving(true);
     try {
       for (const change of changes) {
@@ -158,6 +194,7 @@ function InboundTab() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
+    if (id > 0 && !canUpdate) return;
     setData(prev => prev.map(r =>
       r.id === id ? { ...r, [field]: value } : r
     ));
@@ -189,11 +226,13 @@ function InboundTab() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
-          {t('common.add')}
-        </Button>
-        {editing && (
+      <Space wrap style={{ marginBottom: 16 }}>
+        {canCreate && (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+            {t('common.add')}
+          </Button>
+        )}
+        {editing && canEdit && (
           <>
             <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
               {t('common.save')}
@@ -203,7 +242,7 @@ function InboundTab() {
             </Button>
           </>
         )}
-        {!editing && (
+        {!editing && canEdit && (
           <Button onClick={() => setEditing(true)}>
             {t('common.edit')}
           </Button>
@@ -214,7 +253,7 @@ function InboundTab() {
         dataSource={data}
         columns={columns}
         editing={editing}
-        setEditing={setEditing}
+        setEditing={(value) => setEditing(canEdit && value)}
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
@@ -228,6 +267,10 @@ function InboundTab() {
 
 function TransferOrdersTab() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const canCreate = can('materials:create');
+  const canUpdate = can('materials:update');
+  const canEdit = canCreate || canUpdate;
   const [data, setData] = useState<TransferOrder[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -238,14 +281,21 @@ function TransferOrdersTab() {
   const fetchData = async () => {
     setLoading(true);
     const res = await getTransferOrders({ page: 1, page_size: 1000 });
-    setData(res.data.items);
-    setTotal(res.data.total);
+      setData(res?.items ?? []);
+      setTotal(res?.total ?? 0);
     setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, []);
 
   const handleBatchSave = async (changes: Array<{ id: number; data: Partial<TransferOrder> }>) => {
+    if (
+      (changes.some((change) => change.id < 0) && !canCreate) ||
+      (changes.some((change) => change.id > 0) && !canUpdate)
+    ) {
+      message.error(t('common.noPermission'));
+      return;
+    }
     setSaving(true);
     try {
       for (const change of changes) {
@@ -266,6 +316,7 @@ function TransferOrdersTab() {
   };
 
   const handleRealTimeSave = async (id: number, field: string, value: any) => {
+    if (id > 0 && !canUpdate) return;
     setData(prev => prev.map(r =>
       r.id === id ? { ...r, [field]: value } : r
     ));
@@ -297,11 +348,13 @@ function TransferOrdersTab() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
-          {t('common.add')}
-        </Button>
-        {editing && (
+      <Space wrap style={{ marginBottom: 16 }}>
+        {canCreate && (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+            {t('common.add')}
+          </Button>
+        )}
+        {editing && canEdit && (
           <>
             <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
               {t('common.save')}
@@ -311,7 +364,7 @@ function TransferOrdersTab() {
             </Button>
           </>
         )}
-        {!editing && (
+        {!editing && canEdit && (
           <Button onClick={() => setEditing(true)}>
             {t('common.edit')}
           </Button>
@@ -322,7 +375,7 @@ function TransferOrdersTab() {
         dataSource={data}
         columns={columns}
         editing={editing}
-        setEditing={setEditing}
+        setEditing={(value) => setEditing(canEdit && value)}
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
@@ -343,7 +396,7 @@ function InventoryTab() {
   const fetchData = async () => {
     setLoading(true);
     const res = await getInventory(depotId);
-    setData(res.data);
+    setData(Array.isArray(res) ? res : (res?.data ?? []));
     setLoading(false);
   };
 
@@ -360,12 +413,12 @@ function InventoryTab() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <Select value={depotId} onChange={setDepotId} allowClear placeholder={t('common.filterWarehouse')} style={{ width: 150 }}>
           <Select.Option value={1}>{t('common.defaultWarehouse')}</Select.Option>
         </Select>
       </Space>
-      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" pagination={false} scroll={{ x: 800 }} />
+      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" pagination={false} scroll={{ x: 800, y: 'calc(100vh - 360px)' }} />
     </div>
   );
 }

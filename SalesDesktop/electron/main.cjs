@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -108,6 +108,10 @@ function setupWindowControl() {
 }
 
 app.whenReady().then(() => {
+  const csp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:8900 http://198.51.100.10:8080 ws://localhost:5173; img-src 'self' data: blob:; font-src 'self' data:";
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } });
+  });
   createWindow();
   setupUpdater();
   setupFileDownload();

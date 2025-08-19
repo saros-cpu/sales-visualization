@@ -1,7 +1,7 @@
 import client from './client';
 
 export interface ProcurementItem {
-  id: number; businessDate: string; productName: string; senderName: string;
+  id: number; businessDate: string; productName: string; rawProductName?: string; standardProductName?: string; senderName: string;
   entityName: string; weightTons: number; weighSource: string; remark: string;
 }
 

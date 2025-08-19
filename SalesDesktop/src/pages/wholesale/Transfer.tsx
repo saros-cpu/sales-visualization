@@ -31,9 +31,16 @@ export default function Transfer() {
 
   const filtered = useMemo(() => {
     if (!ts?.byRegionProduct) return [];
-    if (!filterRegion) return ts.byRegionProduct;
-    return ts.byRegionProduct.filter((r) => r.region === filterRegion);
-  }, [ts, filterRegion]);
+    let items = ts.byRegionProduct;
+    if (filterRegion) items = items.filter((r) => r.region === filterRegion);
+    const order = new Map(regionOrder.map((r, i) => [r, i]));
+    return [...items].sort((a, b) => {
+      const oa = order.get(a.region) ?? 999;
+      const ob = order.get(b.region) ?? 999;
+      if (oa !== ob) return oa - ob;
+      return b.tons - a.tons;
+    });
+  }, [ts, filterRegion, regionOrder]);
 
   // 按外运量排序右侧byRegion图表
   const sortedByRegion = useMemo(() => {
@@ -66,35 +73,38 @@ export default function Transfer() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
           onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
       </Space>
-      <Row gutter={16}>
-        <Col xs={24} lg={8}>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
           <Card size="small" title={t('wholesale.byRegion')} style={{ marginBottom: 16 }}>
             <BarList rows={sortedByRegion.map((r) => ({ name: r.region === 'CTY-30' ? 'STN-63' : r.region, tons: r.tons }))} />
           </Card>
         </Col>
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={12}>
           <Card size="small" title={t('wholesale.byProduct')} style={{ marginBottom: 16 }}>
             <BarList rows={(ts?.byProduct ?? []).map((r) => ({ name: r.product, tons: r.tons }))} />
           </Card>
         </Col>
-        <Col xs={24} lg={8}>
-          <Select
-            placeholder={t('retail.region')}
-            allowClear
-            value={filterRegion || undefined}
-            onChange={(v) => setFilterRegion(v ?? '')}
-            options={regions.map((r) => ({ label: r, value: r }))}
-            style={{ width: '100%', marginBottom: 16 }}
-          />
+        <Col xs={24}>
+          <div className="table-toolbar">
+            <Select
+              placeholder={t('retail.region')}
+              allowClear
+              value={filterRegion || undefined}
+              onChange={(v) => setFilterRegion(v ?? '')}
+              options={regions.map((r) => ({ label: r, value: r }))}
+              style={{ width: 260 }}
+            />
+          </div>
           <TableCard
             title={t('wholesale.transferClass')}
             columns={detailColumns}
             data={filtered}
             rowKey={(r: any) => `${r.region}-${r.product}` as any}
+            pagination={false}
           />
         </Col>
       </Row>

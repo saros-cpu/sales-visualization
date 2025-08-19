@@ -1,6 +1,7 @@
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required
 from api_v2 import bp_v2
+from .authz import permission_required
 from db import get_connection
 from text_utils import normalize_text
 import pymysql
@@ -8,6 +9,7 @@ import pymysql
 
 @bp_v2.route('/aliases/products', methods=['GET'])
 @jwt_required()
+@permission_required('aliases:view')
 def alias_products():
     conn = get_connection()
     try:
@@ -34,6 +36,7 @@ def alias_products():
 
 @bp_v2.route('/aliases/entities', methods=['GET'])
 @jwt_required()
+@permission_required('aliases:view')
 def alias_entities():
     conn = get_connection()
     try:
@@ -59,6 +62,7 @@ def alias_entities():
 
 @bp_v2.route('/aliases/suggest', methods=['GET'])
 @jwt_required()
+@permission_required('aliases:view')
 def alias_suggest():
     q = request.args.get('q', '').strip()
     atype = request.args.get('type', 'product')
@@ -87,6 +91,7 @@ def alias_suggest():
 
 @bp_v2.route('/aliases/products/list', methods=['GET'])
 @jwt_required()
+@permission_required('aliases:view')
 def alias_products_list():
     conn = get_connection()
     try:
@@ -108,6 +113,7 @@ def alias_products_list():
 
 @bp_v2.route('/aliases/entities/list', methods=['GET'])
 @jwt_required()
+@permission_required('aliases:view')
 def alias_entities_list():
     conn = get_connection()
     try:
@@ -130,6 +136,7 @@ def alias_entities_list():
 
 @bp_v2.route('/aliases/products', methods=['POST'])
 @jwt_required()
+@permission_required('aliases:create')
 def create_product_alias():
     payload = request.get_json()
     product_id = payload.get('productId')
@@ -154,6 +161,7 @@ def create_product_alias():
 
 @bp_v2.route('/aliases/products/<int:alias_id>', methods=['DELETE'])
 @jwt_required()
+@permission_required('aliases:delete')
 def delete_product_alias(alias_id):
     conn = get_connection()
     try:
@@ -167,6 +175,7 @@ def delete_product_alias(alias_id):
 
 @bp_v2.route('/aliases/entities', methods=['POST'])
 @jwt_required()
+@permission_required('aliases:create')
 def create_entity_alias():
     payload = request.get_json()
     entity_type = payload.get('entityType')
@@ -193,6 +202,7 @@ def create_entity_alias():
 
 @bp_v2.route('/aliases/entities/<int:alias_id>', methods=['DELETE'])
 @jwt_required()
+@permission_required('aliases:delete')
 def delete_entity_alias(alias_id):
     conn = get_connection()
     try:

@@ -25,7 +25,7 @@ from constants import (
 from db import get_connection
 from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, SK29_RSK_MAP, STATION_RK_CORRECTIONS
 
-from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, query_month_summary
+from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, get_report_month_inventory, query_month_summary
 
 analytics_api = Blueprint("analytics_api", __name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -1599,13 +1599,43 @@ def api_assistant_retail_summary():
         conn.close()
 
 
+def _monthly_inventory_needs_refresh(payload):
+    summary = (payload or {}).get("summary") or {}
+    return "inventory" not in summary or "inventoryMonth" not in summary
+
+
+def _attach_monthly_inventory(year_month, payload, cur=None):
+    summary = payload.setdefault("summary", {})
+    if not _monthly_inventory_needs_refresh(payload):
+        return False
+
+    if cur is not None:
+        summary["inventory"] = get_report_month_inventory(cur, year_month)
+        summary["inventoryMonth"] = year_month
+        return True
+
+    conn = get_connection()
+    try:
+        local_cur = conn.cursor()
+        summary["inventory"] = get_report_month_inventory(local_cur, year_month)
+        summary["inventoryMonth"] = year_month
+        return True
+    finally:
+        conn.close()
+
+
 @analytics_api.route('/api/monthly/<year_month>')
 def api_monthly(year_month):
     cache_key = f'monthly:{year_month}'
     cached = get_cached(cache_key)
     if cached and cache_allowed():
+        cache_changed = False
         if "totalTons" not in (cached.get("summary") or {}) or "totalSalesCny" not in (cached.get("summary") or {}):
             cached = _attach_monthly_finance_metrics(cached)
+            cache_changed = True
+        if _attach_monthly_inventory(year_month, cached):
+            cache_changed = True
+        if cache_changed:
             set_cached(cache_key, cached)
         return jsonify(cached)
 
@@ -1617,6 +1647,8 @@ def api_monthly(year_month):
 
         # ---- 当月全网汇总 ----
         summary = query_month_summary(cur, year_month)
+        summary['inventory'] = get_report_month_inventory(cur, year_month)
+        summary['inventoryMonth'] = year_month
         # activeShops 已在 query_month_summary 中合并计算，无需额外查询
 
         # ---- 同比环比数据 ----

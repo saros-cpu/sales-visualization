@@ -1,6 +1,8 @@
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api_v2 import bp_v2
+from .authz import permission_required
+from .data_scope import custom_resource_filter, owner_scope_filter
 from db import get_connection
 import pymysql
 from datetime import datetime
@@ -10,6 +12,7 @@ from datetime import datetime
 
 @bp_v2.route('/materials/categories', methods=['GET'])
 @jwt_required()
+@permission_required('materials:view')
 def list_categories():
     conn = get_connection()
     try:
@@ -20,10 +23,24 @@ def list_categories():
         conn.close()
 
 
+@bp_v2.route('/materials/depots', methods=['GET'])
+@jwt_required()
+@permission_required('materials:view')
+def list_depots():
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute('SELECT id, depot_code, name_zh, name_ru, depot_type, is_active FROM depots WHERE is_active = TRUE ORDER BY id')
+            return jsonify({'code': 0, 'message': 'success', 'data': [dict(r) for r in cur.fetchall()]})
+    finally:
+        conn.close()
+
+
 # ── 物资字典 ──
 
 @bp_v2.route('/materials', methods=['GET'])
 @jwt_required()
+@permission_required('materials:view')
 def list_materials():
     conn = get_connection()
     try:
@@ -42,6 +59,7 @@ def list_materials():
 
 @bp_v2.route('/materials', methods=['POST'])
 @jwt_required()
+@permission_required('materials:create')
 def create_material():
     data = request.get_json() or {}
     conn = get_connection()
@@ -57,17 +75,68 @@ def create_material():
         conn.close()
 
 
+@bp_v2.route('/materials/<int:material_id>', methods=['PUT'])
+@jwt_required()
+@permission_required('materials:update')
+def update_material(material_id):
+    data = request.get_json() or {}
+    field_map = {
+        'materialCode': 'material_code',
+        'material_code': 'material_code',
+        'categoryId': 'category_id',
+        'category_id': 'category_id',
+        'nameZh': 'name_zh',
+        'name_zh': 'name_zh',
+        'nameRu': 'name_ru',
+        'name_ru': 'name_ru',
+        'specification': 'specification',
+        'unit': 'unit',
+        'unitPrice': 'unit_price',
+        'unit_price': 'unit_price',
+        'isActive': 'is_active',
+        'is_active': 'is_active',
+    }
+    updates = []
+    params = []
+    for key, column in field_map.items():
+        if key in data:
+            updates.append(f'{column} = %s')
+            params.append(data[key])
+    if not updates:
+        return jsonify({'code': 0, 'message': 'success', 'data': None})
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            params.append(material_id)
+            cur.execute(f'UPDATE materials SET {", ".join(updates)} WHERE id = %s', params)
+            conn.commit()
+            return jsonify({'code': 0, 'message': 'success', 'data': None})
+    finally:
+        conn.close()
+
+
 # ── 物资入库 ──
 
 @bp_v2.route('/materials/inbound', methods=['GET'])
 @jwt_required()
+@permission_required('materials:view')
 def list_inbound():
     page = int(request.args.get('page', 1))
     page_size = int(request.args.get('page_size', 50))
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            cur.execute('SELECT COUNT(*) AS total FROM material_inbound')
+            user_id = int(get_jwt_identity())
+            scope_clause, scope_params = custom_resource_filter(
+                cur,
+                user_id,
+                'materials',
+                {'depot': {'ids': ['i.depot_id']}},
+            )
+            owner_clause, owner_params = owner_scope_filter(cur, user_id, 'materials', 'i.created_by')
+            list_scope = f'{scope_clause}{owner_clause}'
+            list_params = scope_params + owner_params
+            cur.execute(f'SELECT COUNT(*) AS total FROM material_inbound i WHERE 1=1{list_scope}', list_params)
             total = cur.fetchone()['total']
             offset = (page - 1) * page_size
             cur.execute('''
@@ -77,8 +146,9 @@ def list_inbound():
                 FROM material_inbound i
                 LEFT JOIN materials m ON i.material_id = m.id
                 LEFT JOIN depots d ON i.depot_id = d.id
+                WHERE 1=1''' + list_scope + '''
                 ORDER BY i.created_at DESC LIMIT %s OFFSET %s
-            ''', (page_size, offset))
+            ''', list_params + [page_size, offset])
             items = [dict(r) for r in cur.fetchall()]
             return jsonify({'code': 0, 'message': 'success', 'data': {'items': items, 'total': total, 'page': page, 'page_size': page_size}})
     finally:
@@ -87,6 +157,7 @@ def list_inbound():
 
 @bp_v2.route('/materials/inbound', methods=['POST'])
 @jwt_required()
+@permission_required('materials:create')
 def create_inbound():
     data = request.get_json() or {}
     conn = get_connection()
@@ -106,10 +177,55 @@ def create_inbound():
         conn.close()
 
 
+@bp_v2.route('/materials/inbound/<int:inbound_id>', methods=['PUT'])
+@jwt_required()
+@permission_required('materials:update')
+def update_inbound(inbound_id):
+    data = request.get_json() or {}
+    field_map = {
+        'inboundDate': 'inbound_date',
+        'inbound_date': 'inbound_date',
+        'materialId': 'material_id',
+        'material_id': 'material_id',
+        'depotId': 'depot_id',
+        'depot_id': 'depot_id',
+        'supplierName': 'supplier_name',
+        'supplier_name': 'supplier_name',
+        'quantity': 'quantity',
+        'unitPrice': 'unit_price',
+        'unit_price': 'unit_price',
+        'totalAmount': 'total_amount',
+        'total_amount': 'total_amount',
+        'invoiceNo': 'invoice_no',
+        'invoice_no': 'invoice_no',
+        'remark': 'remark',
+    }
+    updates = []
+    params = []
+    for key, column in field_map.items():
+        if key in data:
+            updates.append(f'{column} = %s')
+            params.append(data[key])
+    if not updates:
+        return jsonify({'code': 0, 'message': 'success', 'data': None})
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            scope_clause, scope_params = owner_scope_filter(cur, int(get_jwt_identity()), 'materials', 'created_by')
+            params.append(inbound_id)
+            params.extend(scope_params)
+            cur.execute(f'UPDATE material_inbound SET {", ".join(updates)} WHERE id = %s{scope_clause}', params)
+            conn.commit()
+            return jsonify({'code': 0, 'message': 'success', 'data': None})
+    finally:
+        conn.close()
+
+
 # ── 调拨单 ──
 
 @bp_v2.route('/materials/orders', methods=['GET'])
 @jwt_required()
+@permission_required('materials:view')
 def list_orders():
     status = request.args.get('status')
     page = int(request.args.get('page', 1))
@@ -117,11 +233,23 @@ def list_orders():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            user_id = int(get_jwt_identity())
             where = ['1=1']
             params = []
             if status:
                 where.append('o.status = %s')
                 params.append(status)
+            scope_clause, scope_params = custom_resource_filter(
+                cur,
+                user_id,
+                'materials',
+                {'depot': {'ids': ['o.from_depot_id', 'o.to_depot_id']}},
+            )
+            where.append(f'1=1{scope_clause}')
+            params.extend(scope_params)
+            owner_clause, owner_params = owner_scope_filter(cur, user_id, 'materials', 'o.created_by')
+            where.append(f'1=1{owner_clause}')
+            params.extend(owner_params)
             cur.execute(f'SELECT COUNT(*) AS total FROM material_transfer_orders o WHERE {" AND ".join(where)}', params)
             total = cur.fetchone()['total']
             offset = (page - 1) * page_size
@@ -146,6 +274,7 @@ def list_orders():
 
 @bp_v2.route('/materials/orders', methods=['POST'])
 @jwt_required()
+@permission_required('materials:create')
 def create_order():
     data = request.get_json() or {}
     conn = get_connection()
@@ -166,8 +295,54 @@ def create_order():
         conn.close()
 
 
+@bp_v2.route('/materials/orders/<int:order_id>', methods=['PUT'])
+@jwt_required()
+@permission_required('materials:update')
+def update_order(order_id):
+    data = request.get_json() or {}
+    field_map = {
+        'orderNo': 'order_no',
+        'order_no': 'order_no',
+        'materialId': 'material_id',
+        'material_id': 'material_id',
+        'fromDepotId': 'from_depot_id',
+        'from_depot_id': 'from_depot_id',
+        'toDepotId': 'to_depot_id',
+        'to_depot_id': 'to_depot_id',
+        'requestedQty': 'requested_qty',
+        'requested_qty': 'requested_qty',
+        'transportMode': 'transport_mode',
+        'transport_mode': 'transport_mode',
+        'vehicleNo': 'vehicle_no',
+        'vehicle_no': 'vehicle_no',
+        'driverName': 'driver_name',
+        'driver_name': 'driver_name',
+        'remark': 'remark',
+    }
+    updates = []
+    params = []
+    for key, column in field_map.items():
+        if key in data:
+            updates.append(f'{column} = %s')
+            params.append(data[key])
+    if not updates:
+        return jsonify({'code': 0, 'message': 'success', 'data': None})
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            scope_clause, scope_params = owner_scope_filter(cur, int(get_jwt_identity()), 'materials', 'created_by')
+            params.append(order_id)
+            params.extend(scope_params)
+            cur.execute(f'UPDATE material_transfer_orders SET {", ".join(updates)} WHERE id = %s{scope_clause}', params)
+            conn.commit()
+            return jsonify({'code': 0, 'message': 'success', 'data': None})
+    finally:
+        conn.close()
+
+
 @bp_v2.route('/materials/orders/<int:order_id>/status', methods=['PUT'])
 @jwt_required()
+@permission_required('materials:approve')
 def update_order_status(order_id):
     data = request.get_json() or {}
     status = data.get('status')
@@ -198,6 +373,7 @@ def update_order_status(order_id):
 
 @bp_v2.route('/materials/inventory', methods=['GET'])
 @jwt_required()
+@permission_required('materials:view')
 def get_inventory():
     depot_id = request.args.get('depot_id')
     conn = get_connection()
@@ -208,6 +384,14 @@ def get_inventory():
             if depot_id:
                 where.append('i.depot_id = %s')
                 params.append(depot_id)
+            scope_clause, scope_params = custom_resource_filter(
+                cur,
+                int(get_jwt_identity()),
+                'materials',
+                {'depot': {'ids': ['i.depot_id']}},
+            )
+            where.append(f'1=1{scope_clause}')
+            params.extend(scope_params)
             cur.execute(f'''
                 SELECT i.id, i.material_id, m.name_zh AS material_name, m.unit,
                        i.depot_id, d.name_zh AS depot_name, d.name_ru AS depot_name_ru,

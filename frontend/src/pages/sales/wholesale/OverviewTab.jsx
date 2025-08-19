@@ -50,7 +50,7 @@ export default function OverviewTab({ data }) {
           </dl>
         </article>
         <article className="metric-panel pending">
-          <span>待审核批发</span>
+          <span>待识别</span>
           <strong>{num.format(pendingCard.tons || 0)} 吨</strong>
           <small>数量已统计，金额待合同复核</small>
           <dl>
@@ -68,9 +68,9 @@ export default function OverviewTab({ data }) {
           </dl>
         </article>
         <article className="metric-panel processing" style={{borderLeftColor:'#FF9800'}}>
-          <span>采购入库</span>
+          <span>采购</span>
           <strong>{num.format(procurementCard.tons || 0)} 吨</strong>
-          <small>外部采购</small>
+          <small>采购</small>
           <dl>
             <div><dt>供应商</dt><dd>{num.format(procurementCard.entities || 0)} 个</dd></div>
             <div><dt>记录</dt><dd>{num.format(procurementCard.rows || 0)} 条</dd></div>

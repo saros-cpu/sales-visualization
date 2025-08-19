@@ -5,6 +5,14 @@ import { num } from '../../utils/format';
 import { getImportBatches, rollbackBatch, organizeWholesale, deduplicateWholesale, uploadWholesaleFile, saveManualDetail, saveManualContract } from '../../api/admin';
 
 const batchStatusLabel = (v) => ({ created: '已创建', parsed: '已解析', validated: '已校验', imported: '已导入', failed: '已回滚/失败' }[v] || v || '--');
+const classificationLabel = v => ({
+  transfer: '外运',
+  export_wholesale: '出口批发',
+  local_wholesale: '本地批发',
+  processing: '代加工',
+  procurement: '采购',
+  unknown: '待识别',
+}[v] || v || '--');
 
 export default function WholesalePanel({ products, customerOptions, refresh }) {
   const [batches, setBatches] = useState([]);
@@ -122,7 +130,7 @@ export default function WholesalePanel({ products, customerOptions, refresh }) {
                         <thead><tr><th>匹配状态</th><th>分类</th><th>行数</th><th>吨数</th></tr></thead>
                         <tbody>
                           {orgResult.statusRows.map((r, i) => (
-                            <tr key={i}><td>{r.matchStatus}</td><td>{r.classification}</td><td>{num.format(r.rows)}</td><td>{num.format(r.tons)}</td></tr>
+                            <tr key={i}><td>{r.matchStatus}</td><td>{classificationLabel(r.classification)}</td><td>{num.format(r.rows)}</td><td>{num.format(r.tons)}</td></tr>
                           ))}
                         </tbody>
                       </table>
@@ -166,7 +174,7 @@ export default function WholesalePanel({ products, customerOptions, refresh }) {
               <p className="muted">录入单条批发明细，保存后自动识别油品、客户/去向并参与当前统计。</p>
               <form className="form-grid manual-entry-form" onSubmit={handleDetail}>
                 <label>日期<input name="businessDate" type="date" required /></label>
-                <label>分类<select name="classification"><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">加工</option><option value="procurement">采购</option><option value="unknown">待识别</option></select></label>
+                <label>分类<select name="classification"><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">代加工</option><option value="procurement">采购</option><option value="unknown">待识别</option></select></label>
                 <label>油品<select name="productCode"><option value="">自动识别</option>{productOpts}</select></label>
                 <label>客户 / 去向<input name="entityName" list="wsCustomerOpts" required /></label>
                 <label>重量 KG<input name="weightKg" type="number" step="0.001" required /></label>

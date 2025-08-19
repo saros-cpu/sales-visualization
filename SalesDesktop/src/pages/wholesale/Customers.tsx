@@ -23,20 +23,20 @@ export default function Customers() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
           onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
       </Space>
       {q.data && ORDER.every(k => !q.data?.customerRankings?.[k]?.length) && (
         <Alert type="info" message={t('common.noData')} showIcon style={{ marginBottom: 16 }} />
       )}
-      <Row gutter={16}>
+      <Row gutter={[16, 16]}>
         {ORDER.map((key) => {
           const items = q.data?.customerRankings[key];
           if (!items || items.length === 0) return null;
           return (
-            <Col xs={24} lg={12} key={key}>
-              <Card size="small" title={t(`wholesale.${key}`)} style={{ marginBottom: 16 }}>
+            <Col xs={24} lg={key === 'local_wholesale' ? 14 : 10} key={key}>
+              <Card size="small" title={t(`wholesale.${key}`)} className="scroll-card customer-rank-card" style={{ marginBottom: 16 }}>
                 <RankList rows={items} mode={MODE[key] ?? 'customer'} />
               </Card>
             </Col>

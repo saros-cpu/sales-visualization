@@ -67,7 +67,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     ws.column_dimensions['B'].hidden = True
 
     month_ru = MONTH_NAMES_RU.get(m, '')
-    _apply_style(ws, 1, 1, f'Åæåäíåâíûé îò÷åò ïî ÀÇÑ - {month_ru} {y}', bold=True, size=12, h_align='center')
+    _apply_style(ws, 1, 1, f'Ежедневный отчет по АЗС - {month_ru} {y}', bold=True, size=12, h_align='center')
     ws.merge_cells('A1:Z1')
     ws.row_dimensions[1].height = 27
 
@@ -608,7 +608,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             ws_d.column_dimensions[get_column_letter(c)].width = w
         ws_d.column_dimensions['B'].hidden = True
 
-        _apply_style(ws_d, 1, 1, f'Åæåäíåâíûé îò÷åò ïî ÀÇÑ - {day.day} {month_ru} {y}',
+        _apply_style(ws_d, 1, 1, f'Ежедневный отчет по АЗС - {day.day} {month_ru} {y}',
                     bold=True, size=12, h_align='center')
         ws_d.merge_cells('A1:X1')
         ws_d.row_dimensions[1].height = 27

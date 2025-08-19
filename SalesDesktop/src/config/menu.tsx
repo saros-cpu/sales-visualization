@@ -9,14 +9,17 @@ export interface MenuItem {
   key: string;
   icon?: ReactNode;
   labelKey: string;
+  moduleKey?: string;
+  permissionCode?: string;
+  anyPermissionCodes?: string[];
   children?: MenuItem[];
   roles?: string[];
 }
 
 export const menuConfig: MenuItem[] = [
-  { key: '/', icon: <DashboardOutlined />, labelKey: 'nav.dashboard' },
+  { key: '/', icon: <DashboardOutlined />, labelKey: 'nav.dashboard', moduleKey: 'dashboard' },
   {
-    key: '/retail', icon: <ShopOutlined />, labelKey: 'nav.retailShort',
+    key: '/retail', icon: <ShopOutlined />, labelKey: 'nav.retailShort', moduleKey: 'retail',
     children: [
       { key: '/retail/overview', labelKey: 'retail.overview' },
       { key: '/retail/region', labelKey: 'retail.region' },
@@ -29,7 +32,7 @@ export const menuConfig: MenuItem[] = [
     ],
   },
   {
-    key: '/wholesale', icon: <ShoppingOutlined />, labelKey: 'nav.wholesale',
+    key: '/wholesale', icon: <ShoppingOutlined />, labelKey: 'nav.wholesale', moduleKey: 'wholesale',
     children: [
       { key: '/wholesale/overview', labelKey: 'wholesale.overview' },
       { key: '/wholesale/products', labelKey: 'wholesale.products' },
@@ -39,21 +42,25 @@ export const menuConfig: MenuItem[] = [
       { key: '/wholesale/query', labelKey: 'wholesale.query' },
     ],
   },
-  { key: '/exchange', icon: <DollarOutlined />, labelKey: 'nav.exchange' },
-  { key: '/train-entry', icon: <CarOutlined />, labelKey: 'nav.dataEntry' },
-  { key: '/procurement', icon: <ImportOutlined />, labelKey: 'nav.procurement' },
-  { key: '/contracts', icon: <FileTextOutlined />, labelKey: 'nav.contracts' },
-  { key: '/materials', icon: <ToolOutlined />, labelKey: 'nav.materials' },
-  { key: '/transfer-loss', icon: <DashOutlined />, labelKey: 'nav.transferLoss' },
-  { key: '/map', icon: <EnvironmentOutlined />, labelKey: 'nav.map' },
+  { key: '/exchange', icon: <DollarOutlined />, labelKey: 'nav.exchange', moduleKey: 'exchange' },
+  { key: '/train-entry', icon: <CarOutlined />, labelKey: 'nav.dataEntry', moduleKey: 'train_entry' },
+  { key: '/procurement', icon: <ImportOutlined />, labelKey: 'nav.procurement', moduleKey: 'procurement' },
+  { key: '/contracts', icon: <FileTextOutlined />, labelKey: 'nav.contracts', moduleKey: 'contracts', children: [
+    { key: '/contracts/view', labelKey: 'nav.contractView' },
+    { key: '/contracts/add', labelKey: 'nav.contractAdd', permissionCode: 'contracts:create' },
+  ] },
+  { key: '/materials', icon: <ToolOutlined />, labelKey: 'nav.materials', moduleKey: 'materials' },
+  { key: '/transfer-loss', icon: <DashOutlined />, labelKey: 'nav.transferLoss', moduleKey: 'transfer_loss' },
+  { key: '/map', icon: <EnvironmentOutlined />, labelKey: 'nav.map', moduleKey: 'map' },
   {
     key: 'management-sub', icon: <TeamOutlined />, labelKey: 'nav.management',
+    roles: ['admin'],
     children: [
-      { key: '/users', labelKey: 'common.userList' },
-      { key: '/users/roles', labelKey: 'common.rolePermissions' },
-      { key: '/aliases', icon: <BookOutlined />, labelKey: 'nav.aliases' },
-      { key: '/weighing', icon: <AuditOutlined />, labelKey: 'nav.weighing' },
+      { key: '/users', labelKey: 'common.userList', moduleKey: 'users', permissionCode: 'users:view' },
+      { key: '/users/organization', labelKey: 'common.organizationPermissions', anyPermissionCodes: ['users:manage', 'roles:manage', 'departments:manage'] },
+      { key: '/aliases', icon: <BookOutlined />, labelKey: 'nav.aliases', moduleKey: 'aliases' },
+      { key: '/weighing', icon: <AuditOutlined />, labelKey: 'nav.weighing', moduleKey: 'weighing' },
     ],
   },
-  { key: '/settings', icon: <SettingOutlined />, labelKey: 'nav.settings' },
+  { key: '/settings', icon: <SettingOutlined />, labelKey: 'nav.settings', moduleKey: 'settings' },
 ];

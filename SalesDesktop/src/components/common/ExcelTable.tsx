@@ -1,9 +1,12 @@
-import React, { useState, useCallback, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { Table, message, Input, InputNumber } from 'antd';
+import React, { useState, useCallback, useEffect, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
+import { Table, message, Input, InputNumber, Select, DatePicker } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import dayjs from 'dayjs';
 
 export interface ExcelTableHandle {
   saveAllChanges: () => Promise<void>;
   addNewRow: () => void;
+  deleteSelectedRows: () => Promise<void>;
 }
 
 interface ColumnDefinition<T> {
@@ -12,6 +15,9 @@ interface ColumnDefinition<T> {
   key: string;
   width?: number;
   editable?: boolean;
+  editorType?: 'text' | 'select' | 'date';
+  editorOptions?: { value: string | number; label: string }[];
+  dateFormat?: string;
   render?: (value: any, record: T, index: number) => React.ReactNode;
 }
 
@@ -21,12 +27,20 @@ interface ExcelTableProps<T extends { id: number }> {
   editing: boolean;
   setEditing: (v: boolean) => void;
   isAdmin: boolean;
-  onBatchSave: (changes: Array<{ id: number; data: Partial<T> }>) => Promise<void>;
+  onBatchSave?: (changes: Array<{ id: number; data: Partial<T> }>) => Promise<void>;
   onRealTimeSave?: (id: number, field: string, value: any) => Promise<void>;
   onAddNew?: (row: T) => void;
+  onDelete?: (ids: number[]) => Promise<void>;
   rowHeight?: number;
   height?: number;
   onKeyDown?: (e: KeyboardEvent) => void;
+  pagination?: false | {
+    current: number;
+    pageSize: number;
+    total: number;
+    onChange: (page: number) => void;
+    showTotal?: (total: number) => string;
+  };
 }
 
 const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps<T>, ref: React.Ref<ExcelTableHandle>) => {
@@ -39,17 +53,21 @@ const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps
     onBatchSave,
     onRealTimeSave,
     onAddNew,
-    rowHeight = 40,
-    height = 600,
+    onDelete,
+    height,
     onKeyDown,
+    pagination,
   } = props;
   const [editData, setEditData] = useState<Record<number, any>>({});
   const [saving, setSaving] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
 
   const [cellSaveStatus, setCellSaveStatus] = useState<Record<string, 'saving' | 'saved' | 'error'>>({});
   const [batchSaveStatus, setBatchSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const nextTempId = useRef(-1);
+
+  const editDataRef = useRef(editData);
+  editDataRef.current = editData;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -81,20 +99,9 @@ const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [editing, isAdmin, selectedRowKeys]);
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const scrollTop = e.currentTarget.scrollTop;
-    const startIndex = Math.floor(scrollTop / rowHeight);
-    setVisibleRange({
-      start: Math.max(0, startIndex),
-      end: Math.min(startIndex + Math.ceil(height / rowHeight), dataSource.length)
-    });
-  };
-
-  const visibleDataSource = dataSource.slice(visibleRange.start, visibleRange.end);
-  const tableHeight = dataSource.length * rowHeight;
-
   const handleAddNew = useCallback(() => {
     const blankRow: any = {};
+    blankRow.id = nextTempId.current--;
     columns.forEach(col => {
       if (col.editable) {
         blankRow[col.dataIndex] = '';
@@ -128,6 +135,7 @@ const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps
   const deleteSelectedRows = useCallback(async () => {
     setSaving(true);
     try {
+      await onDelete?.(selectedRowKeys.map(k => Number(k)));
       setEditData(prev => {
         const newEditData = { ...prev };
         selectedRowKeys.forEach(k => {
@@ -143,13 +151,20 @@ const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps
     } finally {
       setSaving(false);
     }
-  }, [selectedRowKeys]);
+  }, [selectedRowKeys, onDelete]);
 
   const saveAllChanges = async () => {
     const changes: Array<{ id: number; data: Partial<T> }> = [];
 
     for (const [idStr, record] of Object.entries(editData)) {
       const id = Number(idStr);
+      if (id < 0) {
+        changes.push({
+          id,
+          data: record as Partial<T>
+        });
+        continue;
+      }
       const original = dataSource.find(r => r.id === id);
       if (!original) continue;
 
@@ -172,7 +187,7 @@ const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps
 
     setBatchSaveStatus('saving');
     try {
-      await onBatchSave(changes);
+      await onBatchSave?.(changes);
       setEditData({});
       message.success(`已保存 ${changes.length} 条记录`);
       setBatchSaveStatus('saved');
@@ -188,15 +203,43 @@ const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps
   const handleAddNewRef = useRef(handleAddNew);
   handleAddNewRef.current = handleAddNew;
 
+  const deleteSelectedRowsRef = useRef(deleteSelectedRows);
+  deleteSelectedRowsRef.current = deleteSelectedRows;
+
   useImperativeHandle(ref, () => ({
     saveAllChanges: () => saveAllChangesRef.current(),
     addNewRow: () => handleAddNewRef.current(),
+    deleteSelectedRows: () => deleteSelectedRowsRef.current(),
   }), []);
 
-  const renderCell = (id: number, field: string, value: any) => {
+  const renderCell = (id: number, field: string, value: any, col?: ColumnDefinition<T>) => {
     if (!editing) return value || '-';
 
-    const current = editData[id]?.[field] ?? value;
+    const current = editDataRef.current[id]?.[field] ?? value;
+
+    if (col?.editorType === 'select' && col.editorOptions) {
+      return (
+        <Select
+          value={current || undefined}
+          onChange={(v) => updateCell(id, field, v)}
+          size="small" style={{ width: '100%' }}
+          options={col.editorOptions}
+          allowClear
+        />
+      );
+    }
+
+    if (col?.editorType === 'date') {
+      return (
+        <DatePicker
+          value={current ? dayjs(current) : null}
+          onChange={(_, dateStr) => updateCell(id, field, dateStr)}
+          size="small" style={{ width: '100%' }}
+          format={col.dateFormat || 'YYYY-MM-DD'}
+        />
+      );
+    }
+
     const isNum = typeof current === 'number';
 
     if (isNum) {
@@ -219,62 +262,46 @@ const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps
     );
   };
 
-  const columnsWithRender = columns.map(col => ({
+  const columnsWithRender = useMemo(() => columns.map(col => ({
     ...col,
     render: (value: any, record: T, index: number) => {
       if (col.editable) {
-        return renderCell(record.id, col.dataIndex as string, value);
+        if (!editing && col.render) {
+          return col.render(value, record, index);
+        }
+        return renderCell(record.id, col.dataIndex as string, value, col);
       }
       if (col.render) {
         return col.render(value, record, index);
       }
       return value;
     }
-  }));
+  })) as ColumnsType<T>, [columns, editing]);
 
   return (
-    <div>
-      <div
-        style={{
-          height: `${height}px`,
-          overflowY: 'auto',
-          border: '1px solid #d9d9d9'
-        }}
-        onScroll={handleScroll}
-      >
-        <div style={{ height: `${tableHeight}px` }}>
-          <Table
-            dataSource={visibleDataSource}
-            columns={columnsWithRender}
-            rowKey="id"
-            size="middle"
-            bordered
-            pagination={false}
-            rowClassName={(record, index) => {
-              if (index === 0) return 'excel-header-row';
-              if (selectedRowKeys.includes(record.id)) return 'excel-selected-row';
-              return '';
-            }}
-            rowSelection={{
-              selectedRowKeys,
-              onChange: setSelectedRowKeys,
-              getCheckboxProps: (record: T) => ({
-                disabled: !editing || record.id < 0,
-              }),
-            }}
-            scroll={{ y: height }}
-            style={{ position: 'relative' }}
-          />
-        </div>
-      </div>
-
-      {dataSource.length > 50 && (
-        <div style={{
-          height: `${(dataSource.length - visibleRange.end) * rowHeight}px`,
-          visibility: 'hidden'
-        }} />
-      )}
-    </div>
+    <Table
+      dataSource={dataSource}
+      columns={columnsWithRender}
+      rowKey="id"
+      size="middle"
+      bordered
+      pagination={pagination ?? false}
+      onChange={pagination ? () => {} : undefined}
+      rowClassName={(record, index) => {
+        if (index === 0) return 'excel-header-row';
+        if (selectedRowKeys.includes(record.id)) return 'excel-selected-row';
+        return '';
+      }}
+      rowSelection={{
+        selectedRowKeys,
+        onChange: setSelectedRowKeys,
+        getCheckboxProps: (record: T) => ({
+          disabled: !editing || record.id < 0,
+        }),
+      }}
+      scroll={height ? { y: height } : undefined}
+      style={{ position: 'relative' }}
+    />
   );
 });
 export default ExcelTable;

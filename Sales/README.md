@@ -123,9 +123,7 @@ D:\SalesVisualization\backups
 
 ## 安全注意事项
 
-- `SALES_SECRET_KEY` 可通过环境变量显式设置。
-- 未设置时，系统会自动生成并保存到 `Sales/.runtime/secret_key.txt`。
-- 上 HTTPS 后建议设置 `SALES_COOKIE_SECURE=1`。
+- 账号、密钥、Cookie 时效等隐私配置统一登记于 `docs/配置文档.md`（含 `SALES_SECRET_KEY`、`SALES_COOKIE_SECURE`、`Sales/.runtime/secret_key.txt` 等）。
 - 当前使用 Nginx 反向代理，只开放 `80/443`，Flask :8900 不直接暴露。
 
 ## 健康检查

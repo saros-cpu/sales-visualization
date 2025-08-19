@@ -1,4 +1,4 @@
-// src/pages/sales/wholesale/TransferTab.jsx — 外运详情
+// src/pages/sales/wholesale/TransferTab.jsx — 外运
 import { useState } from 'react';
 import { num } from '../../../utils/format';
 import BarList from '../../../components/wholesale/BarList';

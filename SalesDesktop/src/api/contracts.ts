@@ -4,7 +4,7 @@ export interface Contract {
   id: number; contractNo: string; appendixNo: string; signedDate: string;
   effectiveStart: string; effectiveEnd: string; customerName: string;
   productName: string; salesType: string; quantityTons: number;
-  amountOriginal: number; currency: string; executedTons: number;
+  amountOriginal: number; currency: string; executedTons: number; remark?: string;
 }
 
 export interface ContractExecution {
@@ -40,6 +40,11 @@ export async function updateContract(id: number, data: Partial<Contract>) {
 export async function getContractExecution(id: number) {
   const res = await client.get(`/contracts/${id}/execution`);
   return res.data as { code: number; data: ContractExecution };
+}
+
+export async function deleteContract(id: number) {
+  const res = await client.delete(`/contracts/${id}`);
+  return res.data;
 }
 
 export async function getContractAutoVolume(id: number) {

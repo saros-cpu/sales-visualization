@@ -1,4 +1,4 @@
-import { Card, Table, Button, Space } from 'antd';
+import { Card, Table, Button } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 
 interface Props<T> {
@@ -9,18 +9,42 @@ interface Props<T> {
   loading?: boolean;
   onExport?: () => void;
   exportText?: string;
+  pageSize?: number;
+  scrollY?: number | string;
+  pagination?: false;
+  className?: string;
 }
 
-export default function TableCard<T extends object>({ title, columns, data, rowKey, loading, onExport, exportText = '导出' }: Props<T>) {
+export default function TableCard<T extends object>({
+  title,
+  columns,
+  data,
+  rowKey,
+  loading,
+  onExport,
+  exportText = '导出',
+  pageSize = 20,
+  scrollY,
+  pagination,
+  className,
+}: Props<T>) {
   return (
     <Card
       title={title}
       size="small"
-      style={{ marginBottom: 16 }}
+      className={['table-card', className].filter(Boolean).join(' ')}
       extra={onExport && <Button onClick={onExport}>{exportText}</Button>}
     >
-      <div style={{ overflow: 'auto' }}>
-        <Table<T> columns={columns} dataSource={data} rowKey={rowKey} loading={loading} size="small" pagination={{ pageSize: 20 }} scroll={{ x: 'max-content' }} />
+      <div className="table-card-body-scroll">
+        <Table<T>
+          columns={columns}
+          dataSource={data}
+          rowKey={rowKey}
+          loading={loading}
+          size="small"
+          pagination={pagination === false ? false : { pageSize }}
+          scroll={{ x: 'max-content', y: scrollY }}
+        />
       </div>
     </Card>
   );

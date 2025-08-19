@@ -57,10 +57,10 @@ export default function Alert() {
   return (
     <div>
       <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
-      <Row gutter={16} style={{ marginTop: 16, marginBottom: 16 }}>
-        <Col xs={8}><Card size="small"><Statistic title={t('retail.closedStations')} value={statuses.closed.length} /></Card></Col>
-        <Col xs={8}><Card size="small"><Statistic title={t('retail.expectedResume')} value={statuses.renovating.length} /></Card></Col>
-        <Col xs={8}><Card size="small"><Statistic title={t('retail.trendAnomaly')} value={anomalies.length} valueStyle={{ color: anomalies.length > 0 ? '#cf1322' : undefined }} /></Card></Col>
+      <Row gutter={[16, 16]} style={{ marginTop: 16, marginBottom: 16 }}>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.closedStations')} value={statuses.closed.length} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.expectedResume')} value={statuses.renovating.length} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.trendAnomaly')} value={anomalies.length} valueStyle={{ color: anomalies.length > 0 ? '#cf1322' : undefined }} /></Card></Col>
       </Row>
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
         <Card size="small" title={t('retail.closedStations')}>
@@ -73,6 +73,7 @@ export default function Alert() {
                 { title: t('retail.expectedResume'), dataIndex: 'expectedResume', key: 'expectedResume', render: (v: any) => v ?? '-' },
               ]}
               pagination={false}
+              scroll={{ x: 720, y: 260 }}
             />
           ) : <Text type="secondary">{t('common.noData')}</Text>}
         </Card>

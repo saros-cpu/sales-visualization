@@ -753,7 +753,7 @@ def register_assistant_routes(app):
 
     def _assistant_wholesale_tables(label, data, question):
         cards = data.get("cards") or {}
-        labels = {"export_wholesale": "出口批发", "local_wholesale": "本地批发", "unknown": "待审核批发", "transfer": "外运"}
+        labels = {"export_wholesale": "出口批发", "local_wholesale": "本地批发", "unknown": "待识别", "transfer": "外运", "processing": "代加工", "procurement": "采购"}
         sales_keys = ("export_wholesale", "local_wholesale", "unknown")
         sales_total_tons = sum(float((cards.get(key) or {}).get("tons") or 0) for key in sales_keys)
         sales_total_amount = sum(float((cards.get(key) or {}).get("amountCny") or 0) for key in ("export_wholesale", "local_wholesale"))
@@ -876,7 +876,7 @@ def register_assistant_routes(app):
             lines.append(f"批发销售合计：{total_tons:,.3f} 吨，金额 {total_amount:,.2f} 元。")
             lines.append(f"出口批发：{float(export_card.get('tons') or 0):,.3f} 吨，{float(export_card.get('amountCny') or 0):,.2f} 元。")
             lines.append(f"本地批发：{float(local_card.get('tons') or 0):,.3f} 吨，{float(local_card.get('amountCny') or 0):,.2f} 元。")
-            lines.append(f"待审核批发：{float(pending_card.get('tons') or 0):,.3f} 吨，数量已统计，金额待合同复核。")
+            lines.append(f"待识别：{float(pending_card.get('tons') or 0):,.3f} 吨，数量已统计，金额待合同复核。")
             lines.append(f"外运：{float(transfer_card.get('tons') or 0):,.3f} 吨。")
         rankings = data.get("customerRankings") or {}
         key = "export_wholesale" if "出口" in question else ("local_wholesale" if "本地" in question else None)
@@ -896,7 +896,7 @@ def register_assistant_routes(app):
             else:
                 _append_rank_lines(lines, "出口批发油品排行：", products.get("export_wholesale"), limit=5)
                 _append_rank_lines(lines, "本地批发油品排行：", products.get("local_wholesale"), limit=5)
-                _append_rank_lines(lines, "待审核批发油品排行：", products.get("unknown"), limit=5)
+                _append_rank_lines(lines, "待识别油品排行：", products.get("unknown"), limit=5)
                 _append_rank_lines(lines, "外运油品排行：", products.get("transfer"), limit=5)
         if "外运" in question and _assistant_has_any(question, ("区域", "去向", "详情", "油库", "加油站")):
             transfer_summary = data.get("transferSummary") or {}

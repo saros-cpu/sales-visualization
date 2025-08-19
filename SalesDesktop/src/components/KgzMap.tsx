@@ -7,7 +7,11 @@ import { mountHomeMap } from '@/lib/kgz-map/kgz-map-entry';
 import { useAuth } from '@/contexts/AuthContext';
 import { mapRoleVisibleTypes } from '@/config/mapRoles';
 
-export default function KgzMap() {
+interface KgzMapProps {
+  height?: string;
+}
+
+export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -26,7 +30,7 @@ export default function KgzMap() {
         if (token) detailHeaders['Authorization'] = `Bearer ${token}`;
         const [mapRes, detailRes] = await Promise.all([
           client.get('/map/stations'),
-          axios.get('http://198.51.100.10:8080/api/station-map-details', { headers: detailHeaders }).catch(() => null),
+          axios.get('http://localhost:8900/api/station-map-details', { headers: detailHeaders }).catch(() => null),
         ]);
         const data = mapRes.data?.data || mapRes.data;
         const details = detailRes?.data?.items || [];
@@ -50,7 +54,7 @@ export default function KgzMap() {
         const customers = visibleTypes.includes('customer') ? allCustomers : [];
 
         const basePath = typeof window.updater !== 'undefined'
-          ? 'http://198.51.100.10:8080/kgz-map/data/'
+          ? 'http://localhost:8900/kgz-map/data/'
           : '/kgz-map/data/';
         mapInstance = await mountHomeMap(el, { depots, stations, customers }, {
           basePath,
@@ -74,7 +78,7 @@ export default function KgzMap() {
   }, []);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 112px)', background: '#111', borderRadius: 8, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', height, background: '#111', borderRadius: 8, overflow: 'hidden' }}>
       {loading && <Spin style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10 }} />}
       {error && <Alert type="error" message={error} style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10, minWidth: 300 }} />}
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />

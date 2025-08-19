@@ -6,7 +6,7 @@ import ColumnFilter from '../../../components/common/ColumnFilter';
 
 const CLASSIFICATION_LABELS = {
   local_wholesale: '本地批发', export_wholesale: '出口批发',
-  transfer: '外运', procurement: '采购', processing: '代加工',
+  transfer: '外运', processing: '代加工', procurement: '采购', unknown: '待识别',
 };
 const MATCH_OPTIONS = [
   { value: '', label: '全部' }, { value: 'matched', label: '已匹配' },
@@ -16,6 +16,8 @@ const AUDIT_OPTIONS = [
   { value: '', label: '全部' }, { value: 'approved', label: '已通过' },
   { value: 'pending', label: '待审核' }, { value: 'rejected', label: '已拒绝' },
 ];
+const MATCH_LABELS = { matched: '已匹配', unmatched: '未匹配', needs_review: '待审核' };
+const AUDIT_LABELS = { approved: '已通过', pending: '待审核', rejected: '已拒绝' };
 
 export default function WeighDetailTab({ year, month }) {
   const [items, setItems] = useState([]);
@@ -68,6 +70,13 @@ export default function WeighDetailTab({ year, month }) {
 
   const totalTons = items.reduce((s, i) => s + (i.weightTons || 0), 0);
   const clsLabel = v => CLASSIFICATION_LABELS[v] || v || '--';
+  const matchLabel = v => MATCH_LABELS[v] || v || '--';
+  const auditLabel = v => AUDIT_LABELS[v] || v || '--';
+  const withStandard = (raw, standard) => {
+    if (!raw && !standard) return '--';
+    if (!standard || standard === raw) return raw || standard;
+    return <>{raw || standard}<br /><small className="muted">标准：{standard}</small></>;
+  };
 
   return (
     <div className="overview-tab">
@@ -115,8 +124,11 @@ export default function WeighDetailTab({ year, month }) {
                 <th>过磅重量</th>
                 <th>
                   <ColumnFilter label="分类" column="classification" options={filterOptions.classification || []}
-                    selected={colFilters.classification} onChange={handleColFilter} />
+                    selected={colFilters.classification} onChange={handleColFilter} formatOption={clsLabel} />
                 </th>
+                <th>来源</th>
+                <th>匹配</th>
+                <th>审核</th>
                 <th>备注</th>
               </tr>
             </thead>
@@ -125,16 +137,19 @@ export default function WeighDetailTab({ year, month }) {
                 <tr key={item.id}>
                   <td>{idx + 1}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{item.businessDate}</td>
-                  <td>{item.productName || item.rawProductName || '--'}</td>
+                  <td>{withStandard(item.rawProductName, item.productName)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{item.weighSerialNo || '--'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{item.vehicleNo || '--'}</td>
                   <td>{item.senderName || '--'}</td>
-                  <td>{item.standardEntityName || item.rawEntityName || '--'}</td>
+                  <td>{withStandard(item.rawEntityName, item.standardEntityName)}</td>
                   <td style={{ textAlign: 'right' }}>{num.format(item.weightKg)}</td>
                   <td>{clsLabel(item.classification)}</td>
+                  <td>{item.weighSource || '--'}</td>
+                  <td>{matchLabel(item.matchStatus)}</td>
+                  <td>{auditLabel(item.auditStatus)}</td>
                   <td>{item.remark || '--'}</td>
                 </tr>
-              )) : <tr><td colSpan="10">暂无称重数据生成的批发明细</td></tr>}
+              )) : <tr><td colSpan="13">暂无称重数据生成的批发明细</td></tr>}
             </tbody>
           </table>
         </div>

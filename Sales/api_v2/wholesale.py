@@ -1,12 +1,17 @@
 from flask import request, jsonify
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from api_v2 import bp_v2
+from .authz import permission_required
+from .data_scope import custom_resource_filter, custom_resource_values
 from db import get_connection
 import pymysql
+from datetime import date, datetime, timedelta
+from services.weighing_service import get_weighing_list
 
 
 @bp_v2.route('/wholesale/details', methods=['GET'])
 @jwt_required()
+@permission_required('wholesale:view')
 def wholesale_details():
     date_from = request.args.get('date_from')
     date_to = request.args.get('date_to')
@@ -16,68 +21,73 @@ def wholesale_details():
     page = int(request.args.get('page', 1))
     page_size = int(request.args.get('page_size', 50))
 
+    today = date.today()
+    start = datetime.strptime(date_from, '%Y-%m-%d').date() if date_from else today - timedelta(days=7)
+    end = datetime.strptime(date_to, '%Y-%m-%d').date() if date_to else today
+    allowed_entity_names = None
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            where = ['1=1']
-            params = []
-            if date_from:
-                where.append('business_date >= %s')
-                params.append(date_from)
-            if date_to:
-                where.append('business_date <= %s')
-                params.append(date_to)
-            if classification:
-                where.append('classification = %s')
-                params.append(classification)
-            if product_name:
-                where.append('raw_product_name LIKE %s')
-                params.append(f'%{product_name}%')
-            if entity_name:
-                where.append('(sender_name LIKE %s OR standard_entity_name LIKE %s)')
-                params.extend([f'%{entity_name}%', f'%{entity_name}%'])
-
-            cur.execute(f'SELECT COUNT(*) AS total FROM wholesale_detail_records WHERE {" AND ".join(where)}', params)
-            total = cur.fetchone()['total']
-
-            offset = (page - 1) * page_size
-            cur.execute(f'''
-                SELECT id, business_date, raw_product_name, vehicle_no,
-                       sender_name, standard_entity_name, entity_type, entity_code,
-                       classification, weight_tons, weigh_source, transport_mode,
-                       audit_status, remark, created_at
-                FROM wholesale_detail_records
-                WHERE {" AND ".join(where)}
-                ORDER BY business_date DESC, id DESC
-                LIMIT %s OFFSET %s
-            ''', params + [page_size, offset])
-
-            items = []
-            for row in cur.fetchall():
-                items.append({
-                    'id': row['id'],
-                    'businessDate': str(row['business_date']),
-                    'productName': row['raw_product_name'],
-                    'vehicleNo': row['vehicle_no'],
-                    'senderName': row['sender_name'],
-                    'entityName': row['standard_entity_name'],
-                    'entityCode': row['entity_code'],
-                    'entityType': row['entity_type'],
-                    'classification': row['classification'],
-                    'weightTons': float(row['weight_tons']) if row['weight_tons'] else None,
-                    'weighSource': row['weigh_source'],
-                    'transportMode': row['transport_mode'],
-                    'auditStatus': row['audit_status'],
-                    'remark': row['remark'],
-                    'createdAt': str(row['created_at']),
-                })
-            return jsonify({'code': 0, 'message': 'success', 'data': {'items': items, 'total': total, 'page': page, 'page_size': page_size}})
+            scope_values = custom_resource_values(cur, int(get_jwt_identity()), 'wholesale', 'customer')
+            allowed_entity_names = scope_values['labels'] if scope_values is not None else None
+            conn.commit()
     finally:
         conn.close()
+
+    result = get_weighing_list(
+        date_from=start,
+        date_to=end,
+        classification=classification,
+        product_name=product_name,
+        entity_name=entity_name,
+        allowed_entity_names=allowed_entity_names,
+        page=page,
+        page_size=page_size,
+    )
+    items = []
+    for row in result['items']:
+        weight_kg = float(row.get('netWeight') or 0)
+        items.append({
+            'id': f"{row.get('source')}-{row.get('id')}",
+            'sourceId': row.get('id'),
+            'businessDate': row.get('businessDate'),
+            'productName': row.get('rawProductName'),
+            'rawProductName': row.get('rawProductName'),
+            'standardProductName': row.get('standardProductName'),
+            'vehicleNo': row.get('vehicleNo'),
+            'weighSerialNo': row.get('weighSerialNo'),
+            'senderName': row.get('senderName'),
+            'entityName': row.get('receiverName'),
+            'rawEntityName': row.get('receiverName'),
+            'standardEntityName': row.get('standardEntityName'),
+            'entityCode': row.get('entityCode'),
+            'entityType': row.get('entityType'),
+            'classification': row.get('classification'),
+            'weightKg': weight_kg,
+            'weightTons': round(weight_kg / 1000, 6),
+            'matchStatus': row.get('status') or 'pending',
+            'weighSource': row.get('source'),
+            'transportMode': 'truck',
+            'auditStatus': row.get('status') or 'pending',
+            'remark': row.get('remark'),
+            'createdAt': None,
+        })
+    return jsonify({
+        'code': 0,
+        'message': 'success',
+        'data': {
+            'items': items,
+            'total': result['total'],
+            'totalWeight': result['totalWeight'],
+            'page': page,
+            'page_size': page_size,
+        },
+    })
 
 
 @bp_v2.route('/wholesale/export-detail', methods=['GET'])
 @jwt_required()
+@permission_required('wholesale:export')
 def wholesale_export_detail():
     classification = request.args.get('classification', 'export_wholesale')
     date_from = request.args.get('date_from')
@@ -94,6 +104,14 @@ def wholesale_export_detail():
             if date_to:
                 where.append('business_date <= %s')
                 params.append(date_to)
+            scope_clause, scope_params = custom_resource_filter(
+                cur,
+                int(get_jwt_identity()),
+                'wholesale',
+                {'customer': {'labels': ['sender_name', 'raw_entity_name', 'standard_entity_name']}},
+            )
+            where.append(f'1=1{scope_clause}')
+            params.extend(scope_params)
 
             cur.execute(f'''
                 SELECT raw_product_name, standard_entity_name,

@@ -6,11 +6,14 @@ import { useApiQuery } from '@/hooks/useApi';
 import { fetchWholesale } from '@/api/wholesale';
 import { downloadWholesaleReport } from '@/api/export';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { useAuth } from '@/contexts/AuthContext';
 
 const SEVERITY_COLOR: Record<string, string> = { error: 'red', warning: 'orange', info: 'blue' };
 
 export default function Review() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const canExport = can('wholesale:export');
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState<number | undefined>(now.getMonth() + 1);
@@ -20,14 +23,16 @@ export default function Review() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
           onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
-        <Button icon={<FileTextOutlined />} onClick={() => downloadWholesaleReport({ year, month })}>
-          {t('wholesale.generateReport')}
-        </Button>
+        {canExport && (
+          <Button icon={<FileTextOutlined />} onClick={() => downloadWholesaleReport({ year, month })}>
+            {t('wholesale.generateReport')}
+          </Button>
+        )}
       </Space>
-      <Card size="small" title={t('wholesale.dataIssues')}>
+      <Card size="small" title={t('wholesale.dataIssues')} className="scroll-card">
         {issues.length > 0 ? (
           <List
             size="small"

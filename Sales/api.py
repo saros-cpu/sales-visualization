@@ -312,6 +312,13 @@ def shared_asset(filename):
     return response
 
 
+@app.route("/kgz-map/<path:filename>")
+def kgz_map_legacy_asset(filename):
+    response = send_from_directory(SHARED_ASSETS_ROOT / "kgz-map", filename)
+    response.headers["Cache-Control"] = "public, max-age=604800"
+    return response
+
+
 # ── React SPA static assets ──
 @app.route("/_next/<path:filename>")
 def react_static(filename):
@@ -382,4 +389,3 @@ register_update_routes(app)
 # Register v2 API blueprint（桌面端）
 from api_v2 import register_v2_blueprints
 register_v2_blueprints(app)
-

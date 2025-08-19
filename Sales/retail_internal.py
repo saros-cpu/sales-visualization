@@ -23,7 +23,6 @@ _MODULES_TO_ISOLATE = (
     "routes",
     "routes.analytics",
     "routes.basic",
-    "routes.export",
     "routes.kpi",
 )
 
