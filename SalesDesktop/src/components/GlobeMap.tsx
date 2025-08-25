@@ -2,9 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Spin } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { mountGlobeMap } from '@/lib/kgz-map/kgz-map-entry';
+import { API_HOST } from '@/api/http';
 
 interface GlobeMapProps {
   height?: string;
+}
+
+function resolveKgzDataPath() {
+  return new URL('/assets/kgz-map/data/', API_HOST).href;
 }
 
 export default function GlobeMap({ height = 'calc(100vh - 112px)' }: GlobeMapProps) {
@@ -23,9 +28,7 @@ export default function GlobeMap({ height = 'calc(100vh - 112px)' }: GlobeMapPro
       setLoading(true);
       setError('');
       try {
-        const basePath = typeof window.updater !== 'undefined'
-          ? 'http://localhost:8900/kgz-map/data/'
-          : '/kgz-map/data/';
+        const basePath = resolveKgzDataPath();
         const instance = await mountGlobeMap(el, { basePath, showRoads: false, language: i18n.language });
         if (cancelled) {
           instance?.destroy?.();

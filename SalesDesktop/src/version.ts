@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.5.5';
-export const BUILD_DATE = '2026-07-15';
+export const VERSION = '3.6.0';
+export const BUILD_DATE = '2026-07-16';
 
 export interface ChangelogEntry {
   version: string;
@@ -14,6 +14,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.6.0',
+    date: '2026-07-16',
+    type: 'minor',
+    changes: [
+      '新增：全局只读 AI 助手入口，基于 OpenRouter 免费模型回答系统数据查询，严格禁止修改代码、文件、缓存、合同和业务数据',
+      '新增：管理菜单加入系统健康，管理员可查看服务、API 调用、缓存、自动任务和 AI 调用状态',
+      '升级：数据录入、物资调拨、合同新增改为 Excel 式连续录入，支持回车换行、批量粘贴、草稿和统一保存',
+      '升级：零售预警的趋势异常和运营建议支持每日自动生成，并按中俄语言分别返回',
+      '安全：Ctrl+Shift+I 控制台快捷键仅管理员登录后生效，并写入审计日志',
+      '完善：权限、审计、系统健康、AI、调拨状态和批量录入提示补齐中俄双语',
+    ],
+  },
   {
     version: '3.5.5',
     date: '2026-07-15',

@@ -6,6 +6,7 @@ import pymysql
 from db import get_connection
 from import_helpers import (
     classify_wholesale_movement,
+    is_internal_entity_name,
     load_entity_lookup,
     load_product_lookup,
     lookup_entity,
@@ -24,27 +25,39 @@ KJ_COLUMN_MAP = {
 CORRECTABLE_FIELDS = list(KJ_COLUMN_MAP.keys())
 
 
-def auto_classify(sender_name: str, receiver_name: str) -> str:
-    sender = (sender_name or '').strip().lower()
-    receiver = (receiver_name or '').strip().lower()
+def ensure_weighing_review_schema(cur) -> None:
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS weighing_review_status (
+            weighing_source VARCHAR(64) NOT NULL,
+            weighing_id VARCHAR(64) NOT NULL,
+            audit_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+            classification VARCHAR(64) NULL,
+            remark VARCHAR(255) NULL,
+            operator_id BIGINT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (weighing_source, weighing_id),
+            KEY idx_review_status (audit_status),
+            KEY idx_review_classification (classification)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ''')
 
-    def is_company(name: str) -> bool:
-        keywords = ['Example', 'кпк', '公司本部', 'STN-61', '南方CTY-22', '北方REG-08',
-                    'главный склад', 'южный', 'северный']
-        return any(k in name for k in keywords)
+
+def auto_classify(sender_name: str, receiver_name: str) -> str:
+    receiver = (receiver_name or '').strip().lower()
 
     def is_own_station(name: str) -> bool:
         keywords = ['азс', '加油站', 'апз', 'заправочная']
         return any(k in name for k in keywords)
 
-    is_sender_company = is_company(sender)
-    is_receiver_company = is_company(receiver)
+    is_sender_company = is_internal_entity_name(sender_name)
+    is_receiver_company = is_internal_entity_name(receiver_name)
     is_receiver_station = is_own_station(receiver)
 
     # 规则1: Example/CUSTOMER-S-АББР/油库 → 非自有设施 = 外销 (export_wholesale)
     if is_sender_company and not is_receiver_company and not is_receiver_station:
         return 'export_wholesale'
-    # 规则2: Example/CUSTOMER-S-АББР/油库 → 自有设施 = 外运 (transfer)
+    # 规则2: Example/CUSTOMER-S-АББР/油库 → 自有设施 = 外运 (transfer，不是物资调拨)
     elif is_sender_company and (is_receiver_company or is_receiver_station):
         return 'transfer'
     # 规则3: 非Example/CUSTOMER-S-АББР/油库 → Example/CUSTOMER-S-АББР = 采购 (procurement)
@@ -155,6 +168,15 @@ WHERE {' AND '.join(lpg_where)}'''
 ) AS combined ORDER BY business_date DESC, id DESC'''
 
         with conn.cursor(pymysql.cursors.DictCursor) as cur, conn.cursor() as lookup_cur:
+            ensure_weighing_review_schema(cur)
+            cur.execute('''
+                SELECT weighing_source, weighing_id, audit_status, classification, remark
+                FROM weighing_review_status
+            ''')
+            review_map = {
+                (row['weighing_source'], str(row['weighing_id'])): row
+                for row in cur.fetchall()
+            }
             entity_lookup = load_entity_lookup(lookup_cur)
             product_lookup = load_product_lookup(lookup_cur)
             cur.execute(union_sql, all_params)
@@ -177,6 +199,9 @@ WHERE {' AND '.join(lpg_where)}'''
                     item_classification = auto_classify(sender, receiver)
                 if not item_classification or item_classification == 'unknown':
                     item_classification = auto_classify(sender, receiver)
+                review = review_map.get((row['source'], str(row['id'])))
+                if review and review.get('classification'):
+                    item_classification = review['classification']
                 net_weight = float(row['net_weight'] or 0)
                 item = {
                     'source': row['source'],
@@ -195,8 +220,9 @@ WHERE {' AND '.join(lpg_where)}'''
                     'tareWeight': float(row['tare_weight']) if row['tare_weight'] else None,
                     'netWeight': net_weight,
                     'classification': item_classification,
-                    'status': 'pending',
+                    'status': review['audit_status'] if review else 'pending',
                     'remark': row['remark'],
+                    'reviewRemark': review.get('remark') if review else None,
                 }
                 if source and item['source'] != source:
                     continue
@@ -261,5 +287,68 @@ def verify_weighing(weighing_source: str, weighing_id: int,
 
             conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def batch_review_weighing(records: list[dict], action: str,
+                          operator_id: int, classification: str | None = None,
+                          remark: str = '') -> dict:
+    valid_actions = {'approve', 'reject', 'classify'}
+    if action not in valid_actions:
+        raise ValueError('Unsupported batch action')
+    if action == 'classify' and not classification:
+        raise ValueError('classification is required')
+
+    status_value = None
+    if action == 'approve':
+        status_value = 'approved'
+    elif action == 'reject':
+        status_value = 'rejected'
+
+    conn = get_connection()
+    try:
+        success_count = 0
+        errors = []
+        with conn.cursor() as cur:
+            ensure_weighing_review_schema(cur)
+            for record in records:
+                try:
+                    source = str(record.get('source') or '').strip()
+                    weighing_id = str(record.get('id') or '').strip()
+                    if not source or not weighing_id:
+                        raise ValueError('source and id are required')
+                    next_classification = classification if action == 'classify' else record.get('classification')
+                    if status_value:
+                        cur.execute('''
+                            INSERT INTO weighing_review_status
+                                (weighing_source, weighing_id, audit_status, classification, remark, operator_id)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                                audit_status = VALUES(audit_status),
+                                classification = COALESCE(VALUES(classification), classification),
+                                remark = VALUES(remark),
+                                operator_id = VALUES(operator_id),
+                                updated_at = NOW()
+                        ''', (source, weighing_id, status_value, next_classification, remark, operator_id))
+                    else:
+                        cur.execute('''
+                            INSERT INTO weighing_review_status
+                                (weighing_source, weighing_id, audit_status, classification, remark, operator_id)
+                            VALUES (%s, %s, 'pending', %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                                classification = VALUES(classification),
+                                remark = VALUES(remark),
+                                operator_id = VALUES(operator_id),
+                                updated_at = NOW()
+                        ''', (source, weighing_id, next_classification, remark, operator_id))
+                    success_count += 1
+                except Exception as exc:
+                    errors.append({'id': record.get('id'), 'source': record.get('source'), 'error': str(exc)})
+        conn.commit()
+        return {'successCount': success_count, 'errorCount': len(errors), 'errors': errors}
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()

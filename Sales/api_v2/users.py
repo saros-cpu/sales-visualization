@@ -31,6 +31,7 @@ MODULE_CATALOG = [
     ('users', '用户管理', 110),
     ('aliases', '别名管理', 120),
     ('weighing', '称重审核', 130),
+    ('audit_logs', '审计日志', 135),
     ('settings', '设置', 140),
 ]
 

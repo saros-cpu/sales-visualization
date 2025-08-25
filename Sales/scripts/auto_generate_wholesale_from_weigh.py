@@ -16,7 +16,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from db import get_connection
-from import_helpers import classify_wholesale_movement, load_entity_lookup, load_product_lookup, lookup_entity, lookup_product
+from import_helpers import (
+    can_auto_approve_weigh_detail,
+    classify_wholesale_movement,
+    load_entity_lookup,
+    load_product_lookup,
+    lookup_entity,
+    lookup_product,
+)
 from text_utils import normalize_text
 
 WEIGH_COLUMNS = ["序号", "编号", "卡号", "车号", "服务区域", "运输单位", "发货单位",
@@ -40,6 +47,7 @@ def main():
         generated = 0
         skipped = 0
         auto_entity = 0
+        auto_approved = 0
         auto_product = 0
         entity_lookup = load_entity_lookup(cur)
         product_lookup = load_product_lookup(cur)
@@ -114,20 +122,25 @@ def main():
                 sender_name=sender_name,
                 current=classification,
             )
+            auto_approve = can_auto_approve_weigh_detail(classification, product_id, entity_code)
+            audit_status = "approved" if auto_approve else "pending"
+            match_status = "matched" if auto_approve else "unmatched"
+            if auto_approve:
+                auto_approved += 1
 
             cur.execute("""
                 INSERT INTO wholesale_detail_records
                 (batch_id, source_row_number, business_date, raw_product_name, product_id, vehicle_no,
                  weigh_serial_no, raw_entity_name, sender_name, entity_type, entity_code,
                  standard_entity_name, classification, weight_kg, match_status, audit_status, weigh_source)
-                VALUES (NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'unmatched', 'pending', %s)
+                VALUES (NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (int(record.get("序号", 0) or 0), business_date, raw_product, product_id, vehicle_no,
                   weigh_serial_no, raw_entity, sender_name, entity_type, entity_code,
-                  standard_name, classification, weight_kg, source))
+                  standard_name, classification, weight_kg, match_status, audit_status, source))
             generated += 1
 
         conn.commit()
-        print(f"称重生成完成: 新增 {generated} 条, 跳过 {skipped} 条, 自动实体映射 {auto_entity} 条, 自动油品映射 {auto_product} 条")
+        print(f"称重生成完成: 新增 {generated} 条, 自动通过 {auto_approved} 条, 跳过 {skipped} 条, 自动实体映射 {auto_entity} 条, 自动油品映射 {auto_product} 条")
     except Exception:
         conn.rollback()
         raise

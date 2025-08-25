@@ -100,7 +100,7 @@ export default function Region() {
                     return html;
                   } },
                   legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
-                  xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: regionDaily.map((d) => d.date.slice(5)) },
+                  xAxis: { type: 'category', data: regionDaily.map((d) => d.date.slice(5)) },
                   yAxis: [
                     { type: 'value', name: 'L' },
                     { type: 'value', name: t('common.wan') },

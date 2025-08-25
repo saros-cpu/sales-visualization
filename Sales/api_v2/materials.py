@@ -10,6 +10,18 @@ from datetime import datetime
 
 # ── 物资分类 ──
 
+def _ensure_transfer_order_columns(cur):
+    cur.execute("SHOW COLUMNS FROM material_transfer_orders LIKE 'order_date'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE material_transfer_orders ADD COLUMN order_date DATE NULL AFTER order_no")
+    cur.execute("SHOW COLUMNS FROM material_transfer_orders LIKE 'handler_name'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE material_transfer_orders ADD COLUMN handler_name VARCHAR(128) NULL AFTER driver_name")
+
+
+def _generate_order_no():
+    return "MT-" + datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
+
 @bp_v2.route('/materials/categories', methods=['GET'])
 @jwt_required()
 @permission_required('materials:view')
@@ -233,6 +245,7 @@ def list_orders():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            _ensure_transfer_order_columns(cur)
             user_id = int(get_jwt_identity())
             where = ['1=1']
             params = []
@@ -254,11 +267,12 @@ def list_orders():
             total = cur.fetchone()['total']
             offset = (page - 1) * page_size
             cur.execute(f'''
-                SELECT o.id, o.order_no, o.material_id, m.name_zh AS material_name,
+                SELECT o.id, o.order_no, o.order_date, o.material_id, m.name_zh AS material_name,
+                       m.unit AS material_unit,
                        o.from_depot_id, fd.name_zh AS from_depot_name,
                        o.to_depot_id, td.name_zh AS to_depot_name,
                        o.requested_qty, o.transport_mode, o.vehicle_no, o.driver_name,
-                       o.status, o.remark, o.created_at
+                       o.handler_name, o.status, o.remark, o.created_at
                 FROM material_transfer_orders o
                 LEFT JOIN materials m ON o.material_id = m.id
                 LEFT JOIN depots fd ON o.from_depot_id = fd.id
@@ -280,14 +294,16 @@ def create_order():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            _ensure_transfer_order_columns(cur)
             cur.execute('''
                 INSERT INTO material_transfer_orders
-                    (order_no, material_id, from_depot_id, to_depot_id, requested_qty,
-                     transport_mode, vehicle_no, driver_name, remark, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (data['orderNo'], data['materialId'], data['fromDepotId'], data['toDepotId'],
+                    (order_no, order_date, material_id, from_depot_id, to_depot_id, requested_qty,
+                     transport_mode, vehicle_no, driver_name, handler_name, remark, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (data.get('orderNo') or _generate_order_no(), data.get('orderDate') or data.get('order_date') or datetime.now().date().isoformat(),
+                  data['materialId'], data['fromDepotId'], data['toDepotId'],
                   data['requestedQty'], data.get('transportMode', 'truck'),
-                  data.get('vehicleNo'), data.get('driverName'), data.get('remark'),
+                  data.get('vehicleNo'), data.get('driverName'), data.get('handlerName') or data.get('handler_name'), data.get('remark'),
                   int(get_jwt_identity())))
             conn.commit()
             return jsonify({'code': 0, 'message': 'success', 'data': {'id': cur.lastrowid}})
@@ -303,6 +319,8 @@ def update_order(order_id):
     field_map = {
         'orderNo': 'order_no',
         'order_no': 'order_no',
+        'orderDate': 'order_date',
+        'order_date': 'order_date',
         'materialId': 'material_id',
         'material_id': 'material_id',
         'fromDepotId': 'from_depot_id',
@@ -317,6 +335,8 @@ def update_order(order_id):
         'vehicle_no': 'vehicle_no',
         'driverName': 'driver_name',
         'driver_name': 'driver_name',
+        'handlerName': 'handler_name',
+        'handler_name': 'handler_name',
         'remark': 'remark',
     }
     updates = []
@@ -330,6 +350,7 @@ def update_order(order_id):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            _ensure_transfer_order_columns(cur)
             scope_clause, scope_params = owner_scope_filter(cur, int(get_jwt_identity()), 'materials', 'created_by')
             params.append(order_id)
             params.extend(scope_params)

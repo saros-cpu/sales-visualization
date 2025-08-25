@@ -1,7 +1,8 @@
 import {
   DashboardOutlined, ShopOutlined, DollarOutlined, CarOutlined, ShoppingOutlined,
   ImportOutlined, FileTextOutlined, ToolOutlined, DashOutlined, EnvironmentOutlined,
-  TeamOutlined, BookOutlined, SettingOutlined, AuditOutlined,
+  TeamOutlined, BookOutlined, SettingOutlined, AuditOutlined, FileSearchOutlined,
+  MonitorOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 
@@ -60,6 +61,8 @@ export const menuConfig: MenuItem[] = [
       { key: '/users/organization', labelKey: 'common.organizationPermissions', anyPermissionCodes: ['users:manage', 'roles:manage', 'departments:manage'] },
       { key: '/aliases', icon: <BookOutlined />, labelKey: 'nav.aliases', moduleKey: 'aliases' },
       { key: '/weighing', icon: <AuditOutlined />, labelKey: 'nav.weighing', moduleKey: 'weighing' },
+      { key: '/audit-logs', icon: <FileSearchOutlined />, labelKey: 'nav.auditLogs', moduleKey: 'audit_logs', permissionCode: 'audit_logs:view' },
+      { key: '/system-health', icon: <MonitorOutlined />, labelKey: 'nav.systemHealth', moduleKey: 'system_health', permissionCode: 'system_health:view' },
     ],
   },
   { key: '/settings', icon: <SettingOutlined />, labelKey: 'nav.settings', moduleKey: 'settings' },

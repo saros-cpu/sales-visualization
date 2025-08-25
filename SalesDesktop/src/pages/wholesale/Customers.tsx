@@ -20,6 +20,14 @@ export default function Customers() {
   const [month, setMonth] = useState<number | undefined>(now.getMonth() + 1);
 
   const q = useApiQuery(['wholesale', year, month], () => fetchWholesale({ year, month }));
+  const visibleKeys = ORDER.filter((key) => (q.data?.customerRankings?.[key]?.length ?? 0) > 0);
+  const salesCardCount = visibleKeys.filter((key) => key !== 'unknown').length;
+
+  const cardSpan = (key: WholesaleClass) => {
+    if (key === 'unknown') return 24;
+    if (salesCardCount >= 2) return key === 'local_wholesale' ? 14 : 10;
+    return 24;
+  };
 
   return (
     <div>
@@ -31,13 +39,18 @@ export default function Customers() {
         <Alert type="info" message={t('common.noData')} showIcon style={{ marginBottom: 16 }} />
       )}
       <Row gutter={[16, 16]}>
-        {ORDER.map((key) => {
-          const items = q.data?.customerRankings[key];
-          if (!items || items.length === 0) return null;
+        {visibleKeys.map((key) => {
+          const items = q.data?.customerRankings[key] ?? [];
+          const content = <RankList rows={items} mode={MODE[key] ?? 'customer'} />;
           return (
-            <Col xs={24} lg={key === 'local_wholesale' ? 14 : 10} key={key}>
-              <Card size="small" title={t(`wholesale.${key}`)} className="scroll-card customer-rank-card" style={{ marginBottom: 16 }}>
-                <RankList rows={items} mode={MODE[key] ?? 'customer'} />
+            <Col xs={24} lg={cardSpan(key)} key={key}>
+              <Card
+                size="small"
+                title={t(`wholesale.${key}`)}
+                className={`${key === 'local_wholesale' ? 'no-scroll-card' : 'scroll-card'} customer-rank-card`}
+                style={{ marginBottom: 16 }}
+              >
+                {content}
               </Card>
             </Col>
           );

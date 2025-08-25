@@ -119,6 +119,12 @@ def smart_product_code(raw_name):
     if not text:
         return None
 
+    if "ГАЗОЙЛ" in text or "GAZOIL" in text or "GASOIL" in text or "VACUUM" in text or "ВАКУМ" in text or "ВАКУУМ" in text or "蜡油" in text:
+        return "VGO"
+
+    if "НЕФТ" in text or "СЫРОЙ" in text or "BITUM" in text or "原油" in text or "混合油" in text:
+        return "CRUDE_OIL"
+
     if "МАЗУТ" in text or "MAZUT" in text or "油浆" in text or ("ТОПОЧ" in text and "МАЗ" in text):
         return "MAZUT"
     if "ПЕЧ" in text or "催" in text:
@@ -204,6 +210,13 @@ def is_internal_entity_name(name):
     if not normalized:
         return False
     internal_keywords = (
+        "CUSTOMER-S-LAT",
+        "example",
+        "ExamplePetrol",
+        "GLAVNY SKLAD",
+        "NEFTBAZA",
+        "CTY-30",
+        "CTY-22-LAT",
         "Example",
         "CUSTOMER-S-АББР",
         "ExampleCo ПЕТРОЛ",
@@ -225,6 +238,15 @@ def normalize_wholesale_classification(value):
     return "unknown"
 
 
+def can_auto_approve_weigh_detail(classification, product_id=None, entity_code=None):
+    classification = normalize_wholesale_classification(classification)
+    if not product_id or classification == "unknown":
+        return False
+    if classification in ("transfer", "processing", "procurement"):
+        return True
+    return entity_code is not None
+
+
 def classify_wholesale_movement(cur, entity_lookup, raw_entity, sender_name=None, current=None):
     receiver = lookup_entity(entity_lookup, raw_entity)
     sender = lookup_entity(entity_lookup, sender_name) if sender_name else None
@@ -232,7 +254,7 @@ def classify_wholesale_movement(cur, entity_lookup, raw_entity, sender_name=None
     sender_type = sender.get("entity_type") if sender else "unknown"
 
     sender_internal = sender_type in ("retail_station", "own_depot") or is_internal_entity_name(sender_name)
-    receiver_internal = receiver_type in ("retail_station", "own_depot")
+    receiver_internal = receiver_type in ("retail_station", "own_depot") or is_internal_entity_name(raw_entity)
 
     if current == "processing":
         return "processing"
@@ -262,6 +284,10 @@ def classify_wholesale_movement(cur, entity_lookup, raw_entity, sender_name=None
 
     if receiver_internal and not sender_internal:
         return "procurement"
+    if receiver_internal and sender_internal:
+        # In wholesale_detail_records, "transfer" means external transport (外运).
+        # Material transfer orders are handled by the separate materials module.
+        return "transfer"
 
     return normalize_wholesale_classification(current)
 

@@ -159,6 +159,64 @@ def create_contract():
         conn.close()
 
 
+@bp_v2.route('/contracts/batch', methods=['POST'])
+@jwt_required()
+@permission_required('contracts:create')
+def batch_create_contracts():
+    payload = request.get_json() or {}
+    records = payload.get('records') or []
+    if not records:
+        return jsonify({'code': 4221, 'message': '没有待保存的合同', 'data': None}), 422
+
+    conn = get_connection()
+    inserted = 0
+    errors = []
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            for index, data in enumerate(records):
+                required = ['contractNo', 'customerName', 'productName']
+                missing = [key for key in required if not data.get(key)]
+                if missing:
+                    errors.append({'row': index + 1, 'message': '缺少必填字段', 'fields': missing})
+                    continue
+                cur.execute('SELECT id FROM contracts WHERE contract_no = %s LIMIT 1', (data.get('contractNo'),))
+                if cur.fetchone():
+                    errors.append({'row': index + 1, 'message': '合同号已存在', 'fields': ['contractNo']})
+                    continue
+                try:
+                    cur.execute('''
+                        INSERT INTO contracts
+                            (contract_no, appendix_no, signed_date, effective_start, effective_end,
+                             raw_customer_name, raw_product_name, sales_type, contract_quantity_tons,
+                             contract_amount_original, currency_code, remark)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        data.get('contractNo'),
+                        data.get('appendixNo'),
+                        data.get('signedDate'),
+                        data.get('effectiveStart'),
+                        data.get('effectiveEnd'),
+                        data.get('customerName'),
+                        data.get('productName'),
+                        data.get('salesType'),
+                        data.get('quantityTons'),
+                        data.get('amountOriginal'),
+                        data.get('currency'),
+                        data.get('remark'),
+                    ))
+                    inserted += 1
+                except Exception as exc:
+                    errors.append({'row': index + 1, 'message': exc.__class__.__name__, 'fields': []})
+            conn.commit()
+            return jsonify({'code': 0, 'message': 'success', 'data': {'inserted': inserted, 'errors': errors}})
+    except Exception:
+        conn.rollback()
+        logger.error('batch_create_contracts failed: error=%s', traceback.format_exc())
+        return jsonify({'code': 500, 'message': '批量创建合同失败', 'data': None}), 500
+    finally:
+        conn.close()
+
+
 @bp_v2.route('/contracts/<int:contract_id>', methods=['PUT'])
 @jwt_required()
 @permission_required('contracts:update')

@@ -1,5 +1,7 @@
 import { message } from 'antd';
-const BASE_URL = 'http://localhost:8900';
+import { API_HOST } from './http';
+
+const BASE_URL = API_HOST;
 const API_BASE = `${BASE_URL}/api`;
 
 async function getToken() {

@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     NBKR_DAILY_XML_URL: str = "https://www.nbkr.kg/XML/daily.xml"
     NBKR_RATES_PAGE_URL: str = "https://www.nbkr.kg/index1.jsp"
 
+    # AI assistant (read-only). Only free OpenRouter models are allowed.
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1/chat/completions"
+    OPENROUTER_MODEL: str = "openrouter/free"
+    OPENROUTER_APP_TITLE: str = "Sales Visualization"
+    OPENROUTER_HTTP_REFERER: str = ""
+    OPENROUTER_TIMEOUT_SECONDS: int = 30
+    OPENROUTER_MAX_TOKENS: int = 900
+    OPENROUTER_TEMPERATURE: float = 0.2
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_DIR: str = ""
@@ -80,6 +90,13 @@ class Settings(BaseSettings):
         if self.LOG_DIR:
             return Path(self.LOG_DIR)
         return BASE_DIR / "logs"
+
+    @property
+    def resolved_openrouter_model(self) -> str:
+        model = (self.OPENROUTER_MODEL or "openrouter/free").strip()
+        if model == "openrouter/free" or model.endswith(":free"):
+            return model
+        return "openrouter/free"
 
 
 @lru_cache(maxsize=1)

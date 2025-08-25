@@ -33,65 +33,79 @@ export default function Query() {
   const classificationColors: Record<string, string> = {
     export_wholesale: 'blue',
     local_wholesale: 'cyan',
-    external_transport: 'geekblue',
-    toll_processing: 'purple',
     processing: 'purple',
     procurement: 'orange',
     transfer: 'geekblue',
     unknown: 'default',
   };
-  const classificationLabels: Record<string, string> = {
-    transfer: '外运',
-    external_transport: '外运',
-    export_wholesale: '出口批发',
-    local_wholesale: '本地批发',
-    processing: '代加工',
-    toll_processing: '代加工',
-    procurement: '采购',
-    unknown: '待识别',
+  const normalizeClassification = (value?: string) => {
+    if (value === 'external_transport') return 'transfer';
+    if (value === 'toll_processing') return 'processing';
+    return value || 'unknown';
   };
-  const statusLabels: Record<string, string> = {
-    matched: '已匹配',
-    unmatched: '未匹配',
-    needs_review: '待审核',
-    approved: '已通过',
-    pending: '待审核',
-    rejected: '已拒绝',
+  const classificationLabelKeys: Record<string, string> = {
+    transfer: 'wholesale.transferClass',
+    export_wholesale: 'wholesale.export_wholesale',
+    local_wholesale: 'wholesale.local_wholesale',
+    processing: 'wholesale.processing',
+    procurement: 'wholesale.procurement',
+    unknown: 'wholesale.unknown',
+  };
+  const sourceAliases: Record<string, string> = {
+    kj_weighing: 'storagedistrict',
+    storage_district: 'storagedistrict',
+    lpg_weighing: 'lpg',
+    lpg_storage: 'lpg',
+    south_CTY-30: 'south_CTY-30_depot',
+    CTY-30: 'south_CTY-30_depot',
+    CTY-30_depot: 'south_CTY-30_depot',
+    north_CTY-22-LAT: 'north_CTY-22-LAT_depot',
+    CTY-22-LAT: 'north_CTY-22-LAT_depot',
+    CTY-22-LAT_depot: 'north_CTY-22-LAT_depot',
+  };
+  const sourceLabel = (value?: string) => {
+    const raw = String(value || 'unknown').trim();
+    const normalized = sourceAliases[raw.toLowerCase()] || raw;
+    return <span className="wholesale-query-two-line">{t(`wholesale.sources.${normalized}`, { defaultValue: value || '--' })}</span>;
   };
   const withStandard = (raw?: string, standard?: string) => {
     const rawValue = raw || standard || '--';
-    if (!standard || standard === raw) return rawValue;
-    return <span>{rawValue}<br /><small style={{ color: '#8c8c8c' }}>标准：{standard}</small></span>;
+    if (!standard || standard === raw) return <span className="wholesale-query-two-line">{rawValue}</span>;
+    return <span className="wholesale-query-two-line">{rawValue}<br /><small style={{ color: '#8c8c8c' }}>{t('aliases.standardName')}：{standard}</small></span>;
   };
+  const twoLineText = (value?: string) => <span className="wholesale-query-two-line">{value || '--'}</span>;
 
   const columns = [
-    { title: t('common.date'), dataIndex: 'businessDate', key: 'businessDate', ellipsis: true },
-    { title: '磅单号', dataIndex: 'weighSerialNo', key: 'weighSerialNo', ellipsis: true, render: (v: string) => v || '--' },
+    { title: t('common.date'), dataIndex: 'businessDate', key: 'businessDate', width: '7%', ellipsis: true, responsive: ['md' as const] },
+    { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: '11%', responsive: ['lg' as const], render: twoLineText },
     {
-      title: '货名',
+      title: t('weighing.rawProductName'),
       dataIndex: 'rawProductName',
       key: 'rawProductName',
-      ellipsis: true,
+      width: '10%',
       render: (_: string, row: WholesaleItem) => withStandard(row.rawProductName || row.productName, row.standardProductName),
     },
-    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', ellipsis: true },
-    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', ellipsis: true, render: (v: string) => v || '--' },
+    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: '7%', ellipsis: true },
+    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: '14%', render: twoLineText },
     {
-      title: '收货单位',
+      title: t('weighing.receiverName'),
       dataIndex: 'rawEntityName',
       key: 'rawEntityName',
-      ellipsis: true,
+      width: '16%',
       render: (_: string, row: WholesaleItem) => withStandard(row.rawEntityName || row.entityName, row.standardEntityName),
     },
-    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 80 },
+    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: '7%', align: 'center' as const, render: (v: number) => Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 3 }) },
     {
-      title: t('common.classification'), dataIndex: 'classification', key: 'classification', width: 100,
-      render: (v: string) => <Tag color={classificationColors[v] || 'default'}>{classificationLabels[v] || v || '待识别'}</Tag>,
+      title: t('common.classification'), dataIndex: 'classification', key: 'classification',
+      width: '7%',
+      align: 'center' as const,
+      render: (v: string) => {
+        const normalized = normalizeClassification(v);
+        return <Tag color={classificationColors[normalized] || 'default'}>{t(classificationLabelKeys[normalized], { defaultValue: normalized })}</Tag>;
+      },
     },
-    { title: '来源', dataIndex: 'weighSource', key: 'weighSource', ellipsis: true, render: (v: string) => v || '--' },
-    { title: '匹配', dataIndex: 'matchStatus', key: 'matchStatus', width: 90, render: (v: string) => statusLabels[v] || v || '--' },
-    { title: '审核', dataIndex: 'auditStatus', key: 'auditStatus', width: 90, render: (v: string) => statusLabels[v] || v || '--' },
-    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', ellipsis: true },
+    { title: t('common.source'), dataIndex: 'weighSource', key: 'weighSource', width: '8%', responsive: ['lg' as const], render: sourceLabel },
+    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', width: '13%', responsive: ['xl' as const], render: twoLineText },
   ];
 
   return (
@@ -103,9 +117,9 @@ export default function Query() {
           <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
         </Space>
       </div>
-      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small"
+      <Table className="wholesale-query-table" dataSource={data} columns={columns} rowKey="id" loading={loading} size="small"
         pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
-        scroll={{ x: 1320, y: 'calc(100vh - 240px)' }} />
+        tableLayout="fixed" />
     </div>
   );
 }

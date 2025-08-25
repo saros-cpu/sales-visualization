@@ -36,10 +36,15 @@ export default function ExchangeRates() {
 
   const usdValues = sorted.map((r) => r.usdKgs).filter((v): v is number => v !== null);
   const cnyValues = sorted.map((r) => r.cnyKgs).filter((v): v is number => v !== null);
-  const usdMin = Math.min(...usdValues);
-  const usdMax = Math.max(...usdValues);
-  const cnyMin = Math.min(...cnyValues);
-  const cnyMax = Math.max(...cnyValues);
+  const usdMin = usdValues.length ? Math.min(...usdValues) : undefined;
+  const usdMax = usdValues.length ? Math.max(...usdValues) : undefined;
+  const cnyMin = cnyValues.length ? Math.min(...cnyValues) : undefined;
+  const cnyMax = cnyValues.length ? Math.max(...cnyValues) : undefined;
+  const axisMargin = (min?: number, max?: number) => {
+    if (min == null || max == null) return {};
+    const span = max - min || Math.max(max * 0.01, 0.01);
+    return { min: min - span * 0.1, max: max + span * 0.1 };
+  };
 
   const chartOption = {
     tooltip: { trigger: 'axis' as const, formatter: (p: any) => {
@@ -51,19 +56,21 @@ export default function ExchangeRates() {
       return html;
     } },
     legend: { data: ['USD/KGS', 'CNY/KGS'], bottom: 0 },
-    grid: { left: 60, right: 60, top: 10, bottom: 40 },
-    xAxis: { type: 'category' as const, name: t('common.date'), nameLocation: 'center', nameGap: 30, data: sorted.map((r) => r.date.slice(5)), axisLabel: { fontSize: 10 } },
+    grid: { left: 56, right: 56, top: 32, bottom: 68, containLabel: true },
+    xAxis: {
+      type: 'category' as const,
+      data: sorted.map((r) => r.date.slice(5)),
+      axisLabel: { fontSize: 10, interval: 0, rotate: sorted.length > 12 ? 45 : 35, hideOverlap: false },
+    },
     yAxis: [
       { type: 'value' as const, name: 'USD/KGS', position: 'left' as const, axisLabel: { fontSize: 10 },
-        min: usdMin - (usdMax - usdMin) * 0.1,
-        max: usdMax + (usdMax - usdMin) * 0.1, },
+        ...axisMargin(usdMin, usdMax), },
       { type: 'value' as const, name: 'CNY/KGS', position: 'right' as const, axisLabel: { fontSize: 10 },
-        min: cnyMin - (cnyMax - cnyMin) * 0.1,
-        max: cnyMax + (cnyMax - cnyMin) * 0.1, },
+        ...axisMargin(cnyMin, cnyMax), },
     ],
     series: [
-      { name: 'USD/KGS', type: 'line' as const, smooth: true, data: sorted.map((r) => r.usdKgs), lineStyle: { color: '#22d3ee' }, itemStyle: { color: '#22d3ee' } },
-      { name: 'CNY/KGS', type: 'line' as const, smooth: true, yAxisIndex: 1, data: sorted.map((r) => r.cnyKgs), lineStyle: { color: '#facc15' }, itemStyle: { color: '#facc15' } },
+      { name: 'USD/KGS', type: 'line' as const, smooth: true, data: sorted.map((r) => r.usdKgs), lineStyle: { color: '#22d3ee' }, itemStyle: { color: '#22d3ee' }, label: { show: true, position: 'top', formatter: (p: any) => Number(p.value || 0).toFixed(4), fontSize: 10 } },
+      { name: 'CNY/KGS', type: 'line' as const, smooth: true, yAxisIndex: 1, data: sorted.map((r) => r.cnyKgs), lineStyle: { color: '#facc15' }, itemStyle: { color: '#facc15' }, label: { show: true, position: 'top', formatter: (p: any) => Number(p.value || 0).toFixed(4), fontSize: 10 } },
     ],
   };
 

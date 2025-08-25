@@ -4,6 +4,7 @@ import { GlobalOutlined, LockOutlined, ReloadOutlined, DownloadOutlined, SyncOut
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { changePassword } from '@/api/client';
+import { API_HOST } from '@/api/http';
 
 import { VERSION, BUILD_DATE, CHANGELOG } from '@/version';
 
@@ -60,7 +61,7 @@ export default function Settings() {
       <Card title={t('common.settings')}>
       <Descriptions column={1} bordered size="small" style={{ marginBottom: 24 }}>
         <Descriptions.Item label={t('common.version')}>{VERSION}</Descriptions.Item>
-        <Descriptions.Item label={t('common.backendUrl')}>http://localhost:8900</Descriptions.Item>
+        <Descriptions.Item label={t('common.backendUrl')}>{API_HOST}</Descriptions.Item>
         <Descriptions.Item label={t('common.currentUser')}>{user?.username} ({user?.role})</Descriptions.Item>
         <Descriptions.Item label={t('common.buildDate')}>{BUILD_DATE}</Descriptions.Item>
       </Descriptions>

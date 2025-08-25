@@ -22,6 +22,8 @@
     "map": "3D 地图",
     "exchange": "汇率查询",
     "aliases": "别名管理",
+    "auditLogs": "审计日志",
+    "systemHealth": "系统健康",
     "logout": "退出登录"
   },
   "login": {
@@ -30,6 +32,78 @@
     "password": "密码",
     "submit": "登录",
     "error": "用户名或密码错误"
+  },
+  "auditLogs": {
+    "operator": "操作人",
+    "department": "部门",
+    "role": "角色",
+    "duration": "耗时",
+    "requestQuery": "查询条件",
+    "requestBody": "请求内容",
+    "path": "接口路径",
+    "detail": "详情",
+    "modules": {
+      "auth": "登录认证",
+      "dashboard": "仪表盘",
+      "retail": "零售分析",
+      "wholesale": "批发查询",
+      "exchange": "汇率查询",
+      "users": "用户管理",
+      "departments": "部门管理",
+      "roles": "角色权限",
+      "organization": "组织权限",
+      "aliases": "别名管理",
+      "weighing": "称重审核",
+      "train_entry": "数据录入",
+      "contracts": "合同管理",
+      "materials": "物资调拨",
+      "procurement": "原料采购",
+      "transfer_loss": "外运损耗",
+      "map": "3D 地图",
+      "audit_logs": "审计日志",
+      "assistant": "AI 助手",
+      "system_health": "系统健康"
+    },
+    "actions": {
+      "view": "查看",
+      "login": "登录",
+      "logout": "退出",
+      "change_password": "修改密码",
+      "create": "新增",
+      "update": "修改",
+      "delete": "删除",
+      "verify": "审核",
+      "batch_verify": "批量审核",
+      "approve": "审批",
+      "status": "状态变更",
+      "permissions": "权限设置",
+      "data_scopes": "数据范围",
+      "reset_password": "重置密码",
+      "export": "导出",
+      "query": "查询",
+      "open_devtools": "打开控制台",
+      "manage": "管理"
+    },
+    "roles": {
+      "admin": "管理员",
+      "leadership": "领导层",
+      "operator": "业务操作员",
+      "auditor": "审计员",
+      "viewer": "查看员",
+      "sales_manager": "销售主管",
+      "sales_staff": "销售专员",
+      "procurement_staff": "采购专员",
+      "loading_staff": "物流管理专员",
+      "finance_staff": "财务资产专员"
+    },
+    "presets": {
+      "all": "全部",
+      "today": "今天",
+      "failed": "失败操作",
+      "data_view": "数据查看",
+      "permission": "权限变更",
+      "export": "导出记录"
+    }
   },
   "common": {
     "loading": "加载中...",
@@ -59,7 +133,13 @@
     "status": "状态",
     "weightTons": "吨位",
     "senderName": "发货方",
+    "senderUnit": "发货单位",
+    "receiverUnit": "收货单位",
     "customerName": "客户",
+    "productName": "油品",
+    "tons": "吨数",
+    "businessType": "业务类型",
+    "recognitionResult": "系统识别结果",
     "create": "新增",
     "add": "新增",
     "submit": "提交",
@@ -71,6 +151,8 @@
     "buildDate": "构建日期",
     "about": "关于",
     "langSwitch": "语言切换",
+    "yes": "是",
+    "no": "否",
     "adminOnly": "仅管理员可访问",
     "noPermission": "无权限执行此操作",
     "resetPassword": "重置密码",
@@ -106,6 +188,13 @@
     "saved": "已保存",
     "created": "已创建",
     "deleted": "已删除",
+    "saveFailed": "保存失败",
+    "draftCleared": "草稿已清空",
+    "deletedCount": "已删除 {{count}} 条记录",
+    "deleteFailedRetry": "删除失败，请重试",
+    "noChangesToSave": "没有需要保存的修改",
+    "cellsNeedFix": "还有 {{count}} 个单元格需要修正",
+    "savedCount": "已保存 {{count}} 条记录",
     "passwordReset": "密码已重置",
     "statusUpdated": "状态已更新",
     "noFutureDate": "不能为未来日期",
@@ -137,6 +226,7 @@
     "appendixNo": "附件号",
     "salesType": "销售类型",
     "originalAmount": "原币金额",
+    "amount": "金额",
     "currency": "币种",
     "addContract": "新增合同",
     "editContract": "编辑合同",
@@ -159,6 +249,7 @@
     "fromWarehouse": "发出仓库",
     "toWarehouse": "接收仓库",
     "driver": "司机",
+    "handler": "经办人",
     "defaultWarehouse": "默认仓库",
     "filterStatus": "筛选状态",
     "filterWarehouse": "筛选仓库",
@@ -182,7 +273,11 @@
     "import": "导入",
     "uploadPreview": "导入预览",
     "uploadSuccess": "已导入 {{count}} 条",
-    "andMore": "...还有 {{count}} 条"
+    "clearDraft": "清空草稿",
+    "andMore": "...还有 {{count}} 条",
+    "selectedCount": "已选 {{count}} 条",
+    "selectRowsFirst": "请先选择记录",
+    "batchDone": "已处理 {{count}} 条"
   },
   "weighing": {
     "title": "称重列表",
@@ -204,7 +299,16 @@
     "unknown": "待识别",
     "corrected": "已修正 {{count}} 个字段",
     "verify": "审核",
-    "originalValue": "原值: {{value}}"
+    "originalValue": "原值: {{value}}",
+    "batchApprove": "批量通过",
+    "batchReject": "批量驳回",
+    "batchClassify": "批量改分类",
+    "selectClassification": "请选择分类",
+    "reviewStatus": {
+      "pending": "待审核",
+      "approved": "已通过",
+      "rejected": "已驳回"
+    }
   },
   "dashboard": {
     "yearlyWholesaleTons": "年批发(吨)",
@@ -283,12 +387,14 @@
     "inventoryAlert": "库存预警",
     "trendAnomaly": "趋势异常",
     "suggestions": "运营建议",
+    "generatedAt": "生成时间",
     "alertRules": "预警规则",
     "expectedResume": "预计恢复",
     "promoteCard": "推广电子支付",
     "stationUnit": "站",
     "regionConcentrationWarn": "区域集中度建议",
     "ruleTrendAnomaly": "连续 2 天环比下降 > 30% → 趋势异常告警",
+    "ruleLowInventoryShort": "库存 < 10% 总容量触发低库存预警",
     "ruleLowInventory": "库存 < 10% 总容量 → 低库存预警",
     "ruleRegionConcentration": "单个区域占比 > 30% → 区域集中度建议",
     "ruleStationDowntime": "停业/装修超过 7 天 → 运营跟进建议",
@@ -318,6 +424,12 @@
     "insightDailyAvg": "日均销量 {{volume}}，日均销售额 {{amount}}。",
     "insightMom": "环比上月（{{month}}）：销售额 {{sales}}，销量 {{volume}}。",
     "insightYoy": "同比去年（{{month}}）：销售额 {{sales}}，销量 {{volume}}。"
+  },
+  "retailStatus": {
+    "normal": "在营",
+    "renovation": "装修",
+    "closed": "停业",
+    "other": "其他"
   },
   "wholesale": {
     "overview": "总览",
@@ -352,7 +464,26 @@
     "classification_mismatch": "分类不符",
     "missing_price": "缺少价格",
     "missing_exchange_rate": "缺少汇率",
-    "generateReport": "生成批发分析报告"
+    "generateReport": "生成批发分析报告",
+    "sources": {
+      "storagedistrict": "储运区",
+      "kj_weighing": "储运区",
+      "storage_district": "储运区",
+      "lpg": "液化气罐区",
+      "lpg_weighing": "液化气罐区",
+      "lpg_storage": "液化气罐区",
+      "main_depot": "Example总库",
+      "zd_depot": "Example总库",
+      "south_CTY-30_depot": "南方STN-63",
+      "CTY-30_depot": "南方STN-63",
+      "CTY-30": "南方STN-63",
+      "north_CTY-22-LAT_depot": "北方STN-65",
+      "CTY-22-LAT_depot": "北方STN-65",
+      "CTY-22-LAT": "北方STN-65",
+      "summary": "汇总",
+      "manual": "手工录入",
+      "unknown": "未知"
+    }
   },
   "transferLoss": {
     "station": "站点",
@@ -363,7 +494,30 @@
     "reportDate": "盘点日期",
     "stationCount": "站点数",
     "totalLoss": "总损耗量",
-    "avgLossRate": "平均损耗率"
+    "avgLossRate": "平均损耗率",
+    "route": "线路",
+    "target": "目标",
+    "weighingDate": "称重日期",
+    "supplyDate": "零售转运日期",
+    "weighingTons": "称重外运吨",
+    "retailSupplyTons": "零售转运吨",
+    "diffTons": "差异吨",
+    "retailSupplyLiters": "零售转运升",
+    "evidence": "判定依据",
+    "reviewRows": "核对记录",
+    "directRows": "直发{{count}}条",
+    "routeCodes": {
+      "main_to_station": "Example总库-加油站",
+      "depot_to_station": "分库-加油站",
+      "main_to_south_depot": "Example总库-南方STN-63",
+      "main_to_north_depot": "Example总库-北方STN-65",
+      "main_to_depot": "Example总库-自营油库"
+    },
+    "evidenceCodes": {
+      "direct_weight_matched": "{{days}}天前有Example外运称重 {{tons}} 吨",
+      "retail_without_direct_weight": "本日零售有转运，前1-3天未找到Example直发该站称重",
+      "main_to_depot_weight": "称重系统显示Example总库外运至自营油库"
+    }
   },
   "aliases": {
     "productAliases": "产品别名",
@@ -372,8 +526,23 @@
     "ownDepot": "油库",
     "wholesaleCustomer": "批发客户",
     "aliasName": "别名",
+    "standardName": "标准名称",
+    "entityCode": "实体编码",
+    "pendingAliases": "待处理名称",
+    "rawName": "原始名称",
+    "latestDate": "最近日期",
+    "resolveAsProduct": "设为产品别名",
+    "resolveAsEntity": "设为实体别名",
+    "sources": {
+      "weighing": "称重",
+      "summary": "汇总",
+      "contract": "合同"
+    },
     "addProductAlias": "添加产品别名",
-    "addEntityAlias": "添加实体别名"
+    "addEntityAlias": "添加实体别名",
+    "ignoreSelected": "批量忽略",
+    "ignoreSelectedConfirm": "确认忽略选中的 {{count}} 个待处理名称？",
+    "ignoredCount": "已忽略 {{count}} 个名称"
   },
   "materials": {
     "name": "名称",
@@ -386,11 +555,64 @@
     "lastInbound": "最后入库",
     "updatedAt": "更新时间",
     "ship": "发货",
-    "receive": "收货"
+    "receive": "收货",
+    "sameWarehouseError": "调出仓库和调入仓库不能相同",
+    "statusPending": "待处理",
+    "statusApproved": "已批准",
+    "statusCompleted": "已完成"
   },
   "contracts": {
     "exCompany": "Example / ZD",
-    "customerSCompany": "油气公司 / CUSTOMER-S-АББР"
+    "customerSCompany": "油气公司 / CUSTOMER-S-АББР",
+    "dateRangeError": "到期日期不能早于生效日期",
+    "appendixNoHint": "附件列仅登记附件编号；多个附件编号可用逗号、分号或换行记录，暂不上传文件。"
+  },
+  "ai": {
+    "title": "AI 助手",
+    "readOnly": "只读",
+    "readOnlyHint": "仅支持查询和回答，不会修改代码、文件、缓存、合同或业务数据。",
+    "empty": "输入问题后，助手会基于当前系统数据回答。",
+    "queryFailed": "AI 查询失败，请稍后重试。",
+    "thinking": "正在分析...",
+    "placeholder": "请输入要查询的问题，Ctrl+Enter 发送",
+    "ask": "提问"
+  },
+  "systemHealth": {
+    "title": "系统健康",
+    "overall": "整体状态",
+    "apiFailed24h": "24小时失败接口",
+    "aiFailed7d": "7天 AI 失败",
+    "services": "服务状态",
+    "api": "API 调用",
+    "cache": "缓存监控",
+    "automation": "自动任务",
+    "ai": "AI 状态",
+    "path": "接口路径",
+    "calls": "调用次数",
+    "failed": "失败次数",
+    "avgDuration": "平均耗时",
+    "duration": "耗时",
+    "cacheItem": "缓存项",
+    "updatedAt": "更新时间",
+    "size": "大小",
+    "error": "异常",
+    "taskName": "任务名称",
+    "startedAt": "开始时间",
+    "finishedAt": "结束时间",
+    "aiConfigured": "已配置",
+    "aiModel": "模型",
+    "aiCalls7d": "7天调用",
+    "aiAvgDuration": "平均耗时",
+    "aiLastCalled": "最近调用",
+    "service": {
+      "backend": "后端服务",
+      "database": "数据库",
+      "openrouter": "OpenRouter",
+      "api": "后端接口",
+      "cache": "缓存文件",
+      "automation": "自动任务",
+      "ai": "AI 服务"
+    }
   },
   "map": {
     "initFailed": "地图初始化失败",

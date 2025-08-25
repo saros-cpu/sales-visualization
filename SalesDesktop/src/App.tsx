@@ -38,6 +38,8 @@ const Settings = lazy(() => import('@/pages/Settings'));
 const MapPage = lazy(() => import('@/pages/MapPage'));
 const ExchangeRates = lazy(() => import('@/pages/ExchangeRates'));
 const Aliases = lazy(() => import('@/pages/Aliases'));
+const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
+const SystemHealth = lazy(() => import('@/pages/SystemHealth'));
 
 const loading = (
   <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
@@ -86,6 +88,8 @@ function AppRoutes() {
         <Route path="users/organization" element={<ErrorBoundary><Suspense fallback={loading}><OrganizationPermissions /></Suspense></ErrorBoundary>} />
         <Route path="aliases" element={<ErrorBoundary><Suspense fallback={loading}><Aliases /></Suspense></ErrorBoundary>} />
         <Route path="weighing" element={<ErrorBoundary><Suspense fallback={loading}><WeighingList /></Suspense></ErrorBoundary>} />
+        <Route path="audit-logs" element={<ErrorBoundary><Suspense fallback={loading}><AuditLogs /></Suspense></ErrorBoundary>} />
+        <Route path="system-health" element={<ErrorBoundary><Suspense fallback={loading}><SystemHealth /></Suspense></ErrorBoundary>} />
         <Route path="settings" element={<ErrorBoundary><Suspense fallback={loading}><Settings /></Suspense></ErrorBoundary>} />
       </Route>
     </Routes>

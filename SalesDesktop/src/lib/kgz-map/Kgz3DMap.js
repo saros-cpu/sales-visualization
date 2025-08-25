@@ -459,6 +459,7 @@ export class Kgz3DMap {
     this.renderer.render(this.scene, this.camera);
     this.animate();
     this.hideLoading();
+    window.__map3d = this;
   }
 
   createDom() {
@@ -753,7 +754,8 @@ export class Kgz3DMap {
     const aspect = Math.max(0.1, this.camera.aspect || 1);
     const mapSpan = Math.max(size.z, size.x / aspect);
     const distanceFactor = aspect < 0.75 ? 2 : 1.65;
-    const distance = THREE.MathUtils.clamp(mapSpan * distanceFactor, 46, 160);
+    const distanceScale = Number(this.options.fitDistanceScale || 1);
+    const distance = THREE.MathUtils.clamp(mapSpan * distanceFactor * distanceScale, 46 * distanceScale, 160);
     const height = THREE.MathUtils.clamp(distance * (aspect < 0.75 ? 1 : 0.72), 30, 72);
     this.controls.target.copy(center);
     this.camera.position.set(center.x, height, center.z + distance);
@@ -893,7 +895,19 @@ export class Kgz3DMap {
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeave);
     this.controls.dispose();
+    this.scene.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+        for (const material of materials) {
+          if (material.map) material.map.dispose();
+          material.dispose();
+        }
+      }
+    });
     this.renderer.dispose();
+    this.renderer.forceContextLoss?.();
+    if (window.__map3d === this) delete window.__map3d;
     this.container.innerHTML = '';
   }
 

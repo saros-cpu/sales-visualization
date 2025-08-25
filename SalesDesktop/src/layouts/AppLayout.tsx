@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth, type PermissionMap } from '@/contexts/AuthContext';
 import { menuConfig, type MenuItem } from '@/config/menu';
 import WindowTitleBar from '@/components/WindowTitleBar';
+import GlobalAiAssistant from '@/components/GlobalAiAssistant';
 import logoSrc from '@/assets/logo.svg';
 
 const { Header, Sider, Content } = Layout;
@@ -194,6 +195,7 @@ export default function AppLayout() {
           <Content className="app-content" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
             <Outlet />
           </Content>
+          <GlobalAiAssistant />
         </Layout>
       </Layout>
     </Layout>

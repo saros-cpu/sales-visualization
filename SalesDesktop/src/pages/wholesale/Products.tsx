@@ -8,6 +8,7 @@ import PeriodPicker from '@/components/ui/PeriodPicker';
 import type { WholesaleClass } from '@/types/api';
 
 const ORDER: WholesaleClass[] = ['export_wholesale', 'local_wholesale', 'unknown', 'transfer', 'procurement', 'processing'];
+const STACK_ORDER: WholesaleClass[] = ['export_wholesale', 'transfer', 'procurement', 'processing', 'unknown'];
 const SHOW_AMOUNT: Partial<Record<WholesaleClass, boolean>> = { export_wholesale: true, local_wholesale: true };
 
 export default function Products() {
@@ -17,6 +18,8 @@ export default function Products() {
   const [month, setMonth] = useState<number | undefined>(now.getMonth() + 1);
 
   const q = useApiQuery(['wholesale', year, month], () => fetchWholesale({ year, month }));
+  const leftKeys = STACK_ORDER.filter((key) => (q.data?.productRankings?.[key]?.length ?? 0) > 0);
+  const localItems = q.data?.productRankings?.local_wholesale ?? [];
 
   return (
     <div>
@@ -27,18 +30,28 @@ export default function Products() {
       {q.data && ORDER.every(k => !q.data?.productRankings?.[k]?.length) && (
         <Alert type="info" message={t('common.noData')} showIcon style={{ marginBottom: 16 }} />
       )}
-      <Row gutter={[16, 16]}>
-        {ORDER.map((key) => {
-          const items = q.data?.productRankings[key];
-          if (!items || items.length === 0) return null;
-          return (
-            <Col xs={24} lg={12} key={key}>
-              <Card size="small" title={t(`wholesale.${key}`)} className="scroll-card" style={{ marginBottom: 16 }}>
-                <BarList rows={items} showAmount={SHOW_AMOUNT[key]} />
-              </Card>
-            </Col>
-          );
-        })}
+      <Row gutter={[12, 12]} className="wholesale-product-grid">
+        {leftKeys.length > 0 && (
+          <Col xs={24} lg={localItems.length ? 10 : 24}>
+            <div className="product-stack-column">
+              {leftKeys.map((key) => {
+                const items = q.data?.productRankings[key] ?? [];
+                return (
+                  <Card size="small" title={t(`wholesale.${key}`)} className="scroll-card product-stat-card product-stack-card" key={key}>
+                    <BarList rows={items} showAmount={SHOW_AMOUNT[key]} />
+                  </Card>
+                );
+              })}
+            </div>
+          </Col>
+        )}
+        {localItems.length > 0 && (
+          <Col xs={24} lg={leftKeys.length ? 14 : 24}>
+            <Card size="small" title={t('wholesale.local_wholesale')} className="product-stat-card product-local-card no-scroll-card">
+              <BarList rows={localItems} showAmount />
+            </Card>
+          </Col>
+        )}
       </Row>
     </div>
   );

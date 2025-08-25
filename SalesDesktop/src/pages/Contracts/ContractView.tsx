@@ -1,9 +1,8 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Select } from 'antd';
+import { Card, Select, Table } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { getContracts, Contract } from '@/api/contracts';
 import { getProductOptions, getEntityOptions } from '@/api/client';
-import ExcelTable from '@/components/common/ExcelTable';
 
 export default function ContractView() {
   const { t } = useTranslation();
@@ -46,26 +45,33 @@ export default function ContractView() {
 
   return (
     <div>
-      <div className="page-toolbar">
-        <h2>{t('nav.contractView')}</h2>
+      <Card
+        size="small"
+        title={t('nav.contractView')}
+        className="contract-view-card"
+        extra={
           <Select value={company} onChange={(v) => { setCompany(v ?? ''); setPage(1); }} style={{ width: 130 }} allowClear placeholder={t('common.all')}>
             <Select.Option value="Example">{t('contracts.exCompany')}</Select.Option>
             <Select.Option value="CUSTOMER-S-АББР">{t('contracts.customerSCompany')}</Select.Option>
           </Select>
-      </div>
-        <ExcelTable
+        }
+      >
+        <Table<Contract>
           dataSource={data}
-          columns={columns}
-          editing={false}
-          setEditing={() => {}}
-          isAdmin={false}
-          height={640}
+          columns={columns as any}
+          rowKey="id"
+          loading={loading}
+          size="small"
           pagination={{
-            current: page, pageSize: 50, total,
+            current: page,
+            pageSize: 50,
+            total,
             onChange: setPage,
             showTotal: (tot) => t('common.total', { count: tot }),
           }}
+          scroll={{ x: 'max-content', y: 'calc(100vh - 260px)' }}
         />
+      </Card>
     </div>
   );
 }

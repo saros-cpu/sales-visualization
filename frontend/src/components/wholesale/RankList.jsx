@@ -1,11 +1,11 @@
 // src/components/wholesale/RankList.jsx — 排行列表（客户排行等）
 import { yuan, num, typeLabels } from '../../utils/format';
 
-export default function RankList({ rows = [], mode = 'customer' }) {
+export default function RankList({ rows = [], mode = 'customer', compact = true }) {
   if (!rows.length) return <p className="muted">暂无数据</p>;
 
   return (
-    <div className="rank-list compact-rank">
+    <div className={`rank-list${compact ? ' compact-rank' : ''}`}>
       {rows.map((item, i) => {
         let sub;
         if (mode === 'transfer') {

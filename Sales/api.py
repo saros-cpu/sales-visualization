@@ -93,7 +93,7 @@ def handle_options_preflight():
         resp = app.make_default_options_response()
         return add_cors_headers(resp)
 
-APP_BUILD = "2026-05-11-retail-resource-report-v2"
+APP_BUILD = "2026-07-16-fastapiadmin-feature-upgrade-v3.6.0"
 PROJECT_ROOT = Path(__file__).resolve().parent
 OILSTATION_ROOT = PROJECT_ROOT.parent / "OilStation"
 SHARED_ASSETS_ROOT = PROJECT_ROOT.parent / "assets"
@@ -151,7 +151,7 @@ def add_security_headers(response):
 @app.before_request
 def require_session():
     path = request.path
-    if path in PUBLIC_PATHS or path.startswith("/assets/"):
+    if path in PUBLIC_PATHS or path.startswith("/assets/") or path.startswith("/kgz-map/"):
         return None
     if path in PUBLIC_API_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_API_PREFIXES):
         return None

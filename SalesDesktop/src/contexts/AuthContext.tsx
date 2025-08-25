@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import client from '@/api/client';
 import { clearAuthTokens, refreshAccessToken } from '@/api/http';
+import { recordDevToolsOpen } from '@/api/system';
 
 interface User {
   id: number;
@@ -47,6 +48,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [dataScopes, setDataScopes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
+  const syncDevToolsAccess = (role?: string | null) => {
+    window.electronAPI?.setDevToolsAccess?.(role === 'admin');
+  };
+
+  useEffect(() => {
+    const off = window.electronAPI?.onDevToolsOpened?.(() => {
+      recordDevToolsOpen().catch(() => {});
+    });
+    return () => { off?.(); };
+  }, []);
+
   const normalizePermissions = (raw: unknown): PermissionMap => {
     if (Array.isArray(raw)) {
       if (raw.includes('*')) return { '*': { view: true, edit: true } };
@@ -83,11 +95,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userData.departments = res.data?.departments || userData.departments;
         }
         setUser(userData);
+        syncDevToolsAccess(userData?.role);
         setPermissions(normalizePermissions(res.data?.permissions));
         setPermissionCodes(Array.isArray(res.data?.permissionCodes) ? res.data.permissionCodes : []);
         setDataScopes(res.data?.dataScopes || {});
       } catch {
         clearAuthTokens();
+        syncDevToolsAccess(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -111,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
     setUser({ ...userData, roles, departments });
+    syncDevToolsAccess(userData?.role);
     setPermissions(normalizePermissions(userPermissions));
     setPermissionCodes(Array.isArray(codes) ? codes : []);
     setDataScopes(scopes || {});
@@ -119,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     client.post('/auth/logout').catch(() => {});
     clearAuthTokens();
+    syncDevToolsAccess(null);
     setUser(null);
     setPermissions({});
     setPermissionCodes([]);

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Button, Space, Tabs, Table } from 'antd';
+import { Button, Space, Tabs, Table, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
 import { getMonthly } from '@/api/retail';
@@ -28,6 +28,14 @@ export default function Report() {
     const amount = amountOf(row);
     return amount > 0 ? `${Math.round((cardOf(row) / amount) * 100)}%` : '-';
   };
+  const statusText = (row: any) => {
+    const value = row?.statusType || row?.closedReason || row?.status || '';
+    const key = String(value || '').toLowerCase();
+    if (['normal', 'active', 'open', 'operating', '在营', '正常营业', '正在营业'].includes(key)) return { text: '在营', color: 'green' };
+    if (['renovation', 'renovating', 'repair', 'maintenance', '装修', '装修停业', '装修/维修'].includes(key) || key.includes('装修')) return { text: '装修', color: 'orange' };
+    if (['suspended', 'closed', 'inactive', '停业', '关闭', '暂停营业'].includes(key) || key.includes('停业')) return { text: '停业', color: 'red' };
+    return { text: row?.statusLabel || row?.status || '--', color: 'default' };
+  };
 
   const stationColumns = [
     { title: t('retail.station'), dataIndex: 'name', key: 'name', sorter: (a: any, b: any) => a.name.localeCompare(b.name), render: (_: any, r: any) => station(r) },
@@ -37,7 +45,10 @@ export default function Report() {
     { title: t('retail.cash'), key: 'cash', render: (_: any, r: any) => wan(cashOf(r)) },
     { title: t('retail.card'), key: 'card', render: (_: any, r: any) => wan(cardOf(r)) },
     { title: t('retail.cardRatio'), key: 'cardRatio', render: (_: any, r: any) => cardRatio(r) },
-    { title: t('retail.status'), dataIndex: 'status', key: 'status' },
+    { title: t('retail.status'), dataIndex: 'status', key: 'status', render: (_: string, row: any) => {
+      const status = statusText(row);
+      return <Tag color={status.color}>{status.text}</Tag>;
+    } },
   ];
 
   const regionColumns = [

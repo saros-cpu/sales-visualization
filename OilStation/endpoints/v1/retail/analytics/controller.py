@@ -334,8 +334,11 @@ def _normalize_self_use_snapshot(snapshot):
             group_key,
             _safe_int(rec.get('selfUseNumber')),
         )
+        info = SHOP_KEY_MAP.get(sk, {'name': rec.get('stationName') or f'Station-{sk}', 'short': rec.get('stationShort') or '', 'region': ''})
 
         rec['time'] = str(rec.get('time') or '')
+        rec['stationName'] = info.get('name') or rec.get('stationName') or f'Station-{sk}'
+        rec['stationShort'] = info.get('short') or rec.get('stationShort') or ''
         rec['plateNumber'] = _normalize_self_use_plate(
             rec.get('plateNumber'),
             person_key=person_key,

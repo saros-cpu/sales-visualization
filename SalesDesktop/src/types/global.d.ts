@@ -20,6 +20,8 @@ declare global {
       minimize?: () => void;
       maximize?: () => void;
       close?: () => void;
+      setDevToolsAccess?: (enabled: boolean) => void;
+      onDevToolsOpened?: (callback: () => void) => () => void;
     };
     updater?: {
       onStatusChange: (callback: (status: UpdateStatus) => void) => () => void;

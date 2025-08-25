@@ -20,6 +20,8 @@
     "map": "3D карта",
     "exchange": "Курсы валют",
     "aliases": "Псевдонимы",
+    "auditLogs": "Журнал аудита",
+    "systemHealth": "Состояние системы",
     "logout": "Выход"
   },
   "login": {
@@ -28,6 +30,78 @@
     "password": "Пароль",
     "submit": "Войти",
     "error": "Неверное имя или пароль"
+  },
+  "auditLogs": {
+    "operator": "Оператор",
+    "department": "Отдел",
+    "role": "Роль",
+    "duration": "Время",
+    "requestQuery": "Параметры запроса",
+    "requestBody": "Тело запроса",
+    "path": "Путь API",
+    "detail": "Детали",
+    "modules": {
+      "auth": "Авторизация",
+      "dashboard": "Панель",
+      "retail": "Розница",
+      "wholesale": "Опт",
+      "exchange": "Курсы валют",
+      "users": "Пользователи",
+      "departments": "Отделы",
+      "roles": "Роли и права",
+      "organization": "Оргструктура и права",
+      "aliases": "Псевдонимы",
+      "weighing": "Взвешивание",
+      "train_entry": "Ввод данных",
+      "contracts": "Договоры",
+      "materials": "Материалы",
+      "procurement": "Закупки сырья",
+      "transfer_loss": "Потери перевозки",
+      "map": "3D карта",
+      "audit_logs": "Журнал аудита",
+      "assistant": "AI помощник",
+      "system_health": "Состояние системы"
+    },
+    "actions": {
+      "view": "Просмотр",
+      "login": "Вход",
+      "logout": "Выход",
+      "change_password": "Смена пароля",
+      "create": "Создание",
+      "update": "Изменение",
+      "delete": "Удаление",
+      "verify": "Проверка",
+      "batch_verify": "Пакетная проверка",
+      "approve": "Согласование",
+      "status": "Изменение статуса",
+      "permissions": "Настройка прав",
+      "data_scopes": "Область данных",
+      "reset_password": "Сброс пароля",
+      "export": "Экспорт",
+      "query": "Запрос",
+      "open_devtools": "Открытие консоли",
+      "manage": "Управление"
+    },
+    "roles": {
+      "admin": "Администратор",
+      "leadership": "Руководство",
+      "operator": "Оператор",
+      "auditor": "Аудитор",
+      "viewer": "Наблюдатель",
+      "sales_manager": "Руководитель продаж",
+      "sales_staff": "Специалист по продажам",
+      "procurement_staff": "Специалист по закупкам",
+      "loading_staff": "Специалист по логистике",
+      "finance_staff": "Специалист по финансам и активам"
+    },
+    "presets": {
+      "all": "Все",
+      "today": "Сегодня",
+      "failed": "CTY-05ибки",
+      "data_view": "Просмотр данных",
+      "permission": "Изменения прав",
+      "export": "Экспорт"
+    }
   },
   "common": {
     "loading": "Загрузка...",
@@ -57,7 +131,13 @@
     "status": "Статус",
     "weightTons": "Тонны",
     "senderName": "Отправитель",
+    "senderUnit": "Отправитель",
+    "receiverUnit": "Получатель",
     "customerName": "Клиент",
+    "productName": "Нефтепродукт",
+    "tons": "Тонны",
+    "businessType": "Тип операции",
+    "recognitionResult": "Результат распознавания",
     "create": "Создать",
     "add": "Добавить",
     "submit": "Отправить",
@@ -69,6 +149,8 @@
     "buildDate": "Дата сборки",
     "about": "О программе",
     "langSwitch": "Язык",
+    "yes": "Да",
+    "no": "Нет",
     "adminOnly": "Только для администратора",
     "noPermission": "Нет прав для выполнения этого действия",
     "resetPassword": "Сброс пароля",
@@ -104,6 +186,13 @@
     "saved": "Сохранено",
     "created": "Создано",
     "deleted": "Удалено",
+    "saveFailed": "CTY-05ибка сохранения",
+    "draftCleared": "Черновик очищен",
+    "deletedCount": "Удалено записей: {{count}}",
+    "deleteFailedRetry": "Не удалось удалить, попробуйте еще раз",
+    "noChangesToSave": "Нет изменений для сохранения",
+    "cellsNeedFix": "Нужно исправить ячеек: {{count}}",
+    "savedCount": "Сохранено записей: {{count}}",
     "passwordReset": "Пароль сбрCTY-05ен",
     "statusUpdated": "Статус обновлен",
     "noFutureDate": "Дата не может быть в будущем",
@@ -134,6 +223,7 @@
     "appendixNo": "Номер приложения",
     "salesType": "Тип продажи",
     "originalAmount": "Исходная сумма",
+    "amount": "Сумма",
     "currency": "Валюта",
     "addContract": "Добавить договор",
     "editContract": "Изменить договор",
@@ -158,6 +248,7 @@
     "toWarehouse": "На склад",
     "transportMode": "Способ перевозки",
     "driver": "Водитель",
+    "handler": "Ответственный",
     "defaultWarehouse": "Основной склад",
     "filterStatus": "Фильтр по статусу",
     "filterWarehouse": "Фильтр по складу",
@@ -181,7 +272,11 @@
     "import": "Импорт",
     "uploadPreview": "Предпросмотр импорта",
     "uploadSuccess": "Импортировано {{count}} зап.",
-    "andMore": "...еще {{count}} зап."
+    "clearDraft": "Очистить черновик",
+    "andMore": "...еще {{count}} зап.",
+    "selectedCount": "Выбрано {{count}}",
+    "selectRowsFirst": "Сначала выберите записи",
+    "batchDone": "Обработано {{count}} записей"
   },
   "weighing": {
     "title": "Список взвешиваний",
@@ -203,7 +298,16 @@
     "unknown": "Не определено",
     "corrected": "Исправлено {{count}} полей",
     "verify": "Проверка",
-    "originalValue": "Оригинал: {{value}}"
+    "originalValue": "Оригинал: {{value}}",
+    "batchApprove": "Подтвердить выбранные",
+    "batchReject": "Отклонить выбранные",
+    "batchClassify": "Изменить категорию",
+    "selectClassification": "Выберите категорию",
+    "reviewStatus": {
+      "pending": "На проверке",
+      "approved": "Подтверждено",
+      "rejected": "Отклонено"
+    }
   },
   "dashboard": {
     "yearlyWholesaleTons": "Опт за год (т)",
@@ -249,11 +353,13 @@
     "closedStations": "Закрытые АЗС", "pendingStations": "Требуют внимания",
     "inventoryAlert": "Остатки на складах", "trendAnomaly": "Аномалии тренда",
     "suggestions": "Рекомендации", "alertRules": "Правила оповещений",
+    "generatedAt": "Сформировано",
     "expectedResume": "Ожидаемое возобновление",
     "promoteCard": "Продвигать безналичные платежи",
     "stationUnit": "станций",
     "regionConcentrationWarn": "Рекомендуется диверсификация регионов",
     "ruleTrendAnomaly": "Падение > 30% 2 дня подряд → аномалия",
+    "ruleLowInventoryShort": "Запас < 10% общей емкости запускает предупреждение",
     "ruleLowInventory": "Запас < 10% → низкий запас",
     "ruleRegionConcentration": "Доля региона > 30% → концентрация",
     "ruleStationDowntime": "Простой > 7 дней → требуется внимание",
@@ -273,6 +379,12 @@
     "insightMom": "К прCTY-05лому месяцу ({{month}}): выручка {{sales}}, объём {{volume}}.",
     "insightYoy": "К прCTY-05лому году ({{month}}): выручка {{sales}}, объём {{volume}}."
   },
+  "retailStatus": {
+    "normal": "Работает",
+    "renovation": "Ремонт",
+    "closed": "Закрыто",
+    "other": "Другое"
+  },
   "wholesale": {
     "overview": "Обзор", "products": "Продукты", "customers": "Клиенты", "transfer": "Перевозки",
     "trend": "Тренд", "review": "Контроль", "query": "Запрос",
@@ -286,7 +398,26 @@
     "topNeedsReview": "Ожидает проверки", "noReviewData": "Нет данных на проверку",
     "contract_unmatched": "Контракт не сопоставлен", "classification_mismatch": "Несоответствие категории",
     "missing_price": "Отсутствует цена", "missing_exchange_rate": "Отсутствует курс",
-    "generateReport": "Создать отчет"
+    "generateReport": "Создать отчет",
+    "sources": {
+      "storagedistrict": "Участок хранения",
+      "kj_weighing": "Участок хранения",
+      "storage_district": "Участок хранения",
+      "lpg": "Участок СУГ",
+      "lpg_weighing": "Участок СУГ",
+      "lpg_storage": "Участок СУГ",
+      "main_depot": "Главная база",
+      "zd_depot": "Главная база",
+      "south_CTY-30_depot": "Южная нефтебаза CTY-05",
+      "CTY-30_depot": "Южная нефтебаза CTY-05",
+      "CTY-30": "Южная нефтебаза CTY-05",
+      "north_CTY-22-LAT_depot": "Северная нефтебаза CTY-08",
+      "CTY-22-LAT_depot": "Северная нефтебаза CTY-08",
+      "CTY-22-LAT": "Северная нефтебаза CTY-08",
+      "summary": "Сводка",
+      "manual": "Вручную",
+      "unknown": "Неизвестно"
+    }
   },
   "transferLoss": {
     "station": "АЗС",
@@ -297,7 +428,30 @@
     "reportDate": "Дата отчета",
     "stationCount": "Кол-во АЗС",
     "totalLoss": "Общие потери",
-    "avgLossRate": "Ср. коэфф. потерь"
+    "avgLossRate": "Ср. коэфф. потерь",
+    "route": "Маршрут",
+    "target": "Цель",
+    "weighingDate": "Дата взвешивания",
+    "supplyDate": "Дата поступления",
+    "weighingTons": "Тонны по взвешиванию",
+    "retailSupplyTons": "Тонны поступления",
+    "diffTons": "Разница, т",
+    "retailSupplyLiters": "Литры поступления",
+    "evidence": "Основание",
+    "reviewRows": "Записи сверки",
+    "directRows": "Прямых {{count}}",
+    "routeCodes": {
+      "main_to_station": "Главная база - АЗС",
+      "depot_to_station": "Нефтебаза - АЗС",
+      "main_to_south_depot": "Главная база - южная нефтебаза CTY-05",
+      "main_to_north_depot": "Главная база - северная нефтебаза CTY-08",
+      "main_to_depot": "Главная база - собственная нефтебаза"
+    },
+    "evidenceCodes": {
+      "direct_weight_matched": "За {{days}} дн. до поступления найдено взвешивание из главной базы: {{tons}} т",
+      "retail_without_direct_weight": "Есть розничное поступление за день, но за предыдущие 1-3 дня не найдено прямое взвешивание из главной базы на эту АЗС",
+      "main_to_depot_weight": "В системе взвешивания зафиксирована отгрузка из главной базы на собственную нефтебазу"
+    }
   },
   "aliases": {
     "productAliases": "Псевдонимы продуктов",
@@ -306,8 +460,23 @@
     "ownDepot": "Нефтебаза",
     "wholesaleCustomer": "Оптовый клиент",
     "aliasName": "Псевдоним",
+    "standardName": "Стандартное название",
+    "entityCode": "Код сущности",
+    "pendingAliases": "Нераспознанные названия",
+    "rawName": "Исходное название",
+    "latestDate": "Последняя дата",
+    "resolveAsProduct": "Сопоставить с продуктом",
+    "resolveAsEntity": "Сопоставить с сущностью",
+    "sources": {
+      "weighing": "Взвешивание",
+      "summary": "Сводка",
+      "contract": "Договор"
+    },
     "addProductAlias": "Добавить псевдоним продукта",
-    "addEntityAlias": "Добавить псевдоним сущности"
+    "addEntityAlias": "Добавить псевдоним сущности",
+    "ignoreSelected": "Игнорировать выбранные",
+    "ignoreSelectedConfirm": "Игнорировать выбранные названия: {{count}}?",
+    "ignoredCount": "Игнорировано названий: {{count}}"
   },
   "materials": {
     "name": "Название",
@@ -320,11 +489,64 @@
     "lastInbound": "Последнее поступление",
     "updatedAt": "Обновлено",
     "ship": "Отгрузить",
-    "receive": "Принять"
+    "receive": "Принять",
+    "sameWarehouseError": "Склад отправления и склад получения не должны совпадать",
+    "statusPending": "Ожидает обработки",
+    "statusApproved": "Утверждено",
+    "statusCompleted": "Завершено"
   },
   "contracts": {
     "exCompany": "ExampleCo / ZD",
-    "customerSCompany": "Нефтегаз / CUSTOMER-S-АББР"
+    "customerSCompany": "Нефтегаз / CUSTOMER-S-АББР",
+    "dateRangeError": "Дата окончания не может быть раньше даты начала",
+    "appendixNoHint": "В колонке приложения указываются только номера приложений; несколько номеров можно разделять запятыми, точками с запятой или переносом строки. Загрузка файлов пока не выполняется."
+  },
+  "ai": {
+    "title": "AI помощник",
+    "readOnly": "Только чтение",
+    "readOnlyHint": "Поддерживаются только запросы и ответы. Код, файлы, кэш, договоры и бизнес-данные не изменяются.",
+    "empty": "Введите вопрос, и помощник ответит по данным системы.",
+    "queryFailed": "Не удалось выполнить AI-запрос. Попробуйте позже.",
+    "thinking": "Анализ...",
+    "placeholder": "Введите вопрос, Ctrl+Enter для отправки",
+    "ask": "Спросить"
+  },
+  "systemHealth": {
+    "title": "Состояние системы",
+    "overall": "Общий статус",
+    "apiFailed24h": "CTY-05ибки API за 24ч",
+    "aiFailed7d": "CTY-05ибки AI за 7 дней",
+    "services": "Сервисы",
+    "api": "Вызовы API",
+    "cache": "Мониторинг кэша",
+    "automation": "Автозадачи",
+    "ai": "Статус AI",
+    "path": "Путь API",
+    "calls": "Вызовы",
+    "failed": "CTY-05ибки",
+    "avgDuration": "Среднее время",
+    "duration": "Время",
+    "cacheItem": "Элемент кэша",
+    "updatedAt": "Обновлено",
+    "size": "Размер",
+    "error": "CTY-05ибка",
+    "taskName": "Задача",
+    "startedAt": "Начало",
+    "finishedAt": "Завершение",
+    "aiConfigured": "Настроено",
+    "aiModel": "Модель",
+    "aiCalls7d": "Вызовы за 7 дней",
+    "aiAvgDuration": "Среднее время",
+    "aiLastCalled": "Последний вызов",
+    "service": {
+      "backend": "Backend сервис",
+      "database": "База данных",
+      "openrouter": "OpenRouter",
+      "api": "Backend API",
+      "cache": "Файлы кэша",
+      "automation": "Автозадачи",
+      "ai": "AI сервис"
+    }
   },
   "map": {
     "initFailed": "CTY-05ибка инициализации карты",

@@ -10,6 +10,7 @@ from routes_data import (
     run_market_watch_maintenance,
     run_retail_snapshot_maintenance,
 )
+from services.retail_alert_service import generate_retail_alert_insights
 from db import get_connection
 
 
@@ -38,6 +39,13 @@ def run_task(task_name: str):
             error = "; ".join(result["errors"]) if result["errors"] else None
         elif task_name == "retail_snapshots":
             result = run_retail_snapshot_maintenance()
+            result = {
+                "retailSnapshots": result,
+                "retailAlertInsights": {
+                    "zh": generate_retail_alert_insights(use_ai=True, language="zh"),
+                    "ru": generate_retail_alert_insights(use_ai=True, language="ru"),
+                },
+            }
             status = "success"
             error = None
         else:

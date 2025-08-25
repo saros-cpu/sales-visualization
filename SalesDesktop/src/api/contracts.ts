@@ -32,6 +32,16 @@ export async function createContract(data: {
   return res.data;
 }
 
+export async function batchCreateContracts(records: Array<{
+  contractNo: string; customerName: string; productName: string;
+  appendixNo?: string; signedDate?: string; effectiveStart?: string;
+  effectiveEnd?: string; salesType?: string; quantityTons?: number;
+  amountOriginal?: number; currency?: string; remark?: string;
+}>) {
+  const res = await client.post('/contracts/batch', { records });
+  return res.data as { inserted: number; errors: Array<{ row: number; message: string; fields?: string[] }> };
+}
+
 export async function updateContract(id: number, data: Partial<Contract>) {
   const res = await client.put(`/contracts/${id}`, data);
   return res.data;

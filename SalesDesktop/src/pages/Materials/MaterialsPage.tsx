@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Card, Tabs, Button, Space, message, Select, Table } from 'antd';
 import { PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -53,11 +53,11 @@ function MaterialDictTab() {
           await createMaterial(change.data);
         }
       }
-      message.success('保存成功');
+      message.success(`${t('common.save')} ${t('common.success')}`);
       setEditing(false);
       fetchData();
     } catch {
-      message.error('保存失败');
+      message.error(t('common.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -154,6 +154,8 @@ function InboundTab() {
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [depots, setDepots] = useState<DepotOption[]>([]);
   const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = async () => {
@@ -164,7 +166,30 @@ function InboundTab() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    Promise.all([getMaterials(), getDepots()]).then(([m, d]) => {
+      setMaterials(Array.isArray(m) ? m : (m?.data ?? []));
+      setDepots(Array.isArray(d) ? d : (d?.data ?? []));
+    });
+  }, []);
+
+  const materialOptions = useMemo(
+    () => materials.map((item) => ({ value: item.id, label: item.name_zh || item.name_ru || item.material_code })),
+    [materials],
+  );
+  const depotOptions = useMemo(
+    () => depots.map((item) => ({ value: item.id, label: item.name_zh || item.name_ru || item.depot_code })),
+    [depots],
+  );
+  const materialName = useCallback(
+    (value: number, record: InboundRecord) => materials.find((item) => item.id === value)?.name_zh || record.material_name || '-',
+    [materials],
+  );
+  const depotName = useCallback(
+    (value: number, record: InboundRecord) => depots.find((item) => item.id === value)?.name_zh || record.depot_name || '-',
+    [depots],
+  );
 
   const handleBatchSave = async (changes: Array<{ id: number; data: Partial<InboundRecord> }>) => {
     if (
@@ -183,11 +208,11 @@ function InboundTab() {
           await createInbound(change.data);
         }
       }
-      message.success('保存成功');
+      message.success(`${t('common.save')} ${t('common.success')}`);
       setEditing(false);
       fetchData();
     } catch {
-      message.error('保存失败');
+      message.error(t('common.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -214,8 +239,25 @@ function InboundTab() {
 
   const columns = [
     { title: t('common.date'), dataIndex: 'inbound_date', key: 'inbound_date', width: 100, editable: true },
-    { title: t('materials.name'), dataIndex: 'material_name', key: 'material_name', editable: true },
-    { title: t('common.warehouse'), dataIndex: 'depot_name', key: 'depot_name', width: 100, editable: true },
+    {
+      title: t('materials.name'),
+      dataIndex: 'material_id',
+      key: 'material_id',
+      editable: true,
+      editorType: 'select' as const,
+      editorOptions: materialOptions,
+      render: materialName,
+    },
+    {
+      title: t('common.warehouse'),
+      dataIndex: 'depot_id',
+      key: 'depot_id',
+      width: 120,
+      editable: true,
+      editorType: 'select' as const,
+      editorOptions: depotOptions,
+      render: depotName,
+    },
     { title: t('common.supplier'), dataIndex: 'supplier_name', key: 'supplier_name', editable: true },
     { title: t('common.qty'), dataIndex: 'quantity', key: 'quantity', width: 80, editable: true },
     { title: t('common.unitPrice'), dataIndex: 'unit_price', key: 'unit_price', width: 80, editable: true },
@@ -276,6 +318,8 @@ function TransferOrdersTab() {
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [depots, setDepots] = useState<DepotOption[]>([]);
   const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = async () => {
@@ -286,7 +330,50 @@ function TransferOrdersTab() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    Promise.all([getMaterials(), getDepots()]).then(([m, d]) => {
+      setMaterials(Array.isArray(m) ? m : (m?.data ?? []));
+      setDepots(Array.isArray(d) ? d : (d?.data ?? []));
+    });
+  }, []);
+
+  const materialOptions = useMemo(
+    () => materials.map((item) => ({ value: item.id, label: item.name_zh || item.name_ru || item.material_code })),
+    [materials],
+  );
+  const depotOptions = useMemo(
+    () => depots.map((item) => ({ value: item.id, label: item.name_zh || item.name_ru || item.depot_code })),
+    [depots],
+  );
+  const materialName = useCallback(
+    (value: number, record: TransferOrder) => materials.find((item) => item.id === value)?.name_zh || record.material_name || '-',
+    [materials],
+  );
+  const fromDepotName = useCallback(
+    (value: number, record: TransferOrder) => depots.find((item) => item.id === value)?.name_zh || record.from_depot_name || '-',
+    [depots],
+  );
+  const toDepotName = useCallback(
+    (value: number, record: TransferOrder) => depots.find((item) => item.id === value)?.name_zh || record.to_depot_name || '-',
+    [depots],
+  );
+  const materialUnit = useCallback(
+    (_: any, record: TransferOrder) => record.material_unit || materials.find((item) => item.id === record.material_id)?.unit || '-',
+    [materials],
+  );
+
+  const validateRow = useCallback((row: Partial<TransferOrder>) => {
+    const errors: Record<string, string> = {};
+    if (!row.order_date) errors.order_date = t('common.date') + ' ' + t('common.required');
+    if (!row.from_depot_id) errors.from_depot_id = t('common.fromWarehouse') + ' ' + t('common.required');
+    if (!row.to_depot_id) errors.to_depot_id = t('common.toWarehouse') + ' ' + t('common.required');
+    if (row.from_depot_id && row.to_depot_id && row.from_depot_id === row.to_depot_id) errors.to_depot_id = t('materials.sameWarehouseError');
+    if (!row.material_id) errors.material_id = t('materials.name') + ' ' + t('common.required');
+    const qty = Number(row.requested_qty ?? 0);
+    if (!qty || qty <= 0) errors.requested_qty = t('common.qty') + ' ' + t('common.required');
+    return errors;
+  }, [t]);
 
   const handleBatchSave = async (changes: Array<{ id: number; data: Partial<TransferOrder> }>) => {
     if (
@@ -300,16 +387,18 @@ function TransferOrdersTab() {
     try {
       for (const change of changes) {
         if (change.id > 0) {
-          await updateTransferOrder(change.id, change.data);
+          const { status, ...rest } = change.data as Partial<TransferOrder>;
+          if (Object.keys(rest).length > 0) await updateTransferOrder(change.id, rest);
+          if (status) await updateOrderStatus(change.id, status);
         } else {
           await createTransferOrder(change.data);
         }
       }
-      message.success('保存成功');
+      message.success(`${t('common.save')} ${t('common.success')}`);
       setEditing(false);
       fetchData();
     } catch {
-      message.error('保存失败');
+      message.error(t('common.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -322,7 +411,8 @@ function TransferOrdersTab() {
     ));
 
     if (id > 0) {
-      await updateTransferOrder(id, { [field]: value });
+      if (field === 'status') await updateOrderStatus(id, value);
+      else await updateTransferOrder(id, { [field]: value });
     }
   };
 
@@ -335,14 +425,56 @@ function TransferOrdersTab() {
   }, []);
 
   const columns = [
-    { title: t('common.orderNo'), dataIndex: 'order_no', key: 'order_no', width: 130, editable: true },
-    { title: t('materials.name'), dataIndex: 'material_name', key: 'material_name', editable: true },
-    { title: t('common.fromWarehouse'), dataIndex: 'from_depot_name', key: 'from_depot_name', width: 100, editable: true },
-    { title: t('common.toWarehouse'), dataIndex: 'to_depot_name', key: 'to_depot_name', width: 100, editable: true },
-    { title: t('common.qty'), dataIndex: 'requested_qty', key: 'requested_qty', width: 80, editable: true },
-    { title: t('common.transportMode'), dataIndex: 'transport_mode', key: 'transport_mode', width: 80, editable: true },
-    { title: t('common.vehicleNo'), dataIndex: 'vehicle_no', key: 'vehicle_no', width: 120, editable: true },
-    { title: t('common.driver'), dataIndex: 'driver_name', key: 'driver_name', width: 80, editable: true },
+    { title: t('common.date'), dataIndex: 'order_date', key: 'order_date', width: 120, editable: true, required: true, editorType: 'date' as const },
+    {
+      title: t('common.fromWarehouse'),
+      dataIndex: 'from_depot_id',
+      key: 'from_depot_id',
+      width: 150,
+      editable: true,
+      required: true,
+      editorType: 'select' as const,
+      editorOptions: depotOptions,
+      render: fromDepotName,
+    },
+    {
+      title: t('common.toWarehouse'),
+      dataIndex: 'to_depot_id',
+      key: 'to_depot_id',
+      width: 150,
+      editable: true,
+      required: true,
+      editorType: 'select' as const,
+      editorOptions: depotOptions,
+      render: toDepotName,
+    },
+    {
+      title: t('materials.name'),
+      dataIndex: 'material_id',
+      key: 'material_id',
+      width: 160,
+      editable: true,
+      required: true,
+      editorType: 'select' as const,
+      editorOptions: materialOptions,
+      render: materialName,
+    },
+    { title: t('common.qty'), dataIndex: 'requested_qty', key: 'requested_qty', width: 100, editable: true, required: true, editorType: 'number' as const },
+    { title: t('materials.unit'), dataIndex: 'material_unit', key: 'material_unit', width: 80, render: materialUnit },
+    { title: t('common.handler'), dataIndex: 'handler_name', key: 'handler_name', width: 120, editable: true },
+    {
+      title: t('common.status'),
+      dataIndex: 'status',
+      key: 'status',
+      width: 120,
+      editable: true,
+      editorType: 'select' as const,
+      editorOptions: [
+        { value: 'pending', label: t('materials.statusPending') },
+        { value: 'approved', label: t('materials.statusApproved') },
+        { value: 'completed', label: t('materials.statusCompleted') },
+      ],
+    },
     { title: t('common.remark'), dataIndex: 'remark', key: 'remark', editable: true },
   ];
 
@@ -350,13 +482,13 @@ function TransferOrdersTab() {
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
         {canCreate && (
-          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => { if (!editing) setEditing(true); tableRef.current?.addNewRow(); }}>
             {t('common.add')}
           </Button>
         )}
         {editing && canEdit && (
           <>
-            <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
+            <Button icon={<SaveOutlined />} type="primary" onClick={async () => { try { await tableRef.current?.saveAllChanges(); setEditing(false); } catch {} }} loading={saving}>
               {t('common.save')}
             </Button>
             <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
@@ -380,6 +512,9 @@ function TransferOrdersTab() {
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
         onAddNew={handleAddNew}
+        validateRow={validateRow}
+        initialNewRow={() => ({ order_date: new Date().toISOString().slice(0, 10), status: 'pending' })}
+        draftKey="material-transfer-spreadsheet-draft"
         rowHeight={40}
         height={600}
       />

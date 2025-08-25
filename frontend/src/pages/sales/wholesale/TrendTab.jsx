@@ -1,11 +1,12 @@
-// src/pages/sales/wholesale/TrendTab.jsx — 每日批发趋势
+// src/pages/sales/wholesale/TrendTab.jsx - 每日批发趋势
 import { useEffect } from 'react';
 import { yuan, num } from '../../../utils/format';
 import { useChart, noDataOption } from '../../../hooks/useChart';
 
 export default function TrendTab({ data }) {
-  const { chartRef, initChart } = useChart();
+  const { initChart } = useChart();
   const rows = data?.dailyTrend || [];
+  const showPendingColumn = rows.some(item => Number(item.pendingTons || 0) > 0);
 
   useEffect(() => {
     const chart = initChart('wholesaleTrendChart');
@@ -18,6 +19,21 @@ export default function TrendTab({ data }) {
     }
 
     const labels = items.map(i => i.date.slice(5));
+    const showPending = items.some(i => Number(i.pendingTons || 0) > 0);
+    const series = [
+      { name: '出口批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.exportTons || 0), lineStyle: { width: 3 } },
+      { name: '本地批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.localTons || 0), lineStyle: { width: 3 } },
+      { name: '外运', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.transferTons || 0), lineStyle: { width: 3 } },
+      { name: '代加工', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.processingTons || 0), lineStyle: { width: 3 } },
+      { name: '采购', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.procurementTons || 0), lineStyle: { width: 3 } },
+      ...(showPending ? [{ name: '待识别', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.pendingTons || 0), lineStyle: { width: 3, type: 'dashed' } }] : []),
+      {
+        name: '销售额', type: 'bar', yAxisIndex: 1, barMaxWidth: 18,
+        data: items.map(i => i.amountCny || 0),
+        itemStyle: { color: 'rgba(167, 139, 250, 0.34)', borderRadius: [4, 4, 0, 0] },
+      },
+    ];
+
     chart.setOption({
       backgroundColor: 'transparent',
       color: ['#00d4ff', '#00e5a0', '#ffa726', '#9c27b0', '#ffcc66', '#a78bfa'],
@@ -53,19 +69,7 @@ export default function TrendTab({ data }) {
           },
         },
       ],
-      series: [
-        { name: '出口批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.exportTons || 0), lineStyle: { width: 3 } },
-        { name: '本地批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.localTons || 0), lineStyle: { width: 3 } },
-        { name: '外运', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.transferTons || 0), lineStyle: { width: 3 } },
-        { name: '代加工', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.processingTons || 0), lineStyle: { width: 3 } },
-        { name: '采购', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.procurementTons || 0), lineStyle: { width: 3 } },
-        { name: '待识别', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.pendingTons || 0), lineStyle: { width: 3, type: 'dashed' } },
-        {
-          name: '销售额', type: 'bar', yAxisIndex: 1, barMaxWidth: 18,
-          data: items.map(i => i.amountCny || 0),
-          itemStyle: { color: 'rgba(167, 139, 250, 0.34)', borderRadius: [4, 4, 0, 0] },
-        },
-      ],
+      series,
     }, true);
   }, [rows, initChart]);
 
@@ -79,7 +83,7 @@ export default function TrendTab({ data }) {
             <thead>
               <tr>
                 <th>日期</th><th>出口吨数</th><th>本地吨数</th>
-                <th>外运吨数</th><th>代加工吨数</th><th>采购吨数</th><th>待识别吨数</th><th>销售额</th>
+                <th>外运吨数</th><th>代加工吨数</th><th>采购吨数</th>{showPendingColumn && <th>待识别吨数</th>}<th>销售额</th>
               </tr>
             </thead>
             <tbody>
@@ -91,10 +95,10 @@ export default function TrendTab({ data }) {
                   <td>{num.format(item.transferTons || 0)}</td>
                   <td>{num.format(item.processingTons || 0)}</td>
                   <td>{num.format(item.procurementTons || 0)}</td>
-                  <td>{num.format(item.pendingTons || 0)}</td>
+                  {showPendingColumn && <td>{num.format(item.pendingTons || 0)}</td>}
                   <td>{yuan.format(item.amountCny || 0)}</td>
                 </tr>
-              )) : <tr><td colSpan="8">暂无数据</td></tr>}
+              )) : <tr><td colSpan={showPendingColumn ? 8 : 7}>暂无数据</td></tr>}
             </tbody>
           </table>
         </div>

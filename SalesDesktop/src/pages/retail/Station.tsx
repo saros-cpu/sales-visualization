@@ -98,7 +98,7 @@ export default function Station() {
                     return html;
                   } },
                   legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
-                  xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
+                  xAxis: { type: 'category', data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
                   yAxis: [
                     { type: 'value', name: 'L' },
                     { type: 'value', name: t('common.wan') },
@@ -151,7 +151,7 @@ export default function Station() {
                     return html;
                   } },
                   grid: { left: 60, right: 20 },
-                  xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
+                  xAxis: { type: 'category', data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
                   yAxis: { type: 'value', max: 100, name: CHART_AXIS.percent },
                   series: [{
                     type: 'line',
@@ -176,8 +176,19 @@ export default function Station() {
               <ChartCard title={t('retail.sameRegion')} loading={staQ.isLoading}
                 option={{
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-                  grid: { left: 120, right: 20 },
-                  xAxis: { type: 'value' },
+                  grid: { left: 120, right: 20, bottom: 58 },
+                  xAxis: {
+                    type: 'value',
+                    axisLabel: {
+                      rotate: 35,
+                      margin: 16,
+                      formatter: (value: number) => {
+                        if (Math.abs(value) >= 100000000) return `${(value / 100000000).toFixed(1)}亿`;
+                        if (Math.abs(value) >= 10000) return `${Math.round(value / 10000)}万`;
+                        return String(Math.round(value));
+                      },
+                    },
+                  },
                   yAxis: { type: 'category', data: regionStations.map((s: any) => station(s)).reverse(), axisLabel: { fontSize: 11 } },
                   series: [{ type: 'bar', data: regionStations.map((s: any) => s.amount).reverse() }],
                 }}

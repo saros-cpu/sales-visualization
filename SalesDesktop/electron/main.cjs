@@ -4,6 +4,7 @@ const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
+let adminDevToolsEnabled = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -22,10 +23,20 @@ function createWindow() {
   const isDev = process.argv.includes('--dev');
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const key = String(input.key || '').toLowerCase();
+    if (input.control && input.shift && key === 'i') {
+      event.preventDefault();
+      if (adminDevToolsEnabled) {
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
+        mainWindow.webContents.send('devtools-opened');
+      }
+    }
+  });
 
   mainWindow.on('closed', () => { mainWindow = null; });
 }
@@ -107,6 +118,15 @@ function setupWindowControl() {
   ipcMain.on('window-close', () => mainWindow?.close());
 }
 
+function setupDevToolsAccess() {
+  ipcMain.on('set-devtools-access', (event, enabled) => {
+    adminDevToolsEnabled = Boolean(enabled);
+    if (!adminDevToolsEnabled && mainWindow?.webContents.isDevToolsOpened()) {
+      mainWindow.webContents.closeDevTools();
+    }
+  });
+}
+
 app.whenReady().then(() => {
   const csp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:8900 http://198.51.100.10:8080 ws://localhost:5173; img-src 'self' data: blob:; font-src 'self' data:";
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -117,6 +137,7 @@ app.whenReady().then(() => {
   setupFileDownload();
   setupOpenExternal();
   setupWindowControl();
+  setupDevToolsAccess();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

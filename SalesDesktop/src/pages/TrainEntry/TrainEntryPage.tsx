@@ -74,11 +74,11 @@ export default function TrainEntryPage() {
       for (const u of updates) {
         await updateTrainEntry(u.id, u.data);
       }
-      message.success('保存成功');
+      message.success(`${t('common.save')} ${t('common.success')}`);
       setEditing(false);
       fetchData();
     } catch {
-      message.error('保存失败');
+      message.error(t('common.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -94,6 +94,35 @@ export default function TrainEntryPage() {
       await updateTrainEntry(id, { [field]: value });
     }
   };
+
+  const handleAddNew = useCallback((row: any) => {
+    setData(prev => [...prev, row as TrainEntryRecord]);
+  }, []);
+
+  const classifyOilFlow = useCallback((record: Partial<TrainEntryRecord>) => {
+    const sender = String(record.senderName || '').trim();
+    const receiver = String(record.receiverName || '').trim();
+    const text = `${sender} ${receiver}`;
+    const internalWords = ['油库', '加油站', '仓库', 'ProductTeam', '物流管理部', 'CUSTOMER-S-АББР', 'Example'];
+    const senderInternal = internalWords.some(word => sender.includes(word));
+    const receiverInternal = internalWords.some(word => receiver.includes(word));
+    if (senderInternal && receiverInternal) return { type: '外运', result: '内部单位之间油品流转，系统按外运识别' };
+    if (/供应|采购|炼厂|завод|постав/i.test(text)) return { type: '采购', result: '按发货单位/收货单位识别为采购' };
+    if (/客户|出口|销售|покуп|client/i.test(text)) return { type: '批发', result: '按收货单位识别为批发销售' };
+    return { type: '待确认', result: '单位匹配不明确，保存前请核对' };
+  }, []);
+
+  const validateRow = useCallback((row: Partial<TrainEntryRecord>) => {
+    const errors: Record<string, string> = {};
+    if (!row.entryDate) errors.entryDate = t('common.date') + ' ' + t('common.required');
+    if (!row.vehicleNo) errors.vehicleNo = t('common.vehicleNo') + ' ' + t('common.required');
+    if (!row.senderName) errors.senderName = t('common.senderUnit') + ' ' + t('common.required');
+    if (!row.receiverName) errors.receiverName = t('common.receiverUnit') + ' ' + t('common.required');
+    if (!row.productName) errors.productName = t('common.product') + ' ' + t('common.required');
+    const tons = Number(row.weightTons ?? 0);
+    if (!tons || tons <= 0) errors.weightTons = t('common.tons') + ' ' + t('common.required');
+    return errors;
+  }, [t]);
 
   const handleUploadFile = (file: File) => {
     if (!canCreate) {
@@ -153,14 +182,15 @@ export default function TrainEntryPage() {
   };
 
   const columns = [
-    { title: t('common.date'), dataIndex: 'entryDate', key: 'entryDate', width: 140, editable: true },
-    { title: t('retail.product'), dataIndex: 'productName', key: 'productName', width: 110, editable: true },
-    { title: '磅单号', dataIndex: 'weighNo', key: 'weighNo', width: 130, editable: true },
-    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 130, editable: true },
-    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: 140, editable: true },
-    { title: t('weighing.receiverName'), dataIndex: 'receiverName', key: 'receiverName', width: 140, editable: true },
-    { title: t('common.weightKg'), dataIndex: 'weightKg', key: 'weightKg', width: 110, editable: true },
-    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', width: 130, editable: true },
+    { title: t('common.date'), dataIndex: 'entryDate', key: 'entryDate', width: 130, editable: true, required: true, editorType: 'date' as const },
+    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 120, editable: true, required: true },
+    { title: t('common.senderUnit'), dataIndex: 'senderName', key: 'senderName', width: 170, editable: true, required: true },
+    { title: t('common.receiverUnit'), dataIndex: 'receiverName', key: 'receiverName', width: 170, editable: true, required: true },
+    { title: t('common.product'), dataIndex: 'productName', key: 'productName', width: 130, editable: true, required: true },
+    { title: t('common.tons'), dataIndex: 'weightTons', key: 'weightTons', width: 100, editable: true, required: true, editorType: 'number' as const },
+    { title: t('common.businessType'), dataIndex: 'businessType', key: 'businessType', width: 110, render: (_: any, row: TrainEntryRecord) => classifyOilFlow(row).type },
+    { title: t('common.recognitionResult'), dataIndex: 'recognitionResult', key: 'recognitionResult', width: 240, render: (_: any, row: TrainEntryRecord) => classifyOilFlow(row).result },
+    { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: 160, editable: true },
   ];
 
   return (
@@ -178,14 +208,14 @@ export default function TrainEntryPage() {
               </Button>
               <input id="train-upload-input" type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
                 onChange={(e) => e.target.files?.[0] && handleUploadFile(e.target.files[0])} />
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { if (!editing) setEditing(true); tableRef.current?.addNewRow(); }}>
                 {t('common.add')}
               </Button>
             </>
           )}
           {editing && canEdit && (
             <>
-              <Button icon={<SaveOutlined />} type="primary" onClick={async () => { await tableRef.current?.saveAllChanges(); setEditing(false); }} loading={saving}>
+              <Button icon={<SaveOutlined />} type="primary" onClick={async () => { try { await tableRef.current?.saveAllChanges(); setEditing(false); } catch {} }} loading={saving}>
                 {t('common.save')}
               </Button>
               <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
@@ -210,6 +240,10 @@ export default function TrainEntryPage() {
         isAdmin={false}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
+        onAddNew={handleAddNew}
+        validateRow={validateRow}
+        initialNewRow={() => ({ entryDate: dayjs().format('YYYY-MM-DD') })}
+        draftKey="train-entry-spreadsheet-draft"
         rowHeight={40}
         height={600}
       />

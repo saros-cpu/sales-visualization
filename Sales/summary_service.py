@@ -80,7 +80,7 @@ def product_rankings(cur, start, end):
         cur.execute(
             """
             SELECT
-                p.display_name,
+                COALESCE(NULLIF(p.display_name, ''), d.raw_product_name),
                 COALESCE(SUM(d.weight_tons), 0) AS tons,
                 COALESCE(SUM(cr.amount_cny), 0) AS amount_cny
             FROM wholesale_detail_records d
@@ -88,7 +88,7 @@ def product_rankings(cur, start, end):
             LEFT JOIN calculation_results cr ON cr.detail_id = d.id
             WHERE d.business_date >= %s AND d.business_date < %s
               AND d.classification = %s
-            GROUP BY p.display_name
+            GROUP BY COALESCE(NULLIF(p.display_name, ''), d.raw_product_name)
             ORDER BY SUM(d.weight_tons) DESC
             LIMIT 20
             """,

@@ -3,6 +3,7 @@ import { Spin, Alert } from 'antd';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import client from '@/api/client';
+import { API_HOST } from '@/api/http';
 import { mountHomeMap } from '@/lib/kgz-map/kgz-map-entry';
 import { useAuth } from '@/contexts/AuthContext';
 import { mapRoleVisibleTypes } from '@/config/mapRoles';
@@ -20,17 +21,20 @@ export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) 
 
   useEffect(() => {
     let mapInstance: any = null;
+    let cancelled = false;
     const el = containerRef.current;
     if (!el) return;
 
     (async () => {
+      setLoading(true);
+      setError('');
       try {
         const token = localStorage.getItem('accessToken') || '';
         const detailHeaders: Record<string, string> = {};
         if (token) detailHeaders['Authorization'] = `Bearer ${token}`;
         const [mapRes, detailRes] = await Promise.all([
           client.get('/map/stations'),
-          axios.get('http://localhost:8900/api/station-map-details', { headers: detailHeaders }).catch(() => null),
+          axios.get(`${API_HOST}/api/station-map-details`, { headers: detailHeaders }).catch(() => null),
         ]);
         const data = mapRes.data?.data || mapRes.data;
         const details = detailRes?.data?.items || [];
@@ -53,26 +57,37 @@ export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) 
         const allCustomers = (data.customers || []).map((c: any) => ({ ...c, type: 'wholesale_customer', size: 0.35 }));
         const customers = visibleTypes.includes('customer') ? allCustomers : [];
 
-        const basePath = typeof window.updater !== 'undefined'
-          ? 'http://localhost:8900/kgz-map/data/'
-          : '/kgz-map/data/';
-        mapInstance = await mountHomeMap(el, { depots, stations, customers }, {
+        const basePath = new URL('/assets/kgz-map/data/', API_HOST).href;
+        const instance = await mountHomeMap(el, { depots, stations, customers }, {
           basePath,
           showRoadPanel: false, showLakeLabels: true, showCities: true,
           showRegionLabels: false, showLegend: false,
-          initialCamera: { cameraX: -2.35, cameraY: 24.77, cameraZ: 38.2, targetX: -2.35, targetY: 0.33, targetZ: 3.95 },
+          initialCamera: {
+            cameraX: -0.08,
+            cameraY: 30.54,
+            cameraZ: 45.81,
+            targetX: -0.08,
+            targetY: -0.45,
+            targetZ: 2.48,
+          },
         });
+        if (cancelled) {
+          instance?.destroy?.();
+          return;
+        }
+        mapInstance = instance;
         if (!mapInstance) {
           throw new Error(t('map.initFailed'));
         }
       } catch (e: any) {
-        setError(e.message || t('map.loadFailed'));
+        if (!cancelled) setError(e.message || t('map.loadFailed'));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
 
     return () => {
+      cancelled = true;
       if (mapInstance?.destroy) mapInstance.destroy();
     };
   }, []);

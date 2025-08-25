@@ -77,15 +77,15 @@ export default function Transfer() {
         <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
           onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
       </Space>
-      <Row gutter={[16, 16]}>
+      <Row gutter={[12, 12]} className="wholesale-transfer-grid">
         <Col xs={24} lg={12}>
-          <Card size="small" title={t('wholesale.byRegion')} style={{ marginBottom: 16 }}>
+          <Card size="small" title={t('wholesale.byRegion')} className="transfer-summary-card no-scroll-card">
             <BarList rows={sortedByRegion.map((r) => ({ name: r.region === 'CTY-30' ? 'STN-63' : r.region, tons: r.tons }))} />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card size="small" title={t('wholesale.byProduct')} style={{ marginBottom: 16 }}>
-            <BarList rows={(ts?.byProduct ?? []).map((r) => ({ name: r.product, tons: r.tons }))} />
+          <Card size="small" title={t('wholesale.byProduct')} className="scroll-card transfer-summary-card">
+            <BarList rows={(ts?.byProduct ?? []).map((r) => ({ name: r.product || r.name || '未识别油品', tons: r.tons }))} />
           </Card>
         </Col>
         <Col xs={24}>

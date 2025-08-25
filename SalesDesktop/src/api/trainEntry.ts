@@ -9,6 +9,7 @@ export interface TrainEntryRecord {
   receiverName: string;
   vehicleNo: string;
   weightKg: number | null;
+  weightTons?: number | null;
   remark: string;
   createdAt: string;
 }
@@ -22,7 +23,7 @@ export async function getTrainEntryList(params: {
 
 export async function createTrainEntry(data: {
   entryDate: string; productName: string; vehicleNo: string;
-  weighNo?: string; senderName?: string; receiverName?: string; weightKg?: number; remark?: string;
+  weighNo?: string; senderName?: string; receiverName?: string; weightKg?: number; weightTons?: number; remark?: string;
 }) {
   const res = await client.post('/train-entry', data);
   return res.data;
@@ -35,7 +36,7 @@ export async function batchCreateTrainEntry(records: Array<Partial<TrainEntryRec
 
 export async function updateTrainEntry(id: number, data: Partial<{
   entryDate: string; productName: string; vehicleNo: string;
-  weighNo: string; senderName: string; receiverName: string; weightKg: number; remark: string;
+  weighNo: string; senderName: string; receiverName: string; weightKg: number; weightTons: number; remark: string;
 }>) {
   const res = await client.put(`/train-entry/${id}`, data);
   return res.data;

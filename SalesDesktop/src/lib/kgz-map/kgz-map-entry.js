@@ -29,8 +29,12 @@ function showFallbackMessage(target, error) {
 }
 
 async function mountWithFallback(MapClass, target, options, fallback) {
+  const el = normalizeTarget(target);
   try {
-    return await MapClass.mount(target, options);
+    el?.__kgzMapInstance?.destroy?.();
+    const map = await MapClass.mount(target, options);
+    if (el) el.__kgzMapInstance = map;
+    return map;
   } catch (error) {
     console.error('[Kgz3DMap] mount failed:', error);
     if (typeof fallback === 'function') {
@@ -38,6 +42,7 @@ async function mountWithFallback(MapClass, target, options, fallback) {
     } else {
       showFallbackMessage(target, error);
     }
+    if (el?.__kgzMapInstance) delete el.__kgzMapInstance;
     return null;
   }
 }

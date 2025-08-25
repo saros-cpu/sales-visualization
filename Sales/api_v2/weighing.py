@@ -2,7 +2,7 @@ from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api_v2 import bp_v2
 from .authz import permission_required
-from services.weighing_service import get_weighing_list, verify_weighing
+from services.weighing_service import batch_review_weighing, get_weighing_list, verify_weighing
 import pymysql
 from db import get_connection
 from datetime import datetime
@@ -107,6 +107,34 @@ def weighing_batch_verify():
             'errors': errors,
         }
     })
+
+
+@bp_v2.route('/weighing/batch-review', methods=['POST'])
+@jwt_required()
+@permission_required('weighing:verify')
+def weighing_batch_review():
+    data = request.get_json() or {}
+    records = data.get('records') or []
+    action = data.get('action')
+    classification = data.get('classification')
+    remark = data.get('remark') or ''
+
+    if not records:
+        return jsonify({'code': 4221, 'message': 'No selected records', 'data': None}), 422
+
+    try:
+        result = batch_review_weighing(
+            records=records,
+            action=action,
+            classification=classification,
+            operator_id=int(get_jwt_identity()),
+            remark=remark,
+        )
+        return jsonify({'code': 0, 'message': 'success', 'data': result})
+    except ValueError as exc:
+        return jsonify({'code': 4221, 'message': str(exc), 'data': None}), 422
+    except Exception as exc:
+        return jsonify({'code': 5001, 'message': str(exc), 'data': None}), 500
 
 
 @bp_v2.route('/weighing/history', methods=['GET'])

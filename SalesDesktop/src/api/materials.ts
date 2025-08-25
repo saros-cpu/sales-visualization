@@ -24,11 +24,11 @@ export interface InboundRecord {
 }
 
 export interface TransferOrder {
-  id: number; order_no: string; material_id: number; material_name: string;
+  id: number; order_no: string; order_date?: string; material_id: number; material_name: string; material_unit?: string;
   from_depot_id: number; from_depot_name: string;
   to_depot_id: number; to_depot_name: string;
   requested_qty: number; transport_mode: string;
-  vehicle_no: string; driver_name: string;
+  vehicle_no: string; driver_name: string; handler_name?: string;
   status: string; remark: string; created_at: string;
 }
 
@@ -50,9 +50,9 @@ type InboundCreateInput = Partial<InboundRecord> & {
 };
 
 type TransferOrderCreateInput = Partial<TransferOrder> & {
-  orderNo?: string; materialId?: number; fromDepotId?: number;
+  orderNo?: string; orderDate?: string; materialId?: number; fromDepotId?: number;
   toDepotId?: number; requestedQty?: number; transportMode?: string;
-  vehicleNo?: string; driverName?: string;
+  vehicleNo?: string; driverName?: string; handlerName?: string;
 };
 
 export async function getCategories() {
@@ -113,6 +113,7 @@ export async function getTransferOrders(params: { status?: string; page?: number
 export async function createTransferOrder(data: TransferOrderCreateInput) {
   const payload = {
     orderNo: data.orderNo ?? data.order_no,
+    orderDate: data.orderDate ?? data.order_date,
     materialId: data.materialId ?? data.material_id,
     fromDepotId: data.fromDepotId ?? data.from_depot_id,
     toDepotId: data.toDepotId ?? data.to_depot_id,
@@ -120,6 +121,7 @@ export async function createTransferOrder(data: TransferOrderCreateInput) {
     transportMode: data.transportMode ?? data.transport_mode,
     vehicleNo: data.vehicleNo ?? data.vehicle_no,
     driverName: data.driverName ?? data.driver_name,
+    handlerName: data.handlerName ?? data.handler_name,
     remark: data.remark,
   };
   const res = await client.post('/materials/orders', payload);

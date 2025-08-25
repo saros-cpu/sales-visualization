@@ -1,4 +1,4 @@
-// src/pages/sales/wholesale/TransferTab.jsx — 外运
+// src/pages/sales/wholesale/TransferTab.jsx - 外运
 import { useState } from 'react';
 import { num } from '../../../utils/format';
 import BarList from '../../../components/wholesale/BarList';
@@ -13,7 +13,6 @@ export default function TransferTab({ data }) {
   const regionRows = (summary.byRegionProduct || [])
     .filter(item => !region || item.region === region);
 
-  // 按区域分组
   const grouped = new Map();
   regionRows.forEach(item => {
     if (!grouped.has(item.region)) grouped.set(item.region, []);
@@ -22,7 +21,7 @@ export default function TransferTab({ data }) {
 
   return (
     <section className="content-grid">
-      <section className="panel">
+      <section className="panel transfer-region-panel no-panel-scroll">
         <div className="panel-head"><h2>外运区域汇总</h2><span>参考零售区域</span></div>
         <BarList rows={byRegion.map(r => ({ name: r.region, tons: r.tons }))} />
       </section>

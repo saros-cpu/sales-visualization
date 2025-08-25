@@ -2,6 +2,56 @@
 
 ## 版本历史
 
+### v3.6.0 (2026-07-16)
+
+**新增功能**：
+
+1. **全局只读 AI 助手**
+   - 全局浮动入口：`src/components/GlobalAiAssistant.tsx`
+   - 后端接口：`POST /api/v2/assistant/query`、`GET /api/v2/assistant/status`
+   - 模型来源：OpenRouter 免费模型，`OPENROUTER_MODEL` 仅允许 `openrouter/free` 或 `:free` 后缀模型
+   - 安全边界：只能查询和回答，涉及修改代码、文件、缓存、合同和业务数据的请求直接拒绝
+
+2. **管理菜单系统健康**
+   - 管理菜单新增 `SystemHealth.tsx`
+   - 汇总服务状态、API 调用、缓存文件、自动任务和 AI 调用日志
+   - 权限点：`system_health:view`，管理菜单仍仅管理员可见
+
+3. **Excel 式批量录入升级**
+   - 数据录入：字段统一为日期、车号、发货单位、收货单位、油品、吨数、业务类型、系统识别结果、备注
+   - 物资调拨：字段统一为日期、调出仓库、调入仓库、物资名称、数量、单位、经办人、状态、备注
+   - 合同新增：按合同查看列顺序改为 Excel 式录入，附件列仅登记附件编号，支持批量创建
+   - 通用表格支持草稿、Excel 粘贴、Enter 连续录入、必填校验和中俄双语提示
+
+4. **零售预警智能生成**
+   - 自动任务生成零售快照后同步生成趋势异常和运营建议
+   - 后端按语言存储预警建议，中文/俄文界面分别请求对应内容
+   - 保持现有预警菜单结构，不新增复杂预警页签
+
+5. **管理员控制台安全限制**
+   - Electron `Ctrl+Shift+I` 仅管理员登录后生效
+   - 打开控制台会写入审计日志，非管理员和未登录状态无响应
+
+**主要文件**：
+
+```
+Sales/
+├── assistant_agent.py
+├── api_v2/assistant.py
+├── api_v2/system.py
+├── api_v2/retail_alerts.py
+└── services/retail_alert_service.py
+
+SalesDesktop/src/
+├── components/GlobalAiAssistant.tsx
+├── pages/SystemHealth.tsx
+├── api/assistant.ts
+├── api/system.ts
+└── api/retailAlerts.ts
+```
+
+---
+
 ### v3.2.0 (2026-07-13)
 
 **新增功能**：
@@ -227,6 +277,7 @@ SalesDesktop/src/
 ```
 SalesDesktop/src/
 ├── components/
+│   ├── GlobalAiAssistant.tsx          # 全局只读 AI 助手
 │   └── common/
 │       └── ExcelTable.tsx              # 通用 Excel 表格组件
 ├── pages/
@@ -235,14 +286,18 @@ SalesDesktop/src/
 │   ├── Procurement.tsx                 # 采购管理
 │   ├── Materials/
 │   │   └── MaterialsPage.tsx           # 物资管理（3个Tab）
+│   ├── SystemHealth.tsx                # 管理菜单系统健康
 │   ├── Aliases.tsx                     # 别名管理
-│   └── Contracts.tsx                   # 合同管理
+│   └── Contracts/ContractAdd.tsx       # Excel 式合同新增
 ├── contexts/
 │   └── AuthContext.tsx                 # 认证上下文
 ├── hooks/
 │   └── useAuth.ts                      # 认证 Hook
 ├── api/
 │   ├── client.ts                       # API 客户端
+│   ├── assistant.ts                    # 只读 AI 助手 API
+│   ├── system.ts                       # 系统健康 API
+│   ├── retailAlerts.ts                 # 零售预警智能建议 API
 │   ├── trainEntry.ts                   # 火车外运 API
 │   ├── procurement.ts                  # 采购 API
 │   ├── materials.ts                    # 物资 API
@@ -260,8 +315,9 @@ SalesDesktop/src/
 - 支持 Excel 视觉样式（网格线、冻结首行、垂直滚动）
 - 支持 Excel 风格键盘快捷键
 - 支持虚拟滚动（动态行高）
-- 支持实时保存（防抖1秒）
-- 支持批量提交（防抖3秒）
+- 支持 Excel 批量粘贴、Enter 连续录入、草稿恢复
+- 支持实时保存与批量提交
+- 支持必填校验、自定义行校验、中俄双语错误提示
 - 支持权限控制（仅管理员可删除）
 
 **接口定义**：
@@ -274,6 +330,10 @@ interface ExcelTableProps<T extends { id: number }> {
   isAdmin: boolean;
   onBatchSave: (changes: Array<{ id: number; data: Partial<T> }>) => Promise<void>;
   onRealTimeSave?: (id: number, field: string, value: any) => Promise<void>;
+  onAddNew?: (row: T) => void;
+  validateRow?: (row: Partial<T>, rowIndex: number) => Record<string, string>;
+  initialNewRow?: () => Partial<T>;
+  draftKey?: string;
   rowHeight?: number;
   height?: number;
   onKeyDown?: (e: KeyboardEvent) => void;
@@ -296,12 +356,13 @@ interface ExcelTableProps<T extends { id: number }> {
 
 **列定义**：
 - 日期（entryDate）
-- 产品名（productName）
-- 磅单号（weighNo）
 - 车号（vehicleNo）
 - 发货单位（senderName）
 - 收货单位（receiverName）
-- 重量（weightKg）
+- 油品（productName）
+- 吨数（weightTons）
+- 业务类型（businessType，系统识别）
+- 系统识别结果（recognitionResult，只读展示）
 - 备注（remark）
 
 #### 2. Procurement（采购管理）
@@ -508,18 +569,18 @@ if (e.key === 'Delete' && isAdmin) {
 
 ### 版本号管理
 
-1. **同步更新三个地方**：`src/version.ts` 的 `VERSION` + `package.json` 的 `version` + `src/version.ts` 的 `CHANGELOG`
+1. **同步更新四个地方**：`src/version.ts` 的 `VERSION` + `package.json` 的 `version` + `package-lock.json` 的根版本 + `src/version.ts` 的 `CHANGELOG`
 2. **CHANGELOG 必须按严格倒序**（最新版本在最顶部）
 3. **版本号只升不降**，不允许回退
 4. **构建前检查**：运行 `git diff` 确认变更文件，判断版本号增幅是否合理
 
 ### 更新步骤
 
-1. **升版本号** — 按规则 15 同步更新 `src/version.ts`（VERSION + CHANGELOG）+ `package.json` 的 `version`
+1. **升版本号** — 按规则 15 同步更新 `src/version.ts`（VERSION + CHANGELOG）+ `package.json` + `package-lock.json`
 2. **tsc + vite build 验证** — `npx tsc --noEmit && npx vite build`，确保编译和构建通过
 3. **提交** — `git add` + `git commit`，提交信息写明版本号与改动摘要
 4. **打包客户端** — `npm run electron:build` 生成安装包 + `latest.yml`
-5. **部署到服务器** — 将 `release_v18/SalesDesktop Setup {version}.exe` + `latest.yml` 复制到 `SalesDesktop/` 根目录，供 Nginx `/download/` 服务（公网 `http://198.51.100.10:8080/download/`）
+5. **部署到服务器** — 将 `release_v18/SalesDesktop Setup {version}.exe` + `latest.yml` 复制到 `SalesDesktop/` 根目录，供 Nginx `/download/` 服务（公网 `http://198.51.100.10/download/`）
 
 > ⚠️ 如果用户要求先不部署（如仍在开发中），则第 4-5 步暂缓，但第 1-3 步不能跳过。
 
@@ -600,4 +661,4 @@ if (e.key === 'Delete' && isAdmin) {
 
 **文档维护**：每次版本更新后更新此文档
 
-**最后更新**：2026-07-13（v3.2.0）
+**最后更新**：2026-07-16（v3.6.0）

@@ -88,7 +88,7 @@ export default function Monthly() {
                     return html;
                   } },
                   legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
-                  xAxis: { type: 'category', name: t('common.date'), nameLocation: 'center', nameGap: 30, data: (data?.daily ?? []).map((d: any) => d.date.slice(8)) },
+                  xAxis: { type: 'category', data: (data?.daily ?? []).map((d: any) => d.date.slice(8)) },
                   yAxis: [
                     { type: 'value', name: 'L' },
                     { type: 'value', name: t('common.wan') },

@@ -1,7 +1,7 @@
 import { Kgz3DMap } from './Kgz3DMap.js';
 
 const BASE_OPTIONS = {
-  basePath: '/kgz-map/data/',
+  basePath: '/assets/kgz-map/data/',
   showRoads: true,
   showRoadPanel: false,
   showLakeLabels: true,

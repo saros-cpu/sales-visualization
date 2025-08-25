@@ -32,6 +32,16 @@ export async function getEntityAliasesList() {
   return res.data || [];
 }
 
+export async function getUnmatchedAliases() {
+  const res = await client.get('/aliases/unmatched');
+  return res.data || { products: [], entities: [] };
+}
+
+export async function ignoreUnmatchedAliases(items: Array<{ kind: 'product' | 'entity'; rawName: string }>, remark?: string) {
+  const res = await client.post('/aliases/unmatched/ignore', { items, remark });
+  return res.data;
+}
+
 export async function createProductAlias(productId: number, aliasName: string) {
   const res = await client.post('/aliases/products', { productId, aliasName });
   return res.data;

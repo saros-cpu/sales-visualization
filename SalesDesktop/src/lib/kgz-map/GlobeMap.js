@@ -5,7 +5,12 @@ const DEFAULTS = {
   basePath: './data/',
   radius: 10,
   autoRotateSpeed: 0.03,
-  showRoads: true
+  showRoads: true,
+  focusLng: 74.6,
+  focusLat: 41.3,
+  framePadding: 1.07,
+  frameRadiusScale: 1.06,
+  manualMinDistanceScale: 1.35
 };
 
 const DEG2RAD = Math.PI / 180;
@@ -189,7 +194,12 @@ export class GlobeMap {
     this.frame = null;
     this.needsRender = true;
     this.autoRotate = false;
-    this.clock = new THREE.Clock();
+    this.userAdjustedCamera = false;
+    this.startedAt = performance.now();
+    this.lastTick = this.startedAt;
+    this.clock = new THREE.Timer();
+    this.clock.connect?.(document);
+    this.focusDirection = latLngToVec3(this.options.focusLng, this.options.focusLat, 1).normalize();
   }
 
   async init() {
@@ -207,18 +217,23 @@ export class GlobeMap {
       this.loadJson('business_points.json').catch(() => null)
     ]);
 
+    if (!world && !countries && !points) {
+      throw new Error('地球视图资源加载失败，请检查地图资源路径');
+    }
+
     if (world) {
       this.buildWorldOutline(world);
-    } else {
-      console.error('world_countries.geojson is null, skipping buildWorldOutline');
     }
     if (countries || world) this.buildCountries(countries || world);
     if (points) this.buildPoints(points);
 
     this.bindEvents();
     this.resize();
+    this.renderer.render(this.scene, this.camera);
+    this.needsRender = false;
     this.animate();
     this.hideLoading();
+    window.__globe3d = this;
   }
 
   createDom() {
@@ -250,23 +265,28 @@ export class GlobeMap {
     this.scene = new THREE.Scene();
     this.scene.background = null;
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 2000);
-    const focus = latLngToVec3(74, 41.5, 1).normalize();
-    this.camera.position.copy(focus.multiplyScalar(this.radius * 2.4));
+    this.camera.position.copy(this.focusDirection.clone().multiplyScalar(this.getFrameFitDistance(1)));
+    this.camera.lookAt(0, 0, 0);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.setClearColor(0x000000, 0);
     this.canvasWrap.appendChild(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.zoomToCursor = false;
-    this.controls.minDistance = this.radius + 0.5;  // 允许更近距离查看细节
+    this.controls.minDistance = this.getManualMinDistance();
     this.controls.maxDistance = this.radius * 6;
     this.controls.target.set(0, 0, 0);
+    this.controls.update();
     this.controls.addEventListener('change', () => this.requestRender());
-    this.controls.addEventListener('start', () => { this.interacting = true; });
+    this.controls.addEventListener('start', () => {
+      this.interacting = true;
+      this.userAdjustedCamera = true;
+    });
     this.controls.addEventListener('end', () => { this.interacting = false; });
 
     this.raycaster = new THREE.Raycaster();
@@ -282,16 +302,41 @@ export class GlobeMap {
     this.arcGroup = new THREE.Group();
     this.globeGroup.add(this.worldGroup, this.countryGroup, this.highlightGroup, this.kgzGroup, this.pointGroup, this.arcGroup);
 
-    this.scene.add(new THREE.HemisphereLight(0x8fb3ff, 0x1a2440, 0.9));
-    const key = new THREE.DirectionalLight(0xffffff, 1.1);
+    this.scene.add(new THREE.HemisphereLight(0xb7d6ff, 0x1a2440, 1.15));
+    const key = new THREE.DirectionalLight(0xffffff, 1.25);
     key.position.set(30, 40, 30);
     this.scene.add(key);
   }
 
+  getFrameFitDistance(aspect = 1) {
+    const verticalHalfFov = THREE.MathUtils.degToRad(this.camera?.fov || 42) / 2;
+    const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * Math.max(0.3, aspect));
+    const limitingHalfFov = Math.max(0.01, Math.min(verticalHalfFov, horizontalHalfFov));
+    const visualRadius = this.radius * (this.options.frameRadiusScale || 1);
+    const padding = this.options.framePadding || 1;
+    return visualRadius * padding / Math.sin(limitingHalfFov);
+  }
+
+  getManualMinDistance() {
+    return this.radius * (this.options.manualMinDistanceScale || 1.35);
+  }
+
   async loadJson(file) {
-    const response = await fetch(`${this.options.basePath}${file}`);
-    if (!response.ok) throw new Error(`无法加载 ${file}`);
-    return response.json();
+    const fileBase = typeof window !== 'undefined' && window.location?.protocol === 'file:'
+      ? new URL('assets/kgz-map/data/', window.location.href).href
+      : null;
+    const bases = [...new Set([this.options.basePath, fileBase, '/assets/kgz-map/data/', '/kgz-map/data/'].filter(Boolean))];
+    let lastError = null;
+    for (const base of bases) {
+      try {
+        const response = await fetch(`${base}${file}`);
+        if (!response.ok) throw new Error(`无法加载 ${file}`);
+        return response.json();
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error(`无法加载 ${file}`);
   }
 
   async _loadRoads() {
@@ -656,6 +701,15 @@ export class GlobeMap {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
+    const fitDistance = this.getFrameFitDistance(this.camera.aspect);
+    this.controls.minDistance = this.getManualMinDistance();
+    const currentOffset = this.camera.position.clone().sub(this.controls.target);
+    const currentDistance = currentOffset.length();
+    if (!this.userAdjustedCamera && currentDistance < fitDistance) {
+      const direction = currentDistance > 0.001 ? currentOffset.normalize() : this.focusDirection.clone();
+      this.camera.position.copy(this.controls.target.clone().add(direction.multiplyScalar(fitDistance)));
+      this.controls.update();
+    }
     this.requestRender();
   }
 
@@ -665,13 +719,23 @@ export class GlobeMap {
 
   animate() {
     this.frame = requestAnimationFrame(() => this.animate());
-    const delta = this.clock.getDelta();
+    const now = performance.now();
+    let delta = Math.max(0.001, (now - this.lastTick) / 1000);
+    let elapsed = (now - this.startedAt) / 1000;
+    this.lastTick = now;
+    try {
+      this.clock.update?.();
+      delta = this.clock.getDelta?.() ?? delta;
+      elapsed = this.clock.getElapsed?.() ?? elapsed;
+    } catch {
+      // Keep rendering with the browser clock if Three's timer is unavailable.
+    }
     const spinning = this.autoRotate && !this.interacting && !this.hoveredPoint;
     if (spinning) {
       this.globeGroup.rotation.y += this.options.autoRotateSpeed * delta;
       this.needsRender = true;
     }
-    const pulse = Math.sin(this.clock.elapsedTime * 0.9) * 0.03 + 0.09;
+    const pulse = Math.sin(elapsed * 0.9) * 0.03 + 0.09;
     for (const shell of this.highlightShells) {
       shell.material.opacity = pulse;
     }
@@ -693,6 +757,7 @@ export class GlobeMap {
     this.resizeObserver?.disconnect();
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeave);
+    this.clock.disconnect?.();
     this.controls.dispose();
     this.scene.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
@@ -705,6 +770,8 @@ export class GlobeMap {
       }
     });
     this.renderer.dispose();
+    this.renderer.forceContextLoss?.();
+    if (window.__globe3d === this) delete window.__globe3d;
     this.container.innerHTML = '';
   }
 }

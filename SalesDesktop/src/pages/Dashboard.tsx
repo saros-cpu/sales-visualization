@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Spin, Alert, Select, Tag } from 'antd';
+import { Row, Col, Card, Spin, Alert, Select, Tag } from 'antd';
 import { DollarOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
@@ -96,21 +96,31 @@ export default function Dashboard() {
       return html;
     } },
     legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
-    grid: { left: 60, right: 60, top: 20, bottom: 40 },
-    xAxis: { type: 'category' as const, name: t('common.date'), nameLocation: 'center', nameGap: 30, data: trend.map((d) => d.month) },
+    grid: { left: 56, right: 56, top: 58, bottom: 68, containLabel: true },
+    xAxis: {
+      type: 'category' as const,
+      nameLocation: 'center',
+      nameGap: 42,
+      data: trend.map((d) => d.month),
+      axisLabel: { interval: 0, rotate: trend.length > 7 ? 35 : 0, hideOverlap: false },
+    },
     yAxis: [
       { type: 'value' as const, name: t('retail.volume') + '(L)' },
       { type: 'value' as const, name: `${t('retail.amount')}(${t('common.wan')})`, position: 'right' as const },
     ],
     series: [
-      { name: t('retail.volume'), type: 'bar' as const, data: trend.map((d) => d.volume), itemStyle: { color: '#1677ff' } },
-      { name: t('retail.amount'), type: 'line' as const, yAxisIndex: 1, data: trend.map((d) => d.amount), lineStyle: { color: '#52c41a' }, itemStyle: { color: '#52c41a' } },
+      { name: t('retail.volume'), type: 'bar' as const, data: trend.map((d) => d.volume), itemStyle: { color: '#1677ff' }, label: { show: true, position: 'insideBottom', distance: 8, formatter: (p: any) => Math.round(Number(p.value || 0)).toLocaleString(), fontSize: 10, color: '#fff' } },
+      { name: t('retail.amount'), type: 'line' as const, yAxisIndex: 1, data: trend.map((d) => d.amount), lineStyle: { color: '#52c41a' }, itemStyle: { color: '#52c41a' }, label: { show: true, position: 'top', distance: 30, offset: [0, -8], formatter: (p: any) => Number(p.value || 0).toLocaleString(), fontSize: 10 } },
     ],
   } : null;
 
   const formatYoy = (v: number | undefined) => {
     if (v == null) return '-';
     return `${(v >= 0 ? '+' : '')}${(v * 100).toFixed(1)}%`;
+  };
+  const formatRate = (value: number | undefined, precision: number) => {
+    if (!Number.isFinite(value)) return '-';
+    return Number(value).toFixed(precision);
   };
 
   return (
@@ -139,19 +149,26 @@ export default function Dashboard() {
               </>
             )}
             <Col span={24} style={{ display: 'flex', flex: 1 }}>
-              <Card size="small" title={<><DollarOutlined /> {t('exchange.today')}</>} style={{ width: '100%' }}>
+              <Card size="small" title={<><DollarOutlined /> {t('exchange.today')}</>} className="dashboard-rate-card" style={{ width: '100%' }}>
                 {rate ? (
-                  <Row gutter={[16, 12]} align="middle">
-                    <Col xs={12} sm={6}><Statistic title="USD/KGS" value={rate.usdKgs} precision={4} valueStyle={{ color: '#22d3ee', fontSize: 18 }} /></Col>
-                    <Col xs={12} sm={6}><Statistic title="CNY/KGS" value={rate.cnyKgs} precision={4} valueStyle={{ color: '#facc15', fontSize: 18 }} /></Col>
-                    <Col xs={12} sm={6}><Statistic title="KGS/CNY" value={+(1 / rate.cnyKgs).toFixed(6)} precision={6} valueStyle={{ fontSize: 18 }} /></Col>
-                    <Col xs={12} sm={6}>
-                      <div style={{ fontSize: 12, color: '#999' }}>
-                        <div>{rate.date}</div>
-                        <div style={{ marginTop: 4 }}>{t('exchange.source')}: {rate.source}</div>
-                      </div>
-                    </Col>
-                  </Row>
+                  <div className="dashboard-rate-grid">
+                    <div className="dashboard-rate-item">
+                      <span>美元/索姆</span>
+                      <strong className="cyan">{formatRate(rate.usdKgs, 4)}</strong>
+                    </div>
+                    <div className="dashboard-rate-item">
+                      <span>人民币/索姆</span>
+                      <strong className="amber">{formatRate(rate.cnyKgs, 4)}</strong>
+                    </div>
+                    <div className="dashboard-rate-item">
+                      <span>索姆/人民币</span>
+                      <strong>{formatRate(rate.cnyKgs ? 1 / rate.cnyKgs : undefined, 6)}</strong>
+                    </div>
+                    <div className="dashboard-rate-meta">
+                      <div>{rate.date || '-'}</div>
+                      <div>{t('exchange.source')}: {rate.source || 'NBKR'}</div>
+                    </div>
+                  </div>
                 ) : <Alert type="info" message={t('common.noData')} style={{ margin: 0 }} />}
               </Card>
             </Col>

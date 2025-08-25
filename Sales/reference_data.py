@@ -15,6 +15,8 @@ PRODUCTS = [
     {"code": "HEATING_FUEL", "display_name": "催化柴油Печное Топливо", "category": "其他油品", "retail_resource_key": None},
     {"code": "MAZUT", "display_name": "油浆Топочный Мазут", "category": "其他油品", "retail_resource_key": None},
     {"code": "MMA", "display_name": "MMA 氮甲基苯胺", "category": "化工品", "retail_resource_key": None},
+    {"code": "VGO", "display_name": "蜡油", "category": "原料油", "retail_resource_key": None},
+    {"code": "CRUDE_OIL", "display_name": "原油Нефть", "category": "原料油", "retail_resource_key": None},
 ]
 
 
@@ -39,6 +41,18 @@ PRODUCT_ALIASES = [
     ("MAZUT", "油浆Топочный Мазут"),
     ("MAZUT", "М.Т. 油浆"),
     ("MMA", "MMA 氮甲基苯胺"),
+    ("VGO", "蜡油"),
+    ("VGO", "Вакумный газойл"),
+    ("VGO", "Вакуумный газойл"),
+    ("VGO", "Газойл"),
+    ("CRUDE_OIL", "原油"),
+    ("CRUDE_OIL", "混合油"),
+    ("CRUDE_OIL", "Нефть"),
+    ("CRUDE_OIL", "Нефть сырой"),
+    ("CRUDE_OIL", "Сырая нефть"),
+    ("CRUDE_OIL", "Нефть и нефтепродукты"),
+    ("CRUDE_OIL", "Нефть и нефтепродукты из битумных пород"),
+    ("CRUDE_OIL", "Нефть из битуминозных пород"),
 ]
 
 

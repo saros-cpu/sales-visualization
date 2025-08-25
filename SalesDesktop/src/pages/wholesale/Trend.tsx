@@ -16,6 +16,21 @@ export default function Trend() {
 
   const q = useApiQuery(['wholesale', year, month], () => fetchWholesale({ year, month }));
   const trend = q.data?.dailyTrend ?? [];
+  const showPending = trend.some((d) => Number(d.pendingTons || 0) > 0);
+  const legendData = [
+    t('wholesale.export_wholesale'),
+    t('wholesale.local_wholesale'),
+    ...(showPending ? [t('wholesale.unknown')] : []),
+    t('wholesale.transferClass'),
+    t('wholesale.amountCny'),
+  ];
+  const series = [
+    { name: t('wholesale.export_wholesale'), type: 'line' as const, data: trend.map((d) => d.exportTons) },
+    { name: t('wholesale.local_wholesale'), type: 'line' as const, data: trend.map((d) => d.localTons) },
+    ...(showPending ? [{ name: t('wholesale.unknown'), type: 'line' as const, lineStyle: { type: 'dashed' as const }, data: trend.map((d) => d.pendingTons) }] : []),
+    { name: t('wholesale.transferClass'), type: 'line' as const, data: trend.map((d) => d.transferTons) },
+    { name: t('wholesale.amountCny'), type: 'bar' as const, yAxisIndex: 1, data: trend.map((d) => Math.round(d.amountCny / 10000)) },
+  ];
 
   const trendOption = {
     color: CHART_PALETTE,
@@ -27,26 +42,20 @@ export default function Trend() {
       });
       return html;
     } },
-    legend: { data: [t('wholesale.export_wholesale'), t('wholesale.local_wholesale'), t('wholesale.unknown'), t('wholesale.transferClass'), t('wholesale.amountCny')], bottom: 0 },
-    xAxis: { type: 'category' as const, name: t('common.date'), nameLocation: 'center' as const, nameGap: 30, data: trend.map((d) => d.date.slice(5)) },
+    legend: { data: legendData, bottom: 0 },
+    xAxis: { type: 'category' as const, data: trend.map((d) => d.date.slice(5)) },
     yAxis: [
       { type: 'value' as const, name: 'т' },
       { type: 'value' as const, name: '¥万' },
     ],
-    series: [
-      { name: t('wholesale.export_wholesale'), type: 'line' as const, data: trend.map((d) => d.exportTons) },
-      { name: t('wholesale.local_wholesale'), type: 'line' as const, data: trend.map((d) => d.localTons) },
-      { name: t('wholesale.unknown'), type: 'line' as const, lineStyle: { type: 'dashed' as const }, data: trend.map((d) => d.pendingTons) },
-      { name: t('wholesale.transferClass'), type: 'line' as const, data: trend.map((d) => d.transferTons) },
-      { name: t('wholesale.amountCny'), type: 'bar' as const, yAxisIndex: 1, data: trend.map((d) => Math.round(d.amountCny / 10000)) },
-    ],
+    series,
   };
 
   const trendColumns = [
     { title: t('common.date'), dataIndex: 'date', key: 'date' },
     { title: t('wholesale.export_wholesale'), dataIndex: 'exportTons', key: 'exportTons', render: (v: number) => `${v} т` },
     { title: t('wholesale.local_wholesale'), dataIndex: 'localTons', key: 'localTons', render: (v: number) => `${v} т` },
-    { title: t('wholesale.unknown'), dataIndex: 'pendingTons', key: 'pendingTons', render: (v: number) => `${v} т` },
+    ...(showPending ? [{ title: t('wholesale.unknown'), dataIndex: 'pendingTons', key: 'pendingTons', render: (v: number) => `${v} т` }] : []),
     { title: t('wholesale.transferClass'), dataIndex: 'transferTons', key: 'transferTons', render: (v: number) => `${v} т` },
     { title: t('wholesale.amountCny'), dataIndex: 'amountCny', key: 'amountCny', render: (v: number) => `¥${v.toLocaleString()}` },
   ];

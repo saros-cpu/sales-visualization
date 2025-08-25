@@ -8,31 +8,48 @@ import pymysql
 from datetime import datetime
 
 
+def _ensure_train_entry_columns(cur):
+    cur.execute("SHOW COLUMNS FROM train_entry LIKE 'weigh_no'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE train_entry ADD COLUMN weigh_no VARCHAR(100) NULL AFTER product_name")
+
+
+def _weight_kg_from_payload(data):
+    if data.get('weightTons') not in (None, ''):
+        try:
+            return float(data.get('weightTons')) * 1000
+        except (TypeError, ValueError):
+            return None
+    return data.get('weightKg')
+
+
 @bp_v2.route('/train-entry', methods=['POST'])
 @jwt_required()
 @permission_required('train_entry:create')
 def create_train_entry():
     """新增单条火车数据"""
     data = request.get_json() or {}
-    required = ['entryDate', 'productName', 'vehicleNo', 'supplierCustomer']
+    required = ['entryDate', 'productName', 'vehicleNo']
     if not all(k in data for k in required):
         return jsonify({'code': 4221, 'message': '参数不完整', 'data': None}), 422
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            _ensure_train_entry_columns(cur)
             cur.execute('''
                 INSERT INTO train_entry
-                    (entry_date, product_name, sender_name, receiver_name, vehicle_no,
+                    (entry_date, product_name, weigh_no, sender_name, receiver_name, vehicle_no,
                      weight_kg, remark, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 data['entryDate'],
                 data['productName'],
+                data.get('weighNo', ''),
                 data.get('senderName', ''),
                 data.get('receiverName', ''),
                 data['vehicleNo'],
-                data.get('weightKg'),
+                _weight_kg_from_payload(data),
                 data.get('remark', ''),
                 int(get_jwt_identity()),
             ))
@@ -56,20 +73,22 @@ def batch_create_train_entry():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            _ensure_train_entry_columns(cur)
             inserted = 0
             for rec in records:
                 cur.execute('''
                     INSERT INTO train_entry
-                        (entry_date, product_name, sender_name, receiver_name, vehicle_no,
+                        (entry_date, product_name, weigh_no, sender_name, receiver_name, vehicle_no,
                          weight_kg, remark, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
                     rec.get('entryDate'),
                     rec.get('productName'),
+                    rec.get('weighNo', ''),
                     rec.get('senderName', ''),
                     rec.get('receiverName', ''),
                     rec.get('vehicleNo'),
-                    rec.get('weightKg'),
+                    _weight_kg_from_payload(rec),
                     rec.get('remark', ''),
                     operator_id,
                 ))
@@ -92,6 +111,7 @@ def list_train_entries():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            _ensure_train_entry_columns(cur)
             where = ['1=1']
             params = []
             if date_from:
@@ -109,7 +129,7 @@ def list_train_entries():
 
             offset = (page - 1) * page_size
             cur.execute(f'''
-                SELECT id, entry_date, product_name, sender_name, receiver_name,
+                SELECT id, entry_date, product_name, weigh_no, sender_name, receiver_name,
                        vehicle_no, weight_kg, remark, created_at, created_by
                 FROM train_entry
                 WHERE {" AND ".join(where)}
@@ -123,10 +143,12 @@ def list_train_entries():
                     'id': row['id'],
                     'entryDate': str(row['entry_date']),
                     'productName': row['product_name'],
+                    'weighNo': row.get('weigh_no') or '',
                     'senderName': row['sender_name'] or '',
                     'receiverName': row['receiver_name'] or '',
                     'vehicleNo': row['vehicle_no'],
                     'weightKg': float(row['weight_kg']) if row['weight_kg'] else None,
+                    'weightTons': round(float(row['weight_kg']) / 1000, 3) if row['weight_kg'] else None,
                     'remark': row['remark'],
                     'createdAt': str(row['created_at']),
                 })
@@ -143,22 +165,26 @@ def update_train_entry(entry_id):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            _ensure_train_entry_columns(cur)
             scope_clause, scope_params = owner_scope_filter(cur, int(get_jwt_identity()), 'train_entry', 'created_by')
             updates = []
             params = []
             field_map = {
                 'entryDate': 'entry_date',
                 'productName': 'product_name',
+                'weighNo': 'weigh_no',
                 'senderName': 'sender_name',
                 'receiverName': 'receiver_name',
                 'vehicleNo': 'vehicle_no',
-                'weightKg': 'weight_kg',
                 'remark': 'remark',
             }
             for json_key, db_col in field_map.items():
                 if json_key in data:
                     updates.append(f'{db_col} = %s')
                     params.append(data[json_key])
+            if 'weightKg' in data or 'weightTons' in data:
+                updates.append('weight_kg = %s')
+                params.append(_weight_kg_from_payload(data))
 
             if updates:
                 params.append(entry_id)

@@ -35,7 +35,13 @@ from calculations import recalculate_wholesale_batch
 from routes_data import run_exchange_maintenance, run_market_watch_maintenance
 from summary_service import period_bounds
 from db import get_connection
-from import_helpers import classify_wholesale_movement, load_entity_lookup, load_product_lookup, lookup_entity
+from import_helpers import (
+    can_auto_approve_weigh_detail,
+    classify_wholesale_movement,
+    load_entity_lookup,
+    load_product_lookup,
+    lookup_entity,
+)
 from retail_internal import open_oilstation
 from summary_service import available_periods, period_bounds
 from text_utils import clean_str, normalize_station_name, normalize_text, parse_date, parse_decimal
@@ -2644,8 +2650,7 @@ def register_admin_routes(app):
                     current=classification,
                 )
 
-                auto_approve = (entity_code is not None and product_id is not None
-                                and classification not in ("unknown", "", None))
+                auto_approve = can_auto_approve_weigh_detail(classification, product_id, entity_code)
                 audit_status = "approved" if auto_approve else "pending"
                 match_status = "matched" if auto_approve else "unmatched"
 

@@ -25,6 +25,8 @@ MODULE_CATALOG = [
     ("roles", "角色权限", 114),
     ("aliases", "别名管理", 120),
     ("weighing", "称重审核", 130),
+    ("audit_logs", "审计日志", 135),
+    ("system_health", "系统健康", 138),
     ("settings", "设置", 140),
 ]
 
@@ -68,6 +70,9 @@ PERMISSION_CATALOG = [
     ("weighing:view", "weighing", "view", "menu", "View weighing review", 150),
     ("weighing:verify", "weighing", "verify", "button", "Verify weighing data", 151),
     ("weighing:export", "weighing", "export", "button", "Export weighing data", 152),
+    ("audit_logs:view", "audit_logs", "view", "menu", "View operation audit logs", 155),
+    ("audit_logs:export", "audit_logs", "export", "button", "Export operation audit logs", 156),
+    ("system_health:view", "system_health", "view", "menu", "View system health", 158),
     ("settings:view", "settings", "view", "menu", "View settings", 160),
     ("settings:update", "settings", "update", "button", "Update settings", 161),
 ]

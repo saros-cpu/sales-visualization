@@ -1,6 +1,30 @@
 import axios, { AxiosInstance, AxiosError, AxiCTY-30eaders } from 'axios';
 
-export const API_HOST = 'http://localhost:8900';
+function normalizeHost(host: string) {
+  return host.replace(/\/+$/, '');
+}
+
+export function resolveApiHost() {
+  const configured = (window as Window & { __SALES_API_HOST__?: string }).__SALES_API_HOST__
+    || localStorage.getItem('sales_api_host')
+    || import.meta.env.VITE_API_HOST;
+  const normalizedConfigured = configured ? normalizeHost(configured) : '';
+  const isDevHost = import.meta.env.DEV || window.location.port === '5173';
+  if (normalizedConfigured && !(isDevHost && normalizedConfigured === window.location.origin)) {
+    return normalizedConfigured;
+  }
+  if (isDevHost) {
+    const host = window.location.hostname || 'localhost';
+    const backendHost = host === '0.0.0.0' ? 'localhost' : host;
+    return `http://${backendHost}:8900`;
+  }
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    return window.location.origin;
+  }
+  return 'http://localhost:8900';
+}
+
+export const API_HOST = resolveApiHost();
 
 export function clearAuthTokens() {
   localStorage.removeItem('accessToken');

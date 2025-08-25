@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Card, Table, Select, Row, Col, Statistic, Spin } from 'antd';
+import { Card, Table, Select, Row, Col, Statistic, Tag } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 import { getTransferLoss, LossItem } from '@/api/transferLoss';
 
@@ -20,16 +21,35 @@ export default function TransferLoss() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const totalLoss = data.reduce((s, i) => s + i.loss_qty, 0);
-  const avgRate = data.length > 0 ? data.reduce((s, i) => s + i.loss_rate, 0) / data.length : 0;
+  const totalWeighing = data.reduce((s, i) => s + Number(i.system_qty || 0), 0);
+  const totalRetailSupply = data.reduce((s, i) => s + Number(i.actual_qty || 0), 0);
+  const directRows = data.filter((item) => item.route_code === 'main_to_station').length;
+  const routeLabel = (record: LossItem) => record.route_code
+    ? t(`transferLoss.routeCodes.${record.route_code}`, { defaultValue: record.route })
+    : record.route;
+  const routeColor = (record: LossItem) => {
+    if (record.route_code === 'main_to_station') return 'blue';
+    if (record.route_code === 'depot_to_station') return 'cyan';
+    return 'gold';
+  };
+  const evidenceLabel = (record: LossItem) => record.evidence_code
+    ? t(`transferLoss.evidenceCodes.${record.evidence_code}`, {
+        defaultValue: record.evidence || '-',
+        days: record.evidence_days ?? 0,
+        tons: Number(record.evidence_tons || 0).toFixed(3),
+      })
+    : record.evidence || '-';
 
-  const columns = [
-    { title: t('transferLoss.station'), dataIndex: 'station_name', key: 'station_name' },
-    { title: t('transferLoss.systemQty'), dataIndex: 'system_qty', key: 'system_qty', render: (v: number) => v?.toFixed(2) },
-    { title: t('transferLoss.actualQty'), dataIndex: 'actual_qty', key: 'actual_qty', render: (v: number) => v?.toFixed(2) },
-    { title: t('transferLoss.lossQty'), dataIndex: 'loss_qty', key: 'loss_qty', render: (v: number) => <span style={{ color: v > 0 ? '#ff4d4f' : '#52c41a' }}>{v?.toFixed(2)}</span> },
-    { title: t('transferLoss.lossRate'), dataIndex: 'loss_rate', key: 'loss_rate', render: (v: number) => `${(v * 100)?.toFixed(2)}%` },
-    { title: t('transferLoss.reportDate'), dataIndex: 'report_date', key: 'report_date' },
+  const columns: ColumnsType<LossItem> = [
+    { title: t('transferLoss.route'), dataIndex: 'route', key: 'route', width: 180, render: (_: string, r: LossItem) => <Tag color={routeColor(r)}>{routeLabel(r)}</Tag> },
+    { title: t('transferLoss.target'), dataIndex: 'station_name', key: 'station_name', width: 160 },
+    { title: t('transferLoss.weighingDate'), dataIndex: 'report_date', key: 'report_date', width: 120 },
+    { title: t('transferLoss.supplyDate'), dataIndex: 'supply_date', key: 'supply_date', width: 130, render: (v: string) => v || '-' },
+    { title: t('transferLoss.weighingTons'), dataIndex: 'system_qty', key: 'system_qty', width: 130, align: 'right', render: (v: number) => Number(v || 0).toFixed(3) },
+    { title: t('transferLoss.retailSupplyTons'), dataIndex: 'actual_qty', key: 'actual_qty', width: 130, align: 'right', render: (v: number) => Number(v || 0).toFixed(3) },
+    { title: t('transferLoss.diffTons'), dataIndex: 'loss_qty', key: 'loss_qty', width: 110, align: 'right', render: (v: number) => <span style={{ color: v > 0 ? '#ff4d4f' : '#52c41a' }}>{Number(v || 0).toFixed(3)}</span> },
+    { title: t('transferLoss.retailSupplyLiters'), dataIndex: 'retail_liters', key: 'retail_liters', width: 130, align: 'right', render: (v: number) => Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }) },
+    { title: t('transferLoss.evidence'), dataIndex: 'evidence', key: 'evidence', width: 320, render: (_: string, record: LossItem) => evidenceLabel(record) },
   ];
 
   return (
@@ -51,13 +71,11 @@ export default function TransferLoss() {
         </Col>
       </Row>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.stationCount')} value={data.length} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.totalLoss')} value={totalLoss.toFixed(2)} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.avgLossRate')} value={`${(avgRate * 100).toFixed(2)}%`} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.reviewRows')} value={data.length} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.weighingTons')} value={totalWeighing.toFixed(3)} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.retailSupplyTons')} value={totalRetailSupply.toFixed(3)} suffix={t('transferLoss.directRows', { count: directRows })} /></Card></Col>
       </Row>
-      <Card title={t('nav.transferLoss')}>
-        <Table dataSource={data} columns={columns} rowKey={(r) => `${r.station_name}-${r.report_date}`} loading={loading} size="small" pagination={false} scroll={{ x: 900, y: 'calc(100vh - 360px)' }} />
-      </Card>
+      <Table dataSource={data} columns={columns} rowKey={(r) => `${r.route_code || r.route}-${r.station_name}-${r.report_date}-${r.supply_date || ''}`} loading={loading} size="small" pagination={false} scroll={{ x: 1320, y: 'calc(100vh - 360px)' }} />
     </div>
   );
 }

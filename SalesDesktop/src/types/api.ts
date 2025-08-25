@@ -49,7 +49,7 @@ export interface CustomerRanking {
 
 export interface TransferSummary {
   byRegion: { region: string; rows: number; tons: number }[];
-  byProduct: { product: string; rows: number; tons: number }[];
+  byProduct: { product?: string; name?: string; rows: number; tons: number }[];
   byRegionProduct: { region: string; product: string; rows: number; tons: number }[];
 }
 

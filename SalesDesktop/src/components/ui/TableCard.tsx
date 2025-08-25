@@ -24,7 +24,7 @@ export default function TableCard<T extends object>({
   onExport,
   exportText = '导出',
   pageSize = 20,
-  scrollY,
+  scrollY: _scrollY,
   pagination,
   className,
 }: Props<T>) {
@@ -43,7 +43,7 @@ export default function TableCard<T extends object>({
           loading={loading}
           size="small"
           pagination={pagination === false ? false : { pageSize }}
-          scroll={{ x: 'max-content', y: scrollY }}
+          scroll={{ x: 'max-content' }}
         />
       </div>
     </Card>

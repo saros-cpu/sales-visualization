@@ -172,14 +172,14 @@ def transfer_summary(cur, start, end):
         SELECT
             d.entity_type,
             d.entity_code,
-            p.display_name,
+            COALESCE(NULLIF(p.display_name, ''), d.raw_product_name),
             COUNT(*) AS row_count,
             COALESCE(SUM(d.weight_tons), 0) AS tons
         FROM wholesale_detail_records d
         LEFT JOIN products p ON p.id = d.product_id
         WHERE d.business_date >= %s AND d.business_date < %s
           AND d.classification = 'transfer'
-        GROUP BY d.entity_type, d.entity_code, p.display_name
+        GROUP BY d.entity_type, d.entity_code, COALESCE(NULLIF(p.display_name, ''), d.raw_product_name)
         ORDER BY SUM(d.weight_tons) DESC
         """,
         (start, end),

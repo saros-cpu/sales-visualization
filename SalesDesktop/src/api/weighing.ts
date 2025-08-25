@@ -15,6 +15,7 @@ export interface WeighingItem {
   classification: string;
   status: string;
   remark: string;
+  reviewRemark?: string | null;
 }
 
 export interface WeighingListParams {
@@ -43,5 +44,15 @@ export async function verifyWeighing(data: {
   remark?: string;
 }) {
   const res = await client.post('/weighing/verify', data);
+  return res.data;
+}
+
+export async function batchReviewWeighing(data: {
+  action: 'approve' | 'reject' | 'classify';
+  records: Array<Pick<WeighingItem, 'source' | 'id' | 'classification'>>;
+  classification?: string;
+  remark?: string;
+}) {
+  const res = await client.post('/weighing/batch-review', data);
   return res.data;
 }
