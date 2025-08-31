@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
-import { Card, Tabs, Row, Col, Statistic, Table, Tag, Button, Space, Typography } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { useMemo, useState } from 'react';
+import { Alert, Button, Card, Col, message, Popconfirm, Row, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd';
+import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
-import { getSystemHealth } from '@/api/system';
+import { getSystemHealth, runAutomationTask, type AutomationTaskKey } from '@/api/system';
 
 const { Text } = Typography;
 
@@ -16,6 +16,7 @@ function statusColor(status?: string) {
 export default function SystemHealth() {
   const { t } = useTranslation();
   const query = useApiQuery(['system-health'], getSystemHealth, { refetchInterval: 60000 });
+  const [runningTask, setRunningTask] = useState<AutomationTaskKey | null>(null);
   const data = query.data || {};
   const cacheItems = data.cache?.items || [];
   const apiRecent = data.api?.recent || [];
@@ -27,6 +28,31 @@ export default function SystemHealth() {
     key,
     status: value?.status || 'unknown',
   })), [data.services]);
+  const automationActions: Array<{ task: AutomationTaskKey; label: string }> = [
+    { task: 'exchange_rates', label: t('systemHealth.runExchangeRates') },
+    { task: 'market_watch', label: t('systemHealth.runMarketWatch') },
+    { task: 'retail_snapshots', label: t('systemHealth.runRetailSnapshots') },
+    { task: 'all', label: t('systemHealth.runAllTasks') },
+  ];
+
+  const handleRunTask = async (task: AutomationTaskKey) => {
+    setRunningTask(task);
+    try {
+      const result = await runAutomationTask(task);
+      const retailStatus = result?.results?.retailSnapshots?.status;
+      const hasFailed = Object.values(result?.results || {}).some((item: any) => item?.status === 'failed');
+      if (hasFailed) {
+        message.warning(t('systemHealth.runWarning'));
+      } else {
+        message.success(retailStatus === 'queued' || retailStatus === 'running' ? t('systemHealth.runQueued') : t('systemHealth.runSuccess'));
+      }
+      await query.refetch();
+    } catch (err: any) {
+      message.error(err?.message || t('systemHealth.runFailed'));
+    } finally {
+      setRunningTask(null);
+    }
+  };
 
   return (
     <Card
@@ -115,19 +141,41 @@ export default function SystemHealth() {
             key: 'automation',
             label: t('systemHealth.automation'),
             children: (
-              <Table
-                size="small"
-                rowKey="task_name"
-                dataSource={automation}
-                pagination={false}
-                columns={[
-                  { title: t('systemHealth.taskName'), dataIndex: 'task_name' },
-                  { title: t('common.status'), dataIndex: 'status', width: 120, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
-                  { title: t('systemHealth.startedAt'), dataIndex: 'started_at', width: 170 },
-                  { title: t('systemHealth.finishedAt'), dataIndex: 'finished_at', width: 170 },
-                  { title: t('systemHealth.error'), dataIndex: 'error' },
-                ]}
-              />
+              <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                <Alert type="info" showIcon message={t('systemHealth.manualRunHint')} />
+                <Space wrap>
+                  {automationActions.map(item => (
+                    <Popconfirm
+                      key={item.task}
+                      title={t('systemHealth.runConfirm')}
+                      okText={t('common.confirm')}
+                      cancelText={t('common.cancel')}
+                      onConfirm={() => handleRunTask(item.task)}
+                    >
+                      <Button
+                        icon={<PlayCircleOutlined />}
+                        loading={runningTask === item.task}
+                        disabled={Boolean(runningTask) && runningTask !== item.task}
+                      >
+                        {item.label}
+                      </Button>
+                    </Popconfirm>
+                  ))}
+                </Space>
+                <Table
+                  size="small"
+                  rowKey="task_name"
+                  dataSource={automation}
+                  pagination={false}
+                  columns={[
+                    { title: t('systemHealth.taskName'), dataIndex: 'task_name', render: (v: string) => t(`systemHealth.task.${v}`, { defaultValue: v }) },
+                    { title: t('common.status'), dataIndex: 'status', width: 120, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
+                    { title: t('systemHealth.startedAt'), dataIndex: 'started_at', width: 170 },
+                    { title: t('systemHealth.finishedAt'), dataIndex: 'finished_at', width: 170 },
+                    { title: t('systemHealth.error'), dataIndex: 'error' },
+                  ]}
+                />
+              </Space>
             ),
           },
           {

@@ -3,15 +3,16 @@ $ErrorActionPreference = "Stop"
 $TaskName = "SalesVisualizationProduction"
 $TaskPath = "\SalesVisualization\"
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PythonwExe = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
-if (-not $PythonwExe) {
-    $PythonwExe = "C:\Users\User\AppData\Local\Programs\Python\Python313\pythonw.exe"
+$PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
+if (-not $PowerShellExe) {
+    $PowerShellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 }
+$StartScript = Join-Path $AppRoot "start_production.ps1"
 $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 $Action = New-ScheduledTaskAction `
-  -Execute $PythonwExe `
-  -Argument "run_production.py" `
+  -Execute $PowerShellExe `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$StartScript`"" `
   -WorkingDirectory $AppRoot
 
 $Trigger = New-ScheduledTaskTrigger -AtLogOn -User $CurrentUser

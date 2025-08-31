@@ -106,6 +106,13 @@ export default function ContractAdd() {
     return <Card title={t('nav.contractAdd')}><Tag color="red">{t('common.noPermission')}</Tag></Card>;
   }
 
+  const salesTypeOptions = [
+    { value: 'unknown', label: t('contracts.salesTypes.unknown') },
+    { value: 'local_wholesale', label: t('contracts.salesTypes.local_wholesale') },
+    { value: 'export_wholesale', label: t('contracts.salesTypes.export_wholesale') },
+    { value: 'internal', label: t('contracts.salesTypes.internal') },
+  ];
+
   const columns = [
     { title: t('common.contractNo'), dataIndex: 'contractNo', key: 'contractNo', width: 150, editable: true, required: true },
     { title: t('common.appendixNo'), dataIndex: 'appendixNo', key: 'appendixNo', width: 160, editable: true },
@@ -143,7 +150,15 @@ export default function ContractAdd() {
       editorType: 'select' as const,
       editorOptions: ['CNY', 'USD', 'KGS', 'RUB'].map(value => ({ value, label: value })),
     },
-    { title: t('common.salesType'), dataIndex: 'salesType', key: 'salesType', width: 130, editable: true },
+    {
+      title: t('common.salesType'),
+      dataIndex: 'salesType',
+      key: 'salesType',
+      width: 130,
+      editable: true,
+      editorType: 'select' as const,
+      editorOptions: salesTypeOptions,
+    },
     { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: 180, editable: true },
   ];
 
@@ -185,6 +200,7 @@ export default function ContractAdd() {
             effectiveStart: dayjs().format('YYYY-MM-DD'),
             effectiveEnd: dayjs().add(1, 'year').format('YYYY-MM-DD'),
             currency: 'KGS',
+            salesType: 'unknown',
           })}
           draftKey="contract-add-spreadsheet-draft"
           height={600}

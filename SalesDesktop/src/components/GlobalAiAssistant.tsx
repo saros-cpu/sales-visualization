@@ -55,9 +55,10 @@ export default function GlobalAiAssistant() {
         open={open}
         onClose={() => setOpen(false)}
         width={420}
+        className="global-ai-drawer"
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Text type="secondary">{t('ai.readOnlyHint')}</Text>
+        <div className="global-ai-panel">
+          <Text type="secondary" className="global-ai-hint">{t('ai.readOnlyHint')}</Text>
           <div className="global-ai-messages">
             {messages.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('ai.empty')} />
@@ -89,7 +90,7 @@ export default function GlobalAiAssistant() {
           <Button type="primary" icon={<SendOutlined />} onClick={submit} loading={loading} block>
             {t('ai.ask')}
           </Button>
-        </Space>
+        </div>
       </Drawer>
     </>
   );

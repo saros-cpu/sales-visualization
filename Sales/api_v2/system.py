@@ -1,18 +1,27 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import jsonify
+from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 import pymysql
 
 from api_v2 import bp_v2
 from db import get_connection
-from shared_utils import OILSTATION_ROOT, ensure_automation_task_schema, REFRESH_CACHE_STATUS
+from routes_data import run_exchange_maintenance, run_market_watch_maintenance, run_retail_snapshot_maintenance
+from services.retail_alert_service import generate_retail_alert_insights
+from shared_utils import (
+    OILSTATION_ROOT,
+    REFRESH_CACHE_LOCK,
+    REFRESH_CACHE_STATUS,
+    ensure_automation_task_schema,
+    record_automation_task,
+)
 from .assistant import ensure_ai_call_schema
 from .audit_logs import ensure_audit_schema
 from .authz import permission_required
@@ -209,6 +218,103 @@ def _ai_status(cur) -> dict[str, Any]:
     }
 
 
+def _require_admin(cur, user_id: int):
+    cur.execute(
+        "SELECT id, username, role FROM system_users WHERE id = %s AND is_active = TRUE",
+        (user_id,),
+    )
+    user = cur.fetchone()
+    if not user:
+        return None, (jsonify({"code": 4001, "message": "unauthorized", "data": None}), 401)
+    if user["role"] != "admin":
+        return None, (jsonify({"code": 4003, "message": "forbidden", "data": None}), 403)
+    return user, None
+
+
+def _automation_error_payload(exc: Exception) -> dict[str, Any]:
+    return {"status": "failed", "summary": {}, "error": str(exc)}
+
+
+def _run_exchange_task(cur) -> dict[str, Any]:
+    try:
+        result = run_exchange_maintenance(cur)
+        status = "success" if not result.get("errors") else "failed"
+        error = json.dumps(result["errors"], ensure_ascii=False) if result.get("errors") else None
+        record_automation_task(cur, "exchange_rates", status, result, error)
+        return {"status": status, "summary": result, "error": error}
+    except Exception as exc:
+        record_automation_task(cur, "exchange_rates", "failed", {}, str(exc))
+        return _automation_error_payload(exc)
+
+
+def _run_market_watch_task(cur) -> dict[str, Any]:
+    try:
+        result = run_market_watch_maintenance(cur)
+        status = "success" if not result.get("errors") else "failed"
+        error = "; ".join(result["errors"]) if result.get("errors") else None
+        record_automation_task(cur, "market_watch", status, result, error)
+        return {"status": status, "summary": result, "error": error}
+    except Exception as exc:
+        record_automation_task(cur, "market_watch", "failed", {}, str(exc))
+        return _automation_error_payload(exc)
+
+
+def _retail_snapshot_worker():
+    status = "success"
+    error = None
+    summary: dict[str, Any] = {}
+    try:
+        snapshot_result = run_retail_snapshot_maintenance()
+        summary = {
+            "retailSnapshots": snapshot_result,
+            "retailAlertInsights": {
+                "zh": generate_retail_alert_insights(use_ai=True, language="zh"),
+                "ru": generate_retail_alert_insights(use_ai=True, language="ru"),
+            },
+        }
+        message = "零售快照刷新完成"
+    except Exception as exc:
+        status = "failed"
+        error = str(exc)
+        message = error
+    finally:
+        with REFRESH_CACHE_LOCK:
+            REFRESH_CACHE_STATUS.update({
+                "running": False,
+                "finishedAt": datetime.now().isoformat(timespec="seconds"),
+                "status": status,
+                "message": message,
+                "items": summary.get("retailSnapshots", {}),
+            })
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                record_automation_task(cur, "retail_snapshots", status, summary, error)
+                conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+def _queue_retail_snapshot_task() -> dict[str, Any]:
+    with REFRESH_CACHE_LOCK:
+        if REFRESH_CACHE_STATUS.get("running"):
+            return {"status": "running", "message": "零售快照刷新正在后台运行"}
+        REFRESH_CACHE_STATUS.update({
+            "running": True,
+            "startedAt": datetime.now().isoformat(timespec="seconds"),
+            "finishedAt": None,
+            "status": "queued",
+            "message": "零售快照刷新已加入后台执行",
+            "items": [],
+        })
+    thread = threading.Thread(target=_retail_snapshot_worker, name="retail-snapshot-refresh-v2", daemon=True)
+    thread.start()
+    return {"status": "queued", "message": "零售快照刷新已加入后台执行"}
+
+
 @bp_v2.route("/system/health", methods=["GET"])
 @jwt_required()
 @permission_required("system_health:view")
@@ -240,6 +346,41 @@ def system_health():
             }})
     finally:
         conn.close()
+
+
+@bp_v2.route("/system/automation-tasks/run", methods=["POST"])
+@jwt_required()
+def run_automation_task():
+    payload = request.get_json(silent=True) or {}
+    task = payload.get("task")
+    allowed = {"exchange_rates", "market_watch", "retail_snapshots", "all"}
+    if task not in allowed:
+        return jsonify({"code": 4221, "message": "请选择有效的自动任务", "data": None}), 422
+
+    user_id = int(get_jwt_identity())
+    results: dict[str, Any] = {}
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            _, error_response = _require_admin(cur, user_id)
+            if error_response:
+                return error_response
+            ensure_automation_task_schema(cur)
+            if task in {"exchange_rates", "all"}:
+                results["exchangeRates"] = _run_exchange_task(cur)
+            if task in {"market_watch", "all"}:
+                results["marketWatch"] = _run_market_watch_task(cur)
+            conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        return jsonify({"code": 5001, "message": str(exc), "data": None}), 500
+    finally:
+        conn.close()
+
+    if task in {"retail_snapshots", "all"}:
+        results["retailSnapshots"] = _queue_retail_snapshot_task()
+
+    return jsonify({"code": 0, "message": "success", "data": {"task": task, "results": results}})
 
 
 @bp_v2.route("/system/devtools-open", methods=["POST"])

@@ -11,6 +11,37 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+SALES_TYPE_ALIASES = {
+    'local_wholesale': 'local_wholesale',
+    'local': 'local_wholesale',
+    '本地批发': 'local_wholesale',
+    '本地': 'local_wholesale',
+    'местный опт': 'local_wholesale',
+    'локальный опт': 'local_wholesale',
+    'export_wholesale': 'export_wholesale',
+    'export': 'export_wholesale',
+    '出口批发': 'export_wholesale',
+    '出口': 'export_wholesale',
+    'экспорт опт': 'export_wholesale',
+    'экспортный опт': 'export_wholesale',
+    'internal': 'internal',
+    '内部': 'internal',
+    '内部业务': 'internal',
+    'внутренний': 'internal',
+    'внутренние': 'internal',
+    'unknown': 'unknown',
+    '未知': 'unknown',
+    '待识别': 'unknown',
+    'неизвестно': 'unknown',
+}
+
+
+def _normalize_sales_type(value):
+    text = str(value or '').strip()
+    if not text:
+        return 'unknown'
+    return SALES_TYPE_ALIASES.get(text.lower(), SALES_TYPE_ALIASES.get(text, 'unknown'))
+
 
 @bp_v2.route('/contracts', methods=['GET'])
 @jwt_required()
@@ -144,7 +175,7 @@ def create_contract():
                 data.get('effectiveEnd'),
                 data.get('customerName'),
                 data.get('productName'),
-                data.get('salesType'),
+                _normalize_sales_type(data.get('salesType')),
                 data.get('quantityTons'),
                 data.get('amountOriginal'),
                 data.get('currency'),
@@ -198,7 +229,7 @@ def batch_create_contracts():
                         data.get('effectiveEnd'),
                         data.get('customerName'),
                         data.get('productName'),
-                        data.get('salesType'),
+                        _normalize_sales_type(data.get('salesType')),
                         data.get('quantityTons'),
                         data.get('amountOriginal'),
                         data.get('currency'),
@@ -235,7 +266,6 @@ def update_contract(contract_id):
                 'effectiveEnd': 'effective_end',
                 'customerName': 'raw_customer_name',
                 'productName': 'raw_product_name',
-                'salesType': 'sales_type',
                 'quantityTons': 'contract_quantity_tons',
                 'amountOriginal': 'contract_amount_original',
                 'currency': 'currency_code',
@@ -245,6 +275,9 @@ def update_contract(contract_id):
                 if json_key in data:
                     updates.append(f'{db_col} = %s')
                     params.append(data[json_key])
+            if 'salesType' in data:
+                updates.append('sales_type = %s')
+                params.append(_normalize_sales_type(data.get('salesType')))
             if updates:
                 params.append(contract_id)
                 cur.execute(f'UPDATE contracts SET {", ".join(updates)} WHERE id = %s', params)

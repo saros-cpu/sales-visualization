@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.6.0';
+export const VERSION = '3.6.1';
 export const BUILD_DATE = '2026-07-16';
 
 export interface ChangelogEntry {
@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.6.1',
+    date: '2026-07-16',
+    type: 'patch',
+    changes: [
+      '新增：客户端系统健康页支持管理员手动补跑自动任务，作为自动任务失败后的补救入口',
+      '优化：零售/自用油快照补跑进入后台队列执行，避免长任务阻塞客户端界面',
+      '完善：自动任务补跑按钮、确认提示和任务名称支持中俄文切换',
+    ],
+  },
   {
     version: '3.6.0',
     date: '2026-07-16',

@@ -423,10 +423,30 @@ body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
 }
 
+.global-ai-drawer .ant-drawer-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.global-ai-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.global-ai-hint {
+  flex: 0 0 auto;
+}
+
 .global-ai-messages {
-  min-height: 360px;
-  max-height: calc(100vh - 310px);
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
   background: #f7f8fa;
   border: 1px solid #edf0f5;

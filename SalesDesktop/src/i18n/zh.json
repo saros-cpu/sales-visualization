@@ -565,7 +565,13 @@
     "exCompany": "Example / ZD",
     "customerSCompany": "油气公司 / CUSTOMER-S-АББР",
     "dateRangeError": "到期日期不能早于生效日期",
-    "appendixNoHint": "附件列仅登记附件编号；多个附件编号可用逗号、分号或换行记录，暂不上传文件。"
+    "appendixNoHint": "附件列仅登记附件编号；多个附件编号可用逗号、分号或换行记录，暂不上传文件。",
+    "salesTypes": {
+      "unknown": "待识别",
+      "local_wholesale": "本地批发",
+      "export_wholesale": "出口批发",
+      "internal": "内部业务"
+    }
   },
   "ai": {
     "title": "AI 助手",
@@ -587,6 +593,16 @@
     "cache": "缓存监控",
     "automation": "自动任务",
     "ai": "AI 状态",
+    "manualRunHint": "手动执行用于自动任务失败后的补救，正常情况下无需每天点击。零售/自用油快照会进入后台队列执行。",
+    "runConfirm": "确认手动执行该自动任务？",
+    "runExchangeRates": "补跑汇率快照",
+    "runMarketWatch": "补跑市场观察",
+    "runRetailSnapshots": "补跑零售/自用油快照",
+    "runAllTasks": "补跑全部任务",
+    "runQueued": "任务已加入后台执行",
+    "runSuccess": "任务执行完成",
+    "runWarning": "任务已返回失败项，请查看自动任务列表",
+    "runFailed": "任务执行失败",
     "path": "接口路径",
     "calls": "调用次数",
     "failed": "失败次数",
@@ -604,6 +620,12 @@
     "aiCalls7d": "7天调用",
     "aiAvgDuration": "平均耗时",
     "aiLastCalled": "最近调用",
+    "task": {
+      "exchange_rates": "汇率快照",
+      "market_watch": "市场观察",
+      "retail_snapshots": "零售/自用油快照",
+      "automation_all": "全部自动任务"
+    },
     "service": {
       "backend": "后端服务",
       "database": "数据库",

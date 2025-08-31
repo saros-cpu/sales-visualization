@@ -1,9 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PythonExe = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
-if (-not $PythonExe) {
-    $PythonExe = "C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe"
+$PreferredPythonExe = "C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe"
+$PythonExe = if (Test-Path $PreferredPythonExe) {
+    $PreferredPythonExe
+} else {
+    (Get-Command python.exe -ErrorAction Stop).Source
 }
 $LogDir = Join-Path $AppRoot "logs"
 $LogFile = Join-Path $LogDir "production.log"
