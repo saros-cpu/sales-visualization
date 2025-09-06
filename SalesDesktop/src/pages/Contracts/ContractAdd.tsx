@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, Space, message, Tag, Typography } from 'antd';
 import { PlusOutlined, SaveOutlined, CloseOutlined, ClearOutlined } from '@ant-design/icons';
@@ -8,6 +8,7 @@ import { batchCreateContracts } from '@/api/contracts';
 import { getProductOptions, getEntityOptions } from '@/api/client';
 import { useAuth } from '@/contexts/AuthContext';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
+import { KpiGrid } from '@/components/ui/KpiCard';
 
 interface ContractDraft {
   id: number;
@@ -65,6 +66,19 @@ export default function ContractAdd() {
     }
     return errors;
   }, [t]);
+
+  const entryKpis = useMemo(() => {
+    const invalidRows = rows.filter(row => Object.keys(validateRow(row)).length > 0);
+    const appendixMissing = rows.filter(row => !String(row.appendixNo || '').trim()).length;
+    const plannedTons = rows.reduce((sum, row) => sum + Number(row.quantityTons || 0), 0);
+    return [
+      { key: 'rows', title: t('common.currentBatch'), value: rows.length, suffix: t('common.rows') },
+      { key: 'valid', title: t('common.validRows'), value: Math.max(rows.length - invalidRows.length, 0), suffix: t('common.rows'), tone: invalidRows.length ? 'warning' as const : 'success' as const },
+      { key: 'invalid', title: t('common.invalidRows'), value: invalidRows.length, suffix: t('common.rows'), goodWhen: 'down' as const, tone: invalidRows.length ? 'danger' as const : 'success' as const },
+      { key: 'appendix', title: t('common.appendixNo'), value: rows.length - appendixMissing, suffix: t('common.rows') },
+      { key: 'tons', title: t('common.plannedTons'), value: plannedTons, precision: 3, suffix: 't' },
+    ];
+  }, [rows, t, validateRow]);
 
   const handleBatchSave = async (changes: Array<{ id: number; data: Partial<ContractDraft> }>) => {
     if (!can('contracts:create')) {
@@ -183,6 +197,9 @@ export default function ContractAdd() {
       }
     >
       <Typography.Text type="secondary">{t('contracts.appendixNoHint')}</Typography.Text>
+      <div style={{ marginTop: 12, marginBottom: 12 }}>
+        <KpiGrid items={entryKpis} defaultSpan={6} />
+      </div>
       <div style={{ marginTop: 12 }}>
         <ExcelTable<ContractDraft>
           ref={tableRef}

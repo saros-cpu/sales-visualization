@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.6.1';
+export const VERSION = '3.7.0';
 export const BUILD_DATE = '2026-07-16';
 
 export interface ChangelogEntry {
@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.7.0',
+    date: '2026-07-16',
+    type: 'minor',
+    changes: [
+      '新增：可视化舱页面，按角色读取驾驶舱模板并渲染可配置 KPI 与零售预警摘要',
+      '新增：管理中心，管理员可维护驾驶舱组件、数据字典、系统配置和回收站摘要',
+      '升级：KPI 组件化，支持好坏方向、状态色、说明、点击联动和统一网格布局',
+      '完善：数据录入、合同新增、物资调拨增加录入批次 KPI，显示有效行、异常行、未保存行和汇总量',
+      '完善：可视化舱、管理中心、录入 KPI 补齐中俄文切换和俄语单位显示',
+    ],
+  },
   {
     version: '3.6.1',
     date: '2026-07-16',

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Card, Space, DatePicker, Button, message } from 'antd';
 import { SearchOutlined, ReloadOutlined, UploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { getTrainEntryList, createTrainEntry, updateTrainEntry, deleteTrainEntry, batchCreateTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
 import { getProductOptions, getEntityOptions } from '@/api/client';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
+import { KpiGrid } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 
 const { RangePicker } = DatePicker;
@@ -124,6 +125,19 @@ export default function TrainEntryPage() {
     return errors;
   }, [t]);
 
+  const entryKpis = useMemo(() => {
+    const draftRows = data.filter(row => row.id < 0);
+    const invalidRows = data.filter(row => Object.keys(validateRow(row)).length > 0);
+    const totalTons = data.reduce((sum, row) => sum + Number((row.weightTons ?? (row.weightKg ? Number(row.weightKg) / 1000 : 0)) || 0), 0);
+    return [
+      { key: 'rows', title: t('common.currentBatch'), value: data.length, suffix: t('common.rows') },
+      { key: 'valid', title: t('common.validRows'), value: Math.max(data.length - invalidRows.length, 0), suffix: t('common.rows'), tone: invalidRows.length ? 'warning' as const : 'success' as const },
+      { key: 'invalid', title: t('common.invalidRows'), value: invalidRows.length, suffix: t('common.rows'), goodWhen: 'down' as const, tone: invalidRows.length ? 'danger' as const : 'success' as const },
+      { key: 'draft', title: t('common.unsavedRows'), value: draftRows.length, suffix: t('common.rows'), tone: draftRows.length ? 'warning' as const : 'neutral' as const },
+      { key: 'tons', title: t('common.weightTons'), value: totalTons, precision: 3, suffix: 't' },
+    ];
+  }, [data, t, validateRow]);
+
   const handleUploadFile = (file: File) => {
     if (!canCreate) {
       message.error(t('common.noPermission'));
@@ -231,6 +245,9 @@ export default function TrainEntryPage() {
         </Space>
       }
     >
+      <div style={{ marginBottom: 16 }}>
+        <KpiGrid items={entryKpis} defaultSpan={6} />
+      </div>
       <ExcelTable
         ref={tableRef}
         dataSource={data}

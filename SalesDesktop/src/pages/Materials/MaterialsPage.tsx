@@ -11,6 +11,7 @@ import {
   getInventory, InventoryItem,
 } from '@/api/materials';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
+import { KpiGrid } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 
 function MaterialDictTab() {
@@ -375,6 +376,18 @@ function TransferOrdersTab() {
     return errors;
   }, [t]);
 
+  const transferKpis = useMemo(() => {
+    const invalidRows = data.filter(row => Object.keys(validateRow(row)).length > 0);
+    const pendingRows = data.filter(row => row.status === 'pending').length;
+    const totalQty = data.reduce((sum, row) => sum + Number(row.requested_qty || 0), 0);
+    return [
+      { key: 'rows', title: t('common.currentBatch'), value: data.length, suffix: t('common.rows') },
+      { key: 'pending', title: t('common.pending'), value: pendingRows, suffix: t('common.rows'), goodWhen: 'down' as const, tone: pendingRows ? 'warning' as const : 'success' as const },
+      { key: 'invalid', title: t('common.invalidRows'), value: invalidRows.length, suffix: t('common.rows'), goodWhen: 'down' as const, tone: invalidRows.length ? 'danger' as const : 'success' as const },
+      { key: 'qty', title: t('common.qty'), value: totalQty, precision: 2 },
+    ];
+  }, [data, t, validateRow]);
+
   const handleBatchSave = async (changes: Array<{ id: number; data: Partial<TransferOrder> }>) => {
     if (
       (changes.some((change) => change.id < 0) && !canCreate) ||
@@ -480,6 +493,9 @@ function TransferOrdersTab() {
 
   return (
     <div>
+      <div style={{ marginBottom: 16 }}>
+        <KpiGrid items={transferKpis} defaultSpan={6} />
+      </div>
       <Space wrap style={{ marginBottom: 16 }}>
         {canCreate && (
           <Button icon={<PlusOutlined />} type="primary" onClick={() => { if (!editing) setEditing(true); tableRef.current?.addNewRow(); }}>

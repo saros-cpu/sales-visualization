@@ -77,6 +77,41 @@ body {
   line-height: 1;
 }
 
+.kpi-grid {
+  width: 100%;
+}
+
+.kpi-card-clickable {
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.kpi-card-clickable:hover {
+  border-color: #cc0000;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.kpi-card-footer {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cockpit-component-card {
+  height: 100%;
+}
+
+.cockpit-suggestion-item {
+  padding: 8px 10px;
+  color: #1f2937;
+  line-height: 1.5;
+  background: #f7f8fa;
+  border: 1px solid #edf0f5;
+  border-radius: 6px;
+}
+
 .chart-card {
   margin-bottom: 16px;
   overflow: hidden;

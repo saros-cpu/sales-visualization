@@ -2,7 +2,7 @@ import {
   DashboardOutlined, ShopOutlined, DollarOutlined, CarOutlined, ShoppingOutlined,
   ImportOutlined, FileTextOutlined, ToolOutlined, DashOutlined, EnvironmentOutlined,
   TeamOutlined, BookOutlined, SettingOutlined, AuditOutlined, FileSearchOutlined,
-  MonitorOutlined,
+  MonitorOutlined, AppstoreOutlined, ControlOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 
@@ -19,6 +19,7 @@ export interface MenuItem {
 
 export const menuConfig: MenuItem[] = [
   { key: '/', icon: <DashboardOutlined />, labelKey: 'nav.dashboard', moduleKey: 'dashboard' },
+  { key: '/cockpit', icon: <AppstoreOutlined />, labelKey: 'nav.visualCockpit', moduleKey: 'dashboard', permissionCode: 'dashboard:view' },
   {
     key: '/retail', icon: <ShopOutlined />, labelKey: 'nav.retailShort', moduleKey: 'retail',
     children: [
@@ -63,6 +64,7 @@ export const menuConfig: MenuItem[] = [
       { key: '/weighing', icon: <AuditOutlined />, labelKey: 'nav.weighing', moduleKey: 'weighing' },
       { key: '/audit-logs', icon: <FileSearchOutlined />, labelKey: 'nav.auditLogs', moduleKey: 'audit_logs', permissionCode: 'audit_logs:view' },
       { key: '/system-health', icon: <MonitorOutlined />, labelKey: 'nav.systemHealth', moduleKey: 'system_health', permissionCode: 'system_health:view' },
+      { key: '/management-center', icon: <ControlOutlined />, labelKey: 'nav.managementCenter', roles: ['admin'] },
     ],
   },
   { key: '/settings', icon: <SettingOutlined />, labelKey: 'nav.settings', moduleKey: 'settings' },

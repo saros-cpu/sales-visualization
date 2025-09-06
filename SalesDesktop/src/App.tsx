@@ -9,6 +9,7 @@ import Login from '@/pages/Login';
 import './i18n';
 
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const VisualCockpit = lazy(() => import('@/pages/VisualCockpit'));
 const RetailLayout = lazy(() => import('@/layouts/RetailLayout'));
 const RetailOverview = lazy(() => import('@/pages/retail/Overview'));
 const RetailRegion = lazy(() => import('@/pages/retail/Region'));
@@ -40,6 +41,7 @@ const ExchangeRates = lazy(() => import('@/pages/ExchangeRates'));
 const Aliases = lazy(() => import('@/pages/Aliases'));
 const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
 const SystemHealth = lazy(() => import('@/pages/SystemHealth'));
+const ManagementCenter = lazy(() => import('@/pages/ManagementCenter'));
 
 const loading = (
   <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
@@ -52,6 +54,7 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/" element={<AuthRoute><AppLayout /></AuthRoute>}>
         <Route index element={<ErrorBoundary><Suspense fallback={loading}><Dashboard /></Suspense></ErrorBoundary>} />
+        <Route path="cockpit" element={<ErrorBoundary><Suspense fallback={loading}><VisualCockpit /></Suspense></ErrorBoundary>} />
         <Route path="retail" element={<ErrorBoundary><Suspense fallback={loading}><RetailLayout /></Suspense></ErrorBoundary>}>
           <Route index element={<Navigate to="/retail/overview" replace />} />
           <Route path="overview" element={<ErrorBoundary><Suspense fallback={loading}><RetailOverview /></Suspense></ErrorBoundary>} />
@@ -90,6 +93,7 @@ function AppRoutes() {
         <Route path="weighing" element={<ErrorBoundary><Suspense fallback={loading}><WeighingList /></Suspense></ErrorBoundary>} />
         <Route path="audit-logs" element={<ErrorBoundary><Suspense fallback={loading}><AuditLogs /></Suspense></ErrorBoundary>} />
         <Route path="system-health" element={<ErrorBoundary><Suspense fallback={loading}><SystemHealth /></Suspense></ErrorBoundary>} />
+        <Route path="management-center" element={<ErrorBoundary><Suspense fallback={loading}><ManagementCenter /></Suspense></ErrorBoundary>} />
         <Route path="settings" element={<ErrorBoundary><Suspense fallback={loading}><Settings /></Suspense></ErrorBoundary>} />
       </Route>
     </Routes>

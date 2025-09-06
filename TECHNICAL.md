@@ -2,6 +2,46 @@
 
 ## 版本历史
 
+### v3.7.0 (2026-07-16)
+
+**新增功能**：
+
+1. **KPI 组件化**
+   - 通用组件：`src/components/ui/KpiCard.tsx`
+   - 新增 `KpiGrid`、`MetricDelta`，支持指标好坏方向、状态色、点击联动、加载状态和统一网格
+   - 已迁移系统健康、汇率查询，并为数据录入/合同新增/物资调拨补充录入批次 KPI
+
+2. **可配置可视化舱**
+   - 前端页面：`src/pages/VisualCockpit.tsx`
+   - 后端接口：`GET /api/v2/cockpit`
+   - 后端按模板、角色和指标权限过滤组件，当前支持 KPI 卡片和零售预警摘要组件
+
+3. **管理中心**
+   - 前端页面：`src/pages/ManagementCenter.tsx`
+   - 后端接口：`/api/v2/management/*`
+   - 管理员可维护驾驶舱模板、系统配置、数据字典和回收站摘要
+
+4. **管理数据表**
+   - `system_configs`：系统配置
+   - `system_dictionary_items`：统一数据字典
+   - `dashboard_templates`：驾驶舱模板配置
+   - `recycle_bin_items`：回收站摘要
+
+**主要文件**：
+
+```
+Sales/
+└── api_v2/management.py
+
+SalesDesktop/src/
+├── api/management.ts
+├── components/ui/KpiCard.tsx
+├── pages/VisualCockpit.tsx
+└── pages/ManagementCenter.tsx
+```
+
+---
+
 ### v3.6.0 (2026-07-16)
 
 **新增功能**：

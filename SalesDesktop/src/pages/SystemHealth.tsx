@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, message, Popconfirm, Row, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, message, Popconfirm, Row, Space, Table, Tabs, Tag, Typography } from 'antd';
 import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
 import { getSystemHealth, runAutomationTask, type AutomationTaskKey } from '@/api/system';
+import KpiCard, { KpiGrid } from '@/components/ui/KpiCard';
 
 const { Text } = Typography;
 
@@ -60,9 +61,9 @@ export default function SystemHealth() {
       extra={<Button icon={<ReloadOutlined />} onClick={() => query.refetch()} loading={query.isFetching}>{t('common.update')}</Button>}
     >
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('systemHealth.overall')} value={data.status || '-'} valueStyle={{ color: data.status === 'ok' ? '#389e0d' : '#d48806' }} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('systemHealth.apiFailed24h')} value={data.api?.failed24h ?? 0} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('systemHealth.aiFailed7d')} value={ai.failed7d ?? 0} /></Card></Col>
+        <Col xs={24} sm={8}><KpiCard title={t('systemHealth.overall')} value={data.status || '-'} tone={data.status === 'ok' ? 'success' : 'warning'} /></Col>
+        <Col xs={24} sm={8}><KpiCard title={t('systemHealth.apiFailed24h')} value={data.api?.failed24h ?? 0} goodWhen="down" tone={(data.api?.failed24h ?? 0) > 0 ? 'danger' : 'success'} /></Col>
+        <Col xs={24} sm={8}><KpiCard title={t('systemHealth.aiFailed7d')} value={ai.failed7d ?? 0} goodWhen="down" tone={(ai.failed7d ?? 0) > 0 ? 'danger' : 'success'} /></Col>
       </Row>
       <Tabs
         items={[
@@ -182,13 +183,13 @@ export default function SystemHealth() {
             key: 'ai',
             label: t('systemHealth.ai'),
             children: (
-              <Row gutter={[16, 16]}>
-                <Col xs={24} sm={8}><Card size="small"><Statistic title={t('systemHealth.aiConfigured')} value={ai.configured ? t('common.yes') : t('common.no')} /></Card></Col>
-                <Col xs={24} sm={8}><Card size="small"><Statistic title={t('systemHealth.aiModel')} value={ai.model || '-'} /></Card></Col>
-                <Col xs={24} sm={8}><Card size="small"><Statistic title={t('systemHealth.aiCalls7d')} value={ai.total7d ?? 0} /></Card></Col>
-                <Col xs={24} sm={8}><Card size="small"><Statistic title={t('systemHealth.aiAvgDuration')} value={ai.avgDurationMs ?? 0} suffix="ms" /></Card></Col>
-                <Col xs={24} sm={8}><Card size="small"><Statistic title={t('systemHealth.aiLastCalled')} value={ai.lastCalledAt || '-'} /></Card></Col>
-              </Row>
+              <KpiGrid items={[
+                { key: 'configured', title: t('systemHealth.aiConfigured'), value: ai.configured ? t('common.yes') : t('common.no'), tone: ai.configured ? 'success' : 'warning', span: 8 },
+                { key: 'model', title: t('systemHealth.aiModel'), value: ai.model || '-', span: 8 },
+                { key: 'calls', title: t('systemHealth.aiCalls7d'), value: ai.total7d ?? 0, span: 8 },
+                { key: 'duration', title: t('systemHealth.aiAvgDuration'), value: ai.avgDurationMs ?? 0, suffix: 'ms', span: 8 },
+                { key: 'last', title: t('systemHealth.aiLastCalled'), value: ai.lastCalledAt || '-', span: 8 },
+              ]} />
             ),
           },
         ]}

@@ -4,6 +4,7 @@
   },
   "nav": {
     "dashboard": "仪表板",
+    "visualCockpit": "可视化舱",
     "retail": "零售分析",
     "retailShort": "零售",
     "weighing": "称重审核",
@@ -24,6 +25,7 @@
     "aliases": "别名管理",
     "auditLogs": "审计日志",
     "systemHealth": "系统健康",
+    "managementCenter": "管理中心",
     "logout": "退出登录"
   },
   "login": {
@@ -203,6 +205,10 @@
     "action": "操作",
     "type": "类型",
     "rows": "条数",
+    "currentBatch": "当前批次",
+    "validRows": "有效行",
+    "invalidRows": "异常行",
+    "unsavedRows": "未保存行",
     "closed": "停业",
     "ok": "正常",
     "downloadStarted": "下载已开始",
@@ -582,6 +588,33 @@
     "thinking": "正在分析...",
     "placeholder": "请输入要查询的问题，Ctrl+Enter 发送",
     "ask": "提问"
+  },
+  "cockpit": {
+    "configure": "配置组件",
+    "noTemplate": "暂无可用驾驶舱模板",
+    "emptyTemplate": "该模板暂无组件",
+    "retailAlertSummary": "零售预警摘要"
+  },
+  "management": {
+    "cockpitConfig": "驾驶舱配置",
+    "dictionary": "数据字典",
+    "systemConfig": "系统配置",
+    "recycleBin": "回收站",
+    "template": "模板",
+    "visibleRoles": "可见角色",
+    "addKpi": "新增 KPI",
+    "addRetailAlert": "新增零售预警",
+    "kpiCard": "KPI 指标卡",
+    "retailAlertCard": "零售预警卡",
+    "metric": "指标",
+    "span": "宽度",
+    "configKey": "配置键",
+    "configValue": "配置值",
+    "dictionaryItem": "字典项",
+    "sortOrder": "排序",
+    "sourceTable": "来源表",
+    "sourceId": "来源 ID",
+    "deletedAt": "删除时间"
   },
   "systemHealth": {
     "title": "系统健康",

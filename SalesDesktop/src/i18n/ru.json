@@ -2,6 +2,7 @@
   "app": { "title": "Система управления продажами" },
   "nav": {
     "dashboard": "Панель",
+    "visualCockpit": "Визуальная панель",
     "retail": "Розница",
     "retailShort": "Розница",
     "weighing": "Взвешивание",
@@ -22,6 +23,7 @@
     "aliases": "Псевдонимы",
     "auditLogs": "Журнал аудита",
     "systemHealth": "Состояние системы",
+    "managementCenter": "Центр управления",
     "logout": "Выход"
   },
   "login": {
@@ -201,6 +203,10 @@
     "action": "Действие",
     "type": "Тип",
     "rows": "Строк",
+    "currentBatch": "Текущий пакет",
+    "validRows": "Корректные строки",
+    "invalidRows": "Строки с CTY-05ибками",
+    "unsavedRows": "Несохраненные строки",
     "closed": "Закрыто",
     "ok": "Нормально",
     "downloadStarted": "Загрузка начата",
@@ -516,6 +522,33 @@
     "thinking": "Анализ...",
     "placeholder": "Введите вопрос, Ctrl+Enter для отправки",
     "ask": "Спросить"
+  },
+  "cockpit": {
+    "configure": "Настроить",
+    "noTemplate": "Нет доступных шаблонов панели",
+    "emptyTemplate": "В шаблоне нет компонентов",
+    "retailAlertSummary": "Сводка оповещений розницы"
+  },
+  "management": {
+    "cockpitConfig": "Настройка панели",
+    "dictionary": "Справочники",
+    "systemConfig": "Системные настройки",
+    "recycleBin": "Корзина",
+    "template": "Шаблон",
+    "visibleRoles": "Видимые роли",
+    "addKpi": "Добавить KPI",
+    "addRetailAlert": "Добавить оповещения",
+    "kpiCard": "KPI карточка",
+    "retailAlertCard": "Карточка оповещений",
+    "metric": "Показатель",
+    "span": "Ширина",
+    "configKey": "Ключ настройки",
+    "configValue": "Значение",
+    "dictionaryItem": "Элемент справочника",
+    "sortOrder": "Сортировка",
+    "sourceTable": "Таблица",
+    "sourceId": "ID источника",
+    "deletedAt": "Время удаления"
   },
   "systemHealth": {
     "title": "Состояние системы",

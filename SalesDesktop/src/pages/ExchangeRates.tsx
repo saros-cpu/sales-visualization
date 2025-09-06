@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Select, Table, Tag, Button, Spin, Alert, Space } from 'antd';
+import { Row, Col, Card, Select, Table, Tag, Button, Spin, Alert, Space } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
@@ -8,6 +8,7 @@ import { LineChart, BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { getExchangeRates, exportExchangeRates, ExchangeRateItem } from '@/api/exchange';
+import { KpiGrid } from '@/components/ui/KpiCard';
 
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
@@ -108,12 +109,14 @@ export default function ExchangeRates() {
           </Space>
         </Col>
       </Row>
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={12} lg={6}><Card size="small"><Statistic title={t('exchange.totalDays')} value={data?.total ?? 0} suffix={t('common.day')} /></Card></Col>
-        <Col xs={12} lg={6}><Card size="small"><Statistic title={t('exchange.openGaps')} value={data?.openGaps ?? 0} valueStyle={{ color: (data?.openGaps ?? 0) > 0 ? '#ff4d4f' : undefined }} /></Card></Col>
-        <Col xs={12} lg={6}><Card size="small"><Statistic title={t('exchange.missingUsd')} value={data?.missingUsd ?? 0} valueStyle={{ color: (data?.missingUsd ?? 0) > 0 ? '#faad14' : undefined }} /></Card></Col>
-        <Col xs={12} lg={6}><Card size="small"><Statistic title={t('exchange.missingCny')} value={data?.missingCny ?? 0} valueStyle={{ color: (data?.missingCny ?? 0) > 0 ? '#faad14' : undefined }} /></Card></Col>
-      </Row>
+      <div style={{ marginBottom: 16 }}>
+        <KpiGrid items={[
+          { key: 'total', title: t('exchange.totalDays'), value: data?.total ?? 0, suffix: t('common.day') },
+          { key: 'gaps', title: t('exchange.openGaps'), value: data?.openGaps ?? 0, goodWhen: 'down', tone: (data?.openGaps ?? 0) > 0 ? 'danger' : 'success' },
+          { key: 'usd', title: t('exchange.missingUsd'), value: data?.missingUsd ?? 0, goodWhen: 'down', tone: (data?.missingUsd ?? 0) > 0 ? 'warning' : 'success' },
+          { key: 'cny', title: t('exchange.missingCny'), value: data?.missingCny ?? 0, goodWhen: 'down', tone: (data?.missingCny ?? 0) > 0 ? 'warning' : 'success' },
+        ]} />
+      </div>
       <Card size="small" style={{ marginBottom: 16 }}>
         <ReactEChartsCore echarts={echarts} option={chartOption} style={{ height: 320 }} />
       </Card>
