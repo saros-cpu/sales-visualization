@@ -3,8 +3,8 @@
     "title": "销售管理系统"
   },
   "nav": {
-    "dashboard": "仪表板",
-    "visualCockpit": "可视化舱",
+    "dashboard": "数据可视化",
+    "visualCockpit": "数据可视化",
     "retail": "零售分析",
     "retailShort": "零售",
     "weighing": "称重审核",
@@ -46,7 +46,7 @@
     "detail": "详情",
     "modules": {
       "auth": "登录认证",
-      "dashboard": "仪表盘",
+      "dashboard": "数据可视化",
       "retail": "零售分析",
       "wholesale": "批发查询",
       "exchange": "汇率查询",
@@ -316,13 +316,6 @@
       "rejected": "已驳回"
     }
   },
-  "dashboard": {
-    "yearlyWholesaleTons": "年批发(吨)",
-    "activeContracts": "有效合同",
-    "yearlyProcurementTons": "年采购(吨)",
-    "retailSales": "零售累计销售额",
-    "retailVolume": "零售累计销量"
-  },
   "product": {
     "AI-80": "AI-80 (АИ-80)",
     "AI-92": "AI-92 (АИ-92)",
@@ -591,23 +584,34 @@
   },
   "cockpit": {
     "configure": "配置组件",
-    "noTemplate": "暂无可用驾驶舱模板",
+    "editLayout": "调整布局",
+    "saveLayout": "保存布局",
+    "resizeComponent": "调整组件大小",
+    "moveComponent": "拖动组件调整位置",
+    "noTemplate": "暂无可用数据可视化模板",
     "emptyTemplate": "该模板暂无组件",
     "retailAlertSummary": "零售预警摘要"
   },
   "management": {
-    "cockpitConfig": "驾驶舱配置",
+    "cockpitConfig": "数据可视化配置",
     "dictionary": "数据字典",
     "systemConfig": "系统配置",
     "recycleBin": "回收站",
     "template": "模板",
     "visibleRoles": "可见角色",
+    "visibleDepartments": "可见部门",
+    "addTemplate": "新增模板",
+    "addComponent": "添加组件",
+    "componentLibrary": "组件库",
+    "selectComponent": "请选择组件",
     "addKpi": "新增 KPI",
     "addRetailAlert": "新增零售预警",
     "kpiCard": "KPI 指标卡",
     "retailAlertCard": "零售预警卡",
+    "component": "组件",
     "metric": "指标",
     "span": "宽度",
+    "height": "高度",
     "configKey": "配置键",
     "configValue": "配置值",
     "dictionaryItem": "字典项",

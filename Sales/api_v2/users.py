@@ -18,7 +18,7 @@ from .permission_service import (
 ROLES = ('admin', 'operator', 'auditor', 'viewer')
 
 MODULE_CATALOG = [
-    ('dashboard', '仪表板', 10),
+    ('dashboard', '数据可视化', 10),
     ('retail', '零售', 20),
     ('wholesale', '批发', 30),
     ('exchange', '汇率查询', 40),

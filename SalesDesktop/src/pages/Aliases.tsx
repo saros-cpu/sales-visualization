@@ -88,7 +88,12 @@ export default function Aliases() {
       ]);
       setSelectedUnmatchedKeys([]);
       setSelectedUnmatchedRows([]);
-      const opts = (Array.isArray(productOptions.data) ? productOptions.data : productOptions || []).map((product: any) => ({
+      const productRows = Array.isArray(productOptions.data)
+        ? productOptions.data
+        : Array.isArray(productOptions)
+          ? productOptions
+          : [];
+      const opts = productRows.map((product: any) => ({
         value: product.id,
         label: product.displayName,
       }));
@@ -331,7 +336,7 @@ export default function Aliases() {
         onCancel={() => setProductModalOpen(false)}
         onOk={saveProductAlias}
         confirmLoading={saving}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={productForm} layout="vertical">
           <Form.Item name="productId" label={t('common.product')} rules={[{ required: true }]}>
@@ -349,7 +354,7 @@ export default function Aliases() {
         onCancel={() => setEntityModalOpen(false)}
         onOk={saveEntityAlias}
         confirmLoading={saving}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={entityForm} layout="vertical">
           <Form.Item name="entityType" label={t('common.entityType')} rules={[{ required: true }]}>

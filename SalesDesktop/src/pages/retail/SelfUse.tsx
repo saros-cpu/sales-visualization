@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Button, Space, Input, Alert, DatePicker, Table } from 'antd';
+import { Button, Space, Input, Alert, DatePicker, Table, message } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { getSelfUseByRange } from '@/api/retail';
-import { API_HOST } from '@/api/http';
+import { downloadSelfUseReport } from '@/api/export';
 import { useNameI18n } from '@/utils/i18nNames';
 import { useAuth } from '@/contexts/AuthContext';
 import dayjs from 'dayjs';
@@ -57,6 +57,17 @@ export default function SelfUse() {
 
   const summary = data?.summary;
 
+  const onExport = async () => {
+    const dateFrom = dates[0].format('YYYY-MM-DD');
+    const dateTo = dates[1].format('YYYY-MM-DD');
+    try {
+      await downloadSelfUseReport(dateFrom, dateTo);
+      message.success(t('common.downloadStarted'));
+    } catch {
+      message.error(t('common.downloadFailed'));
+    }
+  };
+
   return (
     <div>
       {error && <Alert type="error" message={error.message} closable style={{ marginBottom: 12 }} />}
@@ -65,20 +76,7 @@ export default function SelfUse() {
         <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
         <Input.Search placeholder={t('retail.searchPlate')} value={search} onChange={e => setSearch(e.target.value)} style={{ width: 240 }} allowClear />
         {canExport && (
-          <Button onClick={() => {
-            const token = localStorage.getItem('accessToken') || '';
-            const date_from = dates[0].format('YYYY-MM-DD');
-            const date_to = dates[1].format('YYYY-MM-DD');
-            const url = `/api/export/self-use?date_from=${date_from}&date_to=${date_to}`;
-            if ((window as any).electronAPI?.downloadFile) {
-              (window as any).electronAPI.downloadFile(`${API_HOST}${url}`, `自用油_${date_from}_to_${date_to}.xlsx`, token);
-            } else {
-              const a = document.createElement('a');
-              a.href = token ? `${url}&token=${token}` : url;
-              a.download = `自用油_${date_from}_to_${date_to}.xlsx`;
-              a.click();
-            }
-          }}>{t('common.excelExport')}</Button>
+          <Button onClick={onExport}>{t('common.excelExport')}</Button>
         )}
       </Space>
       {summary && (

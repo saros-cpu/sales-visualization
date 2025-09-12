@@ -1,6 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider, Spin } from 'antd';
-import { Suspense, lazy } from 'react';
+import { App as AntApp, ConfigProvider, Spin } from 'antd';
+import { Suspense, lazy, type ComponentType } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import AuthRoute from '@/components/AuthRoute';
 import AppLayout from '@/layouts/AppLayout';
@@ -8,40 +8,67 @@ import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import Login from '@/pages/Login';
 import './i18n';
 
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const VisualCockpit = lazy(() => import('@/pages/VisualCockpit'));
-const RetailLayout = lazy(() => import('@/layouts/RetailLayout'));
-const RetailOverview = lazy(() => import('@/pages/retail/Overview'));
-const RetailRegion = lazy(() => import('@/pages/retail/Region'));
-const RetailStation = lazy(() => import('@/pages/retail/Station'));
-const RetailMonthly = lazy(() => import('@/pages/retail/Monthly'));
-const RetailResource = lazy(() => import('@/pages/retail/Resource'));
-const RetailReport = lazy(() => import('@/pages/retail/Report'));
-const RetailAlert = lazy(() => import('@/pages/retail/Alert'));
-const RetailSelfUse = lazy(() => import('@/pages/retail/SelfUse'));
-const WholesaleLayout = lazy(() => import('@/layouts/WholesaleLayout'));
-const WholesaleOverview = lazy(() => import('@/pages/wholesale/Overview'));
-const WholesaleProducts = lazy(() => import('@/pages/wholesale/Products'));
-const WholesaleCustomers = lazy(() => import('@/pages/wholesale/Customers'));
-const WholesaleTransfer = lazy(() => import('@/pages/wholesale/Transfer'));
-const WholesaleTrend = lazy(() => import('@/pages/wholesale/Trend'));
-const WholesaleQuery = lazy(() => import('@/pages/wholesale/Query'));
-const WeighingList = lazy(() => import('@/pages/WeighingList'));
-const TrainEntry = lazy(() => import('@/pages/TrainEntry'));
-const Procurement = lazy(() => import('@/pages/Procurement'));
-const Contracts = lazy(() => import('@/pages/Contracts/ContractView'));
-const ContractAdd = lazy(() => import('@/pages/Contracts/ContractAdd'));
-const Materials = lazy(() => import('@/pages/Materials'));
-const TransferLoss = lazy(() => import('@/pages/TransferLoss'));
-const Users = lazy(() => import('@/pages/Users'));
-const OrganizationPermissions = lazy(() => import('@/pages/OrganizationPermissions'));
-const Settings = lazy(() => import('@/pages/Settings'));
-const MapPage = lazy(() => import('@/pages/MapPage'));
-const ExchangeRates = lazy(() => import('@/pages/ExchangeRates'));
-const Aliases = lazy(() => import('@/pages/Aliases'));
-const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
-const SystemHealth = lazy(() => import('@/pages/SystemHealth'));
-const ManagementCenter = lazy(() => import('@/pages/ManagementCenter'));
+function isDynamicImportError(error: unknown) {
+  const message = String((error as { message?: unknown })?.message || error || '');
+  return [
+    'Failed to fetch dynamically imported module',
+    'Importing a module script failed',
+    'error loading dynamically imported module',
+    'ERR_NETWORK_CHANGED',
+    'ChunkLoadError',
+  ].some((item) => message.includes(item));
+}
+
+function lazyWithRetry<T extends { default: ComponentType<any> }>(loader: () => Promise<T>) {
+  return lazy(() => {
+    const load = (attemptsLeft: number): Promise<T> =>
+      loader().catch((error) => {
+        if (!isDynamicImportError(error) || attemptsLeft <= 0) {
+          throw error;
+        }
+        return new Promise<T>((resolve, reject) => {
+          window.setTimeout(() => {
+            load(attemptsLeft - 1).then(resolve, reject);
+          }, 600);
+        });
+      });
+    return load(2);
+  });
+}
+
+const VisualCockpit = lazyWithRetry(() => import('@/pages/VisualCockpit'));
+const RetailLayout = lazyWithRetry(() => import('@/layouts/RetailLayout'));
+const RetailOverview = lazyWithRetry(() => import('@/pages/retail/Overview'));
+const RetailRegion = lazyWithRetry(() => import('@/pages/retail/Region'));
+const RetailStation = lazyWithRetry(() => import('@/pages/retail/Station'));
+const RetailMonthly = lazyWithRetry(() => import('@/pages/retail/Monthly'));
+const RetailResource = lazyWithRetry(() => import('@/pages/retail/Resource'));
+const RetailReport = lazyWithRetry(() => import('@/pages/retail/Report'));
+const RetailAlert = lazyWithRetry(() => import('@/pages/retail/Alert'));
+const RetailSelfUse = lazyWithRetry(() => import('@/pages/retail/SelfUse'));
+const WholesaleLayout = lazyWithRetry(() => import('@/layouts/WholesaleLayout'));
+const WholesaleOverview = lazyWithRetry(() => import('@/pages/wholesale/Overview'));
+const WholesaleProducts = lazyWithRetry(() => import('@/pages/wholesale/Products'));
+const WholesaleCustomers = lazyWithRetry(() => import('@/pages/wholesale/Customers'));
+const WholesaleTransfer = lazyWithRetry(() => import('@/pages/wholesale/Transfer'));
+const WholesaleTrend = lazyWithRetry(() => import('@/pages/wholesale/Trend'));
+const WholesaleQuery = lazyWithRetry(() => import('@/pages/wholesale/Query'));
+const WeighingList = lazyWithRetry(() => import('@/pages/WeighingList'));
+const TrainEntry = lazyWithRetry(() => import('@/pages/TrainEntry'));
+const Procurement = lazyWithRetry(() => import('@/pages/Procurement'));
+const Contracts = lazyWithRetry(() => import('@/pages/Contracts/ContractView'));
+const ContractAdd = lazyWithRetry(() => import('@/pages/Contracts/ContractAdd'));
+const Materials = lazyWithRetry(() => import('@/pages/Materials'));
+const TransferLoss = lazyWithRetry(() => import('@/pages/TransferLoss'));
+const Users = lazyWithRetry(() => import('@/pages/Users'));
+const OrganizationPermissions = lazyWithRetry(() => import('@/pages/OrganizationPermissions'));
+const Settings = lazyWithRetry(() => import('@/pages/Settings'));
+const MapPage = lazyWithRetry(() => import('@/pages/MapPage'));
+const ExchangeRates = lazyWithRetry(() => import('@/pages/ExchangeRates'));
+const Aliases = lazyWithRetry(() => import('@/pages/Aliases'));
+const AuditLogs = lazyWithRetry(() => import('@/pages/AuditLogs'));
+const SystemHealth = lazyWithRetry(() => import('@/pages/SystemHealth'));
+const ManagementCenter = lazyWithRetry(() => import('@/pages/ManagementCenter'));
 
 const loading = (
   <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
@@ -53,8 +80,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/" element={<AuthRoute><AppLayout /></AuthRoute>}>
-        <Route index element={<ErrorBoundary><Suspense fallback={loading}><Dashboard /></Suspense></ErrorBoundary>} />
-        <Route path="cockpit" element={<ErrorBoundary><Suspense fallback={loading}><VisualCockpit /></Suspense></ErrorBoundary>} />
+        <Route index element={<ErrorBoundary><Suspense fallback={loading}><VisualCockpit /></Suspense></ErrorBoundary>} />
+        <Route path="cockpit" element={<Navigate to="/" replace />} />
         <Route path="retail" element={<ErrorBoundary><Suspense fallback={loading}><RetailLayout /></Suspense></ErrorBoundary>}>
           <Route index element={<Navigate to="/retail/overview" replace />} />
           <Route path="overview" element={<ErrorBoundary><Suspense fallback={loading}><RetailOverview /></Suspense></ErrorBoundary>} />
@@ -165,11 +192,13 @@ export default function App() {
         Progress: { defaultColor: '#CC0000' },
       },
     }}>
-      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </HashRouter>
+      <AntApp>
+        <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </HashRouter>
+      </AntApp>
     </ConfigProvider>
   );
 }

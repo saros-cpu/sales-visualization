@@ -2,13 +2,19 @@ import axios from 'axios';
 import client from './client';
 import { API_HOST } from './http';
 
+export interface AssistantTable {
+  title?: string;
+  columns?: string[];
+  rows?: any[][];
+}
+
 export interface AssistantResponse {
   ok: boolean;
   question: string;
   periodLabel?: string;
   answer: string;
   sourceAnswer?: string;
-  tables?: Array<{ title: string; columns: string[]; rows: any[][] }>;
+  tables?: AssistantTable[];
   agent?: {
     mode: string;
     provider: string;

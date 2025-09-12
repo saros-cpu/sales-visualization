@@ -4,7 +4,7 @@ import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/ic
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { batchReviewWeighing, getWeighingList, WeighingItem } from '@/api/weighing';
-import { API_HOST } from '@/api/http';
+import { downloadWholesaleDetails } from '@/api/export';
 import { useAuth } from '@/contexts/AuthContext';
 
 const { RangePicker } = DatePicker;
@@ -81,6 +81,16 @@ export default function WeighingList() {
   }, [dates, vehicleNo, status, page]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleExport = useCallback(async () => {
+    try {
+      const ym = dates[0].format('YYYY-MM');
+      await downloadWholesaleDetails(ym);
+      message.success(t('common.downloadStarted'));
+    } catch {
+      message.error(t('common.downloadFailed'));
+    }
+  }, [dates, t]);
 
   const totalKg = totalWeight;
   const selectedCount = selectedRows.length;
@@ -173,10 +183,7 @@ export default function WeighingList() {
             <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
             <Button icon={<ReloadOutlined />} onClick={() => { setStatus(''); setVehicleNo(''); fetchData(); }}>{t('common.reset')}</Button>
             {canExport && (
-              <Button icon={<DownloadOutlined />} onClick={() => {
-                const ym = dates[0].format('YYYY-MM');
-                window.open(`${API_HOST}/api/export/wholesale/details/${ym}`, '_blank');
-              }}>{t('common.export')}</Button>
+              <Button icon={<DownloadOutlined />} onClick={handleExport}>{t('common.export')}</Button>
             )}
           </Space>
         }

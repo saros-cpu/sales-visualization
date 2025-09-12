@@ -1,8 +1,8 @@
 {
   "app": { "title": "Система управления продажами" },
   "nav": {
-    "dashboard": "Панель",
-    "visualCockpit": "Визуальная панель",
+    "dashboard": "Визуализация данных",
+    "visualCockpit": "Визуализация данных",
     "retail": "Розница",
     "retailShort": "Розница",
     "weighing": "Взвешивание",
@@ -44,7 +44,7 @@
     "detail": "Детали",
     "modules": {
       "auth": "Авторизация",
-      "dashboard": "Панель",
+      "dashboard": "Визуализация данных",
       "retail": "Розница",
       "wholesale": "Опт",
       "exchange": "Курсы валют",
@@ -315,13 +315,6 @@
       "rejected": "Отклонено"
     }
   },
-  "dashboard": {
-    "yearlyWholesaleTons": "Опт за год (т)",
-    "activeContracts": "Активных договоров",
-    "yearlyProcurementTons": "Закупки за год (т)",
-    "retailSales": "Розница (выручка)",
-    "retailVolume": "Розница (объем)"
-  },
   "product": {
     "AI-80": "AI-80 (АИ-80)",
     "AI-92": "AI-92 (АИ-92)",
@@ -525,23 +518,34 @@
   },
   "cockpit": {
     "configure": "Настроить",
-    "noTemplate": "Нет доступных шаблонов панели",
+    "editLayout": "Размеры",
+    "saveLayout": "Сохранить макет",
+    "resizeComponent": "Изменить размер компонента",
+    "moveComponent": "Перетащить компонент",
+    "noTemplate": "Нет доступных шаблонов визуализации данных",
     "emptyTemplate": "В шаблоне нет компонентов",
     "retailAlertSummary": "Сводка оповещений розницы"
   },
   "management": {
-    "cockpitConfig": "Настройка панели",
+    "cockpitConfig": "Настройка визуализации данных",
     "dictionary": "Справочники",
     "systemConfig": "Системные настройки",
     "recycleBin": "Корзина",
     "template": "Шаблон",
     "visibleRoles": "Видимые роли",
+    "visibleDepartments": "Видимые отделы",
+    "addTemplate": "Добавить шаблон",
+    "addComponent": "Добавить компонент",
+    "componentLibrary": "Библиотека компонентов",
+    "selectComponent": "Выберите компонент",
     "addKpi": "Добавить KPI",
     "addRetailAlert": "Добавить оповещения",
     "kpiCard": "KPI карточка",
     "retailAlertCard": "Карточка оповещений",
+    "component": "Компонент",
     "metric": "Показатель",
     "span": "Ширина",
+    "height": "Высота",
     "configKey": "Ключ настройки",
     "configValue": "Значение",
     "dictionaryItem": "Элемент справочника",

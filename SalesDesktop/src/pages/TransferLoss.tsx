@@ -15,7 +15,7 @@ export default function TransferLoss() {
     setLoading(true);
     try {
       const res = await getTransferLoss({ year, quarter });
-      setData(res.data || []);
+      setData(Array.isArray(res) ? res : (res?.data || []));
     } finally { setLoading(false); }
   }, [year, quarter]);
 

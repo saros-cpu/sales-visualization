@@ -4,6 +4,7 @@ from api_v2 import bp_v2
 from db import get_connection
 import pymysql
 from datetime import date, timedelta
+from .authz import permission_required
 
 
 def _safe_query(cur, sql, params=None):
@@ -17,6 +18,7 @@ def _safe_query(cur, sql, params=None):
 
 @bp_v2.route('/dashboard/overview', methods=['GET'])
 @jwt_required()
+@permission_required('dashboard:view')
 def overview():
     today = date.today()
     year_start = today.replace(month=1, day=1)
@@ -54,6 +56,7 @@ def overview():
 
 @bp_v2.route('/dashboard/market-watch', methods=['GET'])
 @jwt_required()
+@permission_required('dashboard:view')
 def market_watch():
     conn = get_connection()
     try:

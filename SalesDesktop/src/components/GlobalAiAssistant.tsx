@@ -2,14 +2,52 @@ import { useState } from 'react';
 import { Button, Drawer, Input, Space, Typography, Tag, Spin, Empty } from 'antd';
 import { RobotOutlined, SendOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { askAssistant, AssistantResponse } from '@/api/assistant';
+import { askAssistant, AssistantTable } from '@/api/assistant';
 
 const { Text, Paragraph } = Typography;
 
 interface MessageItem {
   role: 'user' | 'assistant';
   content: string;
-  meta?: AssistantResponse['agent'];
+  tables?: AssistantTable[];
+  llmUsed?: boolean;
+}
+
+function isTotalRow(row: any[]) {
+  return /合计|平均|итого|средн/i.test(String(row?.[0] ?? ''));
+}
+
+function TableResult({ table }: { table: AssistantTable }) {
+  const columns = table.columns || [];
+  const rows = table.rows || [];
+
+  if (!columns.length && !rows.length) return null;
+
+  return (
+    <section className="global-ai-table">
+      {table.title && <div className="global-ai-table-title">{table.title}</div>}
+      <table>
+        {columns.length > 0 && (
+          <thead>
+            <tr>
+              {columns.map((col, index) => (
+                <th key={`${col}-${index}`}>{col}</th>
+              ))}
+            </tr>
+          </thead>
+        )}
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={rowIndex} className={isTotalRow(row) ? 'global-ai-total-row' : undefined}>
+              {(Array.isArray(row) ? row : [row]).map((cell, cellIndex) => (
+                <td key={cellIndex}>{cell ?? ''}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
 }
 
 export default function GlobalAiAssistant() {
@@ -27,9 +65,14 @@ export default function GlobalAiAssistant() {
     setLoading(true);
     try {
       const data = await askAssistant(text, i18n.language === 'ru' ? 'ru' : 'zh');
-      setMessages(prev => [...prev, { role: 'assistant', content: data.answer, meta: data.agent }]);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.answer,
+        tables: data.tables || [],
+        llmUsed: Boolean(data.agent?.llmUsed),
+      }]);
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'assistant', content: err?.message || t('ai.queryFailed'), meta: { status: 'failed', llmUsed: false } as any }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: err?.message || t('ai.queryFailed') }]);
     } finally {
       setLoading(false);
     }
@@ -54,8 +97,9 @@ export default function GlobalAiAssistant() {
         }
         open={open}
         onClose={() => setOpen(false)}
-        width={420}
+        width="min(760px, calc(100vw - 28px))"
         className="global-ai-drawer"
+        rootClassName="global-ai-drawer-root"
       >
         <div className="global-ai-panel">
           <Text type="secondary" className="global-ai-hint">{t('ai.readOnlyHint')}</Text>
@@ -64,23 +108,19 @@ export default function GlobalAiAssistant() {
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('ai.empty')} />
             ) : messages.map((item, index) => (
               <div key={index} className={`global-ai-message ${item.role}`}>
-                <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 6 }}>{item.content}</Paragraph>
-                {item.meta && (
-                  <Space size={6} wrap>
-                    <Tag>{item.meta.provider || 'openrouter'}</Tag>
-                    <Tag color={item.meta.status === 'ok' ? 'green' : item.meta.status === 'failed' ? 'red' : 'default'}>
-                      {item.meta.status}
-                    </Tag>
-                    {item.meta.model && <Tag>{item.meta.model}</Tag>}
-                  </Space>
+                {item.content && (!item.tables?.length || item.llmUsed) && (
+                  <Paragraph className="global-ai-summary">{item.content}</Paragraph>
                 )}
+                {item.tables?.map((table, tableIndex) => (
+                  <TableResult key={tableIndex} table={table} />
+                ))}
               </div>
             ))}
             {loading && <div className="global-ai-message assistant"><Spin size="small" /> {t('ai.thinking')}</div>}
           </div>
           <Input.TextArea
             value={question}
-            rows={4}
+            rows={3}
             placeholder={t('ai.placeholder')}
             onChange={(event) => setQuestion(event.target.value)}
             onPressEnter={(event) => {

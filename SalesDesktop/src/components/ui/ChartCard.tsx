@@ -123,7 +123,11 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
     const horizontalRight = Math.min(Math.max(38, meta.longestValue * 6 + 20), 96);
     next.grid = {
       ...(existingGrid || {}),
-      containLabel: true,
+      outerBoundsMode: 'same' as const,
+      outerBoundsContain: 'axisLabel' as const,
+      top: mixedBarLine
+        ? Math.max(Number.parseFloat(existingGrid?.top) || 0, 76)
+        : existingGrid?.top,
       bottom: xHasCategory ? (Number.isFinite(existingBottom) ? Math.max(existingBottom, 68) : 68) : (existingGrid?.bottom ?? 32),
       left: hasHorizontalBar ? 8 : (mixedBarLine ? 56 : (existingGrid?.left ?? 48)),
       right: hasHorizontalBar
@@ -132,7 +136,13 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
     };
   } else if (next.grid && !Array.isArray(next.grid)) {
     const existingGrid = next.grid as any;
-    next.grid = { ...existingGrid, containLabel: true, left: existingGrid.left ?? 48, right: existingGrid.right ?? 48 };
+    next.grid = {
+      ...existingGrid,
+      outerBoundsMode: 'same' as const,
+      outerBoundsContain: 'axisLabel' as const,
+      left: existingGrid.left ?? 48,
+      right: existingGrid.right ?? 48,
+    };
   }
 
   const series = rawSeries.map((item) => {
@@ -144,7 +154,9 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
         label: {
           ...(item.label || {}),
           show: true,
-          position: isHorizontalBar ? 'insideRight' : (mixedBarLine ? 'insideTop' : 'top'),
+          position: isHorizontalBar ? 'insideRight' : (mixedBarLine ? 'insideBottom' : 'top'),
+          distance: mixedBarLine && !isHorizontalBar ? 4 : undefined,
+          verticalAlign: mixedBarLine && !isHorizontalBar ? 'bottom' : undefined,
           formatter: seriesValue,
           fontSize: 10,
           color: isHorizontalBar ? '#111827' : (mixedBarLine ? '#fff' : undefined),
@@ -175,9 +187,25 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
           ...(item.label || {}),
           show: true,
           position: 'top',
+          distance: mixedBarLine ? 24 : 6,
+          offset: mixedBarLine ? [0, -6] : undefined,
           formatter: seriesValue,
           fontSize: 10,
+          color: '#111827',
+          textBorderColor: '#fff',
+          textBorderWidth: mixedBarLine ? 2 : 0,
         },
+        labelLayout: mixedBarLine
+          ? (params: any) => {
+              const labelRect = params?.labelRect;
+              if (!labelRect) return { hideOverlap: false };
+              return {
+                y: Math.max(0, labelRect.y - 12),
+                hideOverlap: false,
+                moveOverlap: 'shiftY',
+              };
+            }
+          : undefined,
       };
     }
     if (item.type === 'pie') {

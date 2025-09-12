@@ -1,5 +1,5 @@
 import {
-  DashboardOutlined, ShopOutlined, DollarOutlined, CarOutlined, ShoppingOutlined,
+  ShopOutlined, DollarOutlined, CarOutlined, ShoppingOutlined,
   ImportOutlined, FileTextOutlined, ToolOutlined, DashOutlined, EnvironmentOutlined,
   TeamOutlined, BookOutlined, SettingOutlined, AuditOutlined, FileSearchOutlined,
   MonitorOutlined, AppstoreOutlined, ControlOutlined,
@@ -18,8 +18,7 @@ export interface MenuItem {
 }
 
 export const menuConfig: MenuItem[] = [
-  { key: '/', icon: <DashboardOutlined />, labelKey: 'nav.dashboard', moduleKey: 'dashboard' },
-  { key: '/cockpit', icon: <AppstoreOutlined />, labelKey: 'nav.visualCockpit', moduleKey: 'dashboard', permissionCode: 'dashboard:view' },
+  { key: '/', icon: <AppstoreOutlined />, labelKey: 'nav.visualCockpit', moduleKey: 'dashboard', permissionCode: 'dashboard:view' },
   {
     key: '/retail', icon: <ShopOutlined />, labelKey: 'nav.retailShort', moduleKey: 'retail',
     children: [

@@ -1,11 +1,12 @@
 import os
+from copy import copy
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file
 from loguru import logger
 
 from db import get_connection
-from export_excel import EXPORT_DIR, MONTH_NAMES_CN
+from export_excel import EXPORT_DIR, MONTH_NAMES_CN, RESOURCE_DENSITY, RESOURCE_NAMES
 from endpoints.v1.retail.export.service.workbook import _latest_report_workbook
 from endpoints.v1.retail.export.service.generator import generate_monthly_excel
 from datetime import datetime, timedelta
@@ -13,6 +14,247 @@ from datetime import datetime, timedelta
 from endpoints.v1.retail.analytics.controller import _build_self_use_month_response
 
 export_api = Blueprint("export_api_v2", __name__)
+
+SELF_USE_COMPANY_IDS = {
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+    35, 40, 43, 44, 45, 46, 55, 56,
+}
+SELF_USE_DENSITY_BY_PRODUCT = {
+    product_name: float(RESOURCE_DENSITY.get(resource_key, 0) or 0)
+    for resource_key, product_name in RESOURCE_NAMES.items()
+}
+
+
+def _self_use_float(value):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _self_use_density(record):
+    product_name = str(record.get('productName') or '').strip()
+    density = SELF_USE_DENSITY_BY_PRODUCT.get(product_name)
+    if density:
+        return density
+    try:
+        resource_key = int(record.get('resourceKey') or 0)
+    except (TypeError, ValueError):
+        resource_key = 0
+    return float(RESOURCE_DENSITY.get(resource_key, 0) or 0)
+
+
+def _self_use_weight_kg(record):
+    return _self_use_float(record.get('volume')) * _self_use_density(record)
+
+
+def _group_self_use_totals_by_product(totals):
+    groups = {}
+    for (product, plate), values in totals.items():
+        product_name = product or '-'
+        groups.setdefault(product_name, []).append({
+            'plate': plate or '-',
+            'volume': values['volume'],
+            'weightKg': values['weightKg'],
+        })
+
+    for items in groups.values():
+        items.sort(key=lambda item: item['plate'])
+    return groups
+
+
+def _compact_self_use_text(value):
+    return ''.join(str(value or '').upper().split())
+
+
+def _self_use_is_generator(record):
+    plate = _compact_self_use_text(record.get('plateNumber'))
+    if plate in {'ГЕНЕРАТОР', '发电机'}:
+        return True
+    try:
+        group_key = int(record.get('personGroup') or 0)
+        self_use_number = int(record.get('selfUseNumber') or 0)
+    except (TypeError, ValueError):
+        return False
+    return group_key == 9002 and self_use_number == 1
+
+
+def _self_use_vehicle_remark(record):
+    if _self_use_is_generator(record):
+        return '发电机'
+    try:
+        person_key = int(record.get('personKey') or 0)
+    except (TypeError, ValueError):
+        person_key = 0
+    return '公司车辆' if person_key in SELF_USE_COMPANY_IDS else '员工车辆'
+
+
+def _group_self_use_totals_by_station(records):
+    totals = {}
+    for rec in records:
+        key = (
+            str(rec.get('stationName') or '-'),
+            str(rec.get('stationShort') or ''),
+            str(rec.get('plateNumber') or '-'),
+            str(rec.get('productName') or '-'),
+            _self_use_vehicle_remark(rec),
+        )
+        item = totals.setdefault(key, {'volume': 0.0, 'weightKg': 0.0, 'amount': 0.0})
+        item['volume'] += _self_use_float(rec.get('volume'))
+        item['weightKg'] += _self_use_weight_kg(rec)
+        item['amount'] += _self_use_float(rec.get('amount'))
+    return sorted(totals.items(), key=lambda item: item[0])
+
+
+def _group_self_use_station_blocks(records):
+    blocks = {}
+    for (station_name, station_short, plate, product, remark), values in _group_self_use_totals_by_station(records):
+        station_key = (station_name, station_short)
+        blocks.setdefault(station_key, []).append({
+            'plate': plate,
+            'product': product,
+            'remark': remark,
+            'volume': values['volume'],
+            'weightKg': values['weightKg'],
+            'amount': values['amount'],
+        })
+    return [(station, items) for station, items in sorted(blocks.items(), key=lambda item: item[0])]
+
+
+def _has_cyrillic(value):
+    return any('\u0400' <= char <= '\u052f' for char in str(value or ''))
+
+
+def _apply_self_use_russian_font(cell):
+    if not _has_cyrillic(cell.value):
+        return
+    font = copy(cell.font)
+    font.name = 'Times New Roman'
+    cell.font = font
+
+
+def _apply_self_use_russian_fonts(ws):
+    for row in ws.iter_rows():
+        for cell in row:
+            _apply_self_use_russian_font(cell)
+
+
+def _apply_self_use_filter(ws, ref):
+    ws.auto_filter.ref = ref
+    ws.freeze_panes = 'A2'
+
+
+def _text_width(value):
+    text = str(value or '')
+    if not text:
+        return 0
+    return max(sum(2 if ord(char) > 127 else 1 for char in part) for part in text.splitlines())
+
+
+def _auto_fit_self_use_columns(ws, min_width=8, max_width=60):
+    for col_cells in ws.columns:
+        col_letter = col_cells[0].column_letter
+        max_len = 0
+        for cell in col_cells:
+            if cell.value is None:
+                continue
+            max_len = max(max_len, _text_width(cell.value))
+        if max_len:
+            ws.column_dimensions[col_letter].width = min(max(max_len + 5, min_width), max_width)
+
+
+def _write_self_use_station_sheet(wb, records, styles):
+    ws = wb.create_sheet('按加油站统计')
+    headers = ['加油站', '加油站俄语名称', '车牌号', '油品名称', '加油量公斤(kg)', '加油量升(L)', '金额(сом)', '备注']
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = styles['header_font']
+        cell.fill = styles['header_fill']
+        cell.alignment = styles['center_align']
+        cell.border = styles['thin_border']
+
+    row_idx = 2
+    grand_weight = 0.0
+    grand_volume = 0.0
+    grand_amount = 0.0
+    for (station_name, station_short), items in _group_self_use_station_blocks(records):
+        block_start = row_idx
+        station_weight = sum(item['weightKg'] for item in items)
+        station_volume = sum(item['volume'] for item in items)
+        station_amount = sum(item['amount'] for item in items if item['remark'] == '员工车辆')
+        grand_weight += station_weight
+        grand_volume += station_volume
+        grand_amount += station_amount
+
+        for item in items:
+            employee_amount = round(item['amount'], 2) if item['remark'] == '员工车辆' else ''
+            row_values = [
+                station_name,
+                station_short,
+                item['plate'],
+                item['product'],
+                round(item['weightKg'], 2),
+                round(item['volume'], 2),
+                employee_amount,
+                item['remark'],
+            ]
+            for col_idx, value in enumerate(row_values, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.alignment = styles['center_align']
+                cell.border = styles['thin_border']
+                if col_idx in (5, 6, 7) and value != '':
+                    cell.number_format = '#,##0.00'
+            row_idx += 1
+
+        subtotal_row = row_idx
+        subtotal_values = [
+            station_name,
+            station_short,
+            '小计',
+            '',
+            round(station_weight, 2),
+            round(station_volume, 2),
+            round(station_amount, 2) if station_amount else '',
+            '',
+        ]
+        for col_idx, value in enumerate(subtotal_values, 1):
+            cell = ws.cell(row=subtotal_row, column=col_idx, value=value)
+            cell.font = styles['bold_font']
+            cell.fill = styles['subtotal_fill']
+            cell.alignment = styles['center_align']
+            cell.border = styles['thin_border']
+            if col_idx in (5, 6, 7) and value != '':
+                cell.number_format = '#,##0.00'
+
+        if subtotal_row > block_start:
+            ws.merge_cells(start_row=block_start, start_column=1, end_row=subtotal_row, end_column=1)
+            ws.merge_cells(start_row=block_start, start_column=2, end_row=subtotal_row, end_column=2)
+            ws.cell(row=block_start, column=1).alignment = styles['center_align']
+            ws.cell(row=block_start, column=2).alignment = styles['center_align']
+        row_idx += 1
+
+    total_row = row_idx
+    total_values = {
+        1: '总合计',
+        5: round(grand_weight, 2),
+        6: round(grand_volume, 2),
+        7: round(grand_amount, 2) if grand_amount else '',
+    }
+    for col_idx in range(1, 9):
+        cell = ws.cell(row=total_row, column=col_idx, value=total_values.get(col_idx, ''))
+        cell.font = styles['bold_font']
+        cell.fill = styles['total_fill']
+        cell.alignment = styles['center_align']
+        cell.border = styles['thin_border']
+        if col_idx in (5, 6, 7) and cell.value != '':
+            cell.number_format = '#,##0.00'
+    ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=4)
+
+    _apply_self_use_russian_fonts(ws)
+    _auto_fit_self_use_columns(ws)
+    _apply_self_use_filter(ws, ws.dimensions)
+    return ws
 
 
 def register_export_routes(app):
@@ -67,9 +309,13 @@ def api_export_self_use(year_month):
     ws = wb.active
     ws.title = '自用油'
 
-    headers = ['日期', '站点', '油品', '车牌号', '数量(L)', '金额(сом)']
+    headers = ['日期', '站点', '加油站俄语名称', '油品', '车牌号', '数量(L)', '公斤(kg)', '金额(сом)']
     header_fill = PatternFill(start_color='CC0000', end_color='CC0000', fill_type='solid')
     header_font_white = Font(bold=True, size=11, color='FFFFFF')
+    subtotal_fill = PatternFill(start_color='FFF2CC', end_color='FFF2CC', fill_type='solid')
+    total_fill = PatternFill(start_color='D9EAF7', end_color='D9EAF7', fill_type='solid')
+    center_align = Alignment(horizontal='center', vertical='center')
+    bold_font = Font(bold=True, size=11)
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
@@ -86,23 +332,35 @@ def api_export_self_use(year_month):
         values = [
             rec.get('date', ''),
             rec.get('stationName', ''),
+            rec.get('stationShort', ''),
             rec.get('productName', ''),
             rec.get('plateNumber', ''),
             float(rec.get('volume') or 0),
+            round(_self_use_weight_kg(rec), 2),
             float(rec.get('amount') or 0),
         ]
         for col_idx, v in enumerate(values, 1):
             cell = ws.cell(row=i, column=col_idx, value=v)
             cell.border = thin_border
-            if col_idx in (5, 6):
+            if col_idx in (6, 7, 8):
                 cell.number_format = '#,##0.00'
 
-    ws.column_dimensions['A'].width = 14
-    ws.column_dimensions['B'].width = 22
-    ws.column_dimensions['C'].width = 12
-    ws.column_dimensions['D'].width = 28
-    ws.column_dimensions['E'].width = 14
-    ws.column_dimensions['F'].width = 16
+    _apply_self_use_russian_fonts(ws)
+    _auto_fit_self_use_columns(ws)
+    _apply_self_use_filter(ws, ws.dimensions)
+    _write_self_use_station_sheet(
+        wb,
+        snapshot.get('records', []),
+        {
+            'header_font': header_font_white,
+            'header_fill': header_fill,
+            'center_align': center_align,
+            'thin_border': thin_border,
+            'bold_font': bold_font,
+            'subtotal_fill': subtotal_fill,
+            'total_fill': total_fill,
+        },
+    )
 
     bio = BytesIO()
     wb.save(bio)
@@ -149,6 +407,8 @@ def api_export_self_use_range():
 
     header_fill = PatternFill(start_color='CC0000', end_color='CC0000', fill_type='solid')
     header_font = Font(bold=True, size=11, color='FFFFFF')
+    subtotal_fill = PatternFill(start_color='FFF2CC', end_color='FFF2CC', fill_type='solid')
+    total_fill = PatternFill(start_color='D9EAF7', end_color='D9EAF7', fill_type='solid')
     center_align = Alignment(horizontal='center', vertical='center')
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
@@ -161,7 +421,7 @@ def api_export_self_use_range():
     ws = wb.active
     ws.title = '自用油'
 
-    headers = ['日期', '时间', '站点', '油品', '车牌号', '数量(L)']
+    headers = ['日期', '时间', '站点', '加油站俄语名称', '油品', '车牌号', '数量(L)', '公斤(kg)']
     for col_idx, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=h)
         cell.font = header_font
@@ -174,127 +434,141 @@ def api_export_self_use_range():
             rec['date'],
             rec['time'],
             rec['stationName'],
+            rec.get('stationShort', ''),
             rec['productName'],
             rec['plateNumber'],
             rec['volume'],
+            round(_self_use_weight_kg(rec), 2),
         ]
         for col_idx, v in enumerate(values, 1):
             cell = ws.cell(row=i, column=col_idx, value=v)
             cell.alignment = center_align
             cell.border = thin_border
-            if col_idx == 6:
+            if col_idx in (7, 8):
                 cell.number_format = '#,##0.00'
 
-    PLATE_WIDTH = 48
-
-    for col_cells in ws.columns:
-        col_letter = col_cells[0].column_letter
-        if col_letter == 'E':
-            ws.column_dimensions[col_letter].width = PLATE_WIDTH
-            continue
-        lengths = []
-        for cell in col_cells:
-            if cell.value is None:
-                continue
-            s = str(cell.value)
-            lengths.append(sum(2 if ord(c) > 127 else 1 for c in s))
-        if lengths:
-            ws.column_dimensions[col_letter].width = min(max(max(lengths) + 2, 8), 40)
+    _apply_self_use_russian_fonts(ws)
+    _auto_fit_self_use_columns(ws)
+    _apply_self_use_filter(ws, ws.dimensions)
 
     # Sheet 2: 总表
-    COMPANY_IDS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 35, 40, 43, 44, 45, 46, 55, 56}
-
-    company = defaultdict(float)
-    employee = defaultdict(float)
+    company = defaultdict(lambda: {'volume': 0.0, 'weightKg': 0.0})
+    employee = defaultdict(lambda: {'volume': 0.0, 'weightKg': 0.0})
 
     for rec in records:
         pk = int(rec.get('personKey') or 0)
-        key = (rec['plateNumber'], rec['productName'])
-        if pk in COMPANY_IDS:
-            company[key] += rec['volume']
-        else:
-            employee[key] += rec['volume']
+        key = (str(rec.get('productName') or '-'), str(rec.get('plateNumber') or '-'))
+        target = company if pk in SELF_USE_COMPANY_IDS else employee
+        target[key]['volume'] += _self_use_float(rec.get('volume'))
+        target[key]['weightKg'] += _self_use_weight_kg(rec)
 
-    company_sorted = sorted(company.items())
-    employee_sorted = sorted(employee.items())
+    company_groups = _group_self_use_totals_by_product(company)
+    employee_groups = _group_self_use_totals_by_product(employee)
+    products = sorted(set(company_groups) | set(employee_groups))
+
+    def write_total_cell(row, col, value, *, font=None, fill=None, num_fmt=False):
+        cell = ws2.cell(row=row, column=col, value=value)
+        cell.alignment = center_align
+        cell.border = thin_border
+        if font:
+            cell.font = font
+        if fill:
+            cell.fill = fill
+        if num_fmt:
+            cell.number_format = '#,##0.00'
+        return cell
+
+    def write_side_row(row, start_col, product, plate, volume, weight_kg, *, font=None, fill=None):
+        values = [
+            (start_col, product),
+            (start_col + 1, plate),
+            (start_col + 2, round(volume, 2)),
+            (start_col + 3, round(weight_kg, 2)),
+        ]
+        for col, value in values:
+            write_total_cell(row, col, value, font=font, fill=fill, num_fmt=col in (start_col + 2, start_col + 3))
+
+    def merge_product_rows(start_row, end_row, product_col):
+        if start_row and end_row > start_row:
+            ws2.merge_cells(start_row=start_row, start_column=product_col, end_row=end_row, end_column=product_col)
+            ws2.cell(row=start_row, column=product_col).alignment = center_align
+
+    def side_sums(items):
+        return (
+            sum(item['volume'] for item in items),
+            sum(item['weightKg'] for item in items),
+        )
+
+    company_total_volume = sum(values['volume'] for values in company.values())
+    company_total_weight = sum(values['weightKg'] for values in company.values())
+    employee_total_volume = sum(values['volume'] for values in employee.values())
+    employee_total_weight = sum(values['weightKg'] for values in employee.values())
 
     ws2 = wb.create_sheet('总表')
 
-    ws2.merge_cells('A1:C1')
-    ws2.merge_cells('E1:G1')
-
-    cell = ws2.cell(row=1, column=1, value='公司车辆')
-    cell.font = header_font
-    cell.fill = header_fill
-    cell.alignment = center_align
-    cell.border = thin_border
-    for c in (2, 3):
-        ws2.cell(row=1, column=c).border = thin_border
-        ws2.cell(row=1, column=c).fill = header_fill
-
-    cell = ws2.cell(row=1, column=5, value='员工车辆')
-    cell.font = header_font
-    cell.fill = header_fill
-    cell.alignment = center_align
-    cell.border = thin_border
-    for c in (6, 7):
-        ws2.cell(row=1, column=c).border = thin_border
-        ws2.cell(row=1, column=c).fill = header_fill
-
-    col_headers = {1: '车牌号', 2: '油品', 3: '加油量(L)', 5: '车牌号', 6: '油品', 7: '加油量(L)'}
+    col_headers = {
+        1: '公司车辆油品',
+        2: '公司车辆车牌号',
+        3: '公司车辆加油量(L)',
+        4: '公司车辆公斤(kg)',
+        5: '员工车辆油品',
+        6: '员工车辆车牌号',
+        7: '员工车辆加油量(L)',
+        8: '员工车辆公斤(kg)',
+    }
     for col, h in col_headers.items():
-        cell = ws2.cell(row=2, column=col, value=h)
+        cell = ws2.cell(row=1, column=col, value=h)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = center_align
         cell.border = thin_border
 
-    max_rows = max(len(company_sorted), len(employee_sorted))
-    for idx in range(max_rows):
-        row = idx + 3
-        if idx < len(company_sorted):
-            (plate, product), vol = company_sorted[idx]
-            for c, v in [(1, plate), (2, product), (3, round(vol, 2))]:
-                cell = ws2.cell(row=row, column=c, value=v)
-                cell.alignment = center_align
-                cell.border = thin_border
-                if c == 3:
-                    cell.number_format = '#,##0.00'
-        if idx < len(employee_sorted):
-            (plate, product), vol = employee_sorted[idx]
-            for c, v in [(5, plate), (6, product), (7, round(vol, 2))]:
-                cell = ws2.cell(row=row, column=c, value=v)
-                cell.alignment = center_align
-                cell.border = thin_border
-                if c == 7:
-                    cell.number_format = '#,##0.00'
-
-    subtotal_row = max_rows + 3
     bold_font = Font(bold=True, size=11)
-    for col, val in [(1, '小计'), (3, round(sum(v for _, v in company_sorted), 2)),
-                     (5, '小计'), (7, round(sum(v for _, v in employee_sorted), 2))]:
-        cell = ws2.cell(row=subtotal_row, column=col, value=val)
-        cell.font = bold_font
-        cell.alignment = center_align
-        cell.border = thin_border
-        if col in (3, 7):
-            cell.number_format = '#,##0.00'
+    row = 2
+    for product in products:
+        company_items = company_groups.get(product, [])
+        employee_items = employee_groups.get(product, [])
+        company_start_row = row if company_items else None
+        employee_start_row = row if employee_items else None
+        max_rows = max(len(company_items), len(employee_items))
+        for idx in range(max_rows):
+            if idx < len(company_items):
+                item = company_items[idx]
+                write_side_row(row, 1, product, item['plate'], item['volume'], item['weightKg'])
+            if idx < len(employee_items):
+                item = employee_items[idx]
+                write_side_row(row, 5, product, item['plate'], item['volume'], item['weightKg'])
+            row += 1
 
-    for col_cells in ws2.columns:
-        first = col_cells[0]
-        if not hasattr(first, 'column_letter'):
-            continue
-        col_letter = first.column_letter
-        if col_letter in ('A', 'E'):
-            ws2.column_dimensions[col_letter].width = PLATE_WIDTH
-        elif col_letter in ('B', 'F'):
-            ws2.column_dimensions[col_letter].width = 12
-        elif col_letter == 'C':
-            ws2.column_dimensions[col_letter].width = 14
-        elif col_letter == 'D':
-            ws2.column_dimensions[col_letter].width = 3
-        elif col_letter == 'G':
-            ws2.column_dimensions[col_letter].width = 14
+        if company_items:
+            volume, weight_kg = side_sums(company_items)
+            write_side_row(row, 1, product, '小计', volume, weight_kg, font=bold_font, fill=subtotal_fill)
+            merge_product_rows(company_start_row, row, 1)
+        if employee_items:
+            volume, weight_kg = side_sums(employee_items)
+            write_side_row(row, 5, product, '小计', volume, weight_kg, font=bold_font, fill=subtotal_fill)
+            merge_product_rows(employee_start_row, row, 5)
+        row += 1
+
+    write_side_row(row, 1, '合计', '', company_total_volume, company_total_weight, font=bold_font, fill=total_fill)
+    write_side_row(row, 5, '合计', '', employee_total_volume, employee_total_weight, font=bold_font, fill=total_fill)
+
+    _apply_self_use_russian_fonts(ws2)
+    _auto_fit_self_use_columns(ws2)
+    _apply_self_use_filter(ws2, f"A1:H{row}")
+    _write_self_use_station_sheet(
+        wb,
+        records,
+        {
+            'header_font': header_font,
+            'header_fill': header_fill,
+            'center_align': center_align,
+            'thin_border': thin_border,
+            'bold_font': bold_font,
+            'subtotal_fill': subtotal_fill,
+            'total_fill': total_fill,
+        },
+    )
 
     bio = BytesIO()
     wb.save(bio)

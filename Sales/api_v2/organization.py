@@ -43,7 +43,7 @@ def _forbidden():
 
 def _list_departments(cur):
     cur.execute("""
-        SELECT id, parent_id, dept_code, dept_name, sort_order, is_active
+        SELECT id, parent_id, dept_code, dept_name, dept_name_ru, sort_order, is_active
         FROM system_departments
         ORDER BY sort_order, id
     """)
@@ -53,6 +53,7 @@ def _list_departments(cur):
             "parentId": row["parent_id"],
             "deptCode": row["dept_code"],
             "deptName": row["dept_name"],
+            "deptNameRu": row["dept_name_ru"],
             "sortOrder": row["sort_order"],
             "isActive": bool(row["is_active"]),
         }
@@ -222,16 +223,18 @@ def create_department():
                 return _forbidden()
             dept_code = str(payload.get("deptCode") or "").strip()
             dept_name = str(payload.get("deptName") or "").strip()
+            dept_name_ru = str(payload.get("deptNameRu") or "").strip() or None
             if not dept_code or not dept_name:
                 return jsonify({"code": 4221, "message": "deptCode and deptName are required", "data": None}), 422
             cur.execute("""
                 INSERT INTO system_departments
-                    (parent_id, dept_code, dept_name, sort_order, is_active)
-                VALUES (%s, %s, %s, %s, %s)
+                    (parent_id, dept_code, dept_name, dept_name_ru, sort_order, is_active)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, (
                 payload.get("parentId"),
                 dept_code,
                 dept_name,
+                dept_name_ru,
                 int(payload.get("sortOrder") or 0),
                 1 if payload.get("isActive", True) else 0,
             ))
@@ -252,13 +255,18 @@ def update_department(dept_id):
             user = _current_user(cur)
             if not _is_admin(user):
                 return _forbidden()
+            dept_name = str(payload.get("deptName") or "").strip()
+            dept_name_ru = str(payload.get("deptNameRu") or "").strip() or None
+            if not dept_name:
+                return jsonify({"code": 4221, "message": "deptName is required", "data": None}), 422
             cur.execute("""
                 UPDATE system_departments
-                SET parent_id = %s, dept_name = %s, sort_order = %s, is_active = %s
+                SET parent_id = %s, dept_name = %s, dept_name_ru = %s, sort_order = %s, is_active = %s
                 WHERE id = %s
             """, (
                 payload.get("parentId"),
-                str(payload.get("deptName") or "").strip(),
+                dept_name,
+                dept_name_ru,
                 int(payload.get("sortOrder") or 0),
                 1 if payload.get("isActive", True) else 0,
                 dept_id,

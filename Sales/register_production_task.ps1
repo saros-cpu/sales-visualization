@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $TaskName = "SalesVisualizationProduction"
 $TaskPath = "\SalesVisualization\"
+$Port = 8900
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
 if (-not $PowerShellExe) {
@@ -35,6 +36,9 @@ Register-ScheduledTask `
   -Settings $Settings `
   -Force | Out-Null
 
-Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
+$ExistingListener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $ExistingListener) {
+  Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
+}
 
-Write-Host "Registered and started $TaskPath$TaskName"
+Write-Host "Registered $TaskPath$TaskName"

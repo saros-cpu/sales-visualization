@@ -3,9 +3,12 @@ $ErrorActionPreference = "Stop"
 $TaskName = "SalesVisualizationProduction"
 $TaskPath = "\SalesVisualization\"
 $Port = 8900
-$PythonExe = "C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe"
 $AppDir = "D:\SalesVisualization\Sales"
-$AppEntry = "run_production.py"
+$StartScript = Join-Path $AppDir "start_production.ps1"
+$PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
+if (-not $PowerShellExe) {
+    $PowerShellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+}
 
 Stop-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
@@ -23,8 +26,12 @@ Start-Sleep -Seconds 20
 
 $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if (-not $listeners) {
-    Write-Warning "Scheduled task did not leave port $Port listening; starting production process directly."
-    Start-Process -FilePath $PythonExe -ArgumentList $AppEntry -WorkingDirectory $AppDir -WindowStyle Hidden
+    Write-Warning "Scheduled task did not leave port $Port listening; starting production bootstrap silently."
+    Start-Process `
+        -FilePath $PowerShellExe `
+        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$StartScript`"" `
+        -WorkingDirectory $AppDir `
+        -WindowStyle Hidden
     Start-Sleep -Seconds 20
     $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 }

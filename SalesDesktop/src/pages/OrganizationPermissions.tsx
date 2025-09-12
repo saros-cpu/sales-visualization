@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  App as AntApp,
   Button,
   Checkbox,
   Form,
@@ -15,7 +16,6 @@ import {
   Tabs,
   Tag,
   Typography,
-  message,
 } from 'antd';
 import { EditOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -62,6 +62,8 @@ const copy = {
     loadErrorTitle: '组织权限加载失败',
     deptCode: '部门编码',
     deptName: '部门名称',
+    deptNameZh: '中文名称',
+    deptNameRu: '俄语名称',
     parentDept: '上级部门',
     sortOrder: '排序',
     status: '状态',
@@ -102,7 +104,7 @@ const copy = {
       customer: '客户',
     },
     moduleNames: {
-      dashboard: '仪表板',
+      dashboard: '数据可视化',
       retail: '零售',
       wholesale: '批发',
       exchange: '汇率查询',
@@ -147,13 +149,6 @@ const copy = {
       loading_staff: '物流管理专员',
       finance_staff: '财务资产专员',
     },
-    deptNames: {
-      management: '综合管理部',
-      sales: 'ProductTeam',
-      procurement: '原料采购部',
-      loading: '物流管理部',
-      finance: '财务资产部',
-    },
   },
   ru: {
     title: 'Организационная структура и права доступа',
@@ -179,6 +174,8 @@ const copy = {
     loadErrorTitle: 'CTY-05ибка загрузки настроек прав доступа',
     deptCode: 'Код отдела',
     deptName: 'Название отдела',
+    deptNameZh: 'Название на китайском',
+    deptNameRu: 'Название на русском',
     parentDept: 'Родительский отдел',
     sortOrder: 'Порядок',
     status: 'Статус',
@@ -219,7 +216,7 @@ const copy = {
       customer: 'Клиент / контрагент',
     },
     moduleNames: {
-      dashboard: 'Панель',
+      dashboard: 'Визуализация данных',
       retail: 'Розница',
       wholesale: 'Опт',
       exchange: 'Курсы валют',
@@ -264,13 +261,6 @@ const copy = {
       loading_staff: 'Специалист отдела логистики',
       finance_staff: 'Специалист по финансам и активам',
     },
-    deptNames: {
-      management: 'Административно-управленческий отдел',
-      sales: 'Отдел маркетинга и продаж',
-      procurement: 'Отдел закупки сырья',
-      loading: 'Логистический отдел',
-      finance: 'Отдел финансов и активов',
-    },
   },
 };
 
@@ -282,6 +272,7 @@ function chooseCopy(language: string): LocaleCopy {
 
 export default function OrganizationPermissions() {
   const { i18n, t } = useTranslation();
+  const { message } = AntApp.useApp();
   const { user } = useAuth();
   const canManageDepartments = user?.role === 'admin';
   const canManageRoles = user?.role === 'admin';
@@ -306,7 +297,9 @@ export default function OrganizationPermissions() {
   const selectedRole = overview?.roles.find((role) => role.roleCode === selectedRoleCode);
   const moduleLabel = (moduleKey: string, fallback?: string) => text.moduleNames[moduleKey as keyof typeof text.moduleNames] || fallback || moduleKey;
   const roleLabel = (roleCode: string, fallback?: string) => text.roleNames[roleCode as keyof typeof text.roleNames] || fallback || roleCode;
-  const deptLabel = (dept: DepartmentRecord) => text.deptNames[dept.deptCode as keyof typeof text.deptNames] || dept.deptName;
+  const deptLabel = (dept: DepartmentRecord) => (
+    i18n.language.startsWith('ru') ? (dept.deptNameRu?.trim() || dept.deptName) : dept.deptName
+  );
   const scopeLabel = (scope: string) => text.scopeLabels[scope as keyof typeof text.scopeLabels] || scope;
   const actionLabel = (action: string) => text.actionLabels[action as keyof typeof text.actionLabels] || action;
   const resourceTypeLabel = (type: string) => text.resourceTypeLabels[type as keyof typeof text.resourceTypeLabels] || type;
@@ -338,6 +331,18 @@ export default function OrganizationPermissions() {
     setResourceDraft(roleResources(overview, selectedRoleCode));
   }, [overview, selectedRoleCode]);
 
+  useEffect(() => {
+    if (!deptModalOpen) return;
+    deptForm.resetFields();
+    deptForm.setFieldsValue(editingDept || { isActive: true, sortOrder: 0 });
+  }, [deptModalOpen, editingDept, deptForm]);
+
+  useEffect(() => {
+    if (!roleModalOpen) return;
+    roleForm.resetFields();
+    roleForm.setFieldsValue(editingRole || { dataScope: 'dept', isActive: true, sortOrder: 0 });
+  }, [roleModalOpen, editingRole, roleForm]);
+
   const permissionsByModule = useMemo(() => {
     const groups = new Map<string, PermissionRecord[]>();
     for (const permission of overview?.permissions || []) {
@@ -358,8 +363,6 @@ export default function OrganizationPermissions() {
       return;
     }
     setEditingDept(record || null);
-    deptForm.resetFields();
-    deptForm.setFieldsValue(record || { isActive: true, sortOrder: 0 });
     setDeptModalOpen(true);
   };
 
@@ -369,8 +372,6 @@ export default function OrganizationPermissions() {
       return;
     }
     setEditingRole(record || null);
-    roleForm.resetFields();
-    roleForm.setFieldsValue(record || { dataScope: 'dept', isActive: true, sortOrder: 0 });
     setRoleModalOpen(true);
   };
 
@@ -476,7 +477,8 @@ export default function OrganizationPermissions() {
 
   const departmentColumns = [
     { title: text.deptCode, dataIndex: 'deptCode', width: 160 },
-    { title: text.deptName, dataIndex: 'deptName', render: (_: string, record: DepartmentRecord) => deptLabel(record) },
+    { title: text.deptNameZh, dataIndex: 'deptName', width: 180 },
+    { title: text.deptNameRu, dataIndex: 'deptNameRu', width: 220, render: (value?: string | null) => value || '-' },
     {
       title: text.parentDept,
       dataIndex: 'parentId',
@@ -607,7 +609,7 @@ export default function OrganizationPermissions() {
                 <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
                   {canManageDepartments && <Button type="primary" icon={<PlusOutlined />} onClick={() => openDeptModal()}>{text.addDepartment}</Button>}
                 </div>
-                <Table rowKey="id" size="small" dataSource={overview?.departments || []} columns={departmentColumns} pagination={false} scroll={{ x: 760, y: 'calc(100vh - 320px)' }} />
+                <Table rowKey="id" size="small" dataSource={overview?.departments || []} columns={departmentColumns} pagination={false} scroll={{ x: 960, y: 'calc(100vh - 320px)' }} />
               </div>
             ),
           },
@@ -735,15 +737,18 @@ export default function OrganizationPermissions() {
         ]}
       />
 
-      <Modal title={editingDept ? text.editDepartment : text.addDepartment} open={deptModalOpen} onCancel={() => setDeptModalOpen(false)} onOk={saveDepartment} destroyOnClose>
+      <Modal title={editingDept ? text.editDepartment : text.addDepartment} open={deptModalOpen} onCancel={() => setDeptModalOpen(false)} onOk={saveDepartment} destroyOnHidden>
         <Form form={deptForm} layout="vertical">
           {!editingDept && (
             <Form.Item name="deptCode" label={text.deptCode} rules={[{ required: true }]}>
               <Input placeholder="sales" />
             </Form.Item>
           )}
-          <Form.Item name="deptName" label={text.deptName} rules={[{ required: true }]}>
-            <Input placeholder={text.deptNames.sales} />
+          <Form.Item name="deptName" label={text.deptNameZh} rules={[{ required: true }]}>
+            <Input placeholder="ProductTeam" />
+          </Form.Item>
+          <Form.Item name="deptNameRu" label={text.deptNameRu}>
+            <Input placeholder="Отдел маркетинга и продаж" />
           </Form.Item>
           <Form.Item name="parentId" label={text.parentDept}>
             <Select
@@ -762,7 +767,7 @@ export default function OrganizationPermissions() {
         </Form>
       </Modal>
 
-      <Modal title={editingRole ? text.editRole : text.addRole} open={roleModalOpen} onCancel={() => setRoleModalOpen(false)} onOk={saveRole} destroyOnClose>
+      <Modal title={editingRole ? text.editRole : text.addRole} open={roleModalOpen} onCancel={() => setRoleModalOpen(false)} onOk={saveRole} destroyOnHidden>
         <Form form={roleForm} layout="vertical">
           {!editingRole && (
             <Form.Item name="roleCode" label={text.roleCode} rules={[{ required: true }]}>

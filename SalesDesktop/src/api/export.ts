@@ -11,7 +11,7 @@ async function getToken() {
 async function downloadBlob(url: string, filename: string, token?: string) {
   if ((window as any).electronAPI?.downloadFile) {
     const ok = await (window as any).electronAPI.downloadFile(url, filename, token || '');
-    if (!ok) throw new Error('保存取消');
+    if (!ok) throw new Error('download cancelled');
     return;
   }
   const headers: Record<string, string> = {};
@@ -112,4 +112,23 @@ export async function downloadWholesaleReport(params: { year: number; month?: nu
   if (json.docxDownloadUrl) await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'wholesale-report.docx', token);
   if (json.htmlDownloadUrl) await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'wholesale-report.html', token);
   if (json.htmlViewUrl) (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);
+}
+
+export async function downloadWholesaleDetails(yearMonth: string) {
+  const token = await getToken();
+  await downloadBlob(
+    `${API_BASE}/export/wholesale/details/${yearMonth}`,
+    `wholesale_details_${yearMonth}.xlsx`,
+    token,
+  );
+}
+
+export async function downloadSelfUseReport(dateFrom: string, dateTo: string) {
+  const token = await getToken();
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  await downloadBlob(
+    `${API_BASE}/export/self-use?${params}`,
+    `self_use_${dateFrom}_to_${dateTo}.xlsx`,
+    token,
+  );
 }

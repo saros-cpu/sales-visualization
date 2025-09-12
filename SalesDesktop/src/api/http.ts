@@ -1,5 +1,7 @@
 import axios, { AxiosInstance, AxiosError, AxiCTY-30eaders } from 'axios';
 
+const DEFAULT_PUBLIC_API_HOST = import.meta.env.VITE_DEFAULT_API_HOST || 'http://198.51.100.10';
+
 function normalizeHost(host: string) {
   return host.replace(/\/+$/, '');
 }
@@ -21,7 +23,7 @@ export function resolveApiHost() {
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     return window.location.origin;
   }
-  return 'http://localhost:8900';
+  return normalizeHost(DEFAULT_PUBLIC_API_HOST);
 }
 
 export const API_HOST = resolveApiHost();

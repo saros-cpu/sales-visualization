@@ -10,7 +10,7 @@ DATA_SCOPE_TYPES = ("all", "dept_tree", "dept", "self", "custom")
 
 
 MODULE_CATALOG = [
-    ("dashboard", "仪表板", 10),
+    ("dashboard", "数据可视化", 10),
     ("retail", "零售", 20),
     ("wholesale", "批发", 30),
     ("exchange", "汇率查询", 40),
@@ -32,7 +32,7 @@ MODULE_CATALOG = [
 
 
 PERMISSION_CATALOG = [
-    ("dashboard:view", "dashboard", "view", "menu", "View dashboard", 10),
+    ("dashboard:view", "dashboard", "view", "menu", "View data visualization", 10),
     ("retail:view", "retail", "view", "menu", "View retail", 20),
     ("retail:export", "retail", "export", "button", "Export retail data", 21),
     ("wholesale:view", "wholesale", "view", "menu", "View wholesale", 30),
@@ -93,11 +93,11 @@ ROLE_SEEDS = [
 
 
 DEPARTMENT_SEEDS = [
-    ("management", "综合管理部", None, 10),
-    ("sales", "ProductTeam", None, 20),
-    ("procurement", "原料采购部", None, 30),
-    ("loading", "物流管理部", None, 40),
-    ("finance", "财务资产部", None, 50),
+    ("management", "综合管理部", "Отдел общего управления", None, 10),
+    ("sales", "ProductTeam", "Отдел маркетинга и продаж", None, 20),
+    ("procurement", "原料采购部", "Отдел закупки сырья", None, 30),
+    ("loading", "物流管理部", "Отдел управления логистикой", None, 40),
+    ("finance", "财务资产部", "Отдел финансов и активов", None, 50),
 ]
 
 
@@ -159,6 +159,7 @@ def ensure_permission_schema(cur) -> None:
             parent_id BIGINT NULL,
             dept_code VARCHAR(64) NOT NULL UNIQUE,
             dept_name VARCHAR(128) NOT NULL,
+            dept_name_ru VARCHAR(128) NULL,
             sort_order INT NOT NULL DEFAULT 0,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -166,6 +167,7 @@ def ensure_permission_schema(cur) -> None:
             KEY idx_parent_active (parent_id, is_active)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """)
+    _ensure_department_language_columns(cur)
     _safe_execute(cur, """
         CREATE TABLE IF NOT EXISTS system_roles (
             id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -273,6 +275,15 @@ def ensure_permission_schema(cur) -> None:
     _seed_catalog(cur)
 
 
+def _ensure_department_language_columns(cur) -> None:
+    _safe_execute(cur, "SHOW COLUMNS FROM system_departments LIKE 'dept_name_ru'")
+    if not cur.fetchone():
+        _safe_execute(cur, """
+            ALTER TABLE system_departments
+            ADD COLUMN dept_name_ru VARCHAR(128) NULL AFTER dept_name
+        """)
+
+
 def _seed_catalog(cur) -> None:
     for module_key, module_name, sort_order in MODULE_CATALOG:
         _safe_execute(cur, """
@@ -283,20 +294,22 @@ def _seed_catalog(cur) -> None:
                 sort_order = VALUES(sort_order),
                 is_active = TRUE
         """, (module_key, module_name, sort_order))
-    for dept_code, dept_name, parent_code, sort_order in DEPARTMENT_SEEDS:
+    for dept_code, dept_name, dept_name_ru, parent_code, sort_order in DEPARTMENT_SEEDS:
         parent_id = None
         if parent_code:
             _safe_execute(cur, "SELECT id FROM system_departments WHERE dept_code = %s", (parent_code,))
             row = cur.fetchone()
             parent_id = row["id"] if isinstance(row, dict) and row else row[0] if row else None
         _safe_execute(cur, """
-            INSERT INTO system_departments (dept_code, dept_name, parent_id, sort_order, is_active)
-            VALUES (%s, %s, %s, %s, TRUE)
+            INSERT INTO system_departments (dept_code, dept_name, dept_name_ru, parent_id, sort_order, is_active)
+            VALUES (%s, %s, %s, %s, %s, TRUE)
             ON DUPLICATE KEY UPDATE
-                dept_name = VALUES(dept_name),
+                dept_name = IF(dept_name IS NULL OR dept_name = '', VALUES(dept_name), dept_name),
+                dept_name_ru = IF(dept_name_ru IS NULL OR dept_name_ru = '', VALUES(dept_name_ru), dept_name_ru),
+                parent_id = VALUES(parent_id),
                 sort_order = VALUES(sort_order),
                 is_active = TRUE
-        """, (dept_code, dept_name, parent_id, sort_order))
+        """, (dept_code, dept_name, dept_name_ru, parent_id, sort_order))
     for role_code, role_name, data_scope, sort_order, is_system in ROLE_SEEDS:
         _safe_execute(cur, """
             INSERT INTO system_roles (role_code, role_name, data_scope, is_system, is_active, sort_order)
@@ -525,7 +538,7 @@ def list_user_roles(cur, user_id: int) -> list[dict[str, Any]]:
 
 def list_user_departments(cur, user_id: int) -> list[dict[str, Any]]:
     _safe_execute(cur, """
-        SELECT d.id, d.dept_code, d.dept_name, d.parent_id, ud.is_primary
+        SELECT d.id, d.dept_code, d.dept_name, d.dept_name_ru, d.parent_id, ud.is_primary
         FROM system_user_departments ud
         JOIN system_departments d ON d.id = ud.dept_id
         WHERE ud.user_id = %s AND d.is_active = TRUE
@@ -536,8 +549,9 @@ def list_user_departments(cur, user_id: int) -> list[dict[str, Any]]:
             "id": row["id"] if isinstance(row, dict) else row[0],
             "deptCode": row["dept_code"] if isinstance(row, dict) else row[1],
             "deptName": row["dept_name"] if isinstance(row, dict) else row[2],
-            "parentId": row["parent_id"] if isinstance(row, dict) else row[3],
-            "isPrimary": bool(row["is_primary"] if isinstance(row, dict) else row[4]),
+            "deptNameRu": row["dept_name_ru"] if isinstance(row, dict) else row[3],
+            "parentId": row["parent_id"] if isinstance(row, dict) else row[4],
+            "isPrimary": bool(row["is_primary"] if isinstance(row, dict) else row[5]),
         }
         for row in cur.fetchall()
     ]

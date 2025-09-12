@@ -1,6 +1,7 @@
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt
 from api_v2 import bp_v2
+from .authz import permission_required
 
 
 STATIONS = [
@@ -51,7 +52,8 @@ ROLE_LAYERS = {
 
 
 @bp_v2.route('/map/stations', methods=['GET'])
-@jwt_required(optional=True)
+@jwt_required()
+@permission_required('map:view')
 def map_stations():
     claims = get_jwt() or {}
     role = claims.get('role', 'viewer')

@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.7.0';
+export const VERSION = '3.7.1';
 export const BUILD_DATE = '2026-07-16';
 
 export interface ChangelogEntry {
@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.7.1',
+    date: '2026-07-16',
+    type: 'patch',
+    changes: [
+      '调整：客户端首页统一为数据可视化，原仪表板前端页面下线并删除',
+      '调整：数据可视化继续沿用 dashboard:view 权限，组织权限和角色权限显示名同步为数据可视化',
+      '优化：数据可视化 KPI 组件自适应、颜色规则、汇率卡片布局和中俄文显示细节',
+    ],
+  },
   {
     version: '3.7.0',
     date: '2026-07-16',

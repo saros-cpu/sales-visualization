@@ -22,6 +22,7 @@ from cache_store import set_cached  # noqa: E402
 from constants import CLOSED_STATIONS, DEPOT_COORDS, SHOP_COORDS, SHOP_KEY_MAP  # noqa: E402
 from db import get_connection  # noqa: E402
 from endpoints.v1.retail.analytics.controller import (  # noqa: E402
+    _apply_self_use_generator_rules,
     _map_resource_key_to_name as _self_use_resource_name,
     _self_use_number_for_record,
     _normalize_self_use_plate,
@@ -875,6 +876,13 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
                 plate_number = ''
             tk = int(r[0])
             plate_number = _normalize_self_use_plate(plate_number, pk, tk, group_key, self_use_number)
+            plate_number, group_key, self_use_number = _apply_self_use_generator_rules(
+                plate_number,
+                info,
+                transaction_key=tk,
+                group_key=group_key,
+                self_use_number=self_use_number,
+            )
 
             records.append({
                 'transactionKey': int(r[0]),

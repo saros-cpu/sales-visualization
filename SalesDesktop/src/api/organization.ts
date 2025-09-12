@@ -5,6 +5,7 @@ export interface DepartmentRecord {
   parentId?: number | null;
   deptCode: string;
   deptName: string;
+  deptNameRu?: string | null;
   sortOrder: number;
   isActive: boolean;
 }

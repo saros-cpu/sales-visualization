@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Card, Col, Row, Statistic, Tag, Tooltip, Typography } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 
@@ -21,6 +21,7 @@ export interface KpiCardProps {
   tooltip?: ReactNode;
   extra?: ReactNode;
   statusText?: string;
+  style?: CSSProperties;
   onClick?: () => void;
 }
 
@@ -90,16 +91,20 @@ export default function KpiCard({
   tooltip,
   extra,
   statusText,
+  style,
   onClick,
 }: KpiCardProps) {
   const valueColor = delta === undefined ? toneColor[tone] : deltaColor(delta, goodWhen);
   const displayValue = value === null || value === undefined || value === '' ? '-' : value;
   const titleNode = tooltip ? <Tooltip title={tooltip}><span>{title}</span></Tooltip> : title;
+  const hasDelta = delta !== undefined && delta !== null && Number.isFinite(delta);
+  const hasFooter = hasDelta || !!statusText || !!extra;
   return (
     <Card
       size="small"
-      className={`kpi-card${onClick ? ' kpi-card-clickable' : ''}`}
+      className={['kpi-card', onClick ? 'kpi-card-clickable' : '', hasFooter ? 'kpi-card-has-footer' : 'kpi-card-no-footer'].filter(Boolean).join(' ')}
       loading={loading}
+      style={style}
       onClick={onClick}
     >
       <Statistic
@@ -110,11 +115,13 @@ export default function KpiCard({
         suffix={suffix}
         valueStyle={{ color: valueColor }}
       />
-      <div className="kpi-card-footer">
-        <MetricDelta value={delta} label={deltaLabel} goodWhen={goodWhen} />
-        {statusText && <Tag color={tone === 'danger' ? 'red' : tone === 'warning' ? 'orange' : tone === 'success' ? 'green' : 'default'}>{statusText}</Tag>}
-        {extra}
-      </div>
+      {hasFooter && (
+        <div className="kpi-card-footer">
+          <MetricDelta value={delta} label={deltaLabel} goodWhen={goodWhen} />
+          {statusText && <Tag color={tone === 'danger' ? 'red' : tone === 'warning' ? 'orange' : tone === 'success' ? 'green' : 'default'}>{statusText}</Tag>}
+          {extra}
+        </div>
+      )}
     </Card>
   );
 }

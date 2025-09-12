@@ -51,6 +51,10 @@ interface ExcelTableProps<T extends { id: number }> {
   };
 }
 
+type ExcelTableComponent = <T extends { id: number }>(
+  props: ExcelTableProps<T> & React.RefAttributes<ExcelTableHandle>
+) => React.ReactElement | null;
+
 function isBlankRecord(record: Record<string, any>, editableKeys: string[]) {
   return editableKeys.every((key) => {
     const value = record[key];
@@ -58,7 +62,10 @@ function isBlankRecord(record: Record<string, any>, editableKeys: string[]) {
   });
 }
 
-const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps<T>, ref: React.Ref<ExcelTableHandle>) => {
+const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>(
+  props: ExcelTableProps<T>,
+  ref: React.Ref<ExcelTableHandle>,
+) {
   const {
     dataSource,
     columns,
@@ -379,6 +386,6 @@ const ExcelTable = forwardRef(<T extends { id: number },>(props: ExcelTableProps
       rowClassName={(record) => selectedRowKeys.includes(record.id) ? 'excel-selected-row' : ''}
     />
   );
-});
+}) as ExcelTableComponent;
 
 export default ExcelTable;

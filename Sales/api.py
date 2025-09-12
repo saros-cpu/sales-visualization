@@ -24,6 +24,7 @@ import pandas as pd
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory, session
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
+import pymysql
 from pymysql.err import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -136,6 +137,70 @@ PUBLIC_API_PREFIXES = (
     "/api/export/analysis/sales/download/",
 )
 
+LEGACY_API_PERMISSION_PREFIXES = (
+    ("/api/export/exchange-rates", "exchange:view"),
+    ("/api/export/analysis/wholesale", "wholesale:export"),
+    ("/api/export/wholesale", "wholesale:export"),
+    ("/api/export/analysis/sales", "retail:export"),
+    ("/api/export/analysis/monthly", "retail:export"),
+    ("/api/export/analysis/yearly", "retail:export"),
+    ("/api/export/monthly", "retail:export"),
+    ("/api/export/self-use", "retail:export"),
+    ("/api/review/correct", "weighing:verify"),
+    ("/api/review", "weighing:view"),
+    ("/api/wholesale/weigh-details", "weighing:view"),
+    ("/api/wholesale", "wholesale:view"),
+    ("/api/home/exchange-current", "exchange:view"),
+    ("/api/home/market-watch", "exchange:view"),
+    ("/api/exchange-rates", "exchange:view"),
+    ("/api/dashboard", "retail:view"),
+    ("/api/monthly", "retail:view"),
+    ("/api/station", "retail:view"),
+    ("/api/stations", "retail:view"),
+    ("/api/daily", "retail:view"),
+    ("/api/regions", "retail:view"),
+    ("/api/resources", "retail:view"),
+    ("/api/kpi", "retail:view"),
+    ("/api/years", "retail:view"),
+    ("/api/months", "retail:view"),
+    ("/api/retail", "retail:view"),
+    ("/api/summary", "retail:view"),
+    ("/api/periods", "retail:view"),
+)
+
+
+def _legacy_api_permission(path: str) -> str | None:
+    if not path.startswith("/api/"):
+        return None
+    for prefix, permission_code in LEGACY_API_PERMISSION_PREFIXES:
+        if path == prefix or path.startswith(f"{prefix}/"):
+            return permission_code
+    return None
+
+
+def _enforce_legacy_api_permission(path: str, user_id, role: str | None):
+    permission_code = _legacy_api_permission(path)
+    if not permission_code or role == "admin":
+        return None
+    if not user_id:
+        return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
+    try:
+        numeric_user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
+    conn = get_connection()
+    try:
+        from api_v2.permission_service import has_permission
+
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            allowed = has_permission(cur, numeric_user_id, permission_code, role)
+            conn.commit()
+        if allowed:
+            return None
+    finally:
+        conn.close()
+    return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
+
 @app.after_request
 def add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -161,9 +226,13 @@ def require_session():
         return None
     # 允许有效 JWT Token 通过（Electron 桌面端访问零售 API）
     try:
-        from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
+        from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity, get_jwt
         verify_jwt_in_request(optional=True)
-        if get_jwt_identity() is not None:
+        identity = get_jwt_identity()
+        if identity is not None:
+            error_response = _enforce_legacy_api_permission(path, identity, (get_jwt() or {}).get("role"))
+            if error_response:
+                return error_response
             return None
     except Exception:
         pass
@@ -176,7 +245,11 @@ def require_session():
             return redirect("/login")
     finally:
         conn.close()
-    if session_user():
+    user = session_user()
+    if user:
+        error_response = _enforce_legacy_api_permission(path, user.get("id"), user.get("role"))
+        if error_response:
+            return error_response
         return None
     if wants_json():
         return jsonify({"error": "login_required"}), 401

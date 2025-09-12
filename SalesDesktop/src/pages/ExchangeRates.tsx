@@ -57,7 +57,7 @@ export default function ExchangeRates() {
       return html;
     } },
     legend: { data: ['USD/KGS', 'CNY/KGS'], bottom: 0 },
-    grid: { left: 56, right: 56, top: 32, bottom: 68, containLabel: true },
+    grid: { left: 56, right: 56, top: 32, bottom: 68, outerBoundsMode: 'same' as const, outerBoundsContain: 'axisLabel' as const },
     xAxis: {
       type: 'category' as const,
       data: sorted.map((r) => r.date.slice(5)),

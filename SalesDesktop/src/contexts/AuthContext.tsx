@@ -9,7 +9,7 @@ interface User {
   displayName?: string;
   role: string;
   roles?: Array<{ id: number; roleCode: string; roleName: string; isPrimary: boolean }>;
-  departments?: Array<{ id: number; deptCode: string; deptName: string; isPrimary: boolean }>;
+  departments?: Array<{ id: number; deptCode: string; deptName: string; deptNameRu?: string | null; isPrimary: boolean }>;
 }
 
 export interface PermissionState {

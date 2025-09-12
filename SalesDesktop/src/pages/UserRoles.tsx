@@ -34,7 +34,7 @@ export default function UserRoles() {
 
   // 模块名称中俄对照（从数据库moduleKey映射）
   const moduleNameZh: Record<string, string> = {
-    data_entry: '数据录入', dashboard: '仪表板', contract_mgmt: '合同管理', data_view: '数据查看',
+    data_entry: '数据录入', dashboard: '数据可视化', contract_mgmt: '合同管理', data_view: '数据查看',
     retail: '零售', wholesale: '批发', wholesale_view: '批发查看', transfer_view: '外运查看',
     procurement_view: '采购查看', processing_view: '代加工查看', retail_view: '零售查看',
     contract_view: '合同查看', reports: '报表打印', print_detail: '明细表打印',
@@ -46,7 +46,7 @@ export default function UserRoles() {
     aliases: '别名管理', weighing: '称重审核', settings: '设置',
   };
   const moduleNameRu: Record<string, string> = {
-    data_entry: 'Ввод данных', dashboard: 'Панель', contract_mgmt: 'Управление договорами',
+    data_entry: 'Ввод данных', dashboard: 'Визуализация данных', contract_mgmt: 'Управление договорами',
     data_view: 'Просмотр данных', retail: 'Розница', wholesale: 'Опт',
     wholesale_view: 'Просмотр опта', transfer_view: 'Просмотр перевозок',
     procurement_view: 'Просмотр закупок', processing_view: 'Просмотр переработки',

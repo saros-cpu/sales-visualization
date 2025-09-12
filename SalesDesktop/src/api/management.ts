@@ -7,7 +7,22 @@ export interface KpiDefinition {
   unit?: string;
   precision?: number;
   group: string;
+  periodScope?: 'year' | 'month' | 'latest';
   goodWhen?: 'up' | 'down' | 'neutral';
+  adminOnly?: boolean;
+  permissionCode?: string;
+}
+
+export interface ComponentDefinition {
+  key: string;
+  type: CockpitComponent['type'];
+  titleZh: string;
+  titleRu?: string;
+  group: string;
+  periodScope?: 'year' | 'month' | 'latest';
+  defaultSpan?: number;
+  metricKey?: string;
+  dataKey?: string;
   adminOnly?: boolean;
   permissionCode?: string;
 }
@@ -21,11 +36,16 @@ export interface KpiMetricValue {
 
 export interface CockpitComponent {
   id: string;
-  type: 'kpi' | 'retail_alert';
+  componentKey?: string;
+  type: 'kpi' | 'trend' | 'ranking' | 'structure' | 'exchange' | 'market_watch' | 'retail_alert';
   metricKey?: string;
+  dataKey?: string;
   span?: number;
+  widthPercent?: number;
+  height?: number;
   visible?: boolean;
   adminOnly?: boolean;
+  roleScope?: { roles?: string[]; departments?: string[] };
 }
 
 export interface CockpitTemplate {
@@ -33,7 +53,7 @@ export interface CockpitTemplate {
   templateKey: string;
   titleZh: string;
   titleRu?: string;
-  roleScope?: { roles?: string[] };
+  roleScope?: { roles?: string[]; departments?: string[] };
   config: { components: CockpitComponent[] };
   isActive?: boolean;
   sortOrder?: number;
@@ -73,18 +93,28 @@ export interface RecycleItem {
   restoreStatus: string;
 }
 
+export interface DepartmentOption {
+  deptCode: string;
+  deptName: string;
+  deptNameRu?: string | null;
+  isActive?: boolean;
+}
+
 export async function getCockpit(lang?: string) {
   const res = await client.get('/cockpit', { params: { lang } });
   return res.data as {
     templates: CockpitTemplate[];
     metrics: Record<string, KpiMetricValue>;
     kpiCatalog: KpiDefinition[];
+    componentCatalog: ComponentDefinition[];
+    componentData: Record<string, any>;
     retailAlert?: {
       trendAnomalies?: any[];
       suggestions?: string[];
       generatedAt?: string;
       periodKey?: string;
     };
+    periods?: { year: number; month: number; yearMonth: string };
   };
 }
 
@@ -96,6 +126,8 @@ export async function getManagementOverview() {
     templates: CockpitTemplate[];
     recycleItems: RecycleItem[];
     kpiCatalog: KpiDefinition[];
+    componentCatalog: ComponentDefinition[];
+    departments: DepartmentOption[];
   };
 }
 

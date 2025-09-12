@@ -112,6 +112,8 @@ SELF_USE_PERSON_OVERRIDES = {
 # (the retail software records a different self-use number). Keyed by
 # TransactionKey; value is the correct plate+driver per the retail software.
 SELF_USE_TXN_OVERRIDES = {
+    9273114: 'Генератор',
+    9312728: 'Генератор',
     9422896: 'Генератор',
     9482235: 'Генератор',
     9507306: 'Генератор',
@@ -120,6 +122,36 @@ SELF_USE_TXN_OVERRIDES = {
 SELF_USE_GENERATOR_OVERRIDES = {
     1: 'Генератор',
 }
+SELF_USE_GENERATOR_NUMBER = 1
+SELF_USE_2377SH_PLATE = '01KG000AA'
+SELF_USE_CTY-32_REGION = '\u695a\u6cb3\u5dde'
+
+
+def _self_use_generator_label():
+    return SELF_USE_GENERATOR_OVERRIDES.get(
+        SELF_USE_GENERATOR_NUMBER,
+        '\u0413\u0435\u043d\u0435\u0440\u0430\u0442\u043e\u0440',
+    )
+
+
+def _self_use_txn_forces_generator(transaction_key):
+    override = SELF_USE_TXN_OVERRIDES.get(_safe_int(transaction_key))
+    return bool(override) and _compact_plate(override) == _compact_plate(_self_use_generator_label())
+
+
+def _self_use_2377sh_outside_CTY-32(plate_number, station_info):
+    region = str((station_info or {}).get('region') or '').strip()
+    return (
+        bool(region)
+        and region != SELF_USE_CTY-32_REGION
+        and _compact_plate(plate_number) == _compact_plate(SELF_USE_2377SH_PLATE)
+    )
+
+
+def _apply_self_use_generator_rules(plate_number, station_info, transaction_key=0, group_key=0, self_use_number=0):
+    if _self_use_txn_forces_generator(transaction_key) or _self_use_2377sh_outside_CTY-32(plate_number, station_info):
+        return _self_use_generator_label(), SELF_USE_GENERATOR_GROUP, SELF_USE_GENERATOR_NUMBER
+    return plate_number, group_key, self_use_number
 
 
 def _map_resource_key_to_name(rk, shop_key, price=0.0, rsk=None):
@@ -273,6 +305,13 @@ def _build_self_use_month_response(year_month):
                 group_key=group_key,
                 self_use_number=self_use_number,
             )
+            plate_number, group_key, self_use_number = _apply_self_use_generator_rules(
+                plate_number,
+                info,
+                transaction_key=tk,
+                group_key=group_key,
+                self_use_number=self_use_number,
+            )
 
             records.append({
                 'transactionKey': int(r[0]),
@@ -339,13 +378,21 @@ def _normalize_self_use_snapshot(snapshot):
         rec['time'] = str(rec.get('time') or '')
         rec['stationName'] = info.get('name') or rec.get('stationName') or f'Station-{sk}'
         rec['stationShort'] = info.get('short') or rec.get('stationShort') or ''
-        rec['plateNumber'] = _normalize_self_use_plate(
+        plate_number = _normalize_self_use_plate(
             rec.get('plateNumber'),
             person_key=person_key,
             transaction_key=tk,
             group_key=group_key,
             self_use_number=self_use_number,
         )
+        plate_number, group_key, self_use_number = _apply_self_use_generator_rules(
+            plate_number,
+            info,
+            transaction_key=tk,
+            group_key=group_key,
+            self_use_number=self_use_number,
+        )
+        rec['plateNumber'] = plate_number
         product_name = _map_resource_key_to_name(rk, sk, amount / volume if volume else 0, rsk)
         if product_name.startswith('Other-') and volume == 0 and amount == 0:
             product_name = product_fallbacks.get((sk, rk), product_name)

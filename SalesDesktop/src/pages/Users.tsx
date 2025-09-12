@@ -68,7 +68,9 @@ export default function Users() {
     return [];
   };
   const translateRole = (roleCode?: string, fallback?: string) => roleNameMap[roleCode || ''] || fallback || roleCode || '';
-  const translateDept = (dept?: { deptCode?: string; deptName?: string }) => departmentNameMap[dept?.deptCode || ''] || dept?.deptName || '';
+  const translateDept = (dept?: { deptCode?: string; deptName?: string; deptNameRu?: string | null }) => (
+    (isRu ? dept?.deptNameRu?.trim() : dept?.deptName) || departmentNameMap[dept?.deptCode || ''] || dept?.deptName || ''
+  );
 
   const loadData = async () => {
     setLoading(true);

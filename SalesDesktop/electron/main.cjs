@@ -6,6 +6,26 @@ const { autoUpdater } = require('electron-updater');
 let mainWindow = null;
 let adminDevToolsEnabled = false;
 
+const allowedExternalHosts = new Set(['localhost', '127.0.0.1', '198.51.100.10']);
+const connectSrc = [
+  "'self'",
+  'http://localhost:8900',
+  'http://127.0.0.1:8900',
+  'http://198.51.100.10',
+  'http://198.51.100.10:8900',
+  'http://198.51.100.10:8080',
+  'ws://localhost:5173',
+].join(' ');
+
+function isAllowedExternalUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol) && allowedExternalHosts.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -75,6 +95,8 @@ function setupUpdater() {
 
 function setupFileDownload() {
   ipcMain.handle('download-file', async (event, { url, filename, token }) => {
+    if (!isAllowedExternalUrl(url)) return false;
+
     const result = await dialog.showSaveDialog(mainWindow, {
       defaultPath: filename,
       filters: [
@@ -100,7 +122,7 @@ function setupFileDownload() {
 
 function setupOpenExternal() {
   ipcMain.handle('open-external', async (event, url) => {
-    if (typeof url === 'string' && url.startsWith('http')) {
+    if (typeof url === 'string' && isAllowedExternalUrl(url)) {
       await shell.openExternal(url);
     }
   });
@@ -128,7 +150,7 @@ function setupDevToolsAccess() {
 }
 
 app.whenReady().then(() => {
-  const csp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:8900 http://198.51.100.10:8080 ws://localhost:5173; img-src 'self' data: blob:; font-src 'self' data:";
+  const csp = `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src ${connectSrc}; img-src 'self' data: blob:; font-src 'self' data:`;
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } });
   });
