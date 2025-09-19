@@ -254,7 +254,7 @@ export default function Aliases() {
 
   return (
     <Card
-      title={t('nav.aliases')}
+      title={t('nav.referenceMaintenance')}
       loading={loading}
       extra={(
         <Space>

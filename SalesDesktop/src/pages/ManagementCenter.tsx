@@ -783,11 +783,11 @@ export default function ManagementCenter() {
   const cockpitRoles = organization?.roles || [];
 
   if (query.error) {
-    return <Card title={t('nav.managementCenter')}><Text type="danger">{(query.error as Error).message}</Text></Card>;
+    return <Card title={t('nav.configCenter')}><Text type="danger">{(query.error as Error).message}</Text></Card>;
   }
 
   return (
-    <Card title={t('nav.managementCenter')} loading={query.isLoading}>
+    <Card title={t('nav.configCenter')} loading={query.isLoading}>
       <Tabs
         items={[
           {

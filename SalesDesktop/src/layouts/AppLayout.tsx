@@ -77,11 +77,11 @@ function hasPathAccess(items: MenuItem[], currentPath: string): boolean {
 function findOpenKeys(items: MenuItem[], currentPath: string): string[] {
   for (const item of items) {
     if (item.children) {
-      if (item.children.some(c => currentPath.startsWith(c.key))) {
+      const nested = findOpenKeys(item.children, currentPath);
+      if (nested.length > 0) return [item.key, ...nested];
+      if (item.children.some(c => c.key.startsWith('/') && (currentPath === c.key || currentPath.startsWith(`${c.key}/`)))) {
         return [item.key];
       }
-      const nested = findOpenKeys(item.children, currentPath);
-      if (nested.length > 0) return nested;
     }
   }
   return [];

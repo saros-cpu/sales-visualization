@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.7.1';
+export const VERSION = '3.7.2';
 export const BUILD_DATE = '2026-07-16';
 
 export interface ChangelogEntry {
@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.7.2',
+    date: '2026-07-16',
+    type: 'patch',
+    changes: [
+      '调整：客户端菜单按数据看板、经营分析、业务处理、合同管理、管理和设置重新分组',
+      '优化：多级菜单展开逻辑，支持经营分析和管理菜单下的二级/三级结构',
+      '完善：菜单、页面标题和管理入口补齐中俄文显示名称，语言切换时同步更新',
+    ],
+  },
   {
     version: '3.7.1',
     date: '2026-07-16',

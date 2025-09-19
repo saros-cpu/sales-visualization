@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 import threading
 from flask import jsonify, redirect, request, session
+from flask_jwt_extended import get_jwt, get_jwt_identity, verify_jwt_in_request
 from db import get_connection
 from text_utils import parse_date, parse_decimal
 from calculations import recalculate_wholesale_batch
@@ -253,6 +254,14 @@ def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         user = session_user()
+        if user and user.get("role") == "admin":
+            return fn(*args, **kwargs)
+        try:
+            verify_jwt_in_request(optional=True)
+            if get_jwt_identity() is not None and (get_jwt() or {}).get("role") == "admin":
+                return fn(*args, **kwargs)
+        except Exception:
+            pass
         if not user or user.get("role") != "admin":
             return jsonify({"error": "admin_required"}), 403
         return fn(*args, **kwargs)
