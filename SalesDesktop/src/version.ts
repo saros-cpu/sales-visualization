@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.7.2';
+export const VERSION = '3.7.3';
 export const BUILD_DATE = '2026-07-16';
 
 export interface ChangelogEntry {
@@ -14,6 +14,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.7.3',
+    date: '2026-07-16',
+    type: 'patch',
+    changes: [
+      '修复：数据可视化 KPI 点击跳转按具体指标进入对应页面，避免零售销售额和销量误跳到预警页',
+      '完善：覆盖零售、批发、采购、合同、录入、调拨、汇率和系统健康类 KPI 的跳转规则',
+    ],
+  },
   {
     version: '3.7.2',
     date: '2026-07-16',

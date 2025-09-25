@@ -135,6 +135,58 @@ function cockpitKpiValueColor(definition: KpiDefinition | undefined, metricKey?:
   return cockpitToneColors[toneFor(definition, undefined)] || '#111827';
 }
 
+const cockpitKpiRouteByMetricKey: Record<string, string> = {
+  retail_sales_amount: '/retail/overview',
+  retail_volume_liters: '/retail/overview',
+  retail_active_shops: '/retail/station',
+  retail_inventory: '/retail/overview',
+  retail_month_sales_amount: '/retail/monthly',
+  retail_month_volume_liters: '/retail/monthly',
+  retail_month_active_shops: '/retail/station',
+  retail_trend_anomalies: '/retail/alert',
+  retail_ai_suggestions: '/retail/alert',
+  yearly_wholesale_tons: '/wholesale/overview',
+  yearly_procurement_tons: '/procurement',
+  wholesale_month_export_tons: '/wholesale/overview',
+  wholesale_month_local_tons: '/wholesale/overview',
+  wholesale_month_transfer_tons: '/wholesale/transfer',
+  wholesale_month_procurement_tons: '/procurement',
+  wholesale_month_processing_tons: '/wholesale/query',
+  wholesale_month_unknown_tons: '/wholesale/query',
+  wholesale_month_export_amount_cny: '/wholesale/overview',
+  wholesale_month_local_amount_cny: '/wholesale/overview',
+  contract_active: '/contracts/view',
+  contract_total: '/contracts/view',
+  contract_appendix_missing: '/contracts/view',
+  contract_expiring_30d: '/contracts/view',
+  train_entry_today_rows: '/train-entry',
+  material_transfer_today: '/materials',
+  material_transfer_pending: '/materials',
+  exchange_usd_kgs: '/exchange',
+  exchange_cny_kgs: '/exchange',
+  exchange_kgs_cny: '/exchange',
+  market_watch_items: '/exchange',
+  api_failed_24h: '/system-health',
+  ai_failed_7d: '/system-health',
+  automation_failed: '/system-health',
+  cache_missing: '/system-health',
+};
+
+function routeForCockpitKpi(definition: KpiDefinition | undefined, metricKey?: string) {
+  const key = metricKey || definition?.key || '';
+  if (key && cockpitKpiRouteByMetricKey[key]) return cockpitKpiRouteByMetricKey[key];
+  if (!definition) return undefined;
+  if (definition.group === 'retail') return definition.periodScope === 'month' ? '/retail/monthly' : definition.periodScope === 'latest' ? '/retail/alert' : '/retail/overview';
+  if (definition.group === 'wholesale') return '/wholesale/overview';
+  if (definition.group === 'procurement') return '/procurement';
+  if (definition.group === 'contracts') return '/contracts/view';
+  if (definition.group === 'entry') return '/train-entry';
+  if (definition.group === 'materials') return '/materials';
+  if (definition.group === 'exchange') return '/exchange';
+  if (definition.group === 'system') return '/system-health';
+  return undefined;
+}
+
 function formatCockpitKpiValue(value: number | string | null | undefined, precision?: number) {
   if (value === null || value === undefined || value === '') return '-';
   const numeric = Number(value);
@@ -802,6 +854,7 @@ export default function VisualCockpit() {
       );
     }
     const metric = metricKey ? query.data?.metrics?.[metricKey] : undefined;
+    const targetRoute = routeForCockpitKpi(definition, metricKey);
     return (
       <Col key={component.id} {...cockpitColProps(widthPercent, height, type, layoutEditing && isAdmin)}>
         {renderLayoutFrame(component, span, widthPercent, height, type, (
@@ -814,12 +867,7 @@ export default function VisualCockpit() {
             valueColor={cockpitKpiValueColor(definition, metricKey)}
             tooltip={metric?.updatedAt ? `${t('common.updated')}: ${metric.updatedAt}` : undefined}
             style={cardHeightStyle(height, span, widthPercent)}
-            onClick={layoutEditing ? undefined : () => {
-              if (definition?.group === 'retail') navigate('/retail/alert');
-              if (definition?.group === 'contracts') navigate('/contracts/view');
-              if (definition?.group === 'materials') navigate('/materials');
-              if (definition?.group === 'system') navigate('/system-health');
-            }}
+            onClick={!layoutEditing && targetRoute ? () => navigate(targetRoute) : undefined}
           />
         ))}
       </Col>
