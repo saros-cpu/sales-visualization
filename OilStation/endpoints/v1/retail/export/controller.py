@@ -7,8 +7,8 @@ from loguru import logger
 
 from db import get_connection
 from export_excel import EXPORT_DIR, MONTH_NAMES_CN, RESOURCE_DENSITY, RESOURCE_NAMES
-from endpoints.v1.retail.export.service.workbook import _latest_report_workbook
-from endpoints.v1.retail.export.service.generator import generate_monthly_excel
+from endpoints.v1.retail.export.service.workbook import _latest_report_workbook, _weekly_report_workbook
+from endpoints.v1.retail.export.service.generator import generate_monthly_excel, generate_range_summary_excel
 from datetime import datetime, timedelta
 
 from endpoints.v1.retail.analytics.controller import _build_self_use_month_response
@@ -289,6 +289,54 @@ def api_export_download(year_month):
 
     display_name = f'加油站{month_cn}日销表{gen_date}.xlsx'
     return send_file(filepath, as_attachment=True, download_name=display_name)
+
+
+def _parse_report_range():
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    if not date_from or not date_to:
+        return None, None, jsonify({'error': 'date_from and date_to are required'}), 400
+    try:
+        start_dt = datetime.strptime(date_from, '%Y-%m-%d')
+        end_dt = datetime.strptime(date_to, '%Y-%m-%d')
+    except ValueError:
+        return None, None, jsonify({'error': 'invalid date format, expected YYYY-MM-DD'}), 400
+    if end_dt < start_dt:
+        return None, None, jsonify({'error': 'date_to must be greater than or equal to date_from'}), 400
+    return date_from, date_to, None, None
+
+
+@export_api.route('/api/export/retail/range')
+def api_export_retail_range():
+    date_from, date_to, error_response, status_code = _parse_report_range()
+    if error_response is not None:
+        return error_response, status_code
+    force_refresh = str(request.args.get('refresh') or '').lower() in {'1', 'true', 'yes'}
+    conn = get_connection()
+    try:
+        return jsonify(generate_range_summary_excel(conn, date_from, date_to, force_refresh=force_refresh))
+    finally:
+        conn.close()
+
+
+@export_api.route('/api/export/retail/range/download')
+def api_export_retail_range_download():
+    date_from, date_to, error_response, status_code = _parse_report_range()
+    if error_response is not None:
+        return error_response, status_code
+
+    workbook_path = _weekly_report_workbook(date_from, date_to)
+    if not workbook_path or not workbook_path.exists():
+        conn = get_connection()
+        try:
+            result = generate_range_summary_excel(conn, date_from, date_to, force_refresh=False)
+            workbook_path = Path(result['path'])
+        finally:
+            conn.close()
+
+    if not workbook_path.exists():
+        return jsonify({'error': 'File not found, please generate first'}), 404
+    return send_file(workbook_path, as_attachment=True, download_name=workbook_path.name)
 
 
 @export_api.route('/api/export/self-use/<year_month>')

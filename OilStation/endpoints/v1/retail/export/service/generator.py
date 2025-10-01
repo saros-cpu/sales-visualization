@@ -1,4 +1,5 @@
 from calendar import monthrange
+from copy import copy
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -25,11 +26,145 @@ from export_excel import (
 )
 from endpoints.v1.retail.common.query import get_query_date_range
 from endpoints.v1.retail.export.service.workbook import (
+    WEEKLY_REPORT_DIR,
     _can_reuse_report_workbook,
     _latest_report_workbook,
     _record_report_workbook,
+    _record_weekly_report_workbook,
+    _weekly_report_workbook,
     _workbook_last_nonempty_day,
 )
+
+
+def _copy_summary_template(ws, template_path, title):
+    template_workbook = None
+    try:
+        template_workbook = openpyxl.load_workbook(template_path)
+        template_sheet = template_workbook["总表"] if "总表" in template_workbook.sheetnames else template_workbook[template_workbook.sheetnames[0]]
+
+        ws.title = "总表"
+        ws.freeze_panes = template_sheet.freeze_panes or "E5"
+        ws.sheet_properties.tabColor = template_sheet.sheet_properties.tabColor
+        for col in range(1, 27):
+            letter = get_column_letter(col)
+            source_dim = template_sheet.column_dimensions[letter]
+            target_dim = ws.column_dimensions[letter]
+            target_dim.width = source_dim.width
+            target_dim.hidden = source_dim.hidden
+
+        for row_idx in range(1, 5):
+            ws.row_dimensions[row_idx].height = template_sheet.row_dimensions[row_idx].height
+            for col_idx in range(1, 27):
+                source = template_sheet.cell(row=row_idx, column=col_idx)
+                target = ws.cell(row=row_idx, column=col_idx, value=source.value)
+                if source.has_style:
+                    target.font = copy(source.font)
+                    target.fill = copy(source.fill)
+                    target.border = copy(source.border)
+                    target.alignment = copy(source.alignment)
+                    target.protection = copy(source.protection)
+                    target.number_format = source.number_format
+
+        for merged_range in template_sheet.merged_cells.ranges:
+            if merged_range.min_row <= 4 and merged_range.max_row <= 4:
+                ws.merge_cells(str(merged_range))
+
+        ws.cell(row=1, column=1, value=title)
+    finally:
+        if template_workbook is not None:
+            template_workbook.close()
+
+
+def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, contract_data, start_bal, end_bal, loss_data, total_label):
+    current_row = 5
+    subtotal_rows = []
+    for sk in station_keys:
+        info = SHOP_KEY_MAP.get(sk, {"name": f"SK-{sk}", "short": "", "region": ""})
+        fuel_keys = _get_station_fuel_keys(sk, start_bal, end_bal, sales_data, ved_data, supply_data)
+        current_row = _write_station_block(
+            ws, current_row, sk, info, sales_data, ved_data, supply_data,
+            start_bal, end_bal, contract_data=contract_data, loss_data=loss_data,
+            is_monthly=True, fuel_keys=fuel_keys,
+        )
+        ws.cell(row=current_row - 1, column=1, value="所选日期小计")
+        subtotal_rows.append(current_row - 1)
+
+    _apply_style(ws, current_row, 1, total_label, bold=True, size=9, fill=_FILL_TOTAL)
+    ws.merge_cells(f"A{current_row}:E{current_row}")
+    total_skip_cols = {18, 23}
+    for col in range(2, 27):
+        col_letter = get_column_letter(col)
+        if col >= 6:
+            if col in total_skip_cols:
+                _apply_style(ws, current_row, col, "", bold=True, size=9, fill=_FILL_TOTAL)
+            else:
+                parts = [f"{col_letter}{row}" for row in subtotal_rows]
+                formula = "=" + "+".join(parts)
+                _apply_style(ws, current_row, col, formula, bold=True, size=9, fill=_FILL_TOTAL)
+        else:
+            _apply_style(ws, current_row, col, None, bold=True, size=9, fill=_FILL_TOTAL)
+
+    no_fill_cols = {1, 2, 3, 4, 6, 7, 25, 26}
+    for row in ws.iter_rows(min_row=5, max_row=current_row, max_col=26):
+        for cell in row:
+            if cell.column in no_fill_cols and not (cell.row in subtotal_rows or cell.row == current_row):
+                cell.fill = PatternFill(fill_type=None)
+
+    return current_row
+
+
+def generate_range_summary_excel(conn, date_from, date_to, force_refresh=False):
+    cached_workbook = _weekly_report_workbook(date_from, date_to)
+    if not force_refresh and cached_workbook:
+        return {
+            "status": "ok",
+            "file": cached_workbook.name,
+            "path": str(cached_workbook),
+            "cached": True,
+            "dateFrom": date_from,
+            "dateTo": date_to,
+        }
+
+    start_dt = datetime.strptime(date_from, "%Y-%m-%d")
+    end_dt = datetime.strptime(date_to, "%Y-%m-%d")
+    if end_dt < start_dt:
+        raise ValueError("date_to must be greater than or equal to date_from")
+
+    template_month = start_dt.strftime("%Y-%m")
+    template_result = generate_monthly_excel(conn, template_month, force_refresh=False)
+    template_path = Path(template_result.get("path") or "") if template_result.get("path") else _latest_report_workbook(template_month)
+    if not template_path or not template_path.exists():
+        raise FileNotFoundError("summary template workbook not found")
+
+    station_keys = sorted(SHOP_KEY_MAP.keys())
+    range_end = (end_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    cur = conn.cursor()
+    sales_data, ved_data, supply_data, contract_data, start_bal, end_bal, loss_data = \
+        _build_sheet_data(cur, date_from, range_end, station_keys)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    title = f"Финансовый отчет по АЗС / 加油站零售报表 {date_from} - {date_to}"
+    _copy_summary_template(ws, template_path, title)
+    _write_summary_blocks(
+        ws, station_keys, sales_data, ved_data, supply_data, contract_data,
+        start_bal, end_bal, loss_data, "所选日期总合计",
+    )
+
+    WEEKLY_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"加油站零售报表_{date_from}_至_{date_to}.xlsx"
+    filepath = WEEKLY_REPORT_DIR / filename
+    wb.save(filepath)
+    _record_weekly_report_workbook(date_from, date_to, filepath, source="manual")
+
+    return {
+        "status": "ok",
+        "file": filename,
+        "path": str(filepath),
+        "cached": False,
+        "dateFrom": date_from,
+        "dateTo": date_to,
+    }
 
 
 def generate_monthly_excel(conn, year_month, force_refresh=False):

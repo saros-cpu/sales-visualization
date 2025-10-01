@@ -1,21 +1,38 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Row, Col, Card, Statistic, Select, Typography, Tag, Button, Space } from 'antd';
+import { Row, Col, Card, Statistic, Select, Typography, Tag, Button, Space, DatePicker, App as AntApp } from 'antd';
 import { useTranslation } from 'react-i18next';
+import dayjs from 'dayjs';
 import { useApiQuery } from '@/hooks/useApi';
 import { getStations, getStationMonthly } from '@/api/retail';
+import { downloadRetailRangeReport } from '@/api/export';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
+import { useAuth } from '@/contexts/AuthContext';
 
 const { Text } = Typography;
+const { RangePicker } = DatePicker;
+
+function defaultWeeklyReportRange() {
+  const today = dayjs().startOf('day');
+  const daysSinceMonday = (today.day() + 6) % 7;
+  const thisWeekMonday = today.subtract(daysSinceMonday, 'day');
+  const lastWeekMonday = thisWeekMonday.subtract(7, 'day');
+  return [lastWeekMonday, lastWeekMonday.add(6, 'day')] as [dayjs.Dayjs, dayjs.Dayjs];
+}
 
 export default function Station() {
   const { t } = useTranslation();
+  const { message } = AntApp.useApp();
+  const { can } = useAuth();
+  const canExport = can('retail:export');
   const { region, station } = useNameI18n();
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const [shopKey, setShopKey] = useState<number | null>(null);
+  const [weeklyReportRange, setWeeklyReportRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(defaultWeeklyReportRange);
+  const [weeklyReportLoading, setWeeklyReportLoading] = useState(false);
 
   const staQ = useApiQuery(['retail', 'stations', ym], () => getStations(ym));
   const detailQ = useApiQuery(
@@ -56,18 +73,51 @@ export default function Station() {
     }));
   }, [stations, t, region, station]);
 
+  const onGenerateWeeklyReport = async () => {
+    if (!weeklyReportRange?.[0] || !weeklyReportRange?.[1]) {
+      message.warning(t('retail.selectWeeklyReportRange'));
+      return;
+    }
+    const dateFrom = weeklyReportRange[0].format('YYYY-MM-DD');
+    const dateTo = weeklyReportRange[1].format('YYYY-MM-DD');
+    setWeeklyReportLoading(true);
+    try {
+      await downloadRetailRangeReport(dateFrom, dateTo);
+      message.success(t('common.downloadStarted'));
+    } catch (err: any) {
+      message.error(`${t('common.downloadFailed')}: ${err?.message || ''}`);
+    } finally {
+      setWeeklyReportLoading(false);
+    }
+  };
+
   return (
     <div>
-      <Space wrap style={{ marginBottom: 16 }}>
-        <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
-        <Select
-          showSearch placeholder={t('retail.stationSelector')}
-          value={shopKey} onChange={setShopKey}
-          options={options}
-          style={{ width: 300 }}
-          allowClear
-        />
-      </Space>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+        <Space wrap>
+          <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
+          <Select
+            showSearch placeholder={t('retail.stationSelector')}
+            value={shopKey} onChange={setShopKey}
+            options={options}
+            style={{ width: 300 }}
+            allowClear
+          />
+        </Space>
+        {canExport && (
+          <Space wrap style={{ marginLeft: 'auto' }}>
+            <Text strong>{t('retail.financeWeeklyReport')}:</Text>
+            <RangePicker
+              allowClear={false}
+              value={weeklyReportRange}
+              onChange={(value) => value?.[0] && value?.[1] && setWeeklyReportRange(value as [dayjs.Dayjs, dayjs.Dayjs])}
+            />
+            <Button type="primary" loading={weeklyReportLoading} onClick={onGenerateWeeklyReport}>
+              {t('retail.generateWeeklyReport')}
+            </Button>
+          </Space>
+        )}
+      </div>
       {detail && (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>

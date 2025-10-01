@@ -8,6 +8,8 @@ from export_excel import EXPORT_DIR, MONTH_NAMES_RU, openpyxl, os
 
 
 REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".monthly_report_index.json"
+WEEKLY_REPORT_DIR = Path(EXPORT_DIR) / "weekly"
+WEEKLY_REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".weekly_report_index.json"
 
 
 def _load_report_index():
@@ -18,6 +20,56 @@ def _load_report_index():
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _load_weekly_report_index():
+    if not WEEKLY_REPORT_INDEX_PATH.exists():
+        return {}
+    try:
+        data = json.loads(WEEKLY_REPORT_INDEX_PATH.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _weekly_report_key(date_from, date_to):
+    return f"{date_from}_to_{date_to}"
+
+
+def _weekly_report_workbook(date_from, date_to):
+    item = _load_weekly_report_index().get(_weekly_report_key(date_from, date_to)) or {}
+    filename = item.get("file")
+    if not filename:
+        return None
+    path = WEEKLY_REPORT_DIR / filename
+    return path if path.exists() else None
+
+
+def _record_weekly_report_workbook(date_from, date_to, path, source="manual"):
+    path = Path(path)
+    data = _load_weekly_report_index()
+    data[_weekly_report_key(date_from, date_to)] = {
+        "file": path.name,
+        "dateFrom": date_from,
+        "dateTo": date_to,
+        "updatedAt": path.stat().st_mtime if path.exists() else None,
+        "source": source,
+    }
+    try:
+        WEEKLY_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        temp_path = WEEKLY_REPORT_INDEX_PATH.with_suffix(WEEKLY_REPORT_INDEX_PATH.suffix + ".tmp")
+        content = json.dumps(data, ensure_ascii=False, indent=2)
+        for attempt in range(5):
+            try:
+                temp_path.write_text(content, encoding="utf-8")
+                temp_path.replace(WEEKLY_REPORT_INDEX_PATH)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.1 * (attempt + 1))
+    except OSError:
+        pass
 
 
 def _record_report_workbook(year_month, path, last_nonempty_day=None):

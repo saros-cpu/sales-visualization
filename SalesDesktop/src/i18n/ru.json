@@ -346,6 +346,7 @@
     "year": "Год", "month": "Месяц", "totalSales": "Общий объем продаж", "totalLiters": "Общий объем (л)",
     "amount": "Сумма", "volume": "Объем",
     "activeShops": "Активные АЗС", "inventory": "Остатки", "generateReport": "Создать отчет",
+    "financeWeeklyReport": "Финансовый недельный отчет", "generateWeeklyReport": "Создать отчет", "selectWeeklyReportRange": "Выберите период недельного отчета",
     "regionSales": "Продажи по регионам", "topStations": "ТОП-10 АЗС", "productRank": "Рейтинг продуктов",
     "paymentDist": "Распределение оплат", "cash": "Наличные", "card": "Карта", "bonus": "Бонусы",
     "regionSalesRank": "Рейтинг регионов", "dailyTrend": "Дневной тренд", "monthlySales": "Месячные продажи",

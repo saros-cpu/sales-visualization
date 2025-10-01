@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.7.3';
+export const VERSION = '3.7.4';
 export const BUILD_DATE = '2026-07-16';
 
 export interface ChangelogEntry {
@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.7.4',
+    date: '2026-07-16',
+    type: 'patch',
+    changes: [
+      '新增：零售站点页增加财务周报入口，可按日期范围生成全部站点零售报表',
+      '完善：财务周报沿用零售日报表总表格式，包含站点小计和所选日期总合计',
+      '优化：后端增加财务周报快照缓存，重复下载同一日期范围时可直接复用已生成报表',
+    ],
+  },
   {
     version: '3.7.3',
     date: '2026-07-16',

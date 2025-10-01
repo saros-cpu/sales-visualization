@@ -53,6 +53,27 @@ export async function exportExcel(yearMonth: string) {
   }
 }
 
+export async function downloadRetailRangeReport(dateFrom: string, dateTo: string, refresh = false) {
+  const token = await getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  if (refresh) params.set('refresh', '1');
+
+  const res = await fetch(`${API_BASE}/export/retail/range?${params}`, { headers });
+  const json = await res.json();
+  if (!(json.status === 'ok' || json.code === 0)) {
+    throw new Error(json.message || json.error || '生成报表失败');
+  }
+
+  await downloadBlob(
+    `${API_BASE}/export/retail/range/download?${new URLSearchParams({ date_from: dateFrom, date_to: dateTo })}`,
+    json.file || `加油站零售报表_${dateFrom}_至_${dateTo}.xlsx`,
+    token,
+  );
+}
+
 export async function exportAnalysis(yearMonth: string) {
   try {
     const token = await getToken();
