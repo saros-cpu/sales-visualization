@@ -24,6 +24,10 @@ REFRESH_CACHE_STATUS = {
 }
 REFRESH_CACHE_LOCK = threading.Lock()
 
+def _column_value(row, index, key):
+    return row.get(key) if isinstance(row, dict) else row[index]
+
+
 def ensure_auth_schema(cur):
     cur.execute(
         """
@@ -34,10 +38,13 @@ def ensure_auth_schema(cur):
             display_name VARCHAR(128) NOT NULL,
             role VARCHAR(64) NOT NULL DEFAULT 'viewer',
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
             created_by BIGINT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
             last_login_at TIMESTAMP NULL,
+            password_changed_at TIMESTAMP NULL,
+            password_reset_at TIMESTAMP NULL,
             KEY idx_system_users_role (role, is_active)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
@@ -45,10 +52,52 @@ def ensure_auth_schema(cur):
     cur.execute("SHOW COLUMNS FROM system_users LIKE 'role'")
     row = cur.fetchone()
     if row:
-        column_type = str(row[1] or "")
+        column_type = str(_column_value(row, 1, "Type") or "")
         if column_type.lower().startswith("enum"):
             cur.execute("ALTER TABLE system_users MODIFY role VARCHAR(64) NOT NULL DEFAULT 'viewer'")
             cur.execute("UPDATE system_users SET role = 'viewer' WHERE role = 'user'")
+    cur.execute("SHOW COLUMNS FROM system_users LIKE 'must_change_password'")
+    if not cur.fetchone():
+        cur.execute(
+            """
+            ALTER TABLE system_users
+            ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT TRUE AFTER is_active
+            """
+        )
+    cur.execute("SHOW COLUMNS FROM system_users LIKE 'password_changed_at'")
+    if not cur.fetchone():
+        cur.execute(
+            """
+            ALTER TABLE system_users
+            ADD COLUMN password_changed_at TIMESTAMP NULL AFTER last_login_at
+            """
+        )
+    cur.execute("SHOW COLUMNS FROM system_users LIKE 'password_reset_at'")
+    if not cur.fetchone():
+        cur.execute(
+            """
+            ALTER TABLE system_users
+            ADD COLUMN password_reset_at TIMESTAMP NULL AFTER password_changed_at
+            """
+        )
+
+
+def user_requires_password_change(cur, user_id):
+    if not user_id:
+        return False
+    ensure_auth_schema(cur)
+    cur.execute(
+        """
+        SELECT must_change_password
+        FROM system_users
+        WHERE id = %s AND is_active = TRUE
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False
+    return bool(_column_value(row, 0, "must_change_password"))
 
 
 def ensure_operation_log_schema(cur):

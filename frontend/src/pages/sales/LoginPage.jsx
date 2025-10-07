@@ -15,6 +15,10 @@ export default function LoginPage() {
   // 已登录用户直接跳转
   useEffect(() => {
     if (!loading && user) {
+      if (user.mustChangePassword) {
+        navigate('/change-password', { replace: true });
+        return;
+      }
       const dest = user.role === 'admin' ? (nextUrl || '/admin') : (nextUrl === '/admin' ? '/' : nextUrl);
       navigate(dest, { replace: true });
     }
@@ -38,6 +42,10 @@ export default function LoginPage() {
     setStatus('正在登录...');
     try {
       const loggedIn = await login(username.trim(), password);
+      if (loggedIn.mustChangePassword) {
+        navigate('/change-password', { replace: true });
+        return;
+      }
       const dest = loggedIn.role === 'admin' ? (nextUrl || '/admin') : (nextUrl === '/admin' ? '/' : nextUrl);
       navigate(dest, { replace: true });
     } catch (err) {

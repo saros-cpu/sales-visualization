@@ -130,6 +130,70 @@ function MarketWatchPanel() {
 }
 
 // ── 油库标点数据 ──
+function percent(value, total) {
+  const n = Number(value || 0);
+  const d = Number(total || 0);
+  if (!d || n <= 0) return 0;
+  return Math.max(3, Math.min(100, (n / d) * 100));
+}
+
+function HomeVisualizationPanel({ retail, wholesale, combined }) {
+  const retailAmount = Number(retail.amountCny || 0);
+  const wholesaleAmount = Number(wholesale.salesAmountCny || 0);
+  const totalAmount = Number(combined.salesAmountCny || 0) || retailAmount + wholesaleAmount;
+  const retailTons = Number(retail.tons || 0);
+  const wholesaleTons = Number(wholesale.salesTons || 0);
+  const transferTons = Number(wholesale.transferTons || 0);
+  const totalFlow = retailTons + wholesaleTons + transferTons;
+  const rows = [
+    { label: '零售收入', value: retailYuan.format(retailAmount), pct: percent(retailAmount, totalAmount), tone: 'retail' },
+    { label: '批发收入', value: yuan.format(wholesaleAmount), pct: percent(wholesaleAmount, totalAmount), tone: 'wholesale' },
+    { label: '零售销量', value: `${retailNum.format(retailTons)} 吨`, pct: percent(retailTons, totalFlow), tone: 'retail' },
+    { label: '批发销量', value: `${num.format(wholesaleTons)} 吨`, pct: percent(wholesaleTons, totalFlow), tone: 'wholesale' },
+    { label: '外运吨数', value: `${num.format(transferTons)} 吨`, pct: percent(transferTons, totalFlow), tone: 'transfer' },
+  ];
+
+  return (
+    <section className="panel home-visual-panel">
+      <div className="panel-head">
+        <div>
+          <h2>经营数据可视化</h2>
+          <span>收入结构、销量结构与外运规模</span>
+        </div>
+      </div>
+      <div className="home-visual-grid">
+        <div className="home-visual-bars">
+          {rows.map((item) => (
+            <div className={`home-visual-row ${item.tone}`} key={item.label}>
+              <div className="home-visual-row-head">
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+              <div className="home-visual-track">
+                <i style={{ width: `${item.pct}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="home-visual-focus">
+          <div>
+            <span>综合收入</span>
+            <strong>{yuan.format(totalAmount || 0)}</strong>
+          </div>
+          <div>
+            <span>销售吨数</span>
+            <strong>{num.format(combined.salesTons || 0)} 吨</strong>
+          </div>
+          <div>
+            <span>外运占比</span>
+            <strong>{totalFlow ? `${((transferTons / totalFlow) * 100).toFixed(1)}%` : '--'}</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const depotPoints = [
   { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01 · 示例站', lng: 0, lat: 0, role: 'hq', status: 'normal' },
   { name: '北方STN-65', short: 'S-66', region: 'REG-04 · REG-08', lng: 0, lat: 0, role: 'branch', status: 'closed', note: '维修中' },
@@ -304,6 +368,7 @@ export default function DashboardPage() {
           <p id="statusText">{statusText}</p>
           <nav className="module-nav">
             <Link to="/" className="active">主页</Link>
+            <Link to="/knowledge">知识库</Link>
             {user?.role === 'admin' ? (
               <Link to="/admin" className="module-auth-link admin-ready">后台</Link>
             ) : (
@@ -374,6 +439,8 @@ export default function DashboardPage() {
       </section>
 
       {/* 汇率 + 市场观察 */}
+      <HomeVisualizationPanel retail={r} wholesale={w} combined={c} />
+
       <section className="home-context-grid">
         <ExchangePanel />
         <MarketWatchPanel />

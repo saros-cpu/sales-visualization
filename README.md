@@ -788,7 +788,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.6.0（与 version.ts 对齐）
+├── package.json              # 版本 3.8.0（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）
@@ -811,7 +811,7 @@ SalesDesktop/
 │   ├── types/                # TypeScript 类型定义
 │   └── hooks/                # 自定义 hooks
 ├── dist/                     # Vite 构建产物（dev: :5173, prod: electron loadFile）
-├── release_v18/              # 安装包输出目录
+├── release_build/            # 安装包输出目录
 └── latest.yml                # 自动更新清单
 ```
 

@@ -6,3 +6,5 @@ export const login = (username, password) =>
 export const logout = () => post('/api/auth/logout');
 export const bootstrap = (username, password, displayName) =>
   post('/api/auth/bootstrap', { username, password, displayName });
+export const changePassword = (oldPassword, newPassword) =>
+  post('/api/auth/change-password', { oldPassword, newPassword });

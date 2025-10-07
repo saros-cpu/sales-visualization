@@ -2,25 +2,37 @@ const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electro
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+const { loadRuntimeConfig } = require('./runtime-config.cjs');
 
 let mainWindow = null;
 let adminDevToolsEnabled = false;
 
-const allowedExternalHosts = new Set(['localhost', '127.0.0.1', '198.51.100.10']);
-const connectSrc = [
+const runtimeConfig = loadRuntimeConfig(app);
+const allowedExternalHosts = new Set(runtimeConfig.allowedHosts);
+function urlOrigin(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value;
+  }
+}
+
+const connectSrc = Array.from(new Set([
   "'self'",
+  urlOrigin(runtimeConfig.apiHost),
+  urlOrigin(runtimeConfig.updateUrl),
   'http://localhost:8900',
   'http://127.0.0.1:8900',
-  'http://198.51.100.10',
-  'http://198.51.100.10:8900',
-  'http://198.51.100.10:8080',
   'ws://localhost:5173',
-].join(' ');
+])).join(' ');
+const allowedExternalPathPrefixes = ['/api/', '/download/'];
 
 function isAllowedExternalUrl(value) {
   try {
     const parsed = new URL(value);
-    return ['http:', 'https:'].includes(parsed.protocol) && allowedExternalHosts.has(parsed.hostname);
+    return ['http:', 'https:'].includes(parsed.protocol)
+      && allowedExternalHosts.has(parsed.hostname)
+      && allowedExternalPathPrefixes.some((prefix) => parsed.pathname.startsWith(prefix));
   } catch {
     return false;
   }
@@ -68,6 +80,7 @@ function setupUpdater() {
   }
   autoUpdater.autoDownload = false;
   autoUpdater.allowPrerelease = false;
+  autoUpdater.setFeedURL({ provider: 'generic', url: runtimeConfig.updateUrl });
 
   ipcMain.on('check-for-update', () => { autoUpdater.checkForUpdates(); });
   ipcMain.on('download-update', () => { autoUpdater.downloadUpdate(); });

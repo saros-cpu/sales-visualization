@@ -11,8 +11,116 @@ body {
   background: #f0f2f5;
 }
 
+.app-shell {
+  background: #eef2f7;
+}
+
+.app-sider.ant-layout-sider {
+  background: #ffffff !important;
+  border-right: 1px solid #e7ecf3;
+  box-shadow: 10px 0 28px rgba(15, 23, 42, 0.06);
+}
+
+.app-sider-brand {
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.app-sider-collapse.ant-btn {
+  color: #52606d;
+  border-radius: 6px;
+}
+
+.app-sider-collapse.ant-btn:hover {
+  color: #cc0000 !important;
+  background: #fff1f0 !important;
+}
+
+.app-sider-scroll {
+  padding: 8px;
+  scrollbar-gutter: stable;
+}
+
+.app-menu.ant-menu {
+  border-inline-end: 0 !important;
+  background: transparent;
+}
+
+.app-menu .ant-menu-item,
+.app-menu .ant-menu-submenu-title {
+  width: auto;
+  height: 38px;
+  margin: 3px 0;
+  border-radius: 7px;
+  color: #334155;
+  line-height: 38px;
+}
+
+.app-menu .ant-menu-item:hover,
+.app-menu .ant-menu-submenu-title:hover {
+  color: #cc0000 !important;
+  background: #fff7f6 !important;
+}
+
+.app-menu .ant-menu-item-selected {
+  color: #b42318 !important;
+  background: linear-gradient(135deg, #fff1f0, #fff7ed) !important;
+  font-weight: 700;
+}
+
+.app-menu .ant-menu-item-selected::after {
+  display: none;
+}
+
+.app-menu .ant-menu-sub.ant-menu-inline {
+  background: #fafafa;
+  border-radius: 7px;
+}
+
+.app-main-layout {
+  background: #eef2f7;
+  transition: margin-left 0.2s ease;
+}
+
+.app-header.ant-layout-header {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06);
+}
+
 .app-content {
   padding: 20px;
+  background:
+    radial-gradient(circle at 24px 24px, rgba(204, 0, 0, 0.035), transparent 28px),
+    linear-gradient(180deg, #f7f9fc 0%, #eef2f7 100%);
+}
+
+.app-content .ant-card {
+  border-color: #e5ebf3;
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+}
+
+.app-content .ant-card-head {
+  border-bottom-color: #edf1f6;
+}
+
+.app-content .ant-card-head-title {
+  color: #1f2937;
+  font-weight: 700;
+}
+
+.app-content .ant-table-thead > tr > th {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+}
+
+.app-content .ant-table-tbody > tr:hover > td {
+  background: #fff7f6 !important;
+}
+
+.app-content .ant-btn-primary {
+  box-shadow: 0 6px 14px rgba(204, 0, 0, 0.14);
 }
 
 .page-toolbar {
@@ -733,7 +841,13 @@ body {
   z-index: 1000;
   width: 46px;
   height: 46px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 10px 28px rgba(204, 0, 0, 0.22);
+}
+
+.global-ai-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 32px rgba(204, 0, 0, 0.26);
 }
 
 .global-ai-drawer-root .ant-drawer-content-wrapper {

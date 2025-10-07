@@ -10,6 +10,7 @@ from export_excel import EXPORT_DIR, MONTH_NAMES_RU, openpyxl, os
 REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".monthly_report_index.json"
 WEEKLY_REPORT_DIR = Path(EXPORT_DIR) / "weekly"
 WEEKLY_REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".weekly_report_index.json"
+WEEKLY_REPORT_NAME_PREFIX = "加油站零售周报表"
 
 
 def _load_report_index():
@@ -36,10 +37,14 @@ def _weekly_report_key(date_from, date_to):
     return f"{date_from}_to_{date_to}"
 
 
+def _weekly_report_filename(date_from, date_to):
+    return f"{WEEKLY_REPORT_NAME_PREFIX}_{date_from}_至_{date_to}.xlsx"
+
+
 def _weekly_report_workbook(date_from, date_to):
     item = _load_weekly_report_index().get(_weekly_report_key(date_from, date_to)) or {}
     filename = item.get("file")
-    if not filename:
+    if not filename or filename != _weekly_report_filename(date_from, date_to):
         return None
     path = WEEKLY_REPORT_DIR / filename
     return path if path.exists() else None

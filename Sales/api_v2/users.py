@@ -4,6 +4,7 @@ from api_v2 import bp_v2
 from werkzeug.security import generate_password_hash
 import pymysql
 from db import get_connection
+from shared_utils import ensure_auth_schema
 from .permission_service import (
     ensure_permission_schema as ensure_org_permission_schema,
     ensure_user_org_assignments,
@@ -28,6 +29,7 @@ MODULE_CATALOG = [
     ('materials', '物资调拨', 80),
     ('transfer_loss', '外运损耗', 90),
     ('map', '3D 地图', 100),
+    ('knowledge', '知识库', 105),
     ('users', '用户管理', 110),
     ('aliases', '别名管理', 120),
     ('weighing', '称重审核', 130),
@@ -40,13 +42,13 @@ DEFAULT_ROLE_MODULES = {
     'operator': (
         'dashboard', 'retail', 'wholesale', 'exchange', 'train_entry',
         'procurement', 'contracts', 'materials', 'transfer_loss', 'map',
-        'aliases', 'weighing', 'settings',
+        'knowledge', 'aliases', 'weighing', 'settings',
     ),
     'auditor': (
         'dashboard', 'retail', 'wholesale', 'exchange', 'contracts',
-        'aliases', 'weighing', 'map', 'settings',
+        'knowledge', 'aliases', 'weighing', 'map', 'settings',
     ),
-    'viewer': ('dashboard', 'retail', 'wholesale', 'exchange', 'map', 'settings'),
+    'viewer': ('dashboard', 'retail', 'wholesale', 'exchange', 'map', 'knowledge', 'settings'),
 }
 
 
@@ -149,14 +151,15 @@ def list_users():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            _, error = _require_admin(cur)
+            ensure_auth_schema(cur)
+            _, error = _require_any(cur, ['users:view', 'users:manage'])
             if error:
                 return error
             _ensure_user_role_column(cur)
             ensure_org_permission_schema(cur)
             conn.commit()
             cur.execute('''
-                SELECT id, username, display_name, role, is_active, last_login_at, created_at
+                SELECT id, username, display_name, role, is_active, must_change_password, last_login_at, created_at
                 FROM system_users ORDER BY id
             ''')
             users = []
@@ -170,6 +173,7 @@ def list_users():
                     'roles': list_user_roles(cur, row['id']),
                     'departments': list_user_departments(cur, row['id']),
                     'isActive': bool(row['is_active']),
+                    'mustChangePassword': bool(row['must_change_password']),
                     'lastLoginAt': str(row['last_login_at']) if row['last_login_at'] else None,
                     'createdAt': str(row['created_at']),
                 })
@@ -191,6 +195,8 @@ def create_user():
         role_codes = [data.get('role') or 'viewer']
     role = role_codes[0] if role_codes else 'viewer'
     department_ids = data.get('departmentIds') if isinstance(data.get('departmentIds'), list) else []
+    if password and len(password) < 8:
+        return jsonify({'code': 4221, 'message': '密码长度不能少于8位', 'data': None}), 422
 
     if not username or not password:
         return jsonify({'code': 4221, 'message': '用户名和密码不能为空', 'data': None}), 422
@@ -199,14 +205,16 @@ def create_user():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            _, error = _require_admin(cur)
+            ensure_auth_schema(cur)
+            _, error = _require_any(cur, ['users:create', 'users:manage'])
             if error:
                 return error
             _ensure_user_role_column(cur)
             ensure_org_permission_schema(cur)
             cur.execute('''
-                INSERT INTO system_users (username, password_hash, display_name, role, is_active)
-                VALUES (%s, %s, %s, %s, 1)
+                INSERT INTO system_users
+                    (username, password_hash, display_name, role, is_active, must_change_password, password_reset_at)
+                VALUES (%s, %s, %s, %s, 1, TRUE, NOW())
             ''', (username, password_hash, display_name, role))
             user_id = cur.lastrowid
             primary_role = set_user_roles(cur, user_id, role_codes, role)
@@ -227,7 +235,8 @@ def update_user(user_id):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            _, error = _require_admin(cur)
+            ensure_auth_schema(cur)
+            _, error = _require_any(cur, ['users:update', 'users:manage'])
             if error:
                 return error
             updates = []
@@ -268,6 +277,8 @@ def update_user(user_id):
 def reset_password(user_id):
     data = request.get_json() or {}
     new_password = data.get('password', '')
+    if new_password and len(new_password) < 8:
+        return jsonify({'code': 4221, 'message': '密码长度不能少于8位', 'data': None}), 422
     if not new_password:
         return jsonify({'code': 4221, 'message': '密码不能为空', 'data': None}), 422
 
@@ -275,11 +286,18 @@ def reset_password(user_id):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            _, error = _require_admin(cur)
+            ensure_auth_schema(cur)
+            _, error = _require_any(cur, ['users:reset_password', 'users:manage'])
             if error:
                 return error
-            cur.execute('UPDATE system_users SET password_hash = %s WHERE id = %s',
-                       (password_hash, user_id))
+            cur.execute('''
+                UPDATE system_users
+                SET password_hash = %s,
+                    must_change_password = TRUE,
+                    password_changed_at = NULL,
+                    password_reset_at = NOW()
+                WHERE id = %s
+            ''', (password_hash, user_id))
             conn.commit()
         return jsonify({'code': 0, 'message': 'success', 'data': None})
     finally:
@@ -295,7 +313,7 @@ def update_permissions(user_id):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            _, error = _require_admin(cur)
+            _, error = _require_any(cur, ['users:manage', 'roles:manage'])
             if error:
                 return error
             cur.execute('DELETE FROM user_module_permissions WHERE user_id = %s', (user_id,))
@@ -316,7 +334,7 @@ def list_modules():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            _, error = _require_admin(cur)
+            _, error = _require_any(cur, ['users:manage', 'roles:manage'])
             if error:
                 return error
             _ensure_permission_catalog(cur)
@@ -335,7 +353,7 @@ def list_role_permissions():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            _, error = _require_admin(cur)
+            _, error = _require_any(cur, ['users:manage', 'roles:manage'])
             if error:
                 return error
             _ensure_permission_catalog(cur)
@@ -367,7 +385,7 @@ def save_role_permissions():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            _, error = _require_admin(cur)
+            _, error = _require_any(cur, ['users:manage', 'roles:manage'])
             if error:
                 return error
             _ensure_permission_catalog(cur)

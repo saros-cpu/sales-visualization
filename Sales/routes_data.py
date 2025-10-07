@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 import pandas as pd
 from flask import jsonify, request, session
+from flask_jwt_extended import create_access_token, create_refresh_token
 from pymysql.err import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -872,16 +873,45 @@ def register_data_routes(app):
 
 
 
+    def issue_auth_tokens(user):
+        identity = str(user.get("id"))
+        access_token = create_access_token(
+            identity=identity,
+            additional_claims={
+                "username": user.get("username"),
+                "role": user.get("role"),
+                "mustChangePassword": bool(user.get("mustChangePassword")),
+            },
+            expires_delta=timedelta(hours=2),
+        )
+        refresh_token = create_refresh_token(identity=identity, expires_delta=timedelta(days=7))
+        return {"accessToken": access_token, "refreshToken": refresh_token}
+
+
     @app.route("/api/auth/status")
     def api_auth_status():
         conn = get_connection()
         try:
             cur = conn.cursor()
-            return jsonify({
+            user = session_user()
+            if user:
+                ensure_auth_schema(cur)
+                cur.execute("SELECT must_change_password FROM system_users WHERE id = %s AND is_active = TRUE", (user.get("id"),))
+                row = cur.fetchone()
+                if row:
+                    user = {**user, "mustChangePassword": bool(row[0])}
+                    session["user"] = user
+                else:
+                    session.clear()
+                    user = None
+            response = {
                 "hasUsers": has_users(cur),
-                "authenticated": bool(session_user()),
-                "user": session_user(),
-            })
+                "authenticated": bool(user),
+                "user": user,
+            }
+            if user:
+                response.update(issue_auth_tokens(user))
+            return jsonify(response)
         finally:
             conn.close()
 
@@ -894,6 +924,8 @@ def register_data_routes(app):
         username = clean_str(payload.get("username"))
         password = payload.get("password") or ""
         display_name = clean_str(payload.get("displayName")) or username
+        if password and len(password) < 8:
+            return jsonify({"error": "密码长度不能少于8位"}), 400
         if not username or len(password) < 6:
             return jsonify({"error": "用户名和至少 6 位密码必填"}), 400
         conn = get_connection()
@@ -903,8 +935,9 @@ def register_data_routes(app):
                 return jsonify({"error": "系统已完成首次管理员创建"}), 409
             cur.execute(
                 """
-                INSERT INTO system_users (username, password_hash, display_name, role)
-                VALUES (%s, %s, %s, 'admin')
+                INSERT INTO system_users
+                    (username, password_hash, display_name, role, must_change_password, password_changed_at)
+                VALUES (%s, %s, %s, 'admin', FALSE, CURRENT_TIMESTAMP)
                 """,
                 (username, generate_password_hash(password), display_name),
             )
@@ -917,8 +950,9 @@ def register_data_routes(app):
                 "username": username,
                 "displayName": display_name,
                 "role": "admin",
+                "mustChangePassword": False,
             }
-            return jsonify({"ok": True, "user": session["user"]})
+            return jsonify({"ok": True, "user": session["user"], **issue_auth_tokens(session["user"])})
         except Exception:
             conn.rollback()
             raise
@@ -937,7 +971,7 @@ def register_data_routes(app):
             ensure_auth_schema(cur)
             cur.execute(
                 """
-                SELECT id, username, password_hash, display_name, role, is_active
+                SELECT id, username, password_hash, display_name, role, is_active, must_change_password
                 FROM system_users
                 WHERE username = %s
                 """,
@@ -963,8 +997,9 @@ def register_data_routes(app):
                 "username": row[1],
                 "displayName": row[3],
                 "role": row[4],
+                "mustChangePassword": bool(row[6]),
             }
-            return jsonify({"ok": True, "user": session["user"]})
+            return jsonify({"ok": True, "user": session["user"], **issue_auth_tokens(session["user"])})
         except Exception:
             conn.rollback()
             raise
@@ -979,6 +1014,54 @@ def register_data_routes(app):
             log_system_operation("logout", "system_users", user.get("id"), {"username": user.get("username")})
         session.clear()
         return jsonify({"ok": True})
+
+
+    @app.route("/api/auth/change-password", methods=["POST"])
+    def api_auth_change_password():
+        user = session_user()
+        if not user:
+            return jsonify({"error": "login_required"}), 401
+        payload = request.get_json(force=True)
+        old_password = payload.get("oldPassword") or ""
+        new_password = payload.get("newPassword") or ""
+        if not old_password or not new_password:
+            return jsonify({"error": "旧密码和新密码不能为空"}), 400
+        if len(new_password) < 8:
+            return jsonify({"error": "新密码长度不能少于8位"}), 400
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            ensure_auth_schema(cur)
+            cur.execute("SELECT password_hash FROM system_users WHERE id = %s AND is_active = TRUE", (user.get("id"),))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "user_not_found"}), 404
+            if not check_password_hash(row[0], old_password):
+                return jsonify({"error": "旧密码不正确"}), 401
+            if check_password_hash(row[0], new_password):
+                return jsonify({"error": "新密码不能与旧密码相同"}), 400
+            cur.execute(
+                """
+                UPDATE system_users
+                SET password_hash = %s,
+                    must_change_password = FALSE,
+                    password_changed_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (generate_password_hash(new_password), user.get("id")),
+            )
+            log_operation(cur, "change_password", "system_users", user.get("id"), {"username": user.get("username")})
+            conn.commit()
+            session["user"] = {
+                **user,
+                "mustChangePassword": False,
+            }
+            return jsonify({"ok": True, "mustChangePassword": False, **issue_auth_tokens(session["user"])})
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 
 

@@ -6,6 +6,7 @@ import AuthRoute from '@/components/AuthRoute';
 import AppLayout from '@/layouts/AppLayout';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import Login from '@/pages/Login';
+import ForceChangePassword from '@/pages/ForceChangePassword';
 import './i18n';
 
 function isDynamicImportError(error: unknown) {
@@ -65,6 +66,8 @@ const OrganizationPermissions = lazyWithRetry(() => import('@/pages/Organization
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
 const MapPage = lazyWithRetry(() => import('@/pages/MapPage'));
 const ExchangeRates = lazyWithRetry(() => import('@/pages/ExchangeRates'));
+const ReportsCenter = lazyWithRetry(() => import('@/pages/ReportsCenter'));
+const KnowledgeBase = lazyWithRetry(() => import('@/pages/KnowledgeBase'));
 const Aliases = lazyWithRetry(() => import('@/pages/Aliases'));
 const AuditLogs = lazyWithRetry(() => import('@/pages/AuditLogs'));
 const SystemHealth = lazyWithRetry(() => import('@/pages/SystemHealth'));
@@ -78,7 +81,8 @@ function AppRoutes() {
   const { user } = useAuth();
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/login" element={user ? <Navigate to={user.mustChangePassword ? '/change-password' : '/'} replace /> : <Login />} />
+      <Route path="/change-password" element={<AuthRoute><ForceChangePassword /></AuthRoute>} />
       <Route path="/" element={<AuthRoute><AppLayout /></AuthRoute>}>
         <Route index element={<ErrorBoundary><Suspense fallback={loading}><VisualCockpit /></Suspense></ErrorBoundary>} />
         <Route path="cockpit" element={<Navigate to="/" replace />} />
@@ -103,6 +107,8 @@ function AppRoutes() {
           <Route path="query" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleQuery /></Suspense></ErrorBoundary>} />
         </Route>
         <Route path="exchange" element={<ErrorBoundary><Suspense fallback={loading}><ExchangeRates /></Suspense></ErrorBoundary>} />
+        <Route path="reports" element={<ErrorBoundary><Suspense fallback={loading}><ReportsCenter /></Suspense></ErrorBoundary>} />
+        <Route path="knowledge" element={<ErrorBoundary><Suspense fallback={loading}><KnowledgeBase /></Suspense></ErrorBoundary>} />
         <Route path="train-entry" element={<ErrorBoundary><Suspense fallback={loading}><TrainEntry /></Suspense></ErrorBoundary>} />
         <Route path="procurement" element={<ErrorBoundary><Suspense fallback={loading}><Procurement /></Suspense></ErrorBoundary>} />
         <Route path="contracts">

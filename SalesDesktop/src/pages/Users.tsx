@@ -8,7 +8,7 @@ import { getOrganizationOverview, type DepartmentRecord, type RoleRecord } from 
 
 export default function Users() {
   const { t, i18n } = useTranslation();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, can } = useAuth();
   const [data, setData] = useState<UserRecord[]>([]);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
@@ -22,11 +22,10 @@ export default function Users() {
   const [submitting, setSubmitting] = useState(false);
 
   const isAdmin = currentUser?.role === 'admin';
-  const canViewUsers = isAdmin;
-  const canManageUsers = isAdmin;
-  const canCreateUser = isAdmin;
-  const canUpdateUser = isAdmin;
-  const canResetUserPassword = isAdmin;
+  const canViewUsers = isAdmin || can('users:view') || can('users:manage');
+  const canCreateUser = isAdmin || can('users:create') || can('users:manage');
+  const canUpdateUser = isAdmin || can('users:update') || can('users:manage');
+  const canResetUserPassword = isAdmin || can('users:reset_password') || can('users:manage');
   const isRu = i18n.language.startsWith('ru');
   const departmentLabel = isRu ? 'Отдел' : '部门';
   const displayNameLabel = isRu ? 'Отображаемое имя' : t('common.displayName');
@@ -191,7 +190,12 @@ export default function Users() {
       title: t('common.status'),
       dataIndex: 'isActive',
       key: 'isActive',
-      render: (value: boolean) => <Tag color={value ? 'green' : 'red'}>{value ? t('common.active') : t('common.inactive')}</Tag>,
+      render: (value: boolean, record: UserRecord) => (
+        <Space wrap size={[0, 4]}>
+          <Tag color={value ? 'green' : 'red'}>{value ? t('common.active') : t('common.inactive')}</Tag>
+          {record.mustChangePassword && <Tag color="orange">需改密</Tag>}
+        </Space>
+      ),
     },
     { title: t('common.lastLogin'), dataIndex: 'lastLoginAt', key: 'lastLoginAt' },
     { title: t('common.createdAt'), dataIndex: 'createdAt', key: 'createdAt' },
@@ -238,7 +242,7 @@ export default function Users() {
           {!editing && (
             <>
               <Form.Item name="username" label={t('common.username')} rules={[{ required: true }]}><Input /></Form.Item>
-              <Form.Item name="password" label={t('common.password')} rules={[{ required: true }]}><Input.Password /></Form.Item>
+              <Form.Item name="password" label={t('common.password')} rules={[{ required: true }, { min: 8 }]}><Input.Password /></Form.Item>
             </>
           )}
           <Form.Item name="displayName" label={displayNameLabel}><Input /></Form.Item>
@@ -267,7 +271,7 @@ export default function Users() {
         confirmLoading={submitting}
       >
         <Form form={pwForm} layout="vertical">
-          <Form.Item name="password" label={t('common.newPassword')} rules={[{ required: true, min: 6 }]}>
+          <Form.Item name="password" label={t('common.newPassword')} rules={[{ required: true, min: 8 }]}>
             <Input.Password prefix={<LockOutlined />} />
           </Form.Item>
         </Form>

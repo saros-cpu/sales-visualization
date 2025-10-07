@@ -3,6 +3,11 @@ import {
   ImportOutlined, FileTextOutlined, DashOutlined,
   TeamOutlined, BookOutlined, SettingOutlined, AuditOutlined, FileSearchOutlined,
   MonitorOutlined, AppstoreOutlined, ControlOutlined,
+  DashboardOutlined, EnvironmentOutlined, BarChartOutlined, BankOutlined,
+  CalendarOutlined, DatabaseOutlined, FileDoneOutlined, AlertOutlined,
+  ToolOutlined, UserOutlined, ClusterOutlined, SafetyCertificateOutlined,
+  PlusSquareOutlined, LineChartOutlined, SearchOutlined, PartitionOutlined,
+  SwapOutlined, ProfileOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 
@@ -21,8 +26,8 @@ export const menuConfig: MenuItem[] = [
   {
     key: 'data-dashboard-sub', icon: <AppstoreOutlined />, labelKey: 'nav.dataDashboard',
     children: [
-      { key: '/', labelKey: 'nav.visualCockpit', moduleKey: 'dashboard', permissionCode: 'dashboard:view' },
-      { key: '/map', labelKey: 'nav.map', moduleKey: 'map' },
+      { key: '/', icon: <DashboardOutlined />, labelKey: 'nav.visualCockpit', moduleKey: 'dashboard', permissionCode: 'dashboard:view' },
+      { key: '/map', icon: <EnvironmentOutlined />, labelKey: 'nav.map', moduleKey: 'map' },
     ],
   },
   {
@@ -31,55 +36,56 @@ export const menuConfig: MenuItem[] = [
       {
         key: '/retail', icon: <ShopOutlined />, labelKey: 'nav.retailShort', moduleKey: 'retail',
         children: [
-          { key: '/retail/overview', labelKey: 'retail.overview' },
-          { key: '/retail/region', labelKey: 'retail.region' },
-          { key: '/retail/station', labelKey: 'retail.station' },
-          { key: '/retail/monthly', labelKey: 'retail.monthly' },
-          { key: '/retail/resource', labelKey: 'retail.resource' },
-          { key: '/retail/report', labelKey: 'retail.report' },
-          { key: '/retail/alert', labelKey: 'retail.alert' },
-          { key: '/retail/self-use', labelKey: 'retail.selfUse' },
+          { key: '/retail/overview', icon: <BarChartOutlined />, labelKey: 'retail.overview' },
+          { key: '/retail/region', icon: <PartitionOutlined />, labelKey: 'retail.region' },
+          { key: '/retail/station', icon: <BankOutlined />, labelKey: 'retail.station' },
+          { key: '/retail/monthly', icon: <CalendarOutlined />, labelKey: 'retail.monthly' },
+          { key: '/retail/resource', icon: <DatabaseOutlined />, labelKey: 'retail.resource' },
+          { key: '/retail/report', icon: <FileDoneOutlined />, labelKey: 'retail.report' },
+          { key: '/retail/alert', icon: <AlertOutlined />, labelKey: 'retail.alert' },
+          { key: '/retail/self-use', icon: <ToolOutlined />, labelKey: 'retail.selfUse' },
         ],
       },
       {
         key: '/wholesale', icon: <ShoppingOutlined />, labelKey: 'nav.wholesale', moduleKey: 'wholesale',
         children: [
-          { key: '/wholesale/overview', labelKey: 'wholesale.overview' },
-          { key: '/wholesale/products', labelKey: 'wholesale.products' },
-          { key: '/wholesale/customers', labelKey: 'wholesale.customers' },
-          { key: '/wholesale/transfer', labelKey: 'wholesale.transfer' },
-          { key: '/wholesale/trend', labelKey: 'wholesale.trend' },
-          { key: '/wholesale/query', labelKey: 'wholesale.query' },
+          { key: '/wholesale/overview', icon: <BarChartOutlined />, labelKey: 'wholesale.overview' },
+          { key: '/wholesale/products', icon: <AppstoreOutlined />, labelKey: 'wholesale.products' },
+          { key: '/wholesale/customers', icon: <TeamOutlined />, labelKey: 'wholesale.customers' },
+          { key: '/wholesale/transfer', icon: <SwapOutlined />, labelKey: 'wholesale.transfer' },
+          { key: '/wholesale/trend', icon: <LineChartOutlined />, labelKey: 'wholesale.trend' },
+          { key: '/wholesale/query', icon: <SearchOutlined />, labelKey: 'wholesale.query' },
         ],
       },
       { key: '/procurement', icon: <ImportOutlined />, labelKey: 'nav.procurement', moduleKey: 'procurement' },
       { key: '/exchange', icon: <DollarOutlined />, labelKey: 'nav.exchange', moduleKey: 'exchange' },
+      { key: '/reports', icon: <FileDoneOutlined />, labelKey: 'nav.reports', anyPermissionCodes: ['retail:export', 'wholesale:export'] },
       { key: '/transfer-loss', icon: <DashOutlined />, labelKey: 'nav.transferLoss', moduleKey: 'transfer_loss' },
     ],
   },
   {
     key: 'business-processing-sub', icon: <CarOutlined />, labelKey: 'nav.businessProcessing',
     children: [
-      { key: '/train-entry', labelKey: 'nav.dataEntry', moduleKey: 'train_entry' },
-      { key: '/materials', labelKey: 'nav.materials', moduleKey: 'materials' },
+      { key: '/train-entry', icon: <CarOutlined />, labelKey: 'nav.dataEntry', moduleKey: 'train_entry' },
+      { key: '/materials', icon: <DatabaseOutlined />, labelKey: 'nav.materials', moduleKey: 'materials' },
     ],
   },
+  { key: '/knowledge', icon: <BookOutlined />, labelKey: 'nav.knowledgeBase', moduleKey: 'knowledge', permissionCode: 'knowledge:view' },
   {
     key: '/contracts', icon: <FileTextOutlined />, labelKey: 'nav.contracts', moduleKey: 'contracts',
     children: [
-      { key: '/contracts/view', labelKey: 'nav.contractView' },
-      { key: '/contracts/add', labelKey: 'nav.contractAdd', permissionCode: 'contracts:create' },
+      { key: '/contracts/view', icon: <ProfileOutlined />, labelKey: 'nav.contractView' },
+      { key: '/contracts/add', icon: <PlusSquareOutlined />, labelKey: 'nav.contractAdd', permissionCode: 'contracts:create' },
     ],
   },
   {
     key: 'management-sub', icon: <TeamOutlined />, labelKey: 'nav.management',
-    roles: ['admin'],
     children: [
       {
-        key: 'user-permissions-sub', labelKey: 'nav.userPermissions',
+        key: 'user-permissions-sub', icon: <SafetyCertificateOutlined />, labelKey: 'nav.userPermissions',
         children: [
-          { key: '/users', labelKey: 'nav.userManagement', moduleKey: 'users', permissionCode: 'users:view' },
-          { key: '/users/organization', labelKey: 'common.organizationPermissions', anyPermissionCodes: ['users:manage', 'roles:manage', 'departments:manage'] },
+          { key: '/users', icon: <UserOutlined />, labelKey: 'nav.userManagement', moduleKey: 'users', permissionCode: 'users:view' },
+          { key: '/users/organization', icon: <ClusterOutlined />, labelKey: 'common.organizationPermissions', anyPermissionCodes: ['users:manage', 'roles:manage', 'departments:manage'] },
         ],
       },
       { key: '/management-center', icon: <ControlOutlined />, labelKey: 'nav.configCenter', roles: ['admin'] },

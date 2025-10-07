@@ -60,5 +60,5 @@ export function fetchWeighFilterOptions({ year, month }) {
  */
 export function exportWeighDetails(year, month) {
   const ym = `${year}-${String(month).padStart(2, '0')}`;
-  window.open(`/api/export/wholesale/details/${ym}`, '_blank');
+  return download(`/api/export/wholesale/details/${ym}`, `wholesale_details_${ym}.xlsx`);
 }

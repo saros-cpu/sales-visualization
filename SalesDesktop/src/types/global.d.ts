@@ -13,6 +13,12 @@ declare global {
     message?: string;
   }
   interface Window {
+    __SALES_API_HOST__?: string;
+    SALES_RUNTIME_CONFIG?: {
+      apiHost?: string;
+      updateUrl?: string;
+      allowedHosts?: string[];
+    };
     electronAPI?: {
       platform: string;
       downloadFile: (url: string, filename: string, token?: string) => Promise<boolean>;

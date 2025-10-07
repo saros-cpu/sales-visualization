@@ -273,9 +273,10 @@ function chooseCopy(language: string): LocaleCopy {
 export default function OrganizationPermissions() {
   const { i18n, t } = useTranslation();
   const { message } = AntApp.useApp();
-  const { user } = useAuth();
-  const canManageDepartments = user?.role === 'admin';
-  const canManageRoles = user?.role === 'admin';
+  const { user, can } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const canManageDepartments = isAdmin || can('departments:manage');
+  const canManageRoles = isAdmin || can('roles:manage');
   const text = chooseCopy(i18n.language);
   const [overview, setOverview] = useState<OrganizationOverview | null>(null);
   const [loading, setLoading] = useState(true);

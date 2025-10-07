@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.7.4';
-export const BUILD_DATE = '2026-07-16';
+export const VERSION = '3.8.0';
+export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
   version: string;
@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.0',
+    date: '2026-07-17',
+    type: 'minor',
+    changes: [
+      '新增：知识库底座，支持空间、分类、文章、标签、版本历史、附件元数据、搜索与权限控制',
+      '新增：客户端知识库页面，支持文章维护、附件上传下载、版本记录查看和 AI 可引用开关',
+      '新增：Web 端知识库入口和页面，保持零售、批发页面布局不变',
+      '升级：AI 助手可只读引用当前账号有权限查看的已发布知识库内容，为后续本地大模型和向量检索预留结构',
+      '整合：合并本轮公网客户端安全升级、首次改密、API 统一、报表中心、Web 首页可视化、权限闭环和客户端美化成果',
+    ],
+  },
   {
     version: '3.7.4',
     date: '2026-07-16',

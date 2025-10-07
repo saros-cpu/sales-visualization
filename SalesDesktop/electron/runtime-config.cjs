@@ -1,0 +1,60 @@
+const fs = require('fs');
+const path = require('path');
+
+const DEFAULT_API_HOST = process.env.SALES_API_HOST || 'http://198.51.100.10';
+const DEFAULT_UPDATE_PATH = '/download';
+
+function normalizeHost(value) {
+  return String(value || '').replace(/\/+$/, '');
+}
+
+function readJson(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return {};
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function configPaths(appRef) {
+  const paths = [];
+  if (appRef) {
+    try {
+      paths.push(path.join(appRef.getPath('userData'), 'app-config.json'));
+    } catch {}
+  }
+  if (process.resourcesPath) {
+    paths.push(path.join(process.resourcesPath, 'app-config.json'));
+  }
+  paths.push(path.join(__dirname, '..', 'app-config.json'));
+  return paths;
+}
+
+function loadRuntimeConfig(appRef) {
+  const fileConfig = configPaths(appRef).reduce((acc, filePath) => ({ ...acc, ...readJson(filePath) }), {});
+  const apiHost = normalizeHost(process.env.SALES_API_HOST || fileConfig.apiHost || DEFAULT_API_HOST);
+  const updateUrl = normalizeHost(
+    process.env.SALES_UPDATE_URL
+      || fileConfig.updateUrl
+      || `${apiHost}${DEFAULT_UPDATE_PATH}`,
+  );
+  return {
+    apiHost,
+    updateUrl,
+    allowedHosts: Array.from(new Set([
+      'localhost',
+      '127.0.0.1',
+      '198.51.100.10',
+      'sales.example.com',
+      ...((fileConfig.allowedHosts || []).filter(Boolean)),
+      new URL(apiHost).hostname,
+      new URL(updateUrl).hostname,
+    ])),
+  };
+}
+
+module.exports = {
+  loadRuntimeConfig,
+  normalizeHost,
+};

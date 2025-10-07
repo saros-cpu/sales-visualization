@@ -31,6 +31,7 @@ from endpoints.v1.retail.export.service.workbook import (
     _latest_report_workbook,
     _record_report_workbook,
     _record_weekly_report_workbook,
+    _weekly_report_filename,
     _weekly_report_workbook,
     _workbook_last_nonempty_day,
 )
@@ -144,7 +145,7 @@ def generate_range_summary_excel(conn, date_from, date_to, force_refresh=False):
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    title = f"Финансовый отчет по АЗС / 加油站零售报表 {date_from} - {date_to}"
+    title = f"Финансовый недельный отчет по АЗС / 加油站零售周报表 {date_from} - {date_to}"
     _copy_summary_template(ws, template_path, title)
     _write_summary_blocks(
         ws, station_keys, sales_data, ved_data, supply_data, contract_data,
@@ -152,7 +153,7 @@ def generate_range_summary_excel(conn, date_from, date_to, force_refresh=False):
     )
 
     WEEKLY_REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    filename = f"加油站零售报表_{date_from}_至_{date_to}.xlsx"
+    filename = _weekly_report_filename(date_from, date_to)
     filepath = WEEKLY_REPORT_DIR / filename
     wb.save(filepath)
     _record_weekly_report_workbook(date_from, date_to, filepath, source="manual")

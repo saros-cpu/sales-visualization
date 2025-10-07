@@ -7,6 +7,7 @@ from flask_jwt_extended import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from api_v2 import bp_v2
 from db import get_connection
+from shared_utils import ensure_auth_schema
 from .permission_service import get_effective_auth
 import pymysql
 from datetime import timedelta
@@ -15,7 +16,7 @@ from datetime import timedelta
 ALL_MODULE_KEYS = (
     'dashboard', 'retail', 'wholesale', 'exchange', 'train_entry',
     'procurement', 'contracts', 'materials', 'transfer_loss', 'map',
-    'users', 'aliases', 'weighing', 'settings',
+    'knowledge', 'users', 'aliases', 'weighing', 'settings',
 )
 
 DEFAULT_ROLE_MODULES = {
@@ -23,14 +24,14 @@ DEFAULT_ROLE_MODULES = {
     'operator': (
         'dashboard', 'retail', 'wholesale', 'exchange', 'train_entry',
         'procurement', 'contracts', 'materials', 'transfer_loss', 'map',
-        'aliases', 'weighing', 'settings',
+        'knowledge', 'aliases', 'weighing', 'settings',
     ),
     'auditor': (
         'dashboard', 'retail', 'wholesale', 'exchange', 'contracts',
-        'aliases', 'weighing', 'map', 'settings',
+        'knowledge', 'aliases', 'weighing', 'map', 'settings',
     ),
-    'viewer': ('dashboard', 'retail', 'wholesale', 'exchange', 'map', 'settings'),
-    'user': ('dashboard', 'retail', 'wholesale', 'exchange', 'map', 'settings'),
+    'viewer': ('dashboard', 'retail', 'wholesale', 'exchange', 'map', 'knowledge', 'settings'),
+    'user': ('dashboard', 'retail', 'wholesale', 'exchange', 'map', 'knowledge', 'settings'),
 }
 
 
@@ -125,6 +126,16 @@ def _get_legacy_user_permissions(user_id, role):
         conn.close()
 
 
+def _user_payload(user):
+    return {
+        'id': user['id'],
+        'username': user['username'],
+        'displayName': user['display_name'],
+        'role': user['role'],
+        'mustChangePassword': bool(user.get('must_change_password')),
+    }
+
+
 @bp_v2.route('/auth/login', methods=['POST'])
 def login():
     """桌面端登录 — 返回 JWT Token"""
@@ -138,8 +149,9 @@ def login():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            ensure_auth_schema(cur)
             cur.execute('''
-                SELECT id, username, password_hash, display_name, role, is_active 
+                SELECT id, username, password_hash, display_name, role, is_active, must_change_password
                 FROM system_users WHERE username = %s
             ''', (username,))
             user = cur.fetchone()
@@ -160,6 +172,7 @@ def login():
             additional_claims={
                 'username': user['username'],
                 'role': user['role'],
+                'mustChangePassword': bool(user.get('must_change_password')),
             },
             expires_delta=timedelta(hours=2)
         )
@@ -176,12 +189,7 @@ def login():
             'data': {
                 'accessToken': access_token,
                 'refreshToken': refresh_token,
-                'user': {
-                    'id': user['id'],
-                    'username': user['username'],
-                    'displayName': user['display_name'],
-                    'role': user['role'],
-                },
+                'user': _user_payload(user),
                 'permissions': authz['permissions'],
                 'permissionCodes': authz['permissionCodes'],
                 'roles': authz['roles'],
@@ -201,7 +209,8 @@ def refresh():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            cur.execute('SELECT username, role FROM system_users WHERE id = %s AND is_active = TRUE', (identity,))
+            ensure_auth_schema(cur)
+            cur.execute('SELECT username, role, must_change_password FROM system_users WHERE id = %s AND is_active = TRUE', (identity,))
             user = cur.fetchone()
         if not user:
             return jsonify({'code': 4001, 'message': 'з”Ёж€·дёЌе­ењЁ', 'data': None}), 401
@@ -210,6 +219,7 @@ def refresh():
             additional_claims={
                 'username': user['username'],
                 'role': user['role'],
+                'mustChangePassword': bool(user.get('must_change_password')),
             },
             expires_delta=timedelta(hours=2)
         )
@@ -233,9 +243,10 @@ def me():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            ensure_auth_schema(cur)
             cur.execute('''
-                SELECT id, username, display_name, role
-                FROM system_users WHERE id = %s
+                SELECT id, username, display_name, role, must_change_password
+                FROM system_users WHERE id = %s AND is_active = TRUE
             ''', (user_id,))
             user = cur.fetchone()
         if not user:
@@ -245,12 +256,7 @@ def me():
         return jsonify({
             'code': 0, 'message': 'success',
             'data': {
-                'user': {
-                    'id': user['id'],
-                    'username': user['username'],
-                    'displayName': user['display_name'],
-                    'role': user['role'],
-                },
+                'user': _user_payload(user),
                 'permissions': authz['permissions'],
                 'permissionCodes': authz['permissionCodes'],
                 'roles': authz['roles'],
@@ -270,6 +276,8 @@ def change_password():
     data = request.get_json() or {}
     old_password = data.get('oldPassword', '')
     new_password = data.get('newPassword', '')
+    if len(new_password) < 8:
+        return jsonify({'code': 4221, 'message': '新密码长度不能少于8位', 'data': None}), 422
 
     if not old_password or not new_password:
         return jsonify({'code': 4221, 'message': '旧密码和新密码不能为空', 'data': None}), 422
@@ -279,6 +287,7 @@ def change_password():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            ensure_auth_schema(cur)
             cur.execute('SELECT password_hash FROM system_users WHERE id = %s', (user_id,))
             user = cur.fetchone()
             if not user:
@@ -286,9 +295,18 @@ def change_password():
             if not check_password_hash(user['password_hash'], old_password):
                 return jsonify({'code': 4001, 'message': '旧密码错误', 'data': None}), 401
 
+            if check_password_hash(user['password_hash'], new_password):
+                return jsonify({'code': 4221, 'message': '新密码不能与旧密码相同', 'data': None}), 422
+
             new_hash = generate_password_hash(new_password)
-            cur.execute('UPDATE system_users SET password_hash = %s WHERE id = %s', (new_hash, user_id))
+            cur.execute('''
+                UPDATE system_users
+                SET password_hash = %s,
+                    must_change_password = FALSE,
+                    password_changed_at = NOW()
+                WHERE id = %s
+            ''', (new_hash, user_id))
             conn.commit()
-        return jsonify({'code': 0, 'message': 'success', 'data': None})
+        return jsonify({'code': 0, 'message': 'success', 'data': {'mustChangePassword': False}})
     finally:
         conn.close()

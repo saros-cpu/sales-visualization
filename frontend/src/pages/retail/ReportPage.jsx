@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getMonths, getStations, exportMonthlyExcel } from '../../api/retail';
+import { download } from '../../api/client';
 import { REGION_COLORS, REGION_ORDER, numberFormat, volumeFormat } from '../../utils/retail-helpers';
 
 function fixed2(n) { return Number(n || 0).toFixed(2); }
@@ -53,9 +54,7 @@ export default function ReportPage() {
     try {
       const res = await exportMonthlyExcel(currentMonth);
       if (res.status !== 'ok') throw new Error(res.error || '生成失败');
-      const a = document.createElement('a');
-      a.href = `/api/export/monthly/${currentMonth}/download`;
-      a.click();
+      await download(`/api/export/monthly/${currentMonth}/download`, res.file || '');
     } catch (e) { console.error('Excel导出失败', e); alert('Excel导出失败: ' + e.message); }
     setExporting(false);
   };

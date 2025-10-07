@@ -14,8 +14,8 @@ export default function Login() {
   const onFinish = async (values: { username: string; password: string }) => {
     setLoading(true);
     try {
-      await login(values.username, values.password);
-      window.location.hash = '#/';
+      const user = await login(values.username, values.password);
+      window.location.hash = user.mustChangePassword ? '#/change-password' : '#/';
     } catch {
       message.error(t('login.error'));
     } finally {

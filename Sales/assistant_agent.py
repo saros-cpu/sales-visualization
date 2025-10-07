@@ -26,6 +26,15 @@ ACTION_PATTERNS = (
 )
 
 
+STRICT_ACTION_PATTERNS = (
+    r"(帮我|请|替我|给我|直接|立刻|马上).{0,16}(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入|生成文件|下载)",
+    r"^(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入|生成文件|下载)",
+    r"(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入|生成文件|下载).{0,16}(数据|合同|文件|代码|项目|缓存|记录|报表|账号|权限)",
+    r"\b(delete|update|insert|create|save|submit|import|export|refresh|restart|execute|run|write|commit|download|generate)\b",
+    r"\b(удали|измени|изменить|создай|сохрани|импорт|экспорт|обнови|перезапусти|выполни|запусти|запиши|скачай)\b",
+)
+
+
 def detect_language(question: str | None, fallback: str | None = None) -> str:
     if fallback in {"zh", "ru"}:
         return fallback
@@ -37,10 +46,27 @@ def detect_language(question: str | None, fallback: str | None = None) -> str:
 
 def is_action_request(question: str | None) -> bool:
     text = (question or "").strip().lower()
-    return bool(text) and any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in ACTION_PATTERNS)
+    patterns = (*ACTION_PATTERNS, *STRICT_ACTION_PATTERNS)
+    return bool(text) and any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 
 
 def read_only_refusal(question: str, language: str | None = None) -> dict[str, Any]:
+    lang = detect_language(question, language)
+    answer = (
+        "Я работаю только в режиме чтения: могу искать данные, объяснять показатели и отвечать на вопросы, "
+        "но не изменяю код, файлы, договоры, кэш или бизнес-данные."
+        if lang == "ru"
+        else "我现在只能只读查询：可以查数据、解释指标、回答问题，但不会修改代码、文件、合同、缓存或任何业务数据。"
+    )
+    return {
+        "ok": True,
+        "question": question,
+        "periodLabel": "read_only",
+        "answer": answer,
+        "tables": [],
+        "agent": _agent_meta("blocked_action_request", llm_used=False),
+    }
+
     lang = detect_language(question, language)
     if lang == "ru":
         answer = (

@@ -8,6 +8,7 @@ interface User {
   username: string;
   displayName?: string;
   role: string;
+  mustChangePassword?: boolean;
   roles?: Array<{ id: number; roleCode: string; roleName: string; isPrimary: boolean }>;
   departments?: Array<{ id: number; deptCode: string; deptName: string; deptNameRu?: string | null; isPrimary: boolean }>;
 }
@@ -26,7 +27,7 @@ interface AuthContextType {
   dataScopes: Record<string, string>;
   loading: boolean;
   can: (permissionCode: string) => boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<User>;
   logout: () => void;
 }
 
@@ -124,11 +125,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = res.data;
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
-    setUser({ ...userData, roles, departments });
+    const nextUser = { ...userData, roles, departments };
+    setUser(nextUser);
     syncDevToolsAccess(userData?.role);
     setPermissions(normalizePermissions(userPermissions));
     setPermissionCodes(Array.isArray(codes) ? codes : []);
     setDataScopes(scopes || {});
+    return nextUser;
   };
 
   const logout = () => {

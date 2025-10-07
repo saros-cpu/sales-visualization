@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
 import { getSystemHealth, runAutomationTask, type AutomationTaskKey } from '@/api/system';
 import KpiCard, { KpiGrid } from '@/components/ui/KpiCard';
+import { useAuth } from '@/contexts/AuthContext';
 
 const { Text } = Typography;
 
@@ -16,6 +17,7 @@ function statusColor(status?: string) {
 
 export default function SystemHealth() {
   const { t } = useTranslation();
+  const { user, can } = useAuth();
   const query = useApiQuery(['system-health'], getSystemHealth, { refetchInterval: 60000 });
   const [runningTask, setRunningTask] = useState<AutomationTaskKey | null>(null);
   const data = query.data || {};
@@ -24,6 +26,7 @@ export default function SystemHealth() {
   const apiTop = data.api?.topPaths24h || [];
   const automation = data.automation || [];
   const ai = data.ai || {};
+  const canRunAutomation = user?.role === 'admin' || can('system_health:manage');
 
   const serviceCards = useMemo(() => Object.entries(data.services || {}).map(([key, value]: [string, any]) => ({
     key,
@@ -143,26 +146,30 @@ export default function SystemHealth() {
             label: t('systemHealth.automation'),
             children: (
               <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                <Alert type="info" showIcon message={t('systemHealth.manualRunHint')} />
-                <Space wrap>
-                  {automationActions.map(item => (
-                    <Popconfirm
-                      key={item.task}
-                      title={t('systemHealth.runConfirm')}
-                      okText={t('common.confirm')}
-                      cancelText={t('common.cancel')}
-                      onConfirm={() => handleRunTask(item.task)}
-                    >
-                      <Button
-                        icon={<PlayCircleOutlined />}
-                        loading={runningTask === item.task}
-                        disabled={Boolean(runningTask) && runningTask !== item.task}
-                      >
-                        {item.label}
-                      </Button>
-                    </Popconfirm>
-                  ))}
-                </Space>
+                {canRunAutomation && (
+                  <>
+                    <Alert type="info" showIcon message={t('systemHealth.manualRunHint')} />
+                    <Space wrap>
+                      {automationActions.map(item => (
+                        <Popconfirm
+                          key={item.task}
+                          title={t('systemHealth.runConfirm')}
+                          okText={t('common.confirm')}
+                          cancelText={t('common.cancel')}
+                          onConfirm={() => handleRunTask(item.task)}
+                        >
+                          <Button
+                            icon={<PlayCircleOutlined />}
+                            loading={runningTask === item.task}
+                            disabled={Boolean(runningTask) && runningTask !== item.task}
+                          >
+                            {item.label}
+                          </Button>
+                        </Popconfirm>
+                      ))}
+                    </Space>
+                  </>
+                )}
                 <Table
                   size="small"
                   rowKey="task_name"

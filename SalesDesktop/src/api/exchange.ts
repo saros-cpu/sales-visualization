@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_HOST } from './http';
+import { downloadWithAuth } from './download';
 
 const client = axios.create({
   baseURL: `${API_HOST}/api`,
@@ -49,25 +50,9 @@ export async function getExchangeRates(year: number, month: number): Promise<Exc
   return res.data;
 }
 
-export function exportExchangeRates(year: number, month: number) {
-  const token = localStorage.getItem('accessToken');
+export async function exportExchangeRates(year: number, month: number) {
+  const token = localStorage.getItem('accessToken') || '';
   const params = new URLSearchParams({ year: String(year), month: String(month) });
   const url = `${API_HOST}/api/export/exchange-rates?${params}`;
-  const a = document.createElement('a');
-  a.href = url;
-  if (token) {
-    // fetch with auth header then download blob
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const u = URL.createObjectURL(blob);
-        const b = document.createElement('a');
-        b.href = u;
-        b.download = `汇率快照${year}年${month}月.xlsx`;
-        b.click();
-        URL.revokeObjectURL(u);
-      });
-  } else {
-    a.click();
-  }
+  await downloadWithAuth(url, `汇率快照${year}年${month}月.xlsx`, token);
 }

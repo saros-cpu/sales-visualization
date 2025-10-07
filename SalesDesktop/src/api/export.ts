@@ -1,5 +1,6 @@
 import { message } from 'antd';
 import { API_HOST } from './http';
+import { downloadWithAuth } from './download';
 
 const BASE_URL = API_HOST;
 const API_BASE = `${BASE_URL}/api`;
@@ -9,28 +10,7 @@ async function getToken() {
 }
 
 async function downloadBlob(url: string, filename: string, token?: string) {
-  if ((window as any).electronAPI?.downloadFile) {
-    const ok = await (window as any).electronAPI.downloadFile(url, filename, token || '');
-    if (!ok) throw new Error('download cancelled');
-    return;
-  }
-  const headers: Record<string, string> = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-  const blob = await res.blob();
-  const blobUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = blobUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
-  }, 200);
+  await downloadWithAuth(url, filename, token);
 }
 
 export async function exportExcel(yearMonth: string) {
@@ -69,7 +49,7 @@ export async function downloadRetailRangeReport(dateFrom: string, dateTo: string
 
   await downloadBlob(
     `${API_BASE}/export/retail/range/download?${new URLSearchParams({ date_from: dateFrom, date_to: dateTo })}`,
-    json.file || `加油站零售报表_${dateFrom}_至_${dateTo}.xlsx`,
+    json.file || `加油站零售周报表_${dateFrom}_至_${dateTo}.xlsx`,
     token,
   );
 }

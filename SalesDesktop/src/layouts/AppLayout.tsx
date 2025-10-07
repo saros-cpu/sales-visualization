@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Layout, Menu, Button, Dropdown, Typography } from 'antd';
 import {
-  LogoutOutlined, GlobalOutlined,
+  LogoutOutlined, GlobalOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -148,20 +148,54 @@ export default function AppLayout() {
     localStorage.setItem('lang', lang);
   };
 
-  const siderWidth = collapsed ? 80 : 200;
+  const siderWidth = collapsed ? 72 : 216;
 
   return (
-    <Layout style={{ height: '100vh', overflow: 'hidden', flexDirection: 'column' }}>
+    <Layout className="app-shell" style={{ height: '100vh', overflow: 'hidden', flexDirection: 'column' }}>
       <WindowTitleBar title="销售管理系统" />
       <Layout style={{ flex: 1, minHeight: 0 }}>
-        <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed}
+        <Sider
+          className="app-sider"
+          collapsible
+          collapsed={collapsed}
+          collapsedWidth={72}
+          width={216}
+          trigger={null}
+          onCollapse={setCollapsed}
           style={{ position: 'fixed', left: 0, top: 32, bottom: 0, height: 'calc(100vh - 32px)', zIndex: 10, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #f0f0f0' }}>
-            <img src={logoSrc} alt="" style={{ width: collapsed ? 28 : 36, height: collapsed ? 28 : 36 }} />
+          <div className="app-sider-brand" style={{
+            height: 64,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'space-between',
+            gap: 10,
+            padding: collapsed ? '0 10px' : '0 14px',
+            borderBottom: '1px solid #f0f0f0',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <img src={logoSrc} alt="" style={{ width: collapsed ? 30 : 36, height: collapsed ? 30 : 36, flexShrink: 0 }} />
+              {!collapsed && (
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#1f1f1f', lineHeight: 1.2 }}>销售管理</div>
+                  <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.2 }}>Sales Desktop</div>
+                </div>
+              )}
+            </div>
+            <Button
+              className="app-sider-collapse"
+              type="text"
+              size="small"
+              title={collapsed ? '展开侧栏' : '收起侧栏'}
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(value => !value)}
+              style={{ flexShrink: 0 }}
+            />
           </div>
-          <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, minHeight: 0, maxHeight: 'calc(100vh - 32px - 64px)' }}>
+          <div className="app-sider-scroll" style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, minHeight: 0, maxHeight: 'calc(100vh - 32px - 64px)' }}>
             <Menu
+              className="app-menu"
               mode="inline"
+              inlineCollapsed={collapsed}
               selectedKeys={[selectedKey]}
               defaultOpenKeys={openKeys}
               items={antMenuItems}
@@ -170,8 +204,8 @@ export default function AppLayout() {
             />
           </div>
         </Sider>
-        <Layout style={{ marginLeft: siderWidth, height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <Header style={{
+        <Layout className="app-main-layout" style={{ marginLeft: siderWidth, height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Header className="app-header" style={{
             background: '#fff',
             padding: '0 16px',
             display: 'flex',

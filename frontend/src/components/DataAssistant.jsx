@@ -53,6 +53,31 @@ function TableResult({ table }) {
   );
 }
 
+async function queryAssistant(question) {
+  const token = localStorage.getItem('accessToken');
+  if (token) {
+    const res = await fetch('/api/v2/assistant/query', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ question, language: 'zh', useLlm: true }),
+    });
+    if (res.ok) {
+      const body = await res.json();
+      return body.data ?? body;
+    }
+    if (res.status !== 401 && res.status !== 404) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message || body.error || 'AI 查询失败');
+    }
+  }
+
+  return post('/api/data-assistant/query?_=' + Date.now(), { question });
+}
+
 export default function DataAssistant() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -71,9 +96,7 @@ export default function DataAssistant() {
     setAnswer(null);
 
     try {
-      const data = await post('/api/data-assistant/query?_=' + Date.now(), {
-        question: question.trim(),
-      });
+      const data = await queryAssistant(question.trim());
       setAnswer(data);
     } catch (err) {
       setError(err.name === 'AbortError' ? '查询超时，请稍后重试。' : '查询失败：' + err.message);
@@ -127,7 +150,12 @@ export default function DataAssistant() {
             ) : error ? (
               <span style={{ color: '#ef5350' }}>{error}</span>
             ) : answer?.tables?.length ? (
-              answer.tables.map((table, i) => <TableResult key={i} table={table} />)
+              <>
+                {answer?.answer && answer?.agent?.llmUsed && (
+                  <div className="data-assistant-summary">{answer.answer}</div>
+                )}
+                {answer.tables.map((table, i) => <TableResult key={i} table={table} />)}
+              </>
             ) : (
               answer?.answer || '选择快捷问题或直接输入经营问题，结果会优先以表格显示。'
             )}

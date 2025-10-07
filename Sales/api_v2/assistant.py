@@ -12,6 +12,7 @@ from api_v2 import bp_v2
 from assistant_agent import enhance_assistant_response, is_action_request, read_only_refusal
 from db import get_connection
 from settings import get_settings
+from .knowledge import search_knowledge_snippets
 from .permission_service import get_effective_auth
 
 
@@ -107,6 +108,21 @@ def _legacy_assistant_query(question: str, language: str | None) -> tuple[dict[s
         return payload, resp.status_code
 
 
+def _knowledge_reference_text(snippets: list[dict[str, Any]], language: str | None) -> str:
+    if not snippets:
+        return ""
+    is_ru = str(language or "").lower().startswith("ru")
+    title = "Справка из базы знаний:" if is_ru else "知识库参考："
+    lines = [title]
+    for index, item in enumerate(snippets, start=1):
+        source = " / ".join(part for part in [item.get("spaceName"), item.get("categoryName")] if part)
+        prefix = f"{index}. 《{item.get('title') or '-'}》"
+        if source:
+            prefix += f"（{source}）"
+        lines.append(f"{prefix}: {item.get('snippet') or ''}")
+    return "\n".join(lines)
+
+
 @bp_v2.route("/assistant/query", methods=["POST"])
 @jwt_required()
 def assistant_query():
@@ -135,6 +151,14 @@ def assistant_query():
         _record_ai_call(user_id, question, result["agent"])
         return jsonify({"code": 502, "message": "assistant_source_query_failed", "data": result}), 502
 
+    knowledge_snippets: list[dict[str, Any]] = []
+    try:
+        knowledge_snippets = search_knowledge_snippets(user_id, question, limit=3)
+        if knowledge_snippets:
+            source_payload["knowledge"] = knowledge_snippets
+    except Exception as exc:
+        current_app.logger.warning("knowledge search failed for assistant: %s", exc)
+
     result = enhance_assistant_response(
         source_payload,
         question=question,
@@ -142,6 +166,11 @@ def assistant_query():
         use_llm=use_llm,
         user_context=_user_context(user_id),
     )
+    if knowledge_snippets:
+        result["knowledge"] = knowledge_snippets
+        reference = _knowledge_reference_text(knowledge_snippets, language)
+        answer = str(result.get("answer") or "").strip()
+        result["answer"] = f"{answer}\n\n{reference}" if answer else reference
     _record_ai_call(user_id, question, result.get("agent") or {})
     return jsonify({"code": 0, "message": "success", "data": result})
 

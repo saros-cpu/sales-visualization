@@ -75,15 +75,19 @@ export default function WholesalePage() {
     setStatusText('正在生成批发分析报告...');
     try {
       const result = await generateWholesaleReport({ year, month });
-      triggerDownload(result.docxDownloadUrl || result.htmlDownloadUrl);
+      await triggerDownload(result.docxDownloadUrl || result.htmlDownloadUrl, result.docxFile || result.htmlFile || '');
       setStatusText(`${result.title || '批发分析报告'}已生成`);
     } catch (err) {
       setStatusText(`报告生成失败：${err.message}`);
     }
   };
 
-  const handleExportExchange = () => {
-    exportExchangeRates({ year, month });
+  const handleExportExchange = async () => {
+    try {
+      await exportExchangeRates({ year, month });
+    } catch (err) {
+      setStatusText(`汇率导出失败：${err.message}`);
+    }
   };
 
   return (

@@ -8,8 +8,14 @@ export const getProducts = () => get('/api/admin/products');
 export const getDensities = () => get('/api/densities');
 
 // ── 用户管理 ──
-export const getUsers = () => get('/api/admin/users');
-export const createUser = (payload) => post('/api/admin/users', payload);
+export const getUsers = async () => {
+  const items = await get('/api/v2/users');
+  return { items: Array.isArray(items) ? items : (items?.items || []) };
+};
+export const createUser = (payload) => post('/api/v2/users', {
+  ...payload,
+  role: payload.role === 'user' ? 'viewer' : payload.role,
+});
 
 // ── 零售站点 ──
 export const getStationCatalog = () => get('/api/retail/station-catalog');

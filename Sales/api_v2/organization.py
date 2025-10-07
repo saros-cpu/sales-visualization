@@ -9,6 +9,7 @@ from db import get_connection
 from .permission_service import (
     DATA_SCOPE_TYPES,
     ensure_permission_schema,
+    has_permission,
     list_resources,
 )
 
@@ -35,6 +36,14 @@ def _current_user(cur):
 
 def _is_admin(user):
     return bool(user and user["role"] == "admin")
+
+
+def _has_any_permission(cur, user, permission_codes):
+    if _is_admin(user):
+        return True
+    if not user:
+        return False
+    return any(has_permission(cur, user["id"], code, user["role"]) for code in permission_codes)
 
 
 def _forbidden():
@@ -191,7 +200,7 @@ def organization_overview():
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_permission_schema(cur)
             user = _current_user(cur)
-            if not _is_admin(user):
+            if not _has_any_permission(cur, user, ["users:manage", "roles:manage", "departments:manage"]):
                 return _forbidden()
             conn.commit()
             data = {
@@ -219,7 +228,7 @@ def create_department():
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_permission_schema(cur)
             user = _current_user(cur)
-            if not _is_admin(user):
+            if not _has_any_permission(cur, user, ["departments:manage"]):
                 return _forbidden()
             dept_code = str(payload.get("deptCode") or "").strip()
             dept_name = str(payload.get("deptName") or "").strip()
@@ -253,7 +262,7 @@ def update_department(dept_id):
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_permission_schema(cur)
             user = _current_user(cur)
-            if not _is_admin(user):
+            if not _has_any_permission(cur, user, ["departments:manage"]):
                 return _forbidden()
             dept_name = str(payload.get("deptName") or "").strip()
             dept_name_ru = str(payload.get("deptNameRu") or "").strip() or None
@@ -286,7 +295,7 @@ def create_role():
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_permission_schema(cur)
             user = _current_user(cur)
-            if not _is_admin(user):
+            if not _has_any_permission(cur, user, ["roles:manage"]):
                 return _forbidden()
             role_code = str(payload.get("roleCode") or "").strip()
             role_name = str(payload.get("roleName") or "").strip()
@@ -320,7 +329,7 @@ def update_role(role_id):
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_permission_schema(cur)
             user = _current_user(cur)
-            if not _is_admin(user):
+            if not _has_any_permission(cur, user, ["roles:manage"]):
                 return _forbidden()
             data_scope = payload.get("dataScope") if payload.get("dataScope") in DATA_SCOPE_TYPES else "dept"
             cur.execute("""
@@ -352,7 +361,7 @@ def update_role_permissions(role_code):
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_permission_schema(cur)
             user = _current_user(cur)
-            if not _is_admin(user):
+            if not _has_any_permission(cur, user, ["roles:manage"]):
                 return _forbidden()
             cur.execute("SELECT id FROM system_roles WHERE role_code = %s", (role_code,))
             role = cur.fetchone()
@@ -395,7 +404,7 @@ def update_role_data_scopes(role_code):
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_permission_schema(cur)
             user = _current_user(cur)
-            if not _is_admin(user):
+            if not _has_any_permission(cur, user, ["roles:manage"]):
                 return _forbidden()
             cur.execute("SELECT id FROM system_roles WHERE role_code = %s", (role_code,))
             role = cur.fetchone()

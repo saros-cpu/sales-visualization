@@ -237,9 +237,20 @@
   color: #e8f7ff;
   font-size: 12px;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
-.retail-report-btn:hover { border-color: #00d4ff; background: rgba(0,120,170,0.42); }
-.retail-report-btn:disabled { opacity: .55; cursor: wait; }
+.retail-report-btn:hover {
+  border-color: #00d4ff;
+  background: linear-gradient(135deg, rgba(0,120,170,0.48), rgba(0,80,120,0.32));
+  box-shadow: 0 6px 18px rgba(0,212,255,0.12);
+  transform: translateY(-1px);
+}
+.retail-report-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0,212,255,0.18);
+}
+.retail-report-btn:disabled { opacity: .55; cursor: wait; transform: none; box-shadow: none; }
 
 /* ========== Chart Container ========== */
 /* (defined above with flex layout) */
@@ -447,8 +458,11 @@
 .retail-filter-bar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 10px 14px;
-  background: rgba(10,20,50,0.6);
+  background:
+    linear-gradient(135deg, rgba(0,212,255,0.075), transparent 44%),
+    rgba(10,20,50,0.68);
   border: 1px solid rgba(0,180,255,0.12); border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .retail-filter-bar label { font-size: 11px; color: rgba(160,180,210,0.5); }
 .retail-search-input {
@@ -458,7 +472,10 @@
   color: #c8d8f0; font-size: 12px; outline: none; width: 140px; min-width: 0;
 }
 .retail-search-input::placeholder { color: rgba(160,180,210,0.3); }
-.retail-search-input:focus { border-color: rgba(0,212,255,0.5); }
+.retail-search-input:focus {
+  border-color: rgba(0,212,255,0.5);
+  box-shadow: 0 0 0 3px rgba(0,212,255,0.12);
+}
 
 .retail-view-tab {
   padding: 5px 14px;
@@ -466,13 +483,19 @@
   background: rgba(0,30,80,0.3); color: rgba(160,180,210,0.6);
   font-size: 12px; cursor: pointer; transition: all 0.2s;
 }
-.retail-view-tab:hover { border-color: rgba(0,212,255,0.5); color: #00d4ff; }
-.retail-view-tab.active { border-color: #00d4ff; color: #00d4ff; background: rgba(0,212,255,0.1); }
+.retail-view-tab:hover { border-color: rgba(0,212,255,0.5); color: #00d4ff; transform: translateY(-1px); }
+.retail-view-tab.active {
+  border-color: #00d4ff;
+  color: #00d4ff;
+  background: linear-gradient(135deg, rgba(0,212,255,0.16), rgba(0,30,80,0.32));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
 
 .retail-table-wrap {
   flex: 1; overflow: auto;
-  background: rgba(10,20,50,0.6);
+  background: linear-gradient(180deg, rgba(10,20,50,0.72), rgba(6,14,34,0.66));
   border: 1px solid rgba(0,180,255,0.12); border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
 }
 .retail-table-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
 .retail-table-wrap::-webkit-scrollbar-thumb { background: rgba(0,180,255,0.3); border-radius: 3px; }
@@ -481,14 +504,21 @@
 .retail-data-table thead th {
   position: sticky; top: 0; z-index: 2;
   padding: 10px 12px;
-  background: rgba(0,20,60,0.95);
+  background: linear-gradient(180deg, rgba(2,28,70,0.98), rgba(0,18,48,0.96));
   color: rgba(160,180,210,0.7); font-weight: 600;
   border-bottom: 1px solid rgba(0,180,255,0.2);
   white-space: nowrap; cursor: pointer; user-select: none;
 }
 .retail-data-table thead th:hover { color: #00d4ff; }
-.retail-data-table tbody td { padding: 8px 12px; border-bottom: 1px solid rgba(0,180,255,0.05); color: #c8d8f0; white-space: nowrap; }
-.retail-data-table tbody tr:hover td { background: rgba(0,180,255,0.04); }
+.retail-data-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0,180,255,0.05);
+  color: #c8d8f0;
+  white-space: nowrap;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.retail-data-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.012); }
+.retail-data-table tbody tr:hover td { background: rgba(0,212,255,0.055); color: #eefaff; }
 .retail-data-table tbody tr:last-child td { border-bottom: none; }
 .retail-data-table .num { text-align: right; font-family: 'Courier New','Consolas',monospace; font-size: 10px; color: #7db8f0; }
 .retail-data-table tfoot td { padding: 8px 14px; font-size: 11px; color: rgba(160,180,210,0.5); }

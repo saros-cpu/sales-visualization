@@ -2,7 +2,7 @@ import client from './client';
 
 export interface UserRecord {
   id: number; username: string; displayName: string; role: string;
-  isActive: boolean; lastLoginAt: string; createdAt: string;
+  isActive: boolean; mustChangePassword?: boolean; lastLoginAt: string; createdAt: string;
   roles?: Array<{ id: number; roleCode: string; roleName: string; isPrimary: boolean }>;
   departments?: Array<{ id: number; deptCode: string; deptName: string; deptNameRu?: string | null; isPrimary: boolean }>;
 }

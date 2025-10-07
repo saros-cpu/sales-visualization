@@ -91,7 +91,7 @@ def register_admin_routes(app):
             ensure_auth_schema(cur)
             cur.execute(
                 """
-                SELECT id, username, display_name, role, is_active, created_at, last_login_at
+                SELECT id, username, display_name, role, is_active, must_change_password, created_at, last_login_at
                 FROM system_users
                 ORDER BY id
                 """
@@ -103,8 +103,9 @@ def register_admin_routes(app):
                     "displayName": row[2],
                     "role": row[3],
                     "isActive": bool(row[4]),
-                    "createdAt": row[5].isoformat() if row[5] else None,
-                    "lastLoginAt": row[6].isoformat() if row[6] else None,
+                    "mustChangePassword": bool(row[5]),
+                    "createdAt": row[6].isoformat() if row[6] else None,
+                    "lastLoginAt": row[7].isoformat() if row[7] else None,
                 }
                 for row in cur.fetchall()
             ]
@@ -121,6 +122,8 @@ def register_admin_routes(app):
         password = payload.get("password") or ""
         display_name = clean_str(payload.get("displayName")) or username
         role = payload.get("role") if payload.get("role") in ("admin", "user") else "user"
+        if password and len(password) < 8:
+            return jsonify({"error": "密码长度不能少于8位"}), 400
         if not username or len(password) < 6:
             return jsonify({"error": "用户名和至少 6 位密码必填"}), 400
         conn = get_connection()
@@ -129,8 +132,9 @@ def register_admin_routes(app):
             ensure_auth_schema(cur)
             cur.execute(
                 """
-                INSERT INTO system_users (username, password_hash, display_name, role, created_by)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO system_users
+                    (username, password_hash, display_name, role, created_by, must_change_password, password_reset_at)
+                VALUES (%s, %s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
                 """,
                 (username, generate_password_hash(password), display_name, role, (session_user() or {}).get("id")),
             )

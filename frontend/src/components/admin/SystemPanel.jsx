@@ -53,7 +53,7 @@ export default function SystemPanel({ refreshKey, setStatusText }) {
         <form onSubmit={handleSubmit} className="form-grid single-form">
           <label>用户名<input name="username" required /></label>
           <label>显示名称<input name="displayName" /></label>
-          <label>密码<input name="password" type="password" required /></label>
+          <label>密码<input name="password" type="password" minLength={8} required /></label>
           <label>
             角色
             <select name="role" defaultValue="user">
@@ -81,7 +81,7 @@ export default function SystemPanel({ refreshKey, setStatusText }) {
                   <td>{item.username}</td>
                   <td>{item.displayName}</td>
                   <td>{item.role === 'admin' ? '管理员' : '普通用户'}</td>
-                  <td>{item.isActive ? '启用' : '停用'}</td>
+                  <td>{item.isActive ? '启用' : '停用'}{item.mustChangePassword ? ' / 需改密' : ''}</td>
                   <td>{fmtDate(item.createdAt)}</td>
                   <td>{fmtDate(item.lastLoginAt)}</td>
                 </tr>

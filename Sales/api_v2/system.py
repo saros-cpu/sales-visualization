@@ -25,6 +25,7 @@ from shared_utils import (
 from .assistant import ensure_ai_call_schema
 from .audit_logs import ensure_audit_schema
 from .authz import permission_required
+from .permission_service import has_permission
 
 
 def _file_info(path: Path, required_keys: set[str] | None = None) -> dict[str, Any]:
@@ -218,7 +219,7 @@ def _ai_status(cur) -> dict[str, Any]:
     }
 
 
-def _require_admin(cur, user_id: int):
+def _require_system_manage(cur, user_id: int):
     cur.execute(
         "SELECT id, username, role FROM system_users WHERE id = %s AND is_active = TRUE",
         (user_id,),
@@ -226,7 +227,7 @@ def _require_admin(cur, user_id: int):
     user = cur.fetchone()
     if not user:
         return None, (jsonify({"code": 4001, "message": "unauthorized", "data": None}), 401)
-    if user["role"] != "admin":
+    if user["role"] != "admin" and not has_permission(cur, user_id, "system_health:manage", user["role"]):
         return None, (jsonify({"code": 4003, "message": "forbidden", "data": None}), 403)
     return user, None
 
@@ -362,7 +363,7 @@ def run_automation_task():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            _, error_response = _require_admin(cur, user_id)
+            _, error_response = _require_system_manage(cur, user_id)
             if error_response:
                 return error_response
             ensure_automation_task_schema(cur)

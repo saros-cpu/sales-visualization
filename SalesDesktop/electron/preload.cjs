@@ -1,4 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { loadRuntimeConfig } = require('./runtime-config.cjs');
+
+const runtimeConfig = loadRuntimeConfig();
+
+contextBridge.exposeInMainWorld('__SALES_API_HOST__', runtimeConfig.apiHost);
+contextBridge.exposeInMainWorld('SALES_RUNTIME_CONFIG', runtimeConfig);
 
 contextBridge.exposeInMainWorld('updater', {
   onStatusChange: (callback) => {
@@ -12,6 +18,7 @@ contextBridge.exposeInMainWorld('updater', {
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  platform: process.platform,
   downloadFile: (url, filename, token) => ipcRenderer.invoke('download-file', { url, filename, token }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   minimize: () => ipcRenderer.send('window-minimize'),

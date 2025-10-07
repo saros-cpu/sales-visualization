@@ -5,9 +5,11 @@ import AdminGuard from './components/common/AdminGuard';
 import AppLayout from './components/layout/AppLayout';
 import RetailLayout from './components/layout/RetailLayout';
 import LoginPage from './pages/sales/LoginPage';
+import ForceChangePasswordPage from './pages/sales/ForceChangePasswordPage';
 import DashboardPage from './pages/sales/DashboardPage';
 import WholesalePage from './pages/sales/WholesalePage';
 import AdminPage from './pages/sales/AdminPage';
+import KnowledgePage from './pages/sales/KnowledgePage';
 import RetailDashboard from './pages/retail/RetailDashboard';
 import MonthlyPage from './pages/retail/MonthlyPage';
 import StationPage from './pages/retail/StationPage';
@@ -25,8 +27,10 @@ export default function App() {
 
         {/* 需要登录的页面 */}
         <Route element={<AuthGuard />}>
+          <Route path="/change-password" element={<ForceChangePasswordPage />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/knowledge" element={<KnowledgePage />} />
             <Route path="/wholesale" element={<WholesalePage />} />
             <Route path="/wholesale/:tab" element={<WholesalePage />} />
 

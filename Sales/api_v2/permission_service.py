@@ -20,6 +20,7 @@ MODULE_CATALOG = [
     ("materials", "物资调拨", 80),
     ("transfer_loss", "外运损耗", 90),
     ("map", "3D 地图", 100),
+    ("knowledge", "知识库", 105),
     ("users", "用户管理", 110),
     ("departments", "部门管理", 112),
     ("roles", "角色权限", 114),
@@ -57,6 +58,8 @@ PERMISSION_CATALOG = [
     ("transfer_loss:view", "transfer_loss", "view", "menu", "View transfer loss", 90),
     ("transfer_loss:export", "transfer_loss", "export", "button", "Export transfer loss", 91),
     ("map:view", "map", "view", "menu", "View map", 100),
+    ("knowledge:view", "knowledge", "view", "menu", "View knowledge base", 105),
+    ("knowledge:manage", "knowledge", "manage", "api", "Manage knowledge base", 106),
     ("users:view", "users", "view", "menu", "View users", 110),
     ("users:create", "users", "create", "button", "Create user", 111),
     ("users:update", "users", "update", "button", "Update user", 112),
@@ -73,6 +76,7 @@ PERMISSION_CATALOG = [
     ("audit_logs:view", "audit_logs", "view", "menu", "View operation audit logs", 155),
     ("audit_logs:export", "audit_logs", "export", "button", "Export operation audit logs", 156),
     ("system_health:view", "system_health", "view", "menu", "View system health", 158),
+    ("system_health:manage", "system_health", "manage", "button", "Run system maintenance tasks", 159),
     ("settings:view", "settings", "view", "menu", "View settings", 160),
     ("settings:update", "settings", "update", "button", "Update settings", 161),
 ]
@@ -104,7 +108,7 @@ DEPARTMENT_SEEDS = [
 DATA_VIEW_ACTIONS = {
     "dashboard:view", "retail:view", "wholesale:view", "exchange:view",
     "train_entry:view", "procurement:view", "contracts:view", "materials:view",
-    "transfer_loss:view", "map:view", "weighing:view", "settings:view",
+    "transfer_loss:view", "map:view", "knowledge:view", "weighing:view", "settings:view",
 }
 
 SALES_DEPARTMENT_ACTIONS = DATA_VIEW_ACTIONS | {
@@ -285,6 +289,11 @@ def _ensure_department_language_columns(cur) -> None:
 
 
 def _seed_catalog(cur) -> None:
+    _safe_execute(cur, "SELECT permission_code FROM system_permissions")
+    existing_permission_codes = {
+        row["permission_code"] if isinstance(row, dict) else row[0]
+        for row in cur.fetchall()
+    }
     for module_key, module_name, sort_order in MODULE_CATALOG:
         _safe_execute(cur, """
             INSERT INTO app_modules (module_key, module_name, sort_order, is_active)
@@ -333,10 +342,11 @@ def _seed_catalog(cur) -> None:
                 sort_order = VALUES(sort_order),
                 is_active = TRUE
         """, (code, module_key, action_key, permission_type, name, sort_order))
-    _seed_default_role_permissions(cur)
+    _seed_default_role_permissions(cur, existing_permission_codes)
 
 
-def _seed_default_role_permissions(cur) -> None:
+def _seed_default_role_permissions(cur, existing_permission_codes: set[str] | None = None) -> None:
+    existing_permission_codes = existing_permission_codes or set()
     _safe_execute(cur, "SELECT id, permission_code, module_key FROM system_permissions WHERE is_active = TRUE")
     permissions = cur.fetchall()
     permission_rows = [
@@ -356,13 +366,11 @@ def _seed_default_role_permissions(cur) -> None:
         _safe_execute(cur, "SELECT COUNT(*) AS total FROM system_role_permissions WHERE role_id = %s", (role_id,))
         count_row = cur.fetchone()
         total = count_row["total"] if isinstance(count_row, dict) else count_row[0]
-        if total:
-            continue
         for perm in permission_rows:
             code = perm["permission_code"]
             module_key = perm["module_key"]
             granted = "*" in defaults or code in defaults or f"{module_key}:*" in defaults
-            if granted:
+            if granted and (not total or code not in existing_permission_codes):
                 _safe_execute(cur, """
                     INSERT IGNORE INTO system_role_permissions (role_id, permission_id, granted)
                     VALUES (%s, %s, TRUE)

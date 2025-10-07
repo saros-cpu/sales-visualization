@@ -1,5 +1,6 @@
 import client from './client';
 import { API_HOST } from './http';
+import { downloadWithAuth } from './download';
 
 export interface AuditLogRecord {
   id: number;
@@ -64,26 +65,5 @@ export async function exportAuditLogs(params: AuditLogQuery) {
   const query = search.toString();
   const url = `${API_HOST}/api/v2/audit-logs/export${query ? `?${query}` : ''}`;
   const filename = `审计日志_${new Date().toISOString().slice(0, 10)}.xlsx`;
-
-  if ((window as any).electronAPI?.downloadFile) {
-    const ok = await (window as any).electronAPI.downloadFile(url, filename, token);
-    if (!ok) throw new Error('download cancelled');
-    return;
-  }
-
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const blob = await res.blob();
-  const blobUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = blobUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  setTimeout(() => {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(blobUrl);
-  }, 200);
+  await downloadWithAuth(url, filename, token);
 }

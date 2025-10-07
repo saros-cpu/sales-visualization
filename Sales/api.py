@@ -50,6 +50,7 @@ from retail_internal import open_oilstation
 
 from shared_utils import (
     has_users, session_user, wants_json, login_redirect,
+    user_requires_password_change,
     enrich_retail_station_statuses,
 )
 from routes_assistant import register_assistant_routes
@@ -137,6 +138,15 @@ PUBLIC_API_PREFIXES = (
     "/api/export/analysis/sales/download/",
 )
 
+PASSWORD_CHANGE_ALLOWED_PATHS = {
+    "/change-password",
+    "/api/auth/status",
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/bootstrap",
+    "/api/auth/change-password",
+}
+
 LEGACY_API_PERMISSION_PREFIXES = (
     ("/api/export/exchange-rates", "exchange:view"),
     ("/api/export/analysis/wholesale", "wholesale:export"),
@@ -202,6 +212,26 @@ def _enforce_legacy_api_permission(path: str, user_id, role: str | None):
         conn.close()
     return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
 
+
+def _password_change_required_response():
+    if wants_json():
+        return jsonify({
+            "code": 4091,
+            "error": "password_change_required",
+            "message": "password_change_required",
+            "data": {"mustChangePassword": True},
+        }), 403
+    return redirect("/change-password")
+
+
+def _is_password_change_allowed(path: str):
+    return path in PASSWORD_CHANGE_ALLOWED_PATHS
+
+
+def _mark_session_password_state(user: dict, must_change: bool):
+    if bool(user.get("mustChangePassword")) != must_change:
+        session["user"] = {**user, "mustChangePassword": must_change}
+
 @app.after_request
 def add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -231,6 +261,14 @@ def require_session():
         verify_jwt_in_request(optional=True)
         identity = get_jwt_identity()
         if identity is not None:
+            if not _is_password_change_allowed(path):
+                conn = get_connection()
+                try:
+                    with conn.cursor() as cur:
+                        if user_requires_password_change(cur, identity):
+                            return _password_change_required_response()
+                finally:
+                    conn.close()
             error_response = _enforce_legacy_api_permission(path, identity, (get_jwt() or {}).get("role"))
             if error_response:
                 return error_response
@@ -248,6 +286,15 @@ def require_session():
         conn.close()
     user = session_user()
     if user:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                must_change_password = user_requires_password_change(cur, user.get("id"))
+        finally:
+            conn.close()
+        _mark_session_password_state(user, must_change_password)
+        if must_change_password and not _is_password_change_allowed(path):
+            return _password_change_required_response()
         error_response = _enforce_legacy_api_permission(path, user.get("id"), user.get("role"))
         if error_response:
             return error_response
@@ -439,11 +486,13 @@ def spa_catchall(path):
 
 @app.route("/api/download/<filename>")
 def download_desktop(filename: str):
-    allowed = {"SalesDesktop Setup 3.1.1.exe", "SalesDesktop Setup 3.1.1.exe.blockmap", "latest.yml"}
-    if filename not in allowed:
+    allowed_installer = re.fullmatch(r"SalesDesktop Setup \d+\.\d+\.\d+\.exe(?:\.blockmap)?", filename)
+    if filename != "latest.yml" and not allowed_installer:
         return jsonify({"error": "not_found"}), 404
-    filepath = PROJECT_ROOT.parent / "SalesDesktop" / filename
-    if not filepath.is_file():
+    desktop_root = PROJECT_ROOT.parent / "SalesDesktop"
+    candidates = [desktop_root / filename, desktop_root / "release_build" / filename]
+    filepath = next((item for item in candidates if item.is_file()), None)
+    if filepath is None:
         return jsonify({"error": "file_not_ready"}), 404
     return send_from_directory(str(filepath.parent), filepath.name, as_attachment=True)
 

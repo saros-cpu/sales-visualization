@@ -146,7 +146,7 @@ export default function Settings() {
           <Form.Item name="oldPassword" label={t('common.oldPassword')} rules={[{ required: true }]}>
             <Input.Password />
           </Form.Item>
-          <Form.Item name="newPassword" label={t('common.newPassword')} rules={[{ required: true, min: 6 }]}>
+          <Form.Item name="newPassword" label={t('common.newPassword')} rules={[{ required: true, min: 8 }]}>
             <Input.Password />
           </Form.Item>
         </Form>

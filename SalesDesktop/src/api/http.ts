@@ -7,7 +7,8 @@ function normalizeHost(host: string) {
 }
 
 export function resolveApiHost() {
-  const configured = (window as Window & { __SALES_API_HOST__?: string }).__SALES_API_HOST__
+  const configured = window.__SALES_API_HOST__
+    || window.SALES_RUNTIME_CONFIG?.apiHost
     || localStorage.getItem('sales_api_host')
     || import.meta.env.VITE_API_HOST;
   const normalizedConfigured = configured ? normalizeHost(configured) : '';
@@ -74,9 +75,18 @@ export function createApi(basePath: string): AxiosInstance {
       return res;
     },
     async (err: AxiosError) => {
+      const body = err.response?.data as Record<string, unknown> | undefined;
+      const config = err.config as (typeof err.config & { _retry?: boolean }) | undefined;
+      const url = String(config?.url || '');
+      if (
+        err.response?.status === 403
+        && (body?.code === 4091 || body?.message === 'password_change_required')
+        && !url.includes('/auth/change-password')
+      ) {
+        if (window.location.hash !== '#/change-password') window.location.hash = '#/change-password';
+        return Promise.reject(new Error('首次登录请修改密码'));
+      }
       if (err.response?.status === 401) {
-        const config = err.config as (typeof err.config & { _retry?: boolean }) | undefined;
-        const url = String(config?.url || '');
         const canRefresh = !config?._retry && !url.includes('/auth/login') && !url.includes('/auth/refresh');
         if (config && canRefresh) {
           config._retry = true;
@@ -91,7 +101,6 @@ export function createApi(basePath: string): AxiosInstance {
         clearAuthTokens();
         if (window.location.hash !== '#/login') window.location.hash = '#/login';
       }
-      const body = err.response?.data as Record<string, unknown> | undefined;
       if (body?.message) {
         return Promise.reject(new Error(String(body.message)));
       }

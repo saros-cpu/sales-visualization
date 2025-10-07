@@ -5,6 +5,7 @@ directories:
 files:
   - dist/**/*
   - electron/**/*
+  - app-config.example.json
 win:
   target: nsis
   icon: build/icon.ico
