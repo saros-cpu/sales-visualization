@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.0';
+export const VERSION = '3.8.1';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.1',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '修复：强制改密状态下客户端不再显示 password_change_required 原始错误，统一跳转到改密页并显示中文提示',
+      '修复：Web 端强制改密拦截提示统一为中文，避免测试账号首次登录时看到接口原始状态码',
+    ],
+  },
   {
     version: '3.8.0',
     date: '2026-07-17',

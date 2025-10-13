@@ -1,4 +1,11 @@
 const BASE = '';
+const PASSWORD_CHANGE_REQUIRED_MESSAGE = '首次登录或密码重置后，请先修改密码';
+
+function isPasswordChangeRequired(body) {
+  return body?.code === 4091
+    || body?.error === 'password_change_required'
+    || body?.message === 'password_change_required';
+}
 
 export function storeAuthTokens(data = {}) {
   if (data.accessToken) localStorage.setItem('accessToken', data.accessToken);
@@ -76,12 +83,14 @@ async function api(path, options = {}, retried = false) {
   if (!res.ok) {
     if (isJson) {
       const body = await res.json();
-      if (
-        res.status === 403
-        && (body.code === 4091 || body.error === 'password_change_required' || body.message === 'password_change_required')
-        && !path.includes('/auth/change-password')
-      ) {
-        window.location.href = '/change-password';
+      if (res.status === 403 && isPasswordChangeRequired(body)) {
+        if (!path.includes('/auth/change-password')) {
+          window.location.href = '/change-password';
+        }
+        throw new Error(PASSWORD_CHANGE_REQUIRED_MESSAGE);
+      }
+      if (isPasswordChangeRequired(body)) {
+        throw new Error(PASSWORD_CHANGE_REQUIRED_MESSAGE);
       }
       throw new Error(body.message || body.error || '请求失败');
     }

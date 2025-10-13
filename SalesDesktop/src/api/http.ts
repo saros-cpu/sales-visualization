@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosError, AxiCTY-30eaders } from 'axios';
 
 const DEFAULT_PUBLIC_API_HOST = import.meta.env.VITE_DEFAULT_API_HOST || 'http://198.51.100.10';
+export const PASSWORD_CHANGE_REQUIRED_MESSAGE = '首次登录或密码重置后，请先修改密码';
 
 function normalizeHost(host: string) {
   return host.replace(/\/+$/, '');
@@ -54,6 +55,14 @@ export async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+function isPasswordChangeRequired(body: Record<string, unknown> | undefined) {
+  return (
+    body?.code === 4091
+    || body?.message === 'password_change_required'
+    || body?.error === 'password_change_required'
+  );
+}
+
 export function createApi(basePath: string): AxiosInstance {
   const instance = axios.create({
     baseURL: `${API_HOST}${basePath}`,
@@ -78,14 +87,14 @@ export function createApi(basePath: string): AxiosInstance {
       const body = err.response?.data as Record<string, unknown> | undefined;
       const config = err.config as (typeof err.config & { _retry?: boolean }) | undefined;
       const url = String(config?.url || '');
-      if (
-        err.response?.status === 403
-        && (body?.code === 4091 || body?.message === 'password_change_required')
-        && !url.includes('/auth/change-password')
-      ) {
-        if (window.location.hash !== '#/change-password') window.location.hash = '#/change-password';
-        return Promise.reject(new Error('首次登录请修改密码'));
+
+      if (err.response?.status === 403 && isPasswordChangeRequired(body)) {
+        if (!url.includes('/auth/change-password') && window.location.hash !== '#/change-password') {
+          window.location.hash = '#/change-password';
+        }
+        return Promise.reject(new Error(PASSWORD_CHANGE_REQUIRED_MESSAGE));
       }
+
       if (err.response?.status === 401) {
         const canRefresh = !config?._retry && !url.includes('/auth/login') && !url.includes('/auth/refresh');
         if (config && canRefresh) {
@@ -101,11 +110,15 @@ export function createApi(basePath: string): AxiosInstance {
         clearAuthTokens();
         if (window.location.hash !== '#/login') window.location.hash = '#/login';
       }
+
+      if (isPasswordChangeRequired(body)) {
+        return Promise.reject(new Error(PASSWORD_CHANGE_REQUIRED_MESSAGE));
+      }
       if (body?.message) {
         return Promise.reject(new Error(String(body.message)));
       }
       return Promise.reject(err);
-    }
+    },
   );
 
   return instance;
