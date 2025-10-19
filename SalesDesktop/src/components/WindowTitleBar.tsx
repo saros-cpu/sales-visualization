@@ -1,72 +1,45 @@
-import { useState } from 'react';
+import type { MouseEvent } from 'react';
 
-const api = () => (window as any).electronAPI;
+type WindowCommand = 'minimize' | 'maximize' | 'close';
 
-export default function WindowTitleBar({ title = '销售管理系统' }: { title?: string }) {
-  const [hover, setHover] = useState<string | null>(null);
+function runWindowCommand(command: WindowCommand, event: MouseEvent<HTMLButtonElement>) {
+  event.preventDefault();
+  event.stopPropagation();
 
-  const btnBase: React.CSSProperties = {
-    width: 46,
-    height: 32,
-    border: 'none',
-    background: 'transparent',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    fontSize: 13,
-    fontFamily: 'Segoe UI, Arial, sans-serif',
-    color: '#333',
-    WebkitAppRegion: 'no-drag' as any,
-    outline: 'none',
-    padding: 0,
-    lineHeight: 1,
-    transition: 'background 0.15s',
-  };
+  const controls = window.electronAPI;
+  if (command === 'minimize') void controls?.minimize?.();
+  if (command === 'maximize') void controls?.maximize?.();
+  if (command === 'close') void controls?.close?.();
+}
 
+export default function WindowTitleBar({ title = 'Sales Desktop' }: { title?: string }) {
   return (
-    <div
-      style={{
-        height: 32,
-        background: '#fff',
-        borderBottom: '1px solid #f0f0f0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        WebkitAppRegion: 'drag' as any,
-        userSelect: 'none',
-        flexShrink: 0,
-      }}
-    >
-      <span style={{ padding: '0 12px', fontSize: 13, fontWeight: 500, color: '#333' }}>{title}</span>
-      <div style={{ display: 'flex', height: '100%', WebkitAppRegion: 'no-drag' as any }}>
+    <div className="window-titlebar">
+      <span className="window-titlebar__title">{title}</span>
+      <div className="window-titlebar__controls">
         <button
-          style={{ ...btnBase, background: hover === 'min' ? '#e9e9e9' : 'transparent' }}
-          onMouseEnter={() => setHover('min')}
-          onMouseLeave={() => setHover(null)}
-          onClick={() => api()?.minimize()}
+          type="button"
+          className="window-titlebar__button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => runWindowCommand('minimize', event)}
           title="最小化"
         >
           &#9472;
         </button>
         <button
-          style={{ ...btnBase, background: hover === 'max' ? '#e9e9e9' : 'transparent' }}
-          onMouseEnter={() => setHover('max')}
-          onMouseLeave={() => setHover(null)}
-          onClick={() => api()?.maximize()}
+          type="button"
+          className="window-titlebar__button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => runWindowCommand('maximize', event)}
           title="最大化/还原"
         >
           &#9633;
         </button>
         <button
-          style={{
-            ...btnBase,
-            background: hover === 'close' ? '#e81123' : 'transparent',
-            color: hover === 'close' ? '#fff' : '#333',
-          }}
-          onMouseEnter={() => setHover('close')}
-          onMouseLeave={() => setHover(null)}
-          onClick={() => api()?.close()}
+          type="button"
+          className="window-titlebar__button window-titlebar__button--close"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => runWindowCommand('close', event)}
           title="关闭"
         >
           &#10005;

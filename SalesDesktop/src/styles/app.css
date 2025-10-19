@@ -15,10 +15,81 @@ body {
   background: #eef2f7;
 }
 
+.window-titlebar {
+  position: relative;
+  z-index: 100;
+  display: flex;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+  border-bottom: 1px solid #eef2f7;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.window-titlebar__title {
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 32px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.window-titlebar__controls {
+  position: relative;
+  z-index: 101;
+  display: flex;
+  height: 100%;
+  flex: 0 0 auto;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.window-titlebar__button {
+  display: flex;
+  width: 46px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #334155;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.window-titlebar__button:hover {
+  background: #eef2f7;
+}
+
+.window-titlebar__button--close:hover {
+  color: #ffffff;
+  background: #e81123;
+}
+
 .app-sider.ant-layout-sider {
   background: #ffffff !important;
   border-right: 1px solid #e7ecf3;
   box-shadow: 10px 0 28px rgba(15, 23, 42, 0.06);
+}
+
+.app-sider .ant-layout-sider-children {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .app-sider-brand {
@@ -36,8 +107,96 @@ body {
 }
 
 .app-sider-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 8px;
   scrollbar-gutter: stable;
+}
+
+.app-sider-footer {
+  flex: 0 0 auto;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), #ffffff);
+  border-top: 1px solid #edf1f6;
+}
+
+.app-sider-footer.is-collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+}
+
+.app-sider-user {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+}
+
+.app-sider-user-avatar {
+  flex: 0 0 auto;
+  color: #ffffff;
+  font-weight: 700;
+  background: linear-gradient(135deg, #cc0000, #f97316);
+}
+
+.app-sider-user-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.app-sider-user-name {
+  max-width: 126px;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sider-user-role {
+  max-width: 126px;
+  margin-top: 2px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sider-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.app-sider-footer-button.ant-btn {
+  min-width: 0;
+  border-radius: 7px;
+}
+
+.app-sider-footer-button.ant-btn > span:not(.ant-btn-icon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-sider-footer.is-collapsed .app-sider-footer-button.ant-btn {
+  width: 38px;
+  height: 34px;
+  padding: 0;
 }
 
 .app-menu.ant-menu {

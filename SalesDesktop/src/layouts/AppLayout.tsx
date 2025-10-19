@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Layout, Menu, Button, Dropdown, Typography } from 'antd';
+import { Avatar, Button, Layout, Menu, Tooltip, Typography } from 'antd';
 import {
-  LogoutOutlined, GlobalOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
+  LogoutOutlined,
+  GlobalOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +15,7 @@ import WindowTitleBar from '@/components/WindowTitleBar';
 import GlobalAiAssistant from '@/components/GlobalAiAssistant';
 import logoSrc from '@/assets/logo.svg';
 
-const { Header, Sider, Content } = Layout;
+const { Sider, Content } = Layout;
 const { Text } = Typography;
 
 function hasAccess(roles: string[] | undefined, userRole: string | undefined): boolean {
@@ -149,10 +153,14 @@ export default function AppLayout() {
   };
 
   const siderWidth = collapsed ? 72 : 216;
+  const displayName = user?.displayName || user?.username || '-';
+  const userInitial = displayName.trim().slice(0, 1).toUpperCase() || '?';
+  const nextLang = i18n.language === 'ru' ? 'zh' : 'ru';
+  const nextLangLabel = i18n.language === 'ru' ? '中文' : 'Русский';
 
   return (
     <Layout className="app-shell" style={{ height: '100vh', overflow: 'hidden', flexDirection: 'column' }}>
-      <WindowTitleBar title="销售管理系统" />
+      <WindowTitleBar title={t('app.title')} />
       <Layout style={{ flex: 1, minHeight: 0 }}>
         <Sider
           className="app-sider"
@@ -162,7 +170,8 @@ export default function AppLayout() {
           width={216}
           trigger={null}
           onCollapse={setCollapsed}
-          style={{ position: 'fixed', left: 0, top: 32, bottom: 0, height: 'calc(100vh - 32px)', zIndex: 10, display: 'flex', flexDirection: 'column' }}>
+          style={{ position: 'fixed', left: 0, top: 32, bottom: 0, height: 'calc(100vh - 32px)', zIndex: 10 }}
+        >
           <div className="app-sider-brand" style={{
             height: 64,
             display: 'flex',
@@ -176,22 +185,24 @@ export default function AppLayout() {
               <img src={logoSrc} alt="" style={{ width: collapsed ? 30 : 36, height: collapsed ? 30 : 36, flexShrink: 0 }} />
               {!collapsed && (
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#1f1f1f', lineHeight: 1.2 }}>销售管理</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#1f1f1f', lineHeight: 1.2 }}>{t('app.title')}</div>
                   <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.2 }}>Sales Desktop</div>
                 </div>
               )}
             </div>
-            <Button
-              className="app-sider-collapse"
-              type="text"
-              size="small"
-              title={collapsed ? '展开侧栏' : '收起侧栏'}
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed(value => !value)}
-              style={{ flexShrink: 0 }}
-            />
+            <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
+              <Button
+                className="app-sider-collapse"
+                type="text"
+                size="small"
+                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setCollapsed(value => !value)}
+                style={{ flexShrink: 0 }}
+              />
+            </Tooltip>
           </div>
-          <div className="app-sider-scroll" style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, minHeight: 0, maxHeight: 'calc(100vh - 32px - 64px)' }}>
+
+          <div className="app-sider-scroll">
             <Menu
               className="app-menu"
               mode="inline"
@@ -199,33 +210,75 @@ export default function AppLayout() {
               selectedKeys={[selectedKey]}
               defaultOpenKeys={openKeys}
               items={antMenuItems}
-              onClick={({ key }) => navigate(key)}
+              onClick={({ key }) => {
+                const nextKey = String(key);
+                if (nextKey.startsWith('/')) navigate(nextKey);
+              }}
               style={{ height: 'auto' }}
             />
           </div>
+
+          <div className={`app-sider-footer${collapsed ? ' is-collapsed' : ''}`}>
+            {collapsed ? (
+              <>
+                <Tooltip title={displayName} placement="right">
+                  <Avatar size={34} className="app-sider-user-avatar" icon={displayName === '-' ? <UserOutlined /> : undefined}>
+                    {displayName === '-' ? null : userInitial}
+                  </Avatar>
+                </Tooltip>
+                <Tooltip title={nextLangLabel} placement="right">
+                  <Button
+                    className="app-sider-footer-button"
+                    type="text"
+                    icon={<GlobalOutlined />}
+                    onClick={() => switchLang(nextLang)}
+                  />
+                </Tooltip>
+                <Tooltip title={t('nav.logout')} placement="right">
+                  <Button
+                    className="app-sider-footer-button"
+                    type="text"
+                    danger
+                    icon={<LogoutOutlined />}
+                    onClick={logout}
+                  />
+                </Tooltip>
+              </>
+            ) : (
+              <>
+                <div className="app-sider-user">
+                  <Avatar size={34} className="app-sider-user-avatar" icon={displayName === '-' ? <UserOutlined /> : undefined}>
+                    {displayName === '-' ? null : userInitial}
+                  </Avatar>
+                  <div className="app-sider-user-text">
+                    <Text className="app-sider-user-name" title={displayName}>{displayName}</Text>
+                    <Text className="app-sider-user-role" title={user?.role}>{user?.role || '-'}</Text>
+                  </div>
+                </div>
+                <div className="app-sider-actions">
+                  <Button
+                    className="app-sider-footer-button"
+                    icon={<GlobalOutlined />}
+                    size="small"
+                    onClick={() => switchLang(nextLang)}
+                  >
+                    {nextLangLabel}
+                  </Button>
+                  <Button
+                    className="app-sider-footer-button"
+                    icon={<LogoutOutlined />}
+                    size="small"
+                    onClick={logout}
+                  >
+                    {t('nav.logout')}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </Sider>
+
         <Layout className="app-main-layout" style={{ marginLeft: siderWidth, height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <Header className="app-header" style={{
-            background: '#fff',
-            padding: '0 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            height: 36,
-            lineHeight: '36px',
-            borderBottom: '1px solid #f0f0f0',
-            flexShrink: 0,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Button icon={<GlobalOutlined />} size="small" onClick={() => switchLang(i18n.language === 'zh' ? 'ru' : 'zh')}>
-                {i18n.language === 'ru' ? '中文' : 'Русский'}
-              </Button>
-              <Text style={{ fontSize: 14 }}>{user?.username}</Text>
-              <Button icon={<LogoutOutlined />} size="small" onClick={logout}>
-                {t('nav.logout')}
-              </Button>
-            </div>
-          </Header>
           <Content className="app-content" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
             <Outlet />
           </Content>

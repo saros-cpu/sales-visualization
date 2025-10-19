@@ -142,15 +142,31 @@ function setupOpenExternal() {
 }
 
 function setupWindowControl() {
-  ipcMain.on('window-minimize', () => mainWindow?.minimize());
-  ipcMain.on('window-maximize', () => {
-    if (mainWindow?.isMaximized()) {
-      mainWindow.unmaximize();
-    } else {
-      mainWindow.maximize();
+  const run = (command) => {
+    if (!mainWindow) return false;
+    if (command === 'minimize') {
+      mainWindow.minimize();
+      return true;
     }
-  });
-  ipcMain.on('window-close', () => mainWindow?.close());
+    if (command === 'maximize') {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+      return true;
+    }
+    if (command === 'close') {
+      mainWindow.close();
+      return true;
+    }
+    return false;
+  };
+
+  ipcMain.handle('window-control', (_event, command) => run(command));
+  ipcMain.on('window-minimize', () => run('minimize'));
+  ipcMain.on('window-maximize', () => run('maximize'));
+  ipcMain.on('window-close', () => run('close'));
 }
 
 function setupDevToolsAccess() {

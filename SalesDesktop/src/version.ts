@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.1';
+export const VERSION = '3.8.2';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.2',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '修复：客户端右上角最小化、最大化和关闭按钮改为确认式窗口控制调用，避免点击无响应',
+      '优化：语言切换、当前用户和退出登录移动到左侧菜单底部，释放内容区顶部空间',
+      '优化：侧栏收起后底部仅显示用户头像、语言和退出图标，保持菜单区简洁',
+    ],
+  },
   {
     version: '3.8.1',
     date: '2026-07-17',

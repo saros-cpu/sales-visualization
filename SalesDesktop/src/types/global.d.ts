@@ -23,9 +23,9 @@ declare global {
       platform: string;
       downloadFile: (url: string, filename: string, token?: string) => Promise<boolean>;
       openExternal: (url: string) => Promise<void>;
-      minimize?: () => void;
-      maximize?: () => void;
-      close?: () => void;
+      minimize?: () => void | Promise<boolean>;
+      maximize?: () => void | Promise<boolean>;
+      close?: () => void | Promise<boolean>;
       setDevToolsAccess?: (enabled: boolean) => void;
       onDevToolsOpened?: (callback: () => void) => () => void;
     };
