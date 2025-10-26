@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.2';
+export const VERSION = '3.8.3';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.3',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '修复：设置页更新入口不再因为未检测到 updater 对象而隐藏检查更新按钮',
+      '优化：打包客户端启动后自动检查新版本，发现更新后自动下载，下载完成后提示重启安装',
+      '优化：更新下载完成后弹出安装提示，即使未打开设置页也能选择立即重启安装',
+      '优化：设置页可读取当前更新状态，避免启动时自动检查结果丢失',
+    ],
+  },
   {
     version: '3.8.2',
     date: '2026-07-17',

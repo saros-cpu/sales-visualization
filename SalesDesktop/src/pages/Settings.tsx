@@ -8,6 +8,9 @@ import { API_HOST } from '@/api/http';
 
 import { VERSION, BUILD_DATE, CHANGELOG } from '@/version';
 
+const UPDATE_MODULE_MISSING = '当前客户端未检测到更新模块，请安装最新版客户端后再使用自动更新';
+const AUTO_UPDATE_HINT = '客户端启动后会自动检查更新，发现新版本会自动下载，下载完成后提示重启安装。';
+
 export default function Settings() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -18,24 +21,60 @@ export default function Settings() {
   const [showAllVersions, setShowAllVersions] = useState(false);
 
   useEffect(() => {
-    if (!window.updater) return;
-    const cleanup = window.updater.onStatusChange(setUpdateStatus);
-    return cleanup;
+    const updater = window.updater;
+    if (!updater) {
+      setUpdateStatus({ status: 'unsupported', message: UPDATE_MODULE_MISSING, autoCheck: false });
+      return;
+    }
+
+    let mounted = true;
+    updater.getStatus()
+      .then(status => {
+        if (mounted) setUpdateStatus(status);
+      })
+      .catch(() => {});
+    const cleanup = updater.onStatusChange(status => {
+      if (mounted) setUpdateStatus(status);
+    });
+    return () => {
+      mounted = false;
+      cleanup();
+    };
   }, []);
 
-  const handleCheckUpdate = useCallback(() => {
-    window.updater?.checkForUpdates();
+  const handleCheckUpdate = useCallback(async () => {
+    if (!window.updater) {
+      setUpdateStatus({ status: 'unsupported', message: UPDATE_MODULE_MISSING, autoCheck: false });
+      message.warning(UPDATE_MODULE_MISSING);
+      return;
+    }
+    try {
+      await window.updater.checkForUpdates();
+    } catch (error) {
+      setUpdateStatus({ status: 'error', message: error instanceof Error ? error.message : String(error) });
+    }
   }, []);
 
-  const handleDownloadUpdate = useCallback(() => {
-    window.updater?.downloadUpdate();
+  const handleDownloadUpdate = useCallback(async () => {
+    if (!window.updater) {
+      setUpdateStatus({ status: 'unsupported', message: UPDATE_MODULE_MISSING, autoCheck: false });
+      message.warning(UPDATE_MODULE_MISSING);
+      return;
+    }
+    try {
+      await window.updater.downloadUpdate();
+    } catch (error) {
+      setUpdateStatus({ status: 'error', message: error instanceof Error ? error.message : String(error) });
+    }
   }, []);
 
-  const handleRestart = useCallback(() => {
-    window.updater?.restartApp();
+  const handleRestart = useCallback(async () => {
+    if (!window.updater) {
+      message.warning(UPDATE_MODULE_MISSING);
+      return;
+    }
+    await window.updater.restartApp();
   }, []);
-
-  const isPackaged = typeof window.updater !== 'undefined';
 
   const switchLang = (lang: string) => {
     i18n.changeLanguage(lang);
@@ -72,50 +111,47 @@ export default function Settings() {
             <Button icon={<GlobalOutlined />} type={i18n.language === 'ru' ? 'primary' : 'default'} onClick={() => switchLang('ru')}>Русский</Button>
           </Space>
         </Card>
-        {isPackaged && (
-          <Card size="small" title={t('settings.appUpdate')}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {(updateStatus.status === 'idle' || updateStatus.status === 'not-available' || updateStatus.status === 'error') && (
-                <Button icon={<SyncOutlined />} onClick={handleCheckUpdate}>{t('settings.update')}</Button>
-              )}
-              {updateStatus.status === 'checking' && (
-                <Space><SyncOutlined spin />{t('settings.checking')}</Space>
-              )}
-              {updateStatus.status === 'not-available' && (
-                <Typography.Text type="secondary">{t('settings.upToDate')} (v{VERSION})</Typography.Text>
-              )}
-              {updateStatus.status === 'available' && (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Typography.Text type="warning">{t('settings.updateAvailable', { version: updateStatus.version })}</Typography.Text>
-                  <Button icon={<DownloadOutlined />} type="primary" onClick={handleDownloadUpdate}>{t('settings.downloadNow')}</Button>
-                </Space>
-              )}
-              {updateStatus.status === 'downloading' && (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Typography.Text>{t('settings.downloading', { percent: updateStatus.percent })}</Typography.Text>
-                  <Progress percent={updateStatus.percent || 0} showInfo={false} />
-                </Space>
-              )}
-              {updateStatus.status === 'downloaded' && (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Typography.Text type="success">{t('settings.updateReady')}</Typography.Text>
-                  <Button icon={<ReloadOutlined />} type="primary" onClick={handleRestart}>{t('settings.restartNow')}</Button>
-                </Space>
-              )}
-              {updateStatus.status === 'error' && (
-                <Space wrap>
-                  <Typography.Text type="danger">{t('settings.updateError')}: {updateStatus.message}</Typography.Text>
-                  <Button size="small" onClick={handleCheckUpdate}>{t('common.retry')}</Button>
-                </Space>
-              )}
-            </Space>
-          </Card>
-        )}
-        {!isPackaged && (
-          <Card size="small" title={t('settings.appUpdate')}>
-            <Typography.Text type="secondary">{t('settings.updateDevOnly')}</Typography.Text>
-          </Card>
-        )}
+        <Card size="small" title={t('settings.appUpdate')}>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Typography.Text type="secondary">{AUTO_UPDATE_HINT}</Typography.Text>
+            {(updateStatus.status === 'idle' || updateStatus.status === 'not-available' || updateStatus.status === 'error' || updateStatus.status === 'unsupported') && (
+              <Button icon={<SyncOutlined />} onClick={handleCheckUpdate}>{t('settings.update')}</Button>
+            )}
+            {updateStatus.status === 'unsupported' && (
+              <Typography.Text type="danger">{updateStatus.message || UPDATE_MODULE_MISSING}</Typography.Text>
+            )}
+            {updateStatus.status === 'checking' && (
+              <Space><SyncOutlined spin />{t('settings.checking')}</Space>
+            )}
+            {updateStatus.status === 'not-available' && (
+              <Typography.Text type="secondary">{t('settings.upToDate')} (v{VERSION})</Typography.Text>
+            )}
+            {updateStatus.status === 'available' && (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Typography.Text type="warning">{t('settings.updateAvailable', { version: updateStatus.version })}，正在自动下载...</Typography.Text>
+                <Button icon={<DownloadOutlined />} type="primary" onClick={handleDownloadUpdate}>{t('settings.downloadNow')}</Button>
+              </Space>
+            )}
+            {updateStatus.status === 'downloading' && (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Typography.Text>{t('settings.downloading', { percent: updateStatus.percent })}</Typography.Text>
+                <Progress percent={updateStatus.percent || 0} showInfo={false} />
+              </Space>
+            )}
+            {updateStatus.status === 'downloaded' && (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Typography.Text type="success">{t('settings.updateReady')}</Typography.Text>
+                <Button icon={<ReloadOutlined />} type="primary" onClick={handleRestart}>{t('settings.restartNow')}</Button>
+              </Space>
+            )}
+            {updateStatus.status === 'error' && (
+              <Space wrap>
+                <Typography.Text type="danger">{t('settings.updateError')}: {updateStatus.message}</Typography.Text>
+                <Button size="small" onClick={handleCheckUpdate}>{t('common.retry')}</Button>
+              </Space>
+            )}
+          </Space>
+        </Card>
         <Card size="small" title={t('common.about')}>
           <Typography.Paragraph style={{ whiteSpace: 'pre-line', marginBottom: 4 }}>
             {t('app.title')} v{VERSION}

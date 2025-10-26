@@ -6,6 +6,8 @@ const { loadRuntimeConfig } = require('./runtime-config.cjs');
 
 let mainWindow = null;
 let adminDevToolsEnabled = false;
+let updateStatus = { status: 'idle', autoCheck: true };
+let updatePromptVisible = false;
 
 const runtimeConfig = loadRuntimeConfig(app);
 const allowedExternalHosts = new Set(runtimeConfig.allowedHosts);
@@ -73,37 +75,99 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+function emitUpdateStatus(nextStatus) {
+  updateStatus = { ...updateStatus, ...nextStatus };
+  mainWindow?.webContents.send('update-status', updateStatus);
+  return updateStatus;
+}
+
+async function promptInstallUpdate(info) {
+  if (!mainWindow || updatePromptVisible) return;
+  updatePromptVisible = true;
+  try {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: '更新已准备好',
+      message: `新版本 ${info?.version || ''} 已下载完成`,
+      detail: '重启客户端后将自动安装更新。',
+      buttons: ['稍后', '立即重启安装'],
+      defaultId: 1,
+      cancelId: 0,
+    });
+    if (result.response === 1) {
+      autoUpdater.quitAndInstall();
+    }
+  } finally {
+    updatePromptVisible = false;
+  }
+}
+
 function setupUpdater() {
+  const unsupportedMessage = '更新仅支持打包安装后的客户端';
+
+  const checkForUpdates = async () => {
+    if (!app.isPackaged) {
+      return emitUpdateStatus({ status: 'unsupported', message: unsupportedMessage, autoCheck: false });
+    }
+    try {
+      emitUpdateStatus({ status: 'checking', message: undefined });
+      return await autoUpdater.checkForUpdates();
+    } catch (err) {
+      return emitUpdateStatus({ status: 'error', message: err?.message || String(err) });
+    }
+  };
+
+  ipcMain.handle('get-update-status', () => updateStatus);
+  ipcMain.handle('check-for-update', () => checkForUpdates());
+  ipcMain.handle('download-update', async () => {
+    if (!app.isPackaged) {
+      return emitUpdateStatus({ status: 'unsupported', message: unsupportedMessage, autoCheck: false });
+    }
+    try {
+      return await autoUpdater.downloadUpdate();
+    } catch (err) {
+      return emitUpdateStatus({ status: 'error', message: err?.message || String(err) });
+    }
+  });
+  ipcMain.handle('restart-app', () => {
+    if (!app.isPackaged) return false;
+    autoUpdater.quitAndInstall();
+    return true;
+  });
+
   if (!app.isPackaged) {
+    emitUpdateStatus({ status: 'unsupported', message: unsupportedMessage, autoCheck: false });
     console.log('[Updater] skipped in dev mode');
     return;
   }
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
   autoUpdater.setFeedURL({ provider: 'generic', url: runtimeConfig.updateUrl });
 
-  ipcMain.on('check-for-update', () => { autoUpdater.checkForUpdates(); });
-  ipcMain.on('download-update', () => { autoUpdater.downloadUpdate(); });
-  ipcMain.on('restart-app', () => { autoUpdater.quitAndInstall(); });
-
   autoUpdater.on('checking-for-update', () => {
-    mainWindow?.webContents.send('update-status', { status: 'checking' });
+    emitUpdateStatus({ status: 'checking', message: undefined });
   });
   autoUpdater.on('update-available', (info) => {
-    mainWindow?.webContents.send('update-status', { status: 'available', version: info.version, releaseDate: info.releaseDate });
+    emitUpdateStatus({ status: 'available', version: info.version, releaseDate: info.releaseDate, message: undefined });
   });
   autoUpdater.on('update-not-available', () => {
-    mainWindow?.webContents.send('update-status', { status: 'not-available' });
+    emitUpdateStatus({ status: 'not-available', message: undefined });
   });
   autoUpdater.on('download-progress', (p) => {
-    mainWindow?.webContents.send('update-status', { status: 'downloading', percent: Math.round(p.percent) });
+    emitUpdateStatus({ status: 'downloading', percent: Math.round(p.percent), message: undefined });
   });
   autoUpdater.on('update-downloaded', (info) => {
-    mainWindow?.webContents.send('update-status', { status: 'downloaded', version: info.version });
+    emitUpdateStatus({ status: 'downloaded', version: info.version, message: undefined });
+    promptInstallUpdate(info);
   });
   autoUpdater.on('error', (err) => {
-    mainWindow?.webContents.send('update-status', { status: 'error', message: err.message });
+    emitUpdateStatus({ status: 'error', message: err.message });
   });
+
+  setTimeout(() => {
+    checkForUpdates();
+  }, 8000);
 }
 
 function setupFileDownload() {

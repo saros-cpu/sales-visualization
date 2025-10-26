@@ -6,11 +6,12 @@ declare module 'react' {
 }
 declare global {
   interface UpdateStatus {
-    status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+    status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'unsupported';
     version?: string;
     releaseDate?: string;
     percent?: number;
     message?: string;
+    autoCheck?: boolean;
   }
   interface Window {
     __SALES_API_HOST__?: string;
@@ -31,9 +32,10 @@ declare global {
     };
     updater?: {
       onStatusChange: (callback: (status: UpdateStatus) => void) => () => void;
-      checkForUpdates: () => void;
-      downloadUpdate: () => void;
-      restartApp: () => void;
+      getStatus: () => Promise<UpdateStatus>;
+      checkForUpdates: () => Promise<unknown>;
+      downloadUpdate: () => Promise<unknown>;
+      restartApp: () => Promise<unknown>;
     };
   }
 }

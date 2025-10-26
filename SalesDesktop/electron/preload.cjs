@@ -12,9 +12,10 @@ contextBridge.exposeInMainWorld('updater', {
     ipcRenderer.on('update-status', handler);
     return () => ipcRenderer.removeListener('update-status', handler);
   },
-  checkForUpdates: () => ipcRenderer.send('check-for-update'),
-  downloadUpdate: () => ipcRenderer.send('download-update'),
-  restartApp: () => ipcRenderer.send('restart-app'),
+  getStatus: () => ipcRenderer.invoke('get-update-status'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-update'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  restartApp: () => ipcRenderer.invoke('restart-app'),
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
