@@ -3,15 +3,12 @@ import { Avatar, Button, Layout, Menu, Tooltip, Typography } from 'antd';
 import {
   LogoutOutlined,
   GlobalOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth, type PermissionMap } from '@/contexts/AuthContext';
 import { menuConfig, type MenuItem } from '@/config/menu';
-import WindowTitleBar from '@/components/WindowTitleBar';
 import GlobalAiAssistant from '@/components/GlobalAiAssistant';
 import logoSrc from '@/assets/logo.svg';
 
@@ -160,7 +157,6 @@ export default function AppLayout() {
 
   return (
     <Layout className="app-shell" style={{ height: '100vh', overflow: 'hidden', flexDirection: 'column' }}>
-      <WindowTitleBar title={t('app.title')} />
       <Layout style={{ flex: 1, minHeight: 0 }}>
         <Sider
           className="app-sider"
@@ -170,35 +166,29 @@ export default function AppLayout() {
           width={216}
           trigger={null}
           onCollapse={setCollapsed}
-          style={{ position: 'fixed', left: 0, top: 32, bottom: 0, height: 'calc(100vh - 32px)', zIndex: 10 }}
+          style={{ position: 'fixed', left: 0, top: 0, bottom: 0, height: '100vh', zIndex: 10 }}
         >
           <div className="app-sider-brand" style={{
             height: 64,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'space-between',
-            gap: 10,
             padding: collapsed ? '0 10px' : '0 14px',
             borderBottom: '1px solid #f0f0f0',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-              <img src={logoSrc} alt="" style={{ width: collapsed ? 30 : 36, height: collapsed ? 30 : 36, flexShrink: 0 }} />
-              {!collapsed && (
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#1f1f1f', lineHeight: 1.2 }}>{t('app.title')}</div>
-                  <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.2 }}>Sales Desktop</div>
-                </div>
-              )}
-            </div>
             <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
-              <Button
-                className="app-sider-collapse"
-                type="text"
-                size="small"
-                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              <button
+                type="button"
+                className={`app-sider-brand-button${collapsed ? ' is-collapsed' : ''}`}
                 onClick={() => setCollapsed(value => !value)}
-                style={{ flexShrink: 0 }}
-              />
+              >
+                <img src={logoSrc} alt="" style={{ width: collapsed ? 30 : 36, height: collapsed ? 30 : 36, flexShrink: 0 }} />
+                {!collapsed && (
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1f1f1f', lineHeight: 1.2 }}>{t('app.title')}</div>
+                    <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.2 }}>Sales Desktop</div>
+                  </div>
+                )}
+              </button>
             </Tooltip>
           </div>
 

@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { App as AntApp, ConfigProvider, Spin } from 'antd';
-import { Suspense, lazy, type ComponentType } from 'react';
+import { LogoutOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { App as AntApp, Button, ConfigProvider, Modal, Space, Spin, Typography } from 'antd';
+import { Suspense, lazy, useEffect, useState, type ComponentType } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import AuthRoute from '@/components/AuthRoute';
 import AppLayout from '@/layouts/AppLayout';
@@ -76,6 +77,83 @@ const ManagementCenter = lazyWithRetry(() => import('@/pages/ManagementCenter'))
 const loading = (
   <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
 );
+
+function AppCloseGuard() {
+  const [open, setOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<AppCloseAction | null>(null);
+
+  useEffect(() => {
+    const showCloseConfirm = () => {
+      setPendingAction(null);
+      setOpen(true);
+    };
+    const cleanup = window.electronAPI?.onAppCloseRequested?.(showCloseConfirm);
+    window.addEventListener('sales-app-close-requested', showCloseConfirm);
+    return () => {
+      cleanup?.();
+      window.removeEventListener('sales-app-close-requested', showCloseConfirm);
+    };
+  }, []);
+
+  const resolveClose = async (action: AppCloseAction) => {
+    if (pendingAction) return;
+    if (action === 'cancel') {
+      setOpen(false);
+      await window.electronAPI?.resolveAppClose?.('cancel');
+      return;
+    }
+
+    setPendingAction(action);
+    try {
+      await window.electronAPI?.resolveAppClose?.(action);
+      if (action !== 'quit') setOpen(false);
+    } finally {
+      if (action !== 'quit') setPendingAction(null);
+    }
+  };
+
+  return (
+    <Modal
+      title="关闭客户端"
+      open={open}
+      centered
+      width={460}
+      destroyOnClose
+      maskClosable={!pendingAction}
+      keyboard={!pendingAction}
+      onCancel={() => resolveClose('cancel')}
+      footer={(
+        <Space wrap>
+          <Button
+            icon={<MinusCircleOutlined />}
+            loading={pendingAction === 'minimize'}
+            disabled={pendingAction === 'quit'}
+            onClick={() => resolveClose('minimize')}
+          >
+            最小化到任务栏
+          </Button>
+          <Button
+            danger
+            type="primary"
+            icon={<LogoutOutlined />}
+            loading={pendingAction === 'quit'}
+            disabled={pendingAction === 'minimize'}
+            onClick={() => resolveClose('quit')}
+          >
+            退出账号并关闭
+          </Button>
+        </Space>
+      )}
+    >
+      <Typography.Paragraph style={{ marginBottom: 8 }}>
+        请选择本次关闭方式。
+      </Typography.Paragraph>
+      <Typography.Text type="secondary">
+        最小化后可通过右下角任务栏托盘图标右键打开或关闭，也可以双击图标打开客户端。
+      </Typography.Text>
+    </Modal>
+  );
+}
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -201,6 +279,7 @@ export default function App() {
       <AntApp>
         <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AuthProvider>
+            <AppCloseGuard />
             <AppRoutes />
           </AuthProvider>
         </HashRouter>

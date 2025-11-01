@@ -1,16 +1,24 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { loadRuntimeConfig } = require('./runtime-config.cjs');
 
 let mainWindow = null;
+let tray = null;
+let isQuitting = false;
 let adminDevToolsEnabled = false;
 let updateStatus = { status: 'idle', autoCheck: true };
 let updatePromptVisible = false;
+let closePromptVisible = false;
+let closePromptRequestId = 0;
 
 const runtimeConfig = loadRuntimeConfig(app);
+const appIcon = path.join(__dirname, '..', 'build', 'icon.ico');
 const allowedExternalHosts = new Set(runtimeConfig.allowedHosts);
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.sales.desktop');
+}
 function urlOrigin(value) {
   try {
     return new URL(value).origin;
@@ -40,19 +48,122 @@ function isAllowedExternalUrl(value) {
   }
 }
 
+async function clearRendererAuth() {
+  const logoutUrl = JSON.stringify(`${runtimeConfig.apiHost.replace(/\/+$/, '')}/api/v2/auth/logout`);
+  const clearScript = `
+    (async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        if (token) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 1500);
+          await fetch(${logoutUrl}, {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token },
+            signal: controller.signal,
+          }).catch(() => {});
+          clearTimeout(timer);
+        }
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        sessionStorage.clear();
+      } catch (_) {}
+    })();
+  `;
+
+  await Promise.all(BrowserWindow.getAllWindows().map(async (win) => {
+    if (!win || win.isDestroyed()) return;
+    try {
+      await win.webContents.executeJavaScript(clearScript, true);
+    } catch {}
+  }));
+}
+
+function showMainWindow() {
+  if (isQuitting) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setSkipTaskbar(false);
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+async function quitAppAfterLogout() {
+  if (isQuitting) return;
+  isQuitting = true;
+  await clearRendererAuth();
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+  app.quit();
+}
+
+async function quitAndInstallAfterLogout() {
+  if (isQuitting) return;
+  isQuitting = true;
+  await clearRendererAuth();
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+  autoUpdater.quitAndInstall();
+}
+
+function setupTray() {
+  if (tray || !fs.existsSync(appIcon)) return;
+  tray = new Tray(appIcon);
+  tray.setToolTip('销售管理系统');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '打开', click: showMainWindow },
+    { type: 'separator' },
+    { label: '关闭', click: () => { quitAppAfterLogout(); } },
+  ]));
+  tray.on('double-click', showMainWindow);
+}
+
+function minimizeMainWindowToTray() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.hide();
+    mainWindow.setSkipTaskbar(true);
+  }
+}
+
+function requestCloseDecisionFromRenderer() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const requestId = ++closePromptRequestId;
+  closePromptVisible = true;
+  mainWindow.webContents.send('app-close-requested');
+  mainWindow.webContents.executeJavaScript(
+    "window.dispatchEvent(new CustomEvent('sales-app-close-requested')); true;",
+    true,
+  ).catch(() => {});
+  setTimeout(() => {
+    if (requestId === closePromptRequestId) closePromptVisible = false;
+  }, 8000);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    frame: false,
+    frame: true,
+    autoHideMenuBar: true,
+    title: '销售管理系统',
+    icon: fs.existsSync(appIcon) ? appIcon : undefined,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, 'preload.cjs'),
     },
   });
+  if (fs.existsSync(appIcon)) mainWindow.setIcon(appIcon);
+  setupTray();
 
   const isDev = process.argv.includes('--dev');
   if (isDev) {
@@ -70,6 +181,12 @@ function createWindow() {
         mainWindow.webContents.send('devtools-opened');
       }
     }
+  });
+
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    requestCloseDecisionFromRenderer();
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -95,7 +212,7 @@ async function promptInstallUpdate(info) {
       cancelId: 0,
     });
     if (result.response === 1) {
-      autoUpdater.quitAndInstall();
+      await quitAndInstallAfterLogout();
     }
   } finally {
     updatePromptVisible = false;
@@ -129,9 +246,9 @@ function setupUpdater() {
       return emitUpdateStatus({ status: 'error', message: err?.message || String(err) });
     }
   });
-  ipcMain.handle('restart-app', () => {
+  ipcMain.handle('restart-app', async () => {
     if (!app.isPackaged) return false;
-    autoUpdater.quitAndInstall();
+    await quitAndInstallAfterLogout();
     return true;
   });
 
@@ -206,31 +323,53 @@ function setupOpenExternal() {
 }
 
 function setupWindowControl() {
-  const run = (command) => {
-    if (!mainWindow) return false;
+  const getTargetWindow = (event) => BrowserWindow.fromWebContents(event?.sender) || mainWindow;
+  const run = (command, event) => {
+    const targetWindow = getTargetWindow(event);
+    if (!targetWindow || targetWindow.isDestroyed()) return false;
     if (command === 'minimize') {
-      mainWindow.minimize();
+      targetWindow.minimize();
       return true;
     }
     if (command === 'maximize') {
-      if (mainWindow.isMaximized()) {
-        mainWindow.unmaximize();
+      if (targetWindow.isMaximized()) {
+        targetWindow.unmaximize();
       } else {
-        mainWindow.maximize();
+        targetWindow.maximize();
       }
       return true;
     }
     if (command === 'close') {
-      mainWindow.close();
+      targetWindow.close();
       return true;
     }
     return false;
   };
 
-  ipcMain.handle('window-control', (_event, command) => run(command));
-  ipcMain.on('window-minimize', () => run('minimize'));
-  ipcMain.on('window-maximize', () => run('maximize'));
-  ipcMain.on('window-close', () => run('close'));
+  ipcMain.handle('window-control', (event, command) => run(command, event));
+  ipcMain.on('window-minimize', (event) => run('minimize', event));
+  ipcMain.on('window-maximize', (event) => run('maximize', event));
+  ipcMain.on('window-close', (event) => run('close', event));
+  ipcMain.handle('resolve-app-close', async (event, action) => {
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+    if (sourceWindow !== mainWindow) return false;
+
+    if (action === 'quit') {
+      closePromptVisible = false;
+      closePromptRequestId += 1;
+      await quitAppAfterLogout();
+      return true;
+    }
+    if (action === 'minimize') {
+      closePromptVisible = false;
+      closePromptRequestId += 1;
+      minimizeMainWindowToTray();
+      return true;
+    }
+    closePromptVisible = false;
+    closePromptRequestId += 1;
+    return true;
+  });
 }
 
 function setupDevToolsAccess() {
@@ -254,5 +393,9 @@ app.whenReady().then(() => {
   setupWindowControl();
   setupDevToolsAccess();
 });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+app.on('before-quit', () => { isQuitting = true; });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin' && isQuitting) app.quit(); });
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  else showMainWindow();
+});

@@ -2,6 +2,48 @@
 
 ## 版本历史
 
+### v3.8.5 (2026-07-17)
+
+**客户端关闭、托盘与退出安全**：
+
+1. **关闭确认**
+   - Electron 主进程拦截原生窗口关闭事件，不再直接退出。
+   - 关闭确认改为客户端内置 Ant Design 弹窗，保持与客户端 UI 风格一致。
+   - 弹窗仅保留“最小化到任务栏”和“退出账号并关闭”两个动作。
+   - 弹窗右上角关闭、Esc、点击遮罩仅取消本次关闭。
+
+2. **任务栏托盘**
+   - 新增托盘图标，右键菜单提供“打开”和“关闭”。
+   - 双击托盘图标可恢复客户端窗口。
+   - 最小化到任务栏后窗口从任务栏隐藏，但进程继续运行。
+
+3. **退出登录安全**
+   - 选择“退出账号并关闭”或托盘菜单“关闭”时，先调用退出接口并清除 `accessToken`、`refreshToken`。
+   - 自动更新重启安装前同样清除登录状态。
+   - 软件彻底关闭后再次打开必须重新登录。
+
+4. **本轮配套修复**
+   - 数据录入页新增按权限删除选中记录。
+   - 侧栏收缩入口合并到 logo 区域。
+   - 本地 Electron 测试窗口统一使用正式 logo 图标。
+   - 零售报表“按支付方式”金额列补单位并居中显示。
+   - 知识库初始化资料和中文关键词召回补充。
+
+**主要文件**：
+
+```
+SalesDesktop/
+├── electron/main.cjs              # 托盘、关闭拦截、退出清登录、自动更新重启清登录
+├── electron/preload.cjs           # 关闭确认 IPC 桥接
+├── src/App.tsx                    # 客户端内置关闭确认弹窗
+├── src/types/global.d.ts          # Electron API 类型补充
+├── src/components/common/ExcelTable.tsx
+├── src/pages/TrainEntry/TrainEntryPage.tsx
+└── src/pages/retail/Report.tsx
+```
+
+---
+
 ### v3.7.0 (2026-07-16)
 
 **新增功能**：
@@ -619,8 +661,8 @@ if (e.key === 'Delete' && isAdmin) {
 1. **升版本号** — 按规则 15 同步更新 `src/version.ts`（VERSION + CHANGELOG）+ `package.json` + `package-lock.json`
 2. **tsc + vite build 验证** — `npx tsc --noEmit && npx vite build`，确保编译和构建通过
 3. **提交** — `git add` + `git commit`，提交信息写明版本号与改动摘要
-4. **打包客户端** — `npm run electron:build` 生成安装包 + `latest.yml`
-5. **部署到服务器** — 将 `release_build/SalesDesktop Setup {version}.exe` + `latest.yml` 复制到 `SalesDesktop/` 根目录，供 Nginx `/download/` 服务（公网 `http://198.51.100.10/download/`）
+4. **打包客户端** — `npm run electron:build` 生成安装包、`.blockmap` 和 `latest.yml`
+5. **部署到服务器** — 将 `release_build/SalesDesktop Setup {version}.exe`、对应 `.blockmap` 和 `latest.yml` 复制到 `SalesDesktop/` 根目录，供 Nginx `/download/` 服务（公网 `http://198.51.100.10/download/`）
 
 > ⚠️ 如果用户要求先不部署（如仍在开发中），则第 4-5 步暂缓，但第 1-3 步不能跳过。
 

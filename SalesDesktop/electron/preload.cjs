@@ -22,9 +22,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   downloadFile: (url, filename, token) => ipcRenderer.invoke('download-file', { url, filename, token }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  minimize: () => ipcRenderer.invoke('window-control', 'minimize'),
-  maximize: () => ipcRenderer.invoke('window-control', 'maximize'),
-  close: () => ipcRenderer.invoke('window-control', 'close'),
+  resolveAppClose: (action) => ipcRenderer.invoke('resolve-app-close', action),
+  onAppCloseRequested: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('app-close-requested', handler);
+    return () => ipcRenderer.removeListener('app-close-requested', handler);
+  },
+  minimize: () => ipcRenderer.send('window-minimize'),
+  maximize: () => ipcRenderer.send('window-maximize'),
+  close: () => ipcRenderer.send('window-close'),
   setDevToolsAccess: (enabled) => ipcRenderer.send('set-devtools-access', Boolean(enabled)),
   onDevToolsOpened: (callback) => {
     const handler = () => callback();

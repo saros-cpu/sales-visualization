@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Card, Space, DatePicker, Button, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, UploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { Card, Space, DatePicker, Button, message, Popconfirm } from 'antd';
+import { SearchOutlined, UploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
-import { getTrainEntryList, createTrainEntry, updateTrainEntry, deleteTrainEntry, batchCreateTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
+import { getTrainEntryList, updateTrainEntry, deleteTrainEntry, batchCreateTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
 import { getProductOptions, getEntityOptions } from '@/api/client';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
 import { KpiGrid } from '@/components/ui/KpiCard';
@@ -17,6 +17,7 @@ export default function TrainEntryPage() {
   const { can } = useAuth();
   const canCreate = can('train_entry:create');
   const canUpdate = can('train_entry:update');
+  const canDelete = can('train_entry:delete');
   const canEdit = canCreate || canUpdate;
   const [data, setData] = useState<TrainEntryRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -29,6 +30,7 @@ export default function TrainEntryPage() {
   const [uploadRecords, setUploadRecords] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = useCallback(async () => {
@@ -99,6 +101,25 @@ export default function TrainEntryPage() {
   const handleAddNew = useCallback((row: any) => {
     setData(prev => [...prev, row as TrainEntryRecord]);
   }, []);
+
+  const handleDeleteRows = async (ids: number[]) => {
+    if (!canDelete) {
+      message.error(t('common.noPermission'));
+      return;
+    }
+    const savedIds = ids.filter(id => id > 0);
+    try {
+      for (const id of savedIds) {
+        await deleteTrainEntry(id);
+      }
+      setData(prev => prev.filter(row => !ids.includes(row.id)));
+      setSelectedIds([]);
+      if (savedIds.length > 0) fetchData();
+    } catch {
+      message.error(t('common.deleteFailedRetry'));
+      throw new Error('delete_failed');
+    }
+  };
 
   const classifyOilFlow = useCallback((record: Partial<TrainEntryRecord>) => {
     const sender = String(record.senderName || '').trim();
@@ -214,7 +235,19 @@ export default function TrainEntryPage() {
         <Space wrap>
           <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
           <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
-          <Button icon={<ReloadOutlined />} onClick={() => { fetchData(); }}>{t('common.reset')}</Button>
+          {canDelete && (
+            <Popconfirm
+              title={t('common.deleteConfirm')}
+              okText={t('common.confirm')}
+              cancelText={t('common.cancel')}
+              onConfirm={() => tableRef.current?.deleteSelectedRows()}
+              disabled={selectedIds.length === 0}
+            >
+              <Button danger icon={<DeleteOutlined />} disabled={selectedIds.length === 0}>
+                {selectedIds.length > 0 ? `${t('common.delete')} (${selectedIds.length})` : t('common.delete')}
+              </Button>
+            </Popconfirm>
+          )}
           {canCreate && (
             <>
               <Button icon={<UploadOutlined />} onClick={() => document.getElementById('train-upload-input')?.click()}>
@@ -255,9 +288,12 @@ export default function TrainEntryPage() {
         editing={editing}
         setEditing={(value) => setEditing(canEdit && value)}
         isAdmin={false}
+        canDelete={canDelete}
         onBatchSave={handleBatchSave}
         onRealTimeSave={handleRealTimeSave}
         onAddNew={handleAddNew}
+        onDelete={handleDeleteRows}
+        onSelectionChange={setSelectedIds}
         validateRow={validateRow}
         initialNewRow={() => ({ entryDate: dayjs().format('YYYY-MM-DD') })}
         draftKey="train-entry-spreadsheet-draft"

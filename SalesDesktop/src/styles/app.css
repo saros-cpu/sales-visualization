@@ -26,10 +26,13 @@ body {
   background: #ffffff;
   border-bottom: 1px solid #eef2f7;
   user-select: none;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .window-titlebar__title {
+  display: block;
+  height: 100%;
+  flex: 1 1 auto;
   min-width: 0;
   padding: 0 12px;
   overflow: hidden;
@@ -39,6 +42,7 @@ body {
   line-height: 32px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  -webkit-app-region: drag;
 }
 
 .window-titlebar__controls {
@@ -96,14 +100,27 @@ body {
   background: linear-gradient(180deg, #ffffff, #f8fafc);
 }
 
-.app-sider-collapse.ant-btn {
-  color: #52606d;
-  border-radius: 6px;
+.app-sider-brand-button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 
-.app-sider-collapse.ant-btn:hover {
-  color: #cc0000 !important;
-  background: #fff1f0 !important;
+.app-sider-brand-button.is-collapsed {
+  justify-content: center;
+}
+
+.app-sider-brand-button:focus-visible {
+  outline: 2px solid rgba(204, 0, 0, 0.35);
+  outline-offset: 4px;
 }
 
 .app-sider-scroll {
@@ -800,8 +817,22 @@ body {
 }
 
 .app-content .ant-table-body {
-  max-height: none !important;
-  overflow-y: visible !important;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.app-content .ant-table-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.app-content .ant-table-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}
+
+.app-content .ant-table-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .wholesale-product-grid {

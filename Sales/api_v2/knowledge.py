@@ -21,6 +21,14 @@ from .permission_service import ensure_permission_schema, get_effective_auth, ha
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 KNOWLEDGE_UPLOAD_ROOT = PROJECT_ROOT / "knowledge_uploads"
+KNOWLEDGE_SEARCH_KEYWORDS = (
+    "报表中心", "报表", "模板", "分享", "导出", "下载",
+    "零售", "批发", "合同", "称重", "支付方式", "现金", "刷卡", "金额", "单位", "万", "索姆",
+    "权限", "角色", "数据范围", "账号", "密码", "强制改密", "首次登录",
+    "客户端", "外网", "安装", "更新", "自动更新", "版本",
+    "AI", "助手", "知识库", "只读", "引用", "本地大模型",
+    "首页", "地图", "可视化", "安全", "巡检",
+)
 
 
 def _safe_execute(cur, sql: str, params: tuple[Any, ...] | None = None) -> None:
@@ -168,6 +176,231 @@ def _seed_knowledge_catalog(cur) -> None:
             VALUES (%s, %s, %s, %s, TRUE)
         """, (space_id, name, desc, order))
 
+    _seed_initial_articles(cur, space_ids)
+
+
+def _seed_initial_articles(cur, space_ids: dict[str, int]) -> None:
+    _safe_execute(cur, """
+        SELECT c.id, c.category_name, s.space_key
+        FROM knowledge_categories c
+        JOIN knowledge_spaces s ON s.id = c.space_id
+    """)
+    category_ids = {(row["space_key"], row["category_name"]): row["id"] for row in cur.fetchall()}
+    seeds = [
+        {
+            "space": "sales_platform",
+            "category": "常见问题",
+            "title": "账号首次登录与强制改密说明",
+            "summary": "所有由管理员创建或重置密码的账号，首次登录后都必须先修改密码。",
+            "content": """# 账号首次登录与强制改密说明
+
+本项目不开放用户自行注册，账号统一由管理员创建。由于初始密码通常采用统一规则，所有账号首次登录时都必须先完成密码修改。
+
+适用规则：
+
+- 管理员创建的新账号，首次登录必须修改密码。
+- 管理员重置密码后的账号，再次登录也必须修改密码。
+- 未完成改密前，只允许访问当前账号信息和修改密码接口，其他业务接口会被拦截。
+- 改密完成后，账号按已分配角色和权限正常访问系统。
+""",
+            "type": "faq",
+            "module": "auth",
+            "tags": ["账号", "密码", "强制改密", "首次登录", "安全"],
+        },
+        {
+            "space": "reports",
+            "category": "模板说明",
+            "title": "报表中心统一入口使用说明",
+            "summary": "报表中心只做统一入口和权限控制，现有模板本身保持原有格式与口径。",
+            "content": """# 报表中心统一入口使用说明
+
+报表中心用于集中管理和下载已经完善的报表与分析报告模板，不替换现有模板逻辑。
+
+使用原则：
+
+- 报表模板继续沿用原有格式、字段和口径。
+- 报表中心负责统一入口、菜单权限、下载入口和后续分享入口。
+- 零售、批发等业务页面布局暂时不重做，只统一 API、权限和视觉细节。
+- 新增模板时，优先补充模板说明、适用范围、数据口径和下载权限。
+""",
+            "type": "manual",
+            "module": "reports",
+            "tags": ["报表中心", "模板", "下载", "分享", "权限"],
+        },
+        {
+            "space": "retail",
+            "category": "零售报表",
+            "title": "零售报表口径与支付方式单位说明",
+            "summary": "零售报表金额按索姆统计，部分汇总表为了阅读方便按万索姆展示。",
+            "content": """# 零售报表口径与支付方式单位说明
+
+零售报表金额底层按索姆保存和计算，页面汇总展示时会根据场景转换为万索姆。
+
+重点口径：
+
+- 销售金额、现金、刷卡和合计金额来自零售月度数据。
+- 报表菜单的“按支付方式”表中，现金、刷卡、合计金额统一按“万 сом”展示。
+- 刷卡比例 = 刷卡金额 / 总销售金额。
+- 若站点当月无销售金额，比例显示为占位符，避免误导。
+""",
+            "type": "metric",
+            "module": "retail",
+            "tags": ["零售", "报表", "支付方式", "现金", "刷卡", "金额", "单位"],
+        },
+        {
+            "space": "wholesale",
+            "category": "批发流程",
+            "title": "批发数据与合同匹配口径",
+            "summary": "批发查询、称重审核和合同管理应围绕客户、油品、日期、吨数和金额保持口径一致。",
+            "content": """# 批发数据与合同匹配口径
+
+批发板块的核心是让查询、称重审核、合同和报表口径一致。
+
+建议口径：
+
+- 客户、油品、发货日期、吨数和金额是主要匹配字段。
+- 合同页面负责合同基础信息和附件编号维护。
+- 称重审核负责实际发货和收货数据确认。
+- 报表统计优先引用已审核、已确认的数据，避免草稿或异常行进入正式统计。
+""",
+            "type": "metric",
+            "module": "wholesale",
+            "tags": ["批发", "合同", "称重", "客户", "金额"],
+        },
+        {
+            "space": "operations",
+            "category": "安全运行",
+            "title": "权限管理基础说明",
+            "summary": "权限应按菜单、操作按钮、导出能力和数据范围分层控制。",
+            "content": """# 权限管理基础说明
+
+权限管理建议按“角色 + 权限点 + 数据范围”组合维护。
+
+管理重点：
+
+- 菜单权限决定用户能看到哪些页面。
+- 操作权限决定新增、编辑、删除、导出等按钮是否可用。
+- 数据范围决定用户能查看哪些站点、区域、客户或部门数据。
+- 管理员创建账号后，应先分配角色和必要的数据范围，再交付用户首次登录改密。
+""",
+            "type": "policy",
+            "module": "roles",
+            "tags": ["权限", "角色", "数据范围", "安全"],
+        },
+        {
+            "space": "sales_platform",
+            "category": "操作手册",
+            "title": "AI 助手只读边界与知识库引用",
+            "summary": "AI 助手可以引用知识库回答问题，但不能替用户执行写入、删除、刷新缓存等操作。",
+            "content": """# AI 助手只读边界与知识库引用
+
+AI 助手定位为只读问答和分析入口。
+
+允许范围：
+
+- 查询用户有权限查看的业务数据摘要。
+- 引用已发布且允许 AI 引用的知识库文章。
+- 解释报表口径、菜单位置、常见问题和操作步骤。
+
+禁止范围：
+
+- 不允许直接新增、修改、删除业务数据。
+- 不允许刷新缓存、执行系统命令或修改文件。
+- 不允许绕过当前账号的权限查看资料。
+""",
+            "type": "policy",
+            "module": "assistant",
+            "tags": ["AI", "助手", "知识库", "只读", "引用"],
+        },
+        {
+            "space": "operations",
+            "category": "安全运行",
+            "title": "外网客户端更新与本地验收流程",
+            "summary": "每次客户端修复或新增后，先打开本地 Electron 客户端检查，通过后再打包部署。",
+            "content": """# 外网客户端更新与本地验收流程
+
+客户端用于外网电脑安装使用，不能每次改动后直接覆盖下载目录。
+
+约定流程：
+
+- 修复或新增完成后，先启动本地 Electron 客户端给用户检查。
+- 用户确认没问题后，再升级版本、打包安装包并更新下载目录。
+- 本地验收阶段不覆盖外网下载目录的安装包和 latest.yml。
+- 涉及后端逻辑时，先完成接口、权限和关键页面验证。
+""",
+            "type": "manual",
+            "module": "updates",
+            "tags": ["客户端", "外网", "更新", "版本", "本地验收"],
+        },
+        {
+            "space": "company_work",
+            "category": "通用资料",
+            "title": "通用工作资料沉淀建议",
+            "summary": "知识库不仅保存项目资料，也可以逐步沉淀其他工作中的流程、制度和经验。",
+            "content": """# 通用工作资料沉淀建议
+
+知识库最终可以覆盖项目资料和其他工作资料。
+
+建议分类：
+
+- 项目资料：系统操作、接口口径、报表说明、权限规则。
+- 业务资料：客户规则、流程制度、常用模板、异常处理。
+- 运维资料：部署记录、更新流程、巡检清单、安全注意事项。
+- 经验资料：问题复盘、常见问答、培训材料和临时说明。
+
+资料进入知识库时，应补充标题、摘要、标签、空间分类和是否允许 AI 引用。
+""",
+            "type": "manual",
+            "module": "knowledge",
+            "tags": ["知识库", "工作资料", "流程", "归档"],
+        },
+    ]
+    for item in seeds:
+        space_id = space_ids.get(item["space"])
+        if not space_id:
+            continue
+        _safe_execute(cur, """
+            SELECT id FROM knowledge_articles
+            WHERE space_id = %s AND title = %s
+            LIMIT 1
+        """, (space_id, item["title"]))
+        if cur.fetchone():
+            continue
+        category_id = category_ids.get((item["space"], item["category"]))
+        tags_json = _json_dumps(item["tags"])
+        _safe_execute(cur, """
+            INSERT INTO knowledge_articles (
+                space_id, category_id, title, summary, content, content_format, article_type,
+                status, module_key, tags_json, visible_role_codes, visible_department_ids,
+                allow_ai, published_at
+            )
+            VALUES (%s, %s, %s, %s, %s, 'markdown', %s, 'published', %s, %s, '[]', '[]', TRUE, NOW())
+        """, (
+            space_id,
+            category_id,
+            item["title"],
+            item["summary"],
+            item["content"],
+            item["type"],
+            item["module"],
+            tags_json,
+        ))
+        article_id = cur.lastrowid
+        _safe_execute(cur, """
+            INSERT INTO knowledge_article_versions (
+                article_id, version_no, title, summary, content, tags_json, status,
+                module_key, allow_ai, created_by
+            )
+            VALUES (%s, 1, %s, %s, %s, %s, 'published', %s, TRUE, NULL)
+        """, (
+            article_id,
+            item["title"],
+            item["summary"],
+            item["content"],
+            tags_json,
+            item["module"],
+        ))
+
 
 def _json_list(value: Any) -> list[Any]:
     if value is None or value == "":
@@ -195,6 +428,37 @@ def _json_dumps(value: Any) -> str:
     if not isinstance(value, list):
         value = []
     return json.dumps(value, ensure_ascii=False)
+
+
+def _search_terms(query: str, limit: int = 8) -> list[str]:
+    text = str(query or "").strip()
+    if not text:
+        return []
+    raw_terms = [item.strip() for item in re.split(r"\s+", text) if item.strip()]
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    def add(term: str) -> None:
+        value = term.strip()
+        key = value.lower()
+        if value and key not in seen:
+            seen.add(key)
+            terms.append(value)
+
+    if len(raw_terms) > 1:
+        for item in raw_terms:
+            add(item[:32])
+    elif raw_terms and re.search(r"[A-Za-z0-9_./:-]", raw_terms[0]):
+        add(raw_terms[0][:32])
+
+    lowered = text.lower()
+    for keyword in KNOWLEDGE_SEARCH_KEYWORDS:
+        if keyword.lower() in lowered:
+            add(keyword)
+
+    if not terms and raw_terms:
+        add(raw_terms[0][:24])
+    return terms[:limit]
 
 
 def _time_text(value: Any) -> str | None:
@@ -415,7 +679,7 @@ def _query_articles(cur, user: dict[str, Any], include_archived_for_manager: boo
     elif not can_manage or not include_archived_for_manager:
         where.append("a.status = 'published'")
     if q:
-        terms = [item for item in re.split(r"\s+", q) if item][:5]
+        terms = _search_terms(q)
         for term in terms:
             where.append("(a.title LIKE %s OR a.summary LIKE %s OR a.content LIKE %s OR a.tags_json LIKE %s)")
             like = f"%{term}%"
@@ -775,7 +1039,7 @@ def _snippet(text: str, query: str, max_len: int = 180) -> str:
     compact = re.sub(r"\s+", " ", text or "").strip()
     if len(compact) <= max_len:
         return compact
-    terms = [item for item in re.split(r"\s+", query or "") if item]
+    terms = _search_terms(query)
     pos = -1
     lower = compact.lower()
     for term in terms:
@@ -834,7 +1098,7 @@ def search_knowledge_snippets(user_id: int, question: str, limit: int = 3) -> li
             auth = get_effective_auth(cur, user_id, user["role"])
             user["roles"] = auth.get("roles", [])
             user["departments"] = auth.get("departments", [])
-            terms = [item for item in re.split(r"\s+", query) if item][:5]
+            terms = _search_terms(query)
             where = ["a.status = 'published'", "a.allow_ai = TRUE"]
             params: list[Any] = []
             for term in terms:

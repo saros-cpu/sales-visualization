@@ -24,10 +24,12 @@ export default function TableCard<T extends object>({
   onExport,
   exportText = '导出',
   pageSize = 20,
-  scrollY: _scrollY,
+  scrollY,
   pagination,
   className,
 }: Props<T>) {
+  const tableScroll = scrollY ? { x: 'max-content' as const, y: scrollY } : { x: 'max-content' as const };
+
   return (
     <Card
       title={title}
@@ -43,7 +45,7 @@ export default function TableCard<T extends object>({
           loading={loading}
           size="small"
           pagination={pagination === false ? false : { pageSize }}
-          scroll={{ x: 'max-content' }}
+          scroll={tableScroll}
         />
       </div>
     </Card>

@@ -24,6 +24,9 @@ export default function Report() {
   const cardOf = (row: any) => Number(row?.card ?? row?.cardSales ?? 0);
   const amountOf = (row: any) => Number(row?.amount ?? row?.totalSales ?? 0);
   const wan = (value: number) => `${Math.round(Number(value || 0) / 10000)}${t('common.wan')}`;
+  const paymentAmountUnit = `${t('common.wan')} сом`;
+  const paymentAmountTitle = (label: string) => `${label} (${paymentAmountUnit})`;
+  const paymentAmountText = (value: number) => Number(value || 0).toLocaleString();
   const cardRatio = (row: any) => {
     const amount = amountOf(row);
     return amount > 0 ? `${Math.round((cardOf(row) / amount) * 100)}%` : '-';
@@ -78,12 +81,12 @@ export default function Report() {
   );
 
   const paymentColumns = [
-    { title: t('retail.station'), dataIndex: 'name', key: 'name', render: (_: any, r: any) => station(r) },
-    { title: t('retail.region'), dataIndex: 'region', key: 'region', render: (v: string) => region(v) },
-    { title: t('retail.cash'), dataIndex: 'cash', key: 'cash' },
-    { title: t('retail.card'), dataIndex: 'card', key: 'card' },
-    { title: t('common.totalAmount'), dataIndex: 'total', key: 'total' },
-    { title: t('retail.cardRatio'), dataIndex: 'cardRatio', key: 'cardRatio' },
+    { title: t('retail.station'), dataIndex: 'name', key: 'name', align: 'center' as const, render: (_: any, r: any) => station(r) },
+    { title: t('retail.region'), dataIndex: 'region', key: 'region', align: 'center' as const, render: (v: string) => region(v) },
+    { title: paymentAmountTitle(t('retail.cash')), dataIndex: 'cash', key: 'cash', align: 'center' as const, render: paymentAmountText },
+    { title: paymentAmountTitle(t('retail.card')), dataIndex: 'card', key: 'card', align: 'center' as const, render: paymentAmountText },
+    { title: paymentAmountTitle(t('common.totalAmount')), dataIndex: 'total', key: 'total', align: 'center' as const, render: paymentAmountText },
+    { title: t('retail.cardRatio'), dataIndex: 'cardRatio', key: 'cardRatio', align: 'center' as const },
   ];
 
   const onExport = () => exportExcel(ym);

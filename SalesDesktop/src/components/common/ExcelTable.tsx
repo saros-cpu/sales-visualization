@@ -32,10 +32,12 @@ interface ExcelTableProps<T extends { id: number }> {
   editing: boolean;
   setEditing: (v: boolean) => void;
   isAdmin: boolean;
+  canDelete?: boolean;
   onBatchSave?: (changes: Array<{ id: number; data: Partial<T> }>) => Promise<void>;
   onRealTimeSave?: (id: number, field: string, value: any) => Promise<void>;
   onAddNew?: (row: T) => void;
   onDelete?: (ids: number[]) => Promise<void>;
+  onSelectionChange?: (ids: number[]) => void;
   validateRow?: (row: Partial<T>, rowIndex: number) => Record<string, string>;
   initialNewRow?: () => Partial<T>;
   draftKey?: string;
@@ -72,10 +74,12 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     editing,
     setEditing,
     isAdmin,
+    canDelete,
     onBatchSave,
     onRealTimeSave,
     onAddNew,
     onDelete,
+    onSelectionChange,
     validateRow,
     initialNewRow,
     draftKey,
@@ -94,6 +98,7 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
   const editableKeys = useMemo(() => editableColumns.map(col => String(col.dataIndex)), [editableColumns]);
   const editDataRef = useRef(editData);
   editDataRef.current = editData;
+  const canDeleteRows = Boolean(canDelete ?? isAdmin);
 
   const cellKey = (id: number, field: string) => `${id}::${field}`;
 
@@ -224,7 +229,16 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
 
   const deleteSelectedRows = useCallback(async () => {
     try {
-      const ids = selectedRowKeys.map(k => Number(k)).filter(id => id > 0);
+      const ids = selectedRowKeys.map(k => Number(k));
+      if (ids.length === 0) {
+        message.info(t('common.selectRowsFirst'));
+        return;
+      }
+      const savedIds = ids.filter(id => id > 0);
+      if (savedIds.length > 0 && !onDelete) {
+        message.error(t('common.noPermission'));
+        return;
+      }
       if (ids.length > 0) await onDelete?.(ids);
       setEditData(prev => {
         const next = { ...prev };
@@ -232,11 +246,12 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
         return next;
       });
       setSelectedRowKeys([]);
+      onSelectionChange?.([]);
       message.success(t('common.deletedCount', { count: selectedRowKeys.length }));
     } catch {
       message.error(t('common.deleteFailedRetry'));
     }
-  }, [selectedRowKeys, onDelete, t]);
+  }, [selectedRowKeys, onDelete, onSelectionChange, t]);
 
   const buildChanges = useCallback(() => {
     const changes: Array<{ id: number; data: Partial<T> }> = [];
@@ -303,7 +318,7 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!editing) return;
-      if (e.key === 'Delete' && isAdmin && selectedRowKeys.length > 0) {
+      if (e.key === 'Delete' && canDeleteRows && selectedRowKeys.length > 0) {
         e.preventDefault();
         deleteSelectedRows();
       }
@@ -316,7 +331,7 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [deleteSelectedRows, editing, isAdmin, onKeyDown, saveAllChanges, selectedRowKeys.length, setEditing]);
+  }, [canDeleteRows, deleteSelectedRows, editing, onKeyDown, saveAllChanges, selectedRowKeys.length, setEditing]);
 
   useImperativeHandle(ref, () => ({
     saveAllChanges,
@@ -379,8 +394,11 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
       pagination={pagination ?? false}
       rowSelection={{
         selectedRowKeys,
-        onChange: setSelectedRowKeys,
-        getCheckboxProps: () => ({ disabled: !editing }),
+        onChange: (keys) => {
+          setSelectedRowKeys(keys);
+          onSelectionChange?.(keys.map(k => Number(k)));
+        },
+        getCheckboxProps: () => ({ disabled: !editing && !canDeleteRows }),
       }}
       scroll={height ? { x: 'max-content', y: height } : { x: 'max-content' }}
       rowClassName={(record) => selectedRowKeys.includes(record.id) ? 'excel-selected-row' : ''}

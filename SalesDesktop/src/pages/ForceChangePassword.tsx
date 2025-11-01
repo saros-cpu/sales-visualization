@@ -4,7 +4,6 @@ import { LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { changePassword } from '@/api/client';
 import { useAuth } from '@/contexts/AuthContext';
-import WindowTitleBar from '@/components/WindowTitleBar';
 import logoSrc from '@/assets/logo.svg';
 
 export default function ForceChangePassword() {
@@ -36,7 +35,6 @@ export default function ForceChangePassword() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f0f2f5' }}>
-      <WindowTitleBar title="修改初始密码" />
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: 0, padding: 24 }}>
         <img src={logoSrc} alt="" style={{ width: 72, height: 72, marginBottom: 20 }} />
         <Card style={{ width: 420, maxWidth: '100%' }}>

@@ -5,6 +5,12 @@ declare module 'react' {
   }
 }
 declare global {
+  type AppCloseAction = 'minimize' | 'quit' | 'cancel';
+
+  interface WindowEventMap {
+    'sales-app-close-requested': CustomEvent<void>;
+  }
+
   interface UpdateStatus {
     status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'unsupported';
     version?: string;
@@ -24,6 +30,8 @@ declare global {
       platform: string;
       downloadFile: (url: string, filename: string, token?: string) => Promise<boolean>;
       openExternal: (url: string) => Promise<void>;
+      resolveAppClose?: (action: AppCloseAction) => Promise<boolean>;
+      onAppCloseRequested?: (callback: () => void) => () => void;
       minimize?: () => void | Promise<boolean>;
       maximize?: () => void | Promise<boolean>;
       close?: () => void | Promise<boolean>;
