@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.5';
+export const VERSION = '3.8.6';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.6',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '修复：显式启用 Electron preload 所需环境，避免安装版客户端设置页提示未检测到更新模块',
+      '优化：preload 运行时配置读取失败时仍优先暴露 updater 和 electronAPI，提升自动更新入口稳定性',
+    ],
+  },
   {
     version: '3.8.5',
     date: '2026-07-17',

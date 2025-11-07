@@ -8,7 +8,7 @@ import { API_HOST } from '@/api/http';
 
 import { VERSION, BUILD_DATE, CHANGELOG } from '@/version';
 
-const UPDATE_MODULE_MISSING = '当前客户端未检测到更新模块，请安装最新版客户端后再使用自动更新';
+const UPDATE_MODULE_MISSING = '当前运行环境未检测到客户端更新模块，请确认正在使用桌面客户端安装版';
 const AUTO_UPDATE_HINT = '客户端启动后会自动检查更新，发现新版本会自动下载，下载完成后提示重启安装。';
 
 export default function Settings() {

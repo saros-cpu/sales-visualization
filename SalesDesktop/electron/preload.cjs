@@ -1,7 +1,16 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { loadRuntimeConfig } = require('./runtime-config.cjs');
 
-const runtimeConfig = loadRuntimeConfig();
+const DEFAULT_RUNTIME_CONFIG = {
+  apiHost: 'http://198.51.100.10',
+  updateUrl: 'http://198.51.100.10/download',
+  allowedHosts: ['198.51.100.10', 'sales.example.com'],
+};
+
+let runtimeConfig = DEFAULT_RUNTIME_CONFIG;
+try {
+  const { loadRuntimeConfig } = require('./runtime-config.cjs');
+  runtimeConfig = { ...DEFAULT_RUNTIME_CONFIG, ...loadRuntimeConfig() };
+} catch {}
 
 contextBridge.exposeInMainWorld('__SALES_API_HOST__', runtimeConfig.apiHost);
 contextBridge.exposeInMainWorld('SALES_RUNTIME_CONFIG', runtimeConfig);
