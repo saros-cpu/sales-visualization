@@ -51,30 +51,31 @@ function isAllowedExternalUrl(value) {
 async function clearRendererAuth() {
   const logoutUrl = JSON.stringify(`${runtimeConfig.apiHost.replace(/\/+$/, '')}/api/v2/auth/logout`);
   const clearScript = `
-    (async () => {
+    (() => {
       try {
         const token = localStorage.getItem('accessToken');
-        if (token) {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 1500);
-          await fetch(${logoutUrl}, {
-            method: 'POST',
-            headers: { Authorization: 'Bearer ' + token },
-            signal: controller.signal,
-          }).catch(() => {});
-          clearTimeout(timer);
-        }
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         sessionStorage.clear();
+        if (token) {
+          fetch(${logoutUrl}, {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token },
+            keepalive: true,
+          }).catch(() => {});
+        }
       } catch (_) {}
+      return true;
     })();
   `;
 
   await Promise.all(BrowserWindow.getAllWindows().map(async (win) => {
     if (!win || win.isDestroyed()) return;
     try {
-      await win.webContents.executeJavaScript(clearScript, true);
+      await Promise.race([
+        win.webContents.executeJavaScript(clearScript, true),
+        new Promise((resolve) => setTimeout(resolve, 300)),
+      ]);
     } catch {}
   }));
 }

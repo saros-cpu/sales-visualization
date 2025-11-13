@@ -115,6 +115,7 @@ body {
 }
 
 .app-sider-brand-button.is-collapsed {
+  height: 64px;
   justify-content: center;
 }
 
@@ -130,6 +131,11 @@ body {
   overflow-y: auto;
   padding: 8px;
   scrollbar-gutter: stable;
+}
+
+.app-sider.ant-layout-sider-collapsed .app-sider-scroll {
+  padding: 8px 0;
+  scrollbar-gutter: auto;
 }
 
 .app-sider-footer {
@@ -244,6 +250,31 @@ body {
 }
 
 .app-menu .ant-menu-item-selected::after {
+  display: none;
+}
+
+.app-sider.ant-layout-sider-collapsed .app-menu.ant-menu-inline-collapsed {
+  width: 72px;
+}
+
+.app-sider.ant-layout-sider-collapsed .app-menu.ant-menu-inline-collapsed > .ant-menu-item,
+.app-sider.ant-layout-sider-collapsed .app-menu.ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title {
+  display: flex;
+  width: 72px;
+  align-items: center;
+  justify-content: center;
+  margin-inline: 0;
+  padding-inline: 0 !important;
+}
+
+.app-sider.ant-layout-sider-collapsed .app-menu.ant-menu-inline-collapsed .ant-menu-item-icon,
+.app-sider.ant-layout-sider-collapsed .app-menu.ant-menu-inline-collapsed .anticon {
+  margin-inline-end: 0 !important;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.app-sider.ant-layout-sider-collapsed .app-menu.ant-menu-inline-collapsed .ant-menu-title-content {
   display: none;
 }
 

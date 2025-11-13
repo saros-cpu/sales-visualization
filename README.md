@@ -6,6 +6,11 @@
 
 ## 版本更新记录
 
+### 2026-07-17 (v3.8.7)
+
+- **侧栏修复**：客户端左侧栏收缩后，logo 与菜单图标统一按 72px 侧栏居中对齐。
+- **退出优化**：点击“退出账号并关闭”时先清除本地登录状态，再异步通知后端退出，减少外网网络等待导致的关闭卡顿。
+
 ### 2026-07-17 (v3.8.6)
 
 - **更新修复**：显式启用 Electron preload 所需环境，避免安装版客户端设置页提示未检测到更新模块。
@@ -814,7 +819,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.8.5（与 version.ts 对齐）
+├── package.json              # 版本 3.8.7（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

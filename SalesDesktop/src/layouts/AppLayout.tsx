@@ -172,7 +172,7 @@ export default function AppLayout() {
             height: 64,
             display: 'flex',
             alignItems: 'center',
-            padding: collapsed ? '0 10px' : '0 14px',
+            padding: collapsed ? '0' : '0 14px',
             borderBottom: '1px solid #f0f0f0',
           }}>
             <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">

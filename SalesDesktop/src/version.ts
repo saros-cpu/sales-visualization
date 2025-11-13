@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.6';
+export const VERSION = '3.8.7';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.7',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '修复：侧栏收缩后 logo 与菜单图标统一按 72px 侧栏居中对齐，避免视觉中线偏移',
+      '优化：退出账号并关闭时先清除本地登录状态，再异步通知后端退出，减少外网网络等待导致的关闭卡顿',
+    ],
+  },
   {
     version: '3.8.6',
     date: '2026-07-17',
