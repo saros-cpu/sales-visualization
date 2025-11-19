@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld('updater', {
   checkForUpdates: () => ipcRenderer.invoke('check-for-update'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   restartApp: () => ipcRenderer.invoke('restart-app'),
+  resolveInstallPrompt: (action) => ipcRenderer.invoke('resolve-update-install-prompt', action),
+  onInstallPrompt: (callback) => {
+    const handler = (_event, info) => callback(info);
+    ipcRenderer.on('update-install-requested', handler);
+    return () => ipcRenderer.removeListener('update-install-requested', handler);
+  },
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {

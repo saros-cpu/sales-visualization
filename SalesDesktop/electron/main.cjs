@@ -12,6 +12,7 @@ let updateStatus = { status: 'idle', autoCheck: true };
 let updatePromptVisible = false;
 let closePromptVisible = false;
 let closePromptRequestId = 0;
+let updateProgressLastLoggedPercent = -1;
 
 const runtimeConfig = loadRuntimeConfig(app);
 const appIcon = path.join(__dirname, '..', 'build', 'icon.ico');
@@ -200,25 +201,45 @@ function emitUpdateStatus(nextStatus) {
   return updateStatus;
 }
 
-async function promptInstallUpdate(info) {
+function formatLogArg(value) {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function appendUpdateLog(level, ...args) {
+  try {
+    const logDir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const line = `[${new Date().toISOString()}] [${level}] ${args.map(formatLogArg).join(' ')}\n`;
+    fs.appendFile(path.join(logDir, 'updater.log'), line, () => {});
+  } catch {}
+}
+
+function requestInstallUpdateFromRenderer(info) {
   if (!mainWindow || updatePromptVisible) return;
   updatePromptVisible = true;
-  try {
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: '更新已准备好',
-      message: `新版本 ${info?.version || ''} 已下载完成`,
-      detail: '重启客户端后将自动安装更新。',
-      buttons: ['稍后', '立即重启安装'],
-      defaultId: 1,
-      cancelId: 0,
-    });
-    if (result.response === 1) {
-      await quitAndInstallAfterLogout();
-    }
-  } finally {
+  const payload = { version: info?.version || '' };
+  appendUpdateLog('info', 'request renderer install prompt', payload);
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('update-install-requested', payload);
+}
+
+async function resolveUpdateInstallPrompt(action) {
+  if (action === 'restart') {
+    appendUpdateLog('info', 'restart to install requested');
     updatePromptVisible = false;
+    await quitAndInstallAfterLogout();
+    return true;
   }
+  appendUpdateLog('info', 'install prompt deferred');
+  updatePromptVisible = false;
+  return true;
 }
 
 function setupUpdater() {
@@ -253,34 +274,68 @@ function setupUpdater() {
     await quitAndInstallAfterLogout();
     return true;
   });
+  ipcMain.handle('resolve-update-install-prompt', async (event, action) => {
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+    if (sourceWindow !== mainWindow) return false;
+    return resolveUpdateInstallPrompt(action);
+  });
 
   if (!app.isPackaged) {
     emitUpdateStatus({ status: 'unsupported', message: unsupportedMessage, autoCheck: false });
     console.log('[Updater] skipped in dev mode');
     return;
   }
+  autoUpdater.logger = {
+    info: (...args) => appendUpdateLog('info', ...args),
+    warn: (...args) => appendUpdateLog('warn', ...args),
+    error: (...args) => appendUpdateLog('error', ...args),
+    debug: (...args) => appendUpdateLog('debug', ...args),
+  };
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
   autoUpdater.setFeedURL({ provider: 'generic', url: runtimeConfig.updateUrl });
 
   autoUpdater.on('checking-for-update', () => {
+    appendUpdateLog('info', 'checking for update');
     emitUpdateStatus({ status: 'checking', message: undefined });
   });
   autoUpdater.on('update-available', (info) => {
+    updateProgressLastLoggedPercent = -1;
+    appendUpdateLog('info', 'update available', info);
     emitUpdateStatus({ status: 'available', version: info.version, releaseDate: info.releaseDate, message: undefined });
   });
   autoUpdater.on('update-not-available', () => {
+    appendUpdateLog('info', 'update not available');
     emitUpdateStatus({ status: 'not-available', message: undefined });
   });
   autoUpdater.on('download-progress', (p) => {
-    emitUpdateStatus({ status: 'downloading', percent: Math.round(p.percent), message: undefined });
+    const percent = Math.round(p.percent || 0);
+    if (percent >= updateProgressLastLoggedPercent + 10 || percent === 100) {
+      updateProgressLastLoggedPercent = percent;
+      appendUpdateLog('info', 'download progress', {
+        percent,
+        transferred: p.transferred,
+        total: p.total,
+        bytesPerSecond: p.bytesPerSecond,
+      });
+    }
+    emitUpdateStatus({
+      status: 'downloading',
+      percent,
+      transferred: p.transferred,
+      total: p.total,
+      bytesPerSecond: p.bytesPerSecond,
+      message: undefined,
+    });
   });
   autoUpdater.on('update-downloaded', (info) => {
+    appendUpdateLog('info', 'update downloaded', info);
     emitUpdateStatus({ status: 'downloaded', version: info.version, message: undefined });
-    promptInstallUpdate(info);
+    requestInstallUpdateFromRenderer(info);
   });
   autoUpdater.on('error', (err) => {
+    appendUpdateLog('error', 'update error', err?.stack || err?.message || err);
     emitUpdateStatus({ status: 'error', message: err.message });
   });
 

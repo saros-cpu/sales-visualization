@@ -1,5 +1,5 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { LogoutOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, LogoutOutlined, MinusCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { App as AntApp, Button, ConfigProvider, Modal, Space, Spin, Typography } from 'antd';
 import { Suspense, lazy, useEffect, useState, type ComponentType } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -155,6 +155,76 @@ function AppCloseGuard() {
   );
 }
 
+function AppUpdateInstallGuard() {
+  const [open, setOpen] = useState(false);
+  const [info, setInfo] = useState<UpdateInstallInfo>({});
+  const [pendingAction, setPendingAction] = useState<UpdateInstallAction | null>(null);
+
+  useEffect(() => {
+    const cleanup = window.updater?.onInstallPrompt?.((nextInfo) => {
+      setInfo(nextInfo || {});
+      setPendingAction(null);
+      setOpen(true);
+    });
+    return () => cleanup?.();
+  }, []);
+
+  const resolveInstall = async (action: UpdateInstallAction) => {
+    if (pendingAction) return;
+    if (action === 'later') {
+      setOpen(false);
+      await window.updater?.resolveInstallPrompt?.('later');
+      return;
+    }
+
+    setPendingAction(action);
+    try {
+      await window.updater?.resolveInstallPrompt?.(action);
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  return (
+    <Modal
+      title="更新已准备好"
+      open={open}
+      centered
+      width={460}
+      destroyOnClose
+      maskClosable={!pendingAction}
+      keyboard={!pendingAction}
+      onCancel={() => resolveInstall('later')}
+      footer={(
+        <Space wrap>
+          <Button
+            icon={<ClockCircleOutlined />}
+            disabled={pendingAction === 'restart'}
+            onClick={() => resolveInstall('later')}
+          >
+            稍后
+          </Button>
+          <Button
+            type="primary"
+            icon={<ReloadOutlined />}
+            loading={pendingAction === 'restart'}
+            onClick={() => resolveInstall('restart')}
+          >
+            立即重启安装
+          </Button>
+        </Space>
+      )}
+    >
+      <Typography.Paragraph style={{ marginBottom: 8 }}>
+        新版本 {info.version || ''} 已下载完成。
+      </Typography.Paragraph>
+      <Typography.Text type="secondary">
+        重启客户端后将自动安装更新；安装前会清除本地登录状态，重新打开后需要再次登录。
+      </Typography.Text>
+    </Modal>
+  );
+}
+
 function AppRoutes() {
   const { user } = useAuth();
   return (
@@ -280,6 +350,7 @@ export default function App() {
         <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AuthProvider>
             <AppCloseGuard />
+            <AppUpdateInstallGuard />
             <AppRoutes />
           </AuthProvider>
         </HashRouter>

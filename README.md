@@ -6,6 +6,12 @@
 
 ## 版本更新记录
 
+### 2026-07-17 (v3.8.8)
+
+- **设置简化**：设置页移除重复语言切换入口，统一使用左侧栏底部语言切换。
+- **更新弹窗**：更新下载完成提示改为客户端内置弹窗，避免 Windows 原生消息框风格不一致。
+- **更新排查**：设置页下载进度显示已下载大小、总大小和速度；客户端本地写入 `updater.log`，方便判断差量更新或全量回退。
+
 ### 2026-07-17 (v3.8.7)
 
 - **侧栏修复**：客户端左侧栏收缩后，logo 与菜单图标统一按 72px 侧栏居中对齐。
@@ -819,7 +825,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.8.7（与 version.ts 对齐）
+├── package.json              # 版本 3.8.8（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

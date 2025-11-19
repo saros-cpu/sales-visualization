@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.7';
+export const VERSION = '3.8.8';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.8',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '优化：设置页移除重复语言切换入口，统一使用左侧栏底部语言切换',
+      '优化：更新下载完成提示改为客户端内置弹窗，替代 Windows 原生消息框',
+      '优化：设置页下载进度补充已下载大小、总大小和速度，便于判断差量更新或全量回退',
+      '新增：客户端更新流程写入本地 updater.log，记录差量下载、回退和进度信息，方便外网电脑排查',
+    ],
+  },
   {
     version: '3.8.7',
     date: '2026-07-17',

@@ -6,6 +6,11 @@ declare module 'react' {
 }
 declare global {
   type AppCloseAction = 'minimize' | 'quit' | 'cancel';
+  type UpdateInstallAction = 'later' | 'restart';
+
+  interface UpdateInstallInfo {
+    version?: string;
+  }
 
   interface WindowEventMap {
     'sales-app-close-requested': CustomEvent<void>;
@@ -16,6 +21,9 @@ declare global {
     version?: string;
     releaseDate?: string;
     percent?: number;
+    transferred?: number;
+    total?: number;
+    bytesPerSecond?: number;
     message?: string;
     autoCheck?: boolean;
   }
@@ -44,6 +52,8 @@ declare global {
       checkForUpdates: () => Promise<unknown>;
       downloadUpdate: () => Promise<unknown>;
       restartApp: () => Promise<unknown>;
+      resolveInstallPrompt?: (action: UpdateInstallAction) => Promise<boolean>;
+      onInstallPrompt?: (callback: (info: UpdateInstallInfo) => void) => () => void;
     };
   }
 }

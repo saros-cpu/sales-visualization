@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, Typography, Button, Space, Descriptions, Modal, Form, Input, message, Progress } from 'antd';
-import { GlobalOutlined, LockOutlined, ReloadOutlined, DownloadOutlined, SyncOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import { LockOutlined, ReloadOutlined, DownloadOutlined, SyncOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { changePassword } from '@/api/client';
@@ -11,8 +11,20 @@ import { VERSION, BUILD_DATE, CHANGELOG } from '@/version';
 const UPDATE_MODULE_MISSING = '当前运行环境未检测到客户端更新模块，请确认正在使用桌面客户端安装版';
 const AUTO_UPDATE_HINT = '客户端启动后会自动检查更新，发现新版本会自动下载，下载完成后提示重启安装。';
 
+function formatBytes(value?: number) {
+  if (!value || value < 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let nextValue = value;
+  let unitIndex = 0;
+  while (nextValue >= 1024 && unitIndex < units.length - 1) {
+    nextValue /= 1024;
+    unitIndex += 1;
+  }
+  return `${nextValue.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
 export default function Settings() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [form] = Form.useForm();
@@ -76,11 +88,6 @@ export default function Settings() {
     await window.updater.restartApp();
   }, []);
 
-  const switchLang = (lang: string) => {
-    i18n.changeLanguage(lang);
-    localStorage.setItem('lang', lang);
-  };
-
   const handleChangePw = async () => {
     const values = await form.validateFields();
     setSubmitting(true);
@@ -105,12 +112,6 @@ export default function Settings() {
         <Descriptions.Item label={t('common.buildDate')}>{BUILD_DATE}</Descriptions.Item>
       </Descriptions>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <Card size="small" title={t('common.langSwitch')}>
-          <Space wrap>
-            <Button icon={<GlobalOutlined />} type={i18n.language === 'zh' ? 'primary' : 'default'} onClick={() => switchLang('zh')}>{t('settings.chinese')}</Button>
-            <Button icon={<GlobalOutlined />} type={i18n.language === 'ru' ? 'primary' : 'default'} onClick={() => switchLang('ru')}>Русский</Button>
-          </Space>
-        </Card>
         <Card size="small" title={t('settings.appUpdate')}>
           <Space direction="vertical" style={{ width: '100%' }}>
             <Typography.Text type="secondary">{AUTO_UPDATE_HINT}</Typography.Text>
@@ -135,6 +136,12 @@ export default function Settings() {
             {updateStatus.status === 'downloading' && (
               <Space direction="vertical" style={{ width: '100%' }}>
                 <Typography.Text>{t('settings.downloading', { percent: updateStatus.percent })}</Typography.Text>
+                {updateStatus.total ? (
+                  <Typography.Text type="secondary">
+                    {formatBytes(updateStatus.transferred)} / {formatBytes(updateStatus.total)}
+                    {updateStatus.bytesPerSecond ? `，${formatBytes(updateStatus.bytesPerSecond)}/s` : ''}
+                  </Typography.Text>
+                ) : null}
                 <Progress percent={updateStatus.percent || 0} showInfo={false} />
               </Space>
             )}
