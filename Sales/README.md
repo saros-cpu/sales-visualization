@@ -9,8 +9,8 @@
 ### 2026-06-14
 
 - 完成 React + Vite 前端迁移，`api.py` 中的 HTML 服务路由已标记为 `DEPRECATED`，过渡期结束后移除。
-- 生产环境由 Nginx 反向代理，静态文件服务 + API 转发。Flask :8900 继续作为 API 后端运行。
-- 访问地址新增 `http://localhost`（Nginx :80），原 `http://127.0.0.1:8900` 保留兼容。
+- 生产环境由 Nginx 反向代理，静态文件服务 + API 转发。Flask 仅监听 127.0.0.1:8900 作为 API 后端运行。
+- 访问地址新增 `http://localhost`（Nginx :80）；`http://127.0.0.1:8900` 仅保留本机调试直连。
 
 ### 2026-06-06
 
@@ -31,7 +31,7 @@ C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe run_production.
 当前生产环境由 Windows 计划任务启动，默认监听：
 
 ```text
-0.0.0.0:8900
+127.0.0.1:8900
 ```
 
 推荐重启方式：
@@ -60,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File D:\SalesVisualization\Sales\restart_pro
 后台地址：
 
 ```text
-http://127.0.0.1:8900/admin
+http://localhost/admin
 ```
 
 ## 登录策略

@@ -3,7 +3,7 @@ import { Card, Space, DatePicker, Button, message, Popconfirm } from 'antd';
 import { SearchOutlined, UploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import * as XLSX from 'xlsx';
+import readXlsxFile from 'read-excel-file/browser';
 import { getTrainEntryList, updateTrainEntry, deleteTrainEntry, batchCreateTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
 import { getProductOptions, getEntityOptions } from '@/api/client';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
@@ -159,17 +159,22 @@ export default function TrainEntryPage() {
     ];
   }, [data, t, validateRow]);
 
+  const cellText = (value: unknown) => {
+    if (value instanceof Date) return dayjs(value).format('YYYY-MM-DD');
+    return String(value ?? '').trim();
+  };
+
   const handleUploadFile = (file: File) => {
     if (!canCreate) {
       message.error(t('common.noPermission'));
       return false;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      message.error('请上传 .xlsx 格式文件');
+      return false;
+    }
+    readXlsxFile(file).then((rows) => {
       try {
-        const wb = XLSX.read(e.target?.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
         const headerRow = rows.find((r) => r[1] && String(r[1]).includes('入厂日期'));
         if (!headerRow) { message.error('未找到表头行（需包含「入厂日期」列）'); return; }
         const headerIdx = rows.indexOf(headerRow);
@@ -177,14 +182,14 @@ export default function TrainEntryPage() {
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const r = rows[i];
           if (!r[1]) continue;
-          const entryDate = String(r[1]).trim();
-          const productName = String(r[2] || '').trim();
-          const weighNo = String(r[3] || '').trim();
-          const vehicleNo = String(r[4] || '').trim();
-          const senderName = String(r[5] || '').trim();
-          const receiverName = String(r[6] || '').trim();
-          const weightKg = r[7] != null ? Number(r[7]) : undefined;
-          const remark = String(r[8] || '').trim();
+          const entryDate = cellText(r[1]);
+          const productName = cellText(r[2]);
+          const weighNo = cellText(r[3]);
+          const vehicleNo = cellText(r[4]);
+          const senderName = cellText(r[5]);
+          const receiverName = cellText(r[6]);
+          const weightKg = r[7] != null && r[7] !== '' ? Number(r[7]) : undefined;
+          const remark = cellText(r[8]);
           if (!entryDate || !productName || !vehicleNo) continue;
           records.push({ entryDate, productName, weighNo, vehicleNo, senderName, receiverName, weightKg, remark });
         }
@@ -194,8 +199,9 @@ export default function TrainEntryPage() {
       } catch (err: any) {
         message.error('文件解析失败: ' + (err.message || ''));
       }
-    };
-    reader.readAsBinaryString(file);
+    }).catch((err: any) => {
+      message.error('文件解析失败: ' + (err.message || ''));
+    });
     return false;
   };
 
@@ -253,7 +259,7 @@ export default function TrainEntryPage() {
               <Button icon={<UploadOutlined />} onClick={() => document.getElementById('train-upload-input')?.click()}>
                 {t('common.import')}
               </Button>
-              <input id="train-upload-input" type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
+              <input id="train-upload-input" type="file" accept=".xlsx" style={{ display: 'none' }}
                 onChange={(e) => e.target.files?.[0] && handleUploadFile(e.target.files[0])} />
               <Button icon={<PlusOutlined />} type="primary" onClick={() => { if (!editing) setEditing(true); tableRef.current?.addNewRow(); }}>
                 {t('common.add')}

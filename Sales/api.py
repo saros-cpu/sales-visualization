@@ -56,7 +56,6 @@ from shared_utils import (
 from routes_assistant import register_assistant_routes
 from routes_data import register_data_routes
 from routes_admin import register_admin_routes
-from routes_update import register_update_routes
 
 app = Flask(__name__, static_folder=".", static_url_path="")
 app.secret_key = SECRET_KEY
@@ -507,7 +506,6 @@ register_data_routes(app)
 register_admin_routes(app)
 register_assistant_routes(app)
 register_analysis_report_routes(app)
-register_update_routes(app)
 
 # Register v2 API blueprint（桌面端）
 from api_v2 import register_v2_blueprints

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { changePassword } from '../../api/auth';
 import { useAuth } from '../../hooks/useAuth';
@@ -9,8 +9,27 @@ export default function ForceChangePasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [status, setStatus] = useState('账号首次使用前，需要先修改初始密码。');
   const [submitting, setSubmitting] = useState(false);
-  const { logout } = useAuth();
+  const { refreshAuth } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let cancelled = false;
+    refreshAuth()
+      .then((latestUser) => {
+        if (cancelled) return;
+        if (!latestUser) {
+          navigate('/login', { replace: true });
+          return;
+        }
+        if (!latestUser.mustChangePassword) {
+          navigate('/', { replace: true });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) navigate('/login', { replace: true });
+      });
+    return () => { cancelled = true; };
+  }, [navigate, refreshAuth]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,8 +49,8 @@ export default function ForceChangePasswordPage() {
     setStatus('正在修改密码...');
     try {
       await changePassword(oldPassword, newPassword);
-      await logout();
-      navigate('/login', { replace: true });
+      const latestUser = await refreshAuth();
+      navigate(latestUser?.mustChangePassword ? '/change-password' : '/', { replace: true });
     } catch (err) {
       setStatus(err.message);
     } finally {

@@ -91,7 +91,7 @@ export default function SelfUse() {
         loading={loading}
         size="small"
         pagination={{ pageSize: 20, showTotal: (count) => t('common.total', { count }) }}
-        scroll={{ x: 'max-content', y: 'calc(100vh - 320px)' }}
+        scroll={{ x: 'max-content' }}
       />
     </div>
   );

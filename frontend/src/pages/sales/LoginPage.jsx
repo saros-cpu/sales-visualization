@@ -7,7 +7,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState('正在检查系统状态...');
   const [disabled, setDisabled] = useState(true);
-  const { login, user, hasUsers, loading } = useAuth();
+  const { login, user, hasUsers, loading, refreshAuth } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const nextUrl = searchParams.get('next') || '/';
@@ -15,14 +15,19 @@ export default function LoginPage() {
   // 已登录用户直接跳转
   useEffect(() => {
     if (!loading && user) {
-      if (user.mustChangePassword) {
-        navigate('/change-password', { replace: true });
-        return;
-      }
-      const dest = user.role === 'admin' ? (nextUrl || '/admin') : (nextUrl === '/admin' ? '/' : nextUrl);
-      navigate(dest, { replace: true });
+      refreshAuth()
+        .then((latestUser) => {
+          const currentUser = latestUser || user;
+          if (currentUser.mustChangePassword) {
+            navigate('/change-password', { replace: true });
+            return;
+          }
+          const dest = currentUser.role === 'admin' ? (nextUrl || '/admin') : (nextUrl === '/admin' ? '/' : nextUrl);
+          navigate(dest, { replace: true });
+        })
+        .catch(() => navigate('/login', { replace: true }));
     }
-  }, [loading, user, navigate, nextUrl]);
+  }, [loading, user, navigate, nextUrl, refreshAuth]);
 
   // 检查是否有可用账号
   useEffect(() => {

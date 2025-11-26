@@ -3,6 +3,7 @@ import { Link, useOutletContext } from 'react-router-dom';
 import {
   archiveKnowledgeArticle,
   createKnowledgeArticle,
+  deleteKnowledgeAttachment,
   downloadKnowledgeAttachment,
   getKnowledgeArticle,
   getKnowledgeArticles,
@@ -169,6 +170,13 @@ export default function KnowledgePage() {
     await loadArticles();
   };
 
+  const deleteAttachment = async (attachmentId) => {
+    if (!isAdmin || !selected?.id || !window.confirm('确认删除这个附件?')) return;
+    await deleteKnowledgeAttachment(attachmentId);
+    setStatusText('附件已删除');
+    await loadArticle(selected.id);
+  };
+
   return (
     <>
       <header className="topbar">
@@ -308,9 +316,16 @@ export default function KnowledgePage() {
                   {!selected.attachments?.length ? (
                     <span>暂无附件</span>
                   ) : selected.attachments.map(item => (
-                    <button key={item.id} className="ghost-button" onClick={() => downloadKnowledgeAttachment(item.id, item.originalName)}>
-                      {item.originalName}
-                    </button>
+                    <div key={item.id} className="knowledge-attachment-row">
+                      <button className="ghost-button" onClick={() => downloadKnowledgeAttachment(item.id, item.originalName)}>
+                        {item.originalName}
+                      </button>
+                      {isAdmin && (
+                        <button className="ghost-button danger-button" onClick={() => deleteAttachment(item.id)}>
+                          删除
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </article>

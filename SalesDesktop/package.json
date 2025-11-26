@@ -1,6 +1,6 @@
 {
     "name":  "sales-desktop",
-    "version":  "3.8.8",
+    "version":  "3.8.9",
     "private":  true,
     "type":  "module",
     "main":  "electron/main.cjs",
@@ -25,8 +25,8 @@
                          "react-dom":  "^18.3.1",
                          "react-i18next":  "^15.4.0",
                          "react-router-dom":  "^6.28.0",
-                         "three":  "^0.185.1",
-                         "xlsx":  "^0.18.5"
+                         "read-excel-file":  "^9.3.2",
+                         "three":  "^0.185.1"
                      },
     "devDependencies":  {
                             "@types/node":  "^22.10.0",

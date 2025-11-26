@@ -99,13 +99,13 @@ export default function Report() {
       </Space>
       <Tabs items={[
         { key: 'station', label: t('retail.byStation'), children: (
-          <Table columns={stationColumns} dataSource={stations} rowKey="shopKey" loading={monthQ.isLoading} size="small" pagination={{ pageSize: 20, showTotal: (tot) => t('common.total', { count: tot }) }} scroll={{ x: 'max-content', y: 'calc(100vh - 380px)' }} />
+          <Table columns={stationColumns} dataSource={stations} rowKey="shopKey" loading={monthQ.isLoading} size="small" pagination={{ pageSize: 20, showTotal: (tot) => t('common.total', { count: tot }) }} scroll={{ x: 'max-content' }} />
         )},
         { key: 'region', label: t('retail.byRegion'), children: (
           <Table columns={regionColumns} dataSource={regionData} rowKey="name" loading={monthQ.isLoading} size="small" pagination={false} scroll={{ x: 'max-content' }} />
         )},
         { key: 'payment', label: t('retail.byPayment'), children: (
-          <Table columns={paymentColumns} dataSource={paymentData} rowKey="key" loading={monthQ.isLoading} size="small" pagination={{ pageSize: 20, showTotal: (tot) => t('common.total', { count: tot }) }} scroll={{ x: 'max-content', y: 'calc(100vh - 380px)' }} />
+          <Table columns={paymentColumns} dataSource={paymentData} rowKey="key" loading={monthQ.isLoading} size="small" pagination={{ pageSize: 20, showTotal: (tot) => t('common.total', { count: tot }) }} scroll={{ x: 'max-content' }} />
         )},
       ]} />
     </div>

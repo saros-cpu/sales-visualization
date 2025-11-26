@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     model_config = {"env_file": None, "extra": "ignore"}
 
     # Server
-    APP_HOST: str = "0.0.0.0"
+    APP_HOST: str = "127.0.0.1"
     APP_PORT: int = 8900
     TITLE: str = "SNK-AZS Data API"
 

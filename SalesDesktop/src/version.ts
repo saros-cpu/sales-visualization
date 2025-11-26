@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.8';
+export const VERSION = '3.8.9';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.9',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '修复：知识库附件删除仅管理员可执行，客户端与 Web 端同步隐藏非管理员删除入口',
+      '修复：Web 端强制改密后刷新真实账号状态，避免同一账号在客户端改密后 Web 仍停留在需改密提示',
+      '优化：自用油、零售报表与报表中心内容区改为第一层页面容器，减少二级容器视觉层级',
+      '安全：生产后端默认仅监听 127.0.0.1:8900，由 Nginx 对外转发，并取消旧更新 API 注册',
+      '安全：火车录入 Excel 导入移除 xlsx 依赖，改用只读 xlsx 解析库',
+    ],
+  },
   {
     version: '3.8.8',
     date: '2026-07-17',

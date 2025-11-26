@@ -9,21 +9,28 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [hasUsers, setHasUsers] = useState(true);
 
-  // 启动时检查认证状态
+  const applyAuthData = useCallback((data) => {
+    setHasUsers(data.hasUsers);
+    const nextUser = data.authenticated ? data.user : null;
+    setUser(nextUser);
+    if (data.authenticated) storeAuthTokens(data);
+    else clearAuthTokens();
+    return nextUser;
+  }, []);
+
+  const refreshAuth = useCallback(async () => {
+    const data = await getAuthStatus();
+    return applyAuthData(data);
+  }, [applyAuthData]);
+
   useEffect(() => {
-    getAuthStatus()
-      .then((data) => {
-        setHasUsers(data.hasUsers);
-        setUser(data.authenticated ? data.user : null);
-        if (data.authenticated) storeAuthTokens(data);
-        else clearAuthTokens();
-      })
+    refreshAuth()
       .catch(() => {
         clearAuthTokens();
         setUser(null);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshAuth]);
 
   const login = useCallback(async (username, password) => {
     const data = await apiLogin(username, password);
@@ -39,7 +46,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, hasUsers, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, hasUsers, login, logout, refreshAuth }}>
       {children}
     </AuthContext.Provider>
   );

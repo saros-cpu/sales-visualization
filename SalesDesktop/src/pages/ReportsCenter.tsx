@@ -91,7 +91,7 @@ export default function ReportsCenter() {
         <Text type="secondary">统一调用现有报表模板，保留原有模板格式与生成逻辑。</Text>
       </div>
 
-      <Card size="small">
+      <div>
         <Space wrap>
           <span>报表月份</span>
           <InputNumber min={2020} max={2100} value={year} onChange={(value) => setYear(Number(value || now.year()))} />
@@ -104,12 +104,12 @@ export default function ReportsCenter() {
             }}
           />
         </Space>
-      </Card>
+      </div>
 
       {!canAnyReport && (
-        <Card size="small">
+        <div className="page-inline-alert">
           <Text type="danger">当前账号没有报表导出权限。</Text>
-        </Card>
+        </div>
       )}
 
       <Row gutter={[16, 16]}>

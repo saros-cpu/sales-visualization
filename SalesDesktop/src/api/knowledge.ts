@@ -136,3 +136,8 @@ export async function downloadKnowledgeAttachment(id: number, filename: string) 
   const token = localStorage.getItem('accessToken') || '';
   await downloadWithAuth(`${API_HOST}/api/v2/knowledge/attachments/${id}`, filename, token);
 }
+
+export async function deleteKnowledgeAttachment(id: number) {
+  const res = await client.delete(`/knowledge/attachments/${id}`);
+  return res.data;
+}

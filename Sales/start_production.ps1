@@ -20,7 +20,7 @@ New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Set-Location $AppRoot
 
 $env:PYTHONUNBUFFERED = "1"
-$env:SALES_HOST = if ($env:SALES_HOST) { $env:SALES_HOST } else { "0.0.0.0" }
+$env:SALES_HOST = if ($env:SALES_HOST) { $env:SALES_HOST } else { "127.0.0.1" }
 $env:SALES_PORT = if ($env:SALES_PORT) { $env:SALES_PORT } else { "8900" }
 
 $ExistingListener = Get-NetTCPConnection -LocalPort ([int]$env:SALES_PORT) -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1

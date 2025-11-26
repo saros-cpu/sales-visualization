@@ -40,5 +40,5 @@ DB_CONFIG = {
     "use_unicode": True,
 }
 
-SERVER_HOST = os.getenv("APP_HOST", "0.0.0.0")
+SERVER_HOST = os.getenv("APP_HOST", "127.0.0.1")
 SERVER_PORT = _get_int("APP_PORT", 8900)

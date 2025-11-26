@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 import pandas as pd
 from flask import jsonify, request, session
-from flask_jwt_extended import create_access_token, create_refresh_token
+from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt_identity, verify_jwt_in_request
 from pymysql.err import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -896,14 +896,55 @@ def register_data_routes(app):
             user = session_user()
             if user:
                 ensure_auth_schema(cur)
-                cur.execute("SELECT must_change_password FROM system_users WHERE id = %s AND is_active = TRUE", (user.get("id"),))
+                cur.execute(
+                    """
+                    SELECT id, username, display_name, role, must_change_password
+                    FROM system_users
+                    WHERE id = %s AND is_active = TRUE
+                    """,
+                    (user.get("id"),),
+                )
                 row = cur.fetchone()
                 if row:
-                    user = {**user, "mustChangePassword": bool(row[0])}
+                    user = {
+                        "id": row[0],
+                        "username": row[1],
+                        "displayName": row[2],
+                        "role": row[3],
+                        "mustChangePassword": bool(row[4]),
+                    }
                     session["user"] = user
                 else:
                     session.clear()
                     user = None
+            if not user:
+                identity = None
+                try:
+                    verify_jwt_in_request(optional=True)
+                    identity = get_jwt_identity()
+                except Exception:
+                    identity = None
+                if identity:
+                    ensure_auth_schema(cur)
+                    cur.execute(
+                        """
+                        SELECT id, username, display_name, role, must_change_password
+                        FROM system_users
+                        WHERE id = %s AND is_active = TRUE
+                        """,
+                        (identity,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        user = {
+                            "id": row[0],
+                            "username": row[1],
+                            "displayName": row[2],
+                            "role": row[3],
+                            "mustChangePassword": bool(row[4]),
+                        }
+                        session.permanent = True
+                        session["user"] = user
             response = {
                 "hasUsers": has_users(cur),
                 "authenticated": bool(user),
@@ -1854,7 +1895,7 @@ def register_data_routes(app):
 
     if __name__ == "__main__":
         logging.getLogger("werkzeug").disabled = True
-        host = os.getenv("SALES_HOST", "0.0.0.0")
+        host = os.getenv("SALES_HOST", "127.0.0.1")
         port = int(os.getenv("SALES_PORT", "8900"))
         try:
             from waitress import serve

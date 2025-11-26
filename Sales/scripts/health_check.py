@@ -18,7 +18,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = ROOT.parent
 DEFAULT_BASE_URL = os.getenv("SALES_HEALTH_BASE_URL", "http://127.0.0.1:8900")
-DEFAULT_EXTERNAL_URL = os.getenv("SALES_HEALTH_EXTERNAL_URL", "http://198.51.100.10:8900")
+DEFAULT_EXTERNAL_URL = os.getenv("SALES_HEALTH_EXTERNAL_URL", "http://198.51.100.10")
 DEFAULT_YEAR = int(os.getenv("SALES_HEALTH_YEAR", time.strftime("%Y")))
 
 

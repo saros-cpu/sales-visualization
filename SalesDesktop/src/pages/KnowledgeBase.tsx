@@ -34,6 +34,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   archiveKnowledgeArticle,
   createKnowledgeArticle,
+  deleteKnowledgeAttachment,
   downloadKnowledgeAttachment,
   getKnowledgeArticle,
   getKnowledgeArticles,
@@ -266,6 +267,20 @@ export default function KnowledgeBase() {
     }
   };
 
+  const removeAttachment = async (attachmentId: number) => {
+    if (!isAdmin || !selectedArticle?.id) {
+      message.error(t('common.noPermission'));
+      return;
+    }
+    try {
+      await deleteKnowledgeAttachment(attachmentId);
+      message.success(t('common.deleted'));
+      await loadArticle(selectedArticle.id);
+    } catch (err: any) {
+      message.error(err?.message || t('common.deleteFailedRetry'));
+    }
+  };
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }}>
@@ -439,6 +454,19 @@ export default function KnowledgeBase() {
                           >
                             下载
                           </Button>,
+                          ...(isAdmin ? [
+                            <Popconfirm
+                              key="delete"
+                              title="确认删除这个附件?"
+                              okText={t('common.confirm')}
+                              cancelText={t('common.cancel')}
+                              onConfirm={() => removeAttachment(item.id)}
+                            >
+                              <Button danger type="link">
+                                {t('common.delete')}
+                              </Button>
+                            </Popconfirm>,
+                          ] : []),
                         ]}
                       >
                         <List.Item.Meta

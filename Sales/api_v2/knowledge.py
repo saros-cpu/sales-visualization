@@ -501,6 +501,10 @@ def _can_manage(cur, user: dict[str, Any]) -> bool:
     return user["role"] == "admin" or has_permission(cur, user["id"], "knowledge:manage", user["role"])
 
 
+def _can_delete_attachment(user: dict[str, Any]) -> bool:
+    return user["role"] == "admin"
+
+
 def _role_codes(user: dict[str, Any]) -> set[str]:
     codes = {str(user.get("role") or "")}
     codes.update(str(item.get("roleCode") or "") for item in user.get("roles", []))
@@ -1017,8 +1021,8 @@ def delete_knowledge_attachment(attachment_id: int):
             user, error = _require_view(cur)
             if error:
                 return error
-            if not _can_manage(cur, user):
-                return _forbidden()
+            if not _can_delete_attachment(user):
+                return _forbidden("attachment_delete_admin_only")
             _safe_execute(cur, "SELECT * FROM knowledge_attachments WHERE id = %s", (attachment_id,))
             row = cur.fetchone()
             if not row:

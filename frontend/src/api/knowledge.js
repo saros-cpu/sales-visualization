@@ -19,3 +19,6 @@ export const archiveKnowledgeArticle = (id) =>
 
 export const downloadKnowledgeAttachment = (id, filename) =>
   triggerDownload(`/api/v2/knowledge/attachments/${id}`, filename);
+
+export const deleteKnowledgeAttachment = (id) =>
+  del(`/api/v2/knowledge/attachments/${id}`);

@@ -51,7 +51,7 @@ def start_retail_cache_warmup():
 
 
 if __name__ == "__main__":
-    host = os.getenv("SALES_HOST", "0.0.0.0")
+    host = os.getenv("SALES_HOST", "127.0.0.1")
     port = int(os.getenv("SALES_PORT", "8900"))
     log.info("Starting Sales Visualization on {}:{}", host, port)
     start_retail_cache_warmup()

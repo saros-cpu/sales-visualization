@@ -1,0 +1,11 @@
+Flask
+flask-cors
+flask-jwt-extended
+waitress
+PyMySQL
+pandas
+openpyxl
+pydantic-settings
+loguru
+typer
+Werkzeug
