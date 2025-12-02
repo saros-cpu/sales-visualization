@@ -83,24 +83,27 @@ function MaterialDictTab() {
     setData(prev => [...prev, row as Material]);
   }, []);
 
+  const centerAlign = { align: 'center' as const };
+
   const columns = [
-    { title: t('common.code'), dataIndex: 'material_code', key: 'material_code', width: 100, editable: true },
-    { title: t('common.nameZh'), dataIndex: 'name_zh', key: 'name_zh', editable: true },
-    { title: t('common.nameRu'), dataIndex: 'name_ru', key: 'name_ru', editable: true },
+    { title: t('common.code'), dataIndex: 'material_code', key: 'material_code', width: 100, editable: true, ...centerAlign },
+    { title: t('common.nameZh'), dataIndex: 'name_zh', key: 'name_zh', editable: true, ...centerAlign },
+    { title: t('common.nameRu'), dataIndex: 'name_ru', key: 'name_ru', editable: true, ...centerAlign },
     {
       title: t('materials.category'),
       dataIndex: 'category_id',
       key: 'category_id',
       width: 140,
       editable: true,
+      ...centerAlign,
       editorType: 'select' as const,
       editorOptions: cats.map((cat) => ({ value: cat.id, label: cat.name_zh })),
       render: (value: number, record: Material) => cats.find((cat) => cat.id === value)?.name_zh || record.category_name || '-',
     },
-    { title: t('common.spec'), dataIndex: 'specification', key: 'specification', editable: true },
-    { title: t('materials.unit'), dataIndex: 'unit', key: 'unit', width: 60, editable: true },
-    { title: t('common.unitPrice'), dataIndex: 'unit_price', key: 'unit_price', width: 80, editable: true },
-    { title: t('materials.status'), dataIndex: 'is_active', key: 'is_active', width: 70, editable: true },
+    { title: t('common.spec'), dataIndex: 'specification', key: 'specification', editable: true, ...centerAlign },
+    { title: t('materials.unit'), dataIndex: 'unit', key: 'unit', width: 60, editable: true, ...centerAlign },
+    { title: t('common.unitPrice'), dataIndex: 'unit_price', key: 'unit_price', width: 80, editable: true, ...centerAlign },
+    { title: t('materials.status'), dataIndex: 'is_active', key: 'is_active', width: 70, editable: true, ...centerAlign },
   ];
 
   return (

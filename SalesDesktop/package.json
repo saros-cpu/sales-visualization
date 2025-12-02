@@ -1,6 +1,6 @@
 {
     "name":  "sales-desktop",
-    "version":  "3.8.9",
+    "version":  "3.8.10",
     "private":  true,
     "type":  "module",
     "main":  "electron/main.cjs",

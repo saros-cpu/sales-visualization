@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.9';
+export const VERSION = '3.8.10';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.10',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '优化：物资字典补齐并规范俄语名称，提升中俄双语资料完整度',
+      '优化：客户端物资字典列内容统一居中显示，提升表格阅读一致性',
+      '安全：项目知识库附件与本地客户端配置加入忽略规则，避免资料和本地地址配置误提交',
+    ],
+  },
   {
     version: '3.8.9',
     date: '2026-07-17',

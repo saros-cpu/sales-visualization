@@ -16,6 +16,7 @@ export interface ColumnDefinition<T> {
   dataIndex: keyof T | string;
   key: string;
   width?: number;
+  align?: 'left' | 'center' | 'right';
   editable?: boolean;
   readOnly?: boolean;
   required?: boolean;
