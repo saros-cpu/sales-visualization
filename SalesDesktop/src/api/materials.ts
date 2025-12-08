@@ -84,6 +84,11 @@ export async function createMaterial(data: MaterialCreateInput) {
   return res.data;
 }
 
+export async function deleteMaterial(id: number) {
+  const res = await client.delete(`/materials/${id}`);
+  return res.data;
+}
+
 export async function getInboundList(params: { page?: number; page_size?: number }) {
   const res = await client.get('/materials/inbound', { params });
   return res.data;

@@ -249,8 +249,8 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
       setSelectedRowKeys([]);
       onSelectionChange?.([]);
       message.success(t('common.deletedCount', { count: selectedRowKeys.length }));
-    } catch {
-      message.error(t('common.deleteFailedRetry'));
+    } catch (error) {
+      message.error(error instanceof Error && error.message ? error.message : t('common.deleteFailedRetry'));
     }
   }, [selectedRowKeys, onDelete, onSelectionChange, t]);
 
@@ -363,7 +363,8 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     };
     const editor = (() => {
       if (col.editorType === 'select' && col.editorOptions) {
-        return <Select value={current || undefined} onChange={(v) => updateCell(record.id, field, v)} options={col.editorOptions} allowClear showSearch optionFilterProp="label" {...commonProps} />;
+        const selectValue = typeof current === 'boolean' ? (current ? 1 : 0) : current;
+        return <Select value={selectValue === '' ? undefined : selectValue} onChange={(v) => updateCell(record.id, field, v)} options={col.editorOptions} allowClear showSearch optionFilterProp="label" {...commonProps} />;
       }
       if (col.editorType === 'date') {
         return <DatePicker value={current ? dayjs(current) : null} onChange={(_, dateStr) => updateCell(record.id, field, dateStr)} format={col.dateFormat || 'YYYY-MM-DD'} {...commonProps} />;

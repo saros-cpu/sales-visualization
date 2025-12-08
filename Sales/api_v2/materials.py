@@ -62,7 +62,7 @@ def list_materials():
                        m.name_zh, m.name_ru, m.specification, m.unit, m.unit_price, m.is_active
                 FROM materials m
                 LEFT JOIN material_categories c ON m.category_id = c.id
-                ORDER BY c.sort_order, m.name_zh
+                ORDER BY m.material_code ASC, m.id ASC
             ''')
             return jsonify({'code': 0, 'message': 'success', 'data': [dict(r) for r in cur.fetchall()]})
     finally:
@@ -121,6 +121,34 @@ def update_material(material_id):
         with conn.cursor() as cur:
             params.append(material_id)
             cur.execute(f'UPDATE materials SET {", ".join(updates)} WHERE id = %s', params)
+            conn.commit()
+            return jsonify({'code': 0, 'message': 'success', 'data': None})
+    finally:
+        conn.close()
+
+
+@bp_v2.route('/materials/<int:material_id>', methods=['DELETE'])
+@jwt_required()
+@permission_required('materials:delete')
+def delete_material(material_id):
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute('SELECT id FROM materials WHERE id = %s', (material_id,))
+            if not cur.fetchone():
+                return jsonify({'code': 4004, 'message': 'material_not_found', 'data': None}), 404
+
+            reference_checks = [
+                ('material_inbound', 'material_id'),
+                ('material_transfer_orders', 'material_id'),
+                ('material_inventory', 'material_id'),
+            ]
+            for table_name, column_name in reference_checks:
+                cur.execute(f'SELECT COUNT(*) AS total FROM {table_name} WHERE {column_name} = %s', (material_id,))
+                if cur.fetchone()['total']:
+                    return jsonify({'code': 4092, 'message': 'material_in_use', 'data': None}), 409
+
+            cur.execute('DELETE FROM materials WHERE id = %s', (material_id,))
             conn.commit()
             return jsonify({'code': 0, 'message': 'success', 'data': None})
     finally:

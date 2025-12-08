@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Card, Tabs, Button, Space, message, Select, Table } from 'antd';
-import { PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { Card, Tabs, Button, Space, message, Select, Table, Popconfirm } from 'antd';
+import { PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import client from '@/api/client';
 import {
-  getCategories, getMaterials, createMaterial, Material, MaterialCategory,
+  getCategories, getMaterials, createMaterial, deleteMaterial, Material, MaterialCategory,
   getDepots, DepotOption,
   getInboundList, createInbound, InboundRecord,
   getTransferOrders, createTransferOrder, updateOrderStatus, TransferOrder,
@@ -19,12 +19,14 @@ function MaterialDictTab() {
   const { can } = useAuth();
   const canCreate = can('materials:create');
   const canUpdate = can('materials:update');
+  const canDelete = can('materials:delete');
   const canEdit = canCreate || canUpdate;
   const [data, setData] = useState<Material[]>([]);
   const [cats, setCats] = useState<MaterialCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const tableRef = useRef<ExcelTableHandle>(null);
 
   const fetchData = async () => {
@@ -64,17 +66,6 @@ function MaterialDictTab() {
     }
   };
 
-  const handleRealTimeSave = async (id: number, field: string, value: any) => {
-    if (id > 0 && !canUpdate) return;
-    setData(prev => prev.map(r =>
-      r.id === id ? { ...r, [field]: value } : r
-    ));
-
-    if (id > 0) {
-      await updateMaterial(id, { [field]: value });
-    }
-  };
-
   const updateMaterial = async (id: number, data: Partial<Material>) => {
     await client.put(`/materials/${id}`, data);
   };
@@ -83,11 +74,54 @@ function MaterialDictTab() {
     setData(prev => [...prev, row as Material]);
   }, []);
 
+  const nextMaterialCode = useMemo(() => {
+    const maxNo = data.reduce((max, row) => {
+      const match = /^A(\d+)$/.exec(row.material_code || '');
+      if (!match) return max;
+      return Math.max(max, Number(match[1]) || 0);
+    }, 0);
+    return `A${String(maxNo + 1).padStart(4, '0')}`;
+  }, [data]);
+
+  const defaultCategoryId = useMemo(
+    () => cats.find((cat) => cat.category_code === 'other')?.id ?? cats[0]?.id,
+    [cats],
+  );
+
+  const handleAddRow = useCallback(() => {
+    setEditing(true);
+    window.setTimeout(() => tableRef.current?.addNewRow(), 0);
+  }, []);
+
+  const handleDeleteMaterials = useCallback(async (ids: number[]) => {
+    if (!canDelete) throw new Error(t('common.noPermission'));
+    try {
+      for (const id of ids.filter((item) => item > 0)) {
+        await deleteMaterial(id);
+      }
+      setData(prev => prev.filter(row => !ids.includes(row.id)));
+    } catch (error: any) {
+      if (error?.response?.data?.code === 4092) {
+        throw new Error(t('materials.deleteInUse'));
+      }
+      throw new Error(t('common.deleteFailedRetry'));
+    }
+  }, [canDelete, t]);
+
+  const validateMaterialRow = useCallback((row: Partial<Material>) => {
+    const errors: Record<string, string> = {};
+    if (!String(row.material_code || '').trim()) errors.material_code = t('materials.materialNo') + ' ' + t('common.required');
+    if (!String(row.name_zh || '').trim()) errors.name_zh = t('common.nameZh') + ' ' + t('common.required');
+    if (!row.category_id) errors.category_id = t('materials.category') + ' ' + t('common.required');
+    if (!String(row.unit || '').trim()) errors.unit = t('materials.unit') + ' ' + t('common.required');
+    return errors;
+  }, [t]);
+
   const centerAlign = { align: 'center' as const };
 
   const columns = [
-    { title: t('common.code'), dataIndex: 'material_code', key: 'material_code', width: 100, editable: true, ...centerAlign },
-    { title: t('common.nameZh'), dataIndex: 'name_zh', key: 'name_zh', editable: true, ...centerAlign },
+    { title: t('materials.materialNo'), dataIndex: 'material_code', key: 'material_code', width: 100, editable: true, required: true, ...centerAlign },
+    { title: t('common.nameZh'), dataIndex: 'name_zh', key: 'name_zh', editable: true, required: true, ...centerAlign },
     { title: t('common.nameRu'), dataIndex: 'name_ru', key: 'name_ru', editable: true, ...centerAlign },
     {
       title: t('materials.category'),
@@ -95,24 +129,50 @@ function MaterialDictTab() {
       key: 'category_id',
       width: 140,
       editable: true,
+      required: true,
       ...centerAlign,
       editorType: 'select' as const,
       editorOptions: cats.map((cat) => ({ value: cat.id, label: cat.name_zh })),
       render: (value: number, record: Material) => cats.find((cat) => cat.id === value)?.name_zh || record.category_name || '-',
     },
     { title: t('common.spec'), dataIndex: 'specification', key: 'specification', editable: true, ...centerAlign },
-    { title: t('materials.unit'), dataIndex: 'unit', key: 'unit', width: 60, editable: true, ...centerAlign },
-    { title: t('common.unitPrice'), dataIndex: 'unit_price', key: 'unit_price', width: 80, editable: true, ...centerAlign },
-    { title: t('materials.status'), dataIndex: 'is_active', key: 'is_active', width: 70, editable: true, ...centerAlign },
+    { title: t('materials.unit'), dataIndex: 'unit', key: 'unit', width: 60, editable: true, required: true, ...centerAlign },
+    { title: t('common.unitPrice'), dataIndex: 'unit_price', key: 'unit_price', width: 80, editable: true, editorType: 'number' as const, ...centerAlign },
+    {
+      title: t('materials.status'),
+      dataIndex: 'is_active',
+      key: 'is_active',
+      width: 90,
+      editable: true,
+      ...centerAlign,
+      editorType: 'select' as const,
+      editorOptions: [
+        { value: 1, label: t('materials.active') },
+        { value: 0, label: t('materials.inactive') },
+      ],
+      render: (value: boolean | number) => Number(value) ? t('materials.active') : t('materials.inactive'),
+    },
   ];
 
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
         {canCreate && (
-          <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
+          <Button icon={<PlusOutlined />} type="primary" onClick={handleAddRow}>
             {t('common.add')}
           </Button>
+        )}
+        {canDelete && (
+          <Popconfirm
+            title={t('common.deleteConfirm')}
+            okText={t('common.confirm')}
+            cancelText={t('common.cancel')}
+            onConfirm={() => tableRef.current?.deleteSelectedRows()}
+          >
+            <Button danger icon={<DeleteOutlined />} disabled={selectedIds.length === 0}>
+              {selectedIds.length > 0 ? `${t('common.delete')} (${selectedIds.length})` : t('common.delete')}
+            </Button>
+          </Popconfirm>
         )}
         {editing && canEdit && (
           <>
@@ -137,9 +197,20 @@ function MaterialDictTab() {
         editing={editing}
         setEditing={(value) => setEditing(canEdit && value)}
         isAdmin={false}
+        canDelete={canDelete}
         onBatchSave={handleBatchSave}
-        onRealTimeSave={handleRealTimeSave}
         onAddNew={handleAddNew}
+        onDelete={handleDeleteMaterials}
+        onSelectionChange={setSelectedIds}
+        validateRow={validateMaterialRow}
+        initialNewRow={() => ({
+          material_code: nextMaterialCode,
+          category_id: defaultCategoryId,
+          unit: '\u4e2a',
+          unit_price: 0,
+          is_active: true,
+        })}
+        draftKey="material-dict-spreadsheet-draft"
         rowHeight={40}
         height={600}
       />

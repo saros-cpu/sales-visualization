@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.10';
+export const VERSION = '3.8.11';
 export const BUILD_DATE = '2026-07-17';
 
 export interface ChangelogEntry {
@@ -14,6 +14,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.11',
+    date: '2026-07-17',
+    type: 'patch',
+    changes: [
+      '优化：物资字典“编码”统一改为“编号”，后端列表按编号从小到大返回',
+      '优化：物资字典新增和编辑改为本地批量保存，减少逐格保存导致的卡顿',
+      '新增：物资字典支持按权限删除选中记录，已被入库、调拨或库存引用的物资禁止删除',
+      '优化：物资字典新增行自动生成下一个编号，并补齐默认分类、单位和启用状态',
+    ],
+  },
   {
     version: '3.8.10',
     date: '2026-07-17',

@@ -556,6 +556,7 @@
     "ignoredCount": "已忽略 {{count}} 个名称"
   },
   "materials": {
+    "materialNo": "编号",
     "name": "名称",
     "category": "分类",
     "unit": "单位",
@@ -567,6 +568,7 @@
     "updatedAt": "更新时间",
     "ship": "发货",
     "receive": "收货",
+    "deleteInUse": "该物资已被入库、调拨或库存记录使用，不能直接删除",
     "sameWarehouseError": "调出仓库和调入仓库不能相同",
     "statusPending": "待处理",
     "statusApproved": "已批准",
