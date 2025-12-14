@@ -135,12 +135,21 @@ function filenameFromDisposition(value) {
 
 export async function triggerDownload(url, filename = '') {
   if (!url) return;
-  const token = localStorage.getItem('accessToken');
+  let token = localStorage.getItem('accessToken');
   if (token) {
-    const res = await fetch(url, {
+    let res = await fetch(url, {
       credentials: 'include',
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (res.status === 401) {
+      token = await refreshAccessToken();
+      if (token) {
+        res = await fetch(url, {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);

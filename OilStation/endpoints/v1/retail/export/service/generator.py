@@ -7,6 +7,8 @@ from business_time import selling_business_day_subquery, shift_business_date_exp
 from constants import RENOVATION_CARRY_FORWARD_STATIONS, SHOP_KEY_MAP
 from export_excel import (
     EXPORT_DIR,
+    BalanceMap,
+    MetricMap,
     MONTH_NAMES_CN,
     MONTH_NAMES_RU,
     PatternFill,
@@ -15,10 +17,19 @@ from export_excel import (
     SK30_RSK_MAP,
     STATION_RK_CORRECTIONS,
     _FILL_TOTAL,
+    _allow_fixed_density_fallback,
     _apply_style,
+    _balance_begin_density_expr,
+    _balance_begin_mass_expr,
+    _balance_end_density_expr,
+    _balance_end_mass_expr,
     _build_sheet_data,
+    _density_from_mass_volume,
     _get_station_fuel_keys,
     _infer_resource_code_daily,
+    _mass_from_db_mass_or_density,
+    _selling_mass_expr,
+    _supply_mass_expr,
     _write_station_block,
     get_column_letter,
     openpyxl,
@@ -35,6 +46,36 @@ from endpoints.v1.retail.export.service.workbook import (
     _weekly_report_workbook,
     _workbook_last_nonempty_day,
 )
+
+
+def _new_metric_map():
+    data = MetricMap()
+    data.mass = {}
+    data.density = {}
+    return data
+
+
+def _daily_metric_map(cache, day_key):
+    item = cache.get(day_key)
+    if item is None:
+        item = _new_metric_map()
+        cache[day_key] = item
+    return item
+
+
+def _new_balance_map():
+    data = BalanceMap()
+    data.mass = {}
+    data.density = {}
+    return data
+
+
+def _daily_balance_map(cache, day_key):
+    item = cache.get(day_key)
+    if item is None:
+        item = _new_balance_map()
+        cache[day_key] = item
+    return item
 
 
 def _copy_summary_template(ws, template_path, title):
@@ -76,7 +117,7 @@ def _copy_summary_template(ws, template_path, title):
             template_workbook.close()
 
 
-def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, contract_data, start_bal, end_bal, loss_data, total_label):
+def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, contract_data, start_bal, end_bal, loss_data, total_label, allow_fixed_density_fallback=True):
     current_row = 5
     subtotal_rows = []
     for sk in station_keys:
@@ -85,7 +126,7 @@ def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, c
         current_row = _write_station_block(
             ws, current_row, sk, info, sales_data, ved_data, supply_data,
             start_bal, end_bal, contract_data=contract_data, loss_data=loss_data,
-            is_monthly=True, fuel_keys=fuel_keys,
+            is_monthly=True, fuel_keys=fuel_keys, allow_fixed_density_fallback=allow_fixed_density_fallback,
         )
         ws.cell(row=current_row - 1, column=1, value="所选日期小计")
         subtotal_rows.append(current_row - 1)
@@ -139,6 +180,7 @@ def generate_range_summary_excel(conn, date_from, date_to, force_refresh=False):
 
     station_keys = sorted(SHOP_KEY_MAP.keys())
     range_end = (end_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    allow_fixed_density_fallback = _allow_fixed_density_fallback(date_from)
     cur = conn.cursor()
     sales_data, ved_data, supply_data, contract_data, start_bal, end_bal, loss_data = \
         _build_sheet_data(cur, date_from, range_end, station_keys)
@@ -149,7 +191,7 @@ def generate_range_summary_excel(conn, date_from, date_to, force_refresh=False):
     _copy_summary_template(ws, template_path, title)
     _write_summary_blocks(
         ws, station_keys, sales_data, ved_data, supply_data, contract_data,
-        start_bal, end_bal, loss_data, "所选日期总合计",
+        start_bal, end_bal, loss_data, "所选日期总合计", allow_fixed_density_fallback=allow_fixed_density_fallback,
     )
 
     WEEKLY_REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -181,6 +223,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     cur = conn.cursor()
     y, m = int(year_month.split('-')[0]), int(year_month.split('-')[1])
     ym_start, ym_end = get_query_date_range(year_month)
+    allow_fixed_density_fallback = _allow_fixed_density_fallback(ym_start)
     station_keys = sorted(SHOP_KEY_MAP.keys())
     selling_by_business_day = selling_business_day_subquery("selling", ym_start, ym_end, station_keys)
 
@@ -245,7 +288,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         current_row = _write_station_block(
             ws, current_row, sk, info, sales_data, ved_data, supply_data,
             start_bal, end_bal, contract_data=contract_data, loss_data=loss_data,
-            is_monthly=True, fuel_keys=fuel_keys
+            is_monthly=True, fuel_keys=fuel_keys, allow_fixed_density_fallback=allow_fixed_density_fallback
         )
         subtotal_rows.append(current_row - 1)
 
@@ -282,6 +325,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             break
         actual_days.append(d)
 
+    selling_mass_expr = _selling_mass_expr(
+        use_ai80_missing_density_fallback=not allow_fixed_density_fallback
+    )
     cur.execute(f"""
         SELECT ShopKey,
             CASE
@@ -300,6 +346,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
                 WHEN BasePrice <= 45   THEN 108
@@ -317,7 +366,11 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             SUM(BonusOutCost) as bonus_amt,
             SUM(BasePrice * Volume) / NULLIF(SUM(Volume), 0) as avg_price,
             SUM(CASE WHEN BasePrice > 0 THEN BonusOutCost / BasePrice ELSE 0 END) as bonus_vol,
-            business_day as day_date
+            business_day as day_date,
+            SUM(CASE WHEN BasePaymentTypeKey = 1 AND COALESCE(DerivedPaymentTypeKey, 0) <> 5 THEN {selling_mass_expr} ELSE 0 END) as cash_mass,
+            SUM(CASE WHEN BasePaymentTypeKey = 2 OR DerivedPaymentTypeKey = 5 THEN {selling_mass_expr} ELSE 0 END) as card_mass,
+            SUM({selling_mass_expr}) as total_mass,
+            SUM({selling_mass_expr}) / NULLIF(SUM(Volume), 0) as weighted_density
         FROM {selling_by_business_day}
         WHERE business_day >= %s AND business_day < %s
           AND (DerivedPaymentTypeKey IS NULL OR DerivedPaymentTypeKey NOT IN (2, 3, 4))
@@ -338,6 +391,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
                 WHEN BasePrice <= 45   THEN 108
@@ -359,12 +415,17 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         total_vol = float(r[6] or 0)
         bonus_amt = float(r[8] or 0)
         bonus_vol = float(r[10] or 0)
+        total_mass = float(r[14] or 0)
         row_data = {
             'cash_vol': round(float(r[2] or 0), 3), 'cash_amt': round(float(r[3] or 0), 2),
             'card_vol': round(float(r[4] or 0), 3), 'card_amt': round(float(r[5] or 0), 2),
             'total_vol': round(total_vol, 3), 'total_amt': round(float(r[7] or 0), 2),
             'bonus_amt': round(bonus_amt, 2), 'bonus_vol': round(bonus_vol, 3),
             'avg_price': round(avg_price, 2),
+            'cash_mass': round(float(r[12] or 0), 3),
+            'card_mass': round(float(r[13] or 0), 3),
+            'total_mass': round(total_mass, 3),
+            'density': _density_from_mass_volume(total_mass, total_vol, r[15] or 0),
         }
         if day_str not in daily_sales_cache:
             daily_sales_cache[day_str] = {}
@@ -382,8 +443,12 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             ex['total_amt'] = round(ex['total_amt'] + row_data['total_amt'], 2)
             ex['bonus_amt'] = round(ex['bonus_amt'] + row_data['bonus_amt'], 2)
             ex['bonus_vol'] = round(ex['bonus_vol'] + row_data['bonus_vol'], 3)
+            ex['cash_mass'] = round(ex.get('cash_mass', 0) + row_data.get('cash_mass', 0), 3)
+            ex['card_mass'] = round(ex.get('card_mass', 0) + row_data.get('card_mass', 0), 3)
+            ex['total_mass'] = round(ex.get('total_mass', 0) + row_data.get('total_mass', 0), 3)
             if ex['total_vol'] > 0:
                 ex['avg_price'] = round(ex['total_amt'] / ex['total_vol'], 2)
+                ex['density'] = _density_from_mass_volume(ex.get('total_mass', 0), ex['total_vol'], ex.get('density', 0))
 
     cur.execute(f"""
         SELECT ShopKey,
@@ -403,6 +468,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -413,7 +481,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 ELSE 106
             END as inferred_rk,
             SUM(Volume) as ved_vol,
-            business_day as day_date
+            business_day as day_date,
+            SUM({selling_mass_expr}) as ved_mass,
+            SUM({selling_mass_expr}) / NULLIF(SUM(Volume), 0) as weighted_density
         FROM {selling_by_business_day}
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 2
@@ -434,6 +504,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
                 WHEN BasePrice <= 45   THEN 108
@@ -452,8 +525,12 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             continue
         vol = round(float(r[2] or 0), 3)
         ds = str(r[3])
-        d_sk = daily_ved_cache.setdefault(ds, {}).setdefault(sk, {})
+        d_day = _daily_metric_map(daily_ved_cache, ds)
+        d_sk = d_day.setdefault(sk, {})
         d_sk[rk] = round(d_sk.get(rk, 0) + vol, 3)
+        key = (sk, rk)
+        d_day.mass[key] = round(d_day.mass.get(key, 0) + float(r[4] or 0), 3)
+        d_day.density[key] = _density_from_mass_volume(d_day.mass[key], d_sk[rk], r[5] or 0)
 
     cur.execute(f"""
         SELECT ShopKey, ResourceKey, AVG(BasePrice) as avg_price
@@ -464,10 +541,12 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     """, (ym_start + ' 00:00:00', ym_end + ' 00:00:00'))
     supply_price_ref = {(int(r[0]), int(r[1])): float(r[2] or 0) for r in cur.fetchall()}
 
+    supply_mass_expr = _supply_mass_expr()
     cur.execute(f"""
         SELECT ShopKey, ResourceKey, SUM(Volume) as supply_vol,
             AVG(Density) as avg_density,
-            DATE(AcceptDateTime) as day_date, ResourceShopKey
+            DATE(AcceptDateTime) as day_date, ResourceShopKey,
+            SUM({supply_mass_expr}) as supply_mass
         FROM supply
         WHERE AcceptDateTime >= %s AND AcceptDateTime < %s
           AND NOT ((AcceptDateTime >= '2026-06-22 00:00:00'
@@ -488,6 +567,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         avg_density = float(r[3] or 0)
         ds = str(r[4])
         rsk = r[5]
+        mass = round(float(r[6] or 0), 3)
 
         if orig_rk >= 100:
             rk = orig_rk
@@ -518,8 +598,12 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
 
         if rk < 100:
             continue
-        d_sk = daily_supply_cache.setdefault(ds, {}).setdefault(sk, {})
+        d_day = _daily_metric_map(daily_supply_cache, ds)
+        d_sk = d_day.setdefault(sk, {})
         d_sk[rk] = round(d_sk.get(rk, 0) + vol, 3)
+        key = (sk, rk)
+        d_day.mass[key] = round(d_day.mass.get(key, 0) + mass, 3)
+        d_day.density[key] = _density_from_mass_volume(d_day.mass[key], d_sk[rk], avg_density)
 
     cur.execute(f"""
         SELECT ShopKey,
@@ -539,6 +623,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -551,7 +638,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             SUM(Volume) as contract_vol,
             SUM(ShopCost) as contract_amt,
             SUM(ShopCost) / NULLIF(SUM(Volume), 0) as contract_price,
-            business_day as day_date
+            business_day as day_date,
+            SUM({selling_mass_expr}) as contract_mass,
+            SUM({selling_mass_expr}) / NULLIF(SUM(Volume), 0) as weighted_density
         FROM {selling_by_business_day}
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 3
@@ -572,6 +661,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
                 WHEN BasePrice <= 45   THEN 108
@@ -592,27 +684,43 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         amt = round(float(r[3] or 0), 2)
         contract_price_val = round(float(r[4] or 0), 2)
         ds = str(r[5])
+        mass = round(float(r[6] or 0), 3)
+        density = _density_from_mass_volume(mass, vol, r[7] or 0)
         d_sk = daily_contract_cache.setdefault(ds, {}).setdefault(sk, {})
         if rk not in d_sk:
-            d_sk[rk] = {'vol': vol, 'amt': amt, 'price': contract_price_val}
+            d_sk[rk] = {'vol': vol, 'amt': amt, 'price': contract_price_val, 'mass': mass, 'density': density}
         else:
             ex = d_sk[rk]
             new_vol = round(ex['vol'] + vol, 3)
             new_amt = round(ex['amt'] + amt, 2)
+            new_mass = round(ex.get('mass', 0) + mass, 3)
             d_sk[rk] = {'vol': new_vol, 'amt': new_amt,
-                        'price': round(new_amt / new_vol, 2) if new_vol > 0 else 0}
+                        'price': round(new_amt / new_vol, 2) if new_vol > 0 else 0,
+                        'mass': new_mass,
+                        'density': _density_from_mass_volume(new_mass, new_vol, ex.get('density', density))}
 
     month_end_str = (datetime(y, m, days_in_month) + timedelta(days=1)).strftime('%Y-%m-%d')
     shift_business_day = shift_business_date_expr("s")
+    begin_mass_expr = _balance_begin_mass_expr("b")
+    end_mass_expr = _balance_end_mass_expr("b")
+    begin_density_expr = _balance_begin_density_expr("b")
+    end_density_expr = _balance_end_density_expr("b")
+    balance_mass_record_condition = (
+        "(b.BeginMass IS NOT NULL OR b.BeginMassReal IS NOT NULL OR "
+        "b.BeginMassCalculation IS NOT NULL OR b.EndMass IS NOT NULL OR "
+        "b.EndMassReal IS NOT NULL OR b.EndMassCalculation IS NOT NULL)"
+    )
     cur.execute(f"""
         SELECT b.ShopKey, b.ResourceKey,
-               b.BeginBalance, b.EndBalance, b.EndBalanceCalculation, b.EndPrice,
+               b.BeginBalance, {begin_mass_expr}, {begin_density_expr},
+               b.EndBalance, {end_mass_expr}, {end_density_expr},
+               b.EndBalanceCalculation, b.EndPrice,
                {shift_business_day} as shift_date, b.ResourceShopKey,
                s.DatetimeShiftBegin
         FROM balance b
         JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
         WHERE b.ShopKey IN (%s)
-          AND b.BeginMass IS NOT NULL
+          AND {balance_mass_record_condition}
           AND {shift_business_day} >= '%s'
           AND {shift_business_day} < '%s'
         ORDER BY b.ShopKey, b.ResourceKey, s.DatetimeShiftBegin
@@ -629,34 +737,46 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             if corrected:
                 rk = corrected
         else:
-            rk = _infer_resource_code_daily(rk, r[5], rsk=r[7], sk=sk)
+            rk = _infer_resource_code_daily(rk, r[9], rsk=r[11], sk=sk)
         if rk < 100:
             continue
-        ds = str(r[6])
+        ds = str(r[10])
         beg = round(float(r[2] or 0), 3)
-        end = round(float(r[3] or 0), 3)
-        end_calc = float(r[4] or 0)
-        shift_dt = r[8]
+        beg_density = float(r[4] or 0)
+        end = round(float(r[5] or 0), 3)
+        end_density = float(r[7] or 0)
+        beg_mass = _mass_from_db_mass_or_density(r[3], beg, beg_density)
+        end_mass = _mass_from_db_mass_or_density(r[6], end, end_density)
+        end_calc = float(r[8] or 0)
+        shift_dt = r[12]
         key = (sk, rk)
 
         ds_start_dt = daily_start_dt.setdefault(ds, {})
-        ds_start = daily_start_cache.setdefault(ds, {})
+        ds_start = _daily_balance_map(daily_start_cache, ds)
         if key not in ds_start_dt or shift_dt < ds_start_dt[key]:
             ds_start_dt[key] = shift_dt
             ds_start[key] = beg
+            ds_start.mass[key] = beg_mass
+            ds_start.density[key] = _density_from_mass_volume(beg_mass, beg, beg_density)
         elif shift_dt == ds_start_dt[key]:
             ds_start[key] = round(ds_start.get(key, 0) + beg, 3)
+            ds_start.mass[key] = round(ds_start.mass.get(key, 0) + beg_mass, 3)
+            ds_start.density[key] = _density_from_mass_volume(ds_start.mass[key], ds_start[key], beg_density)
 
         ds_end_dt = daily_end_dt.setdefault(ds, {})
-        ds_end = daily_bal_cache.setdefault(ds, {})
+        ds_end = _daily_balance_map(daily_bal_cache, ds)
         ds_loss = daily_loss_cache.setdefault(ds, {})
         if key not in ds_end_dt or shift_dt > ds_end_dt[key]:
             ds_end_dt[key] = shift_dt
             ds_end[key] = end
+            ds_end.mass[key] = end_mass
+            ds_end.density[key] = _density_from_mass_volume(end_mass, end, end_density)
             if sk not in (29, 30):
                 ds_loss[key] = round(end_calc - end, 3)
         elif shift_dt == ds_end_dt[key]:
             ds_end[key] = round(ds_end.get(key, 0) + end, 3)
+            ds_end.mass[key] = round(ds_end.mass.get(key, 0) + end_mass, 3)
+            ds_end.density[key] = _density_from_mass_volume(ds_end.mass[key], ds_end[key], end_density)
             ds_loss[key] = round(ds_loss.get(key, 0) + (end_calc - end), 3)
 
     cur.execute("""
@@ -686,7 +806,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         FROM balance b
         JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
         WHERE b.ShopKey IN (%s)
-          AND b.BeginMass IS NOT NULL
+          AND {balance_mass_record_condition}
           AND {shift_business_day} >= '%s'
           AND {shift_business_day} < '%s'
         ORDER BY b.ShopKey, s.DatetimeShiftBegin DESC, b.ResourceKey
@@ -699,17 +819,18 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         if (sk, rk) not in daily_price_cache.get(ds, {}) and float(r[2] or 0) > 0:
             daily_price_cache.setdefault(ds, {})[(sk, rk)] = round(float(r[2] or 0), 2)
 
-    pre_month_bal = {}
+    pre_month_bal = _new_balance_map()
     pre_month_bal_dt = {}
     month_start_dt = datetime(y, m, 1)
     carry_forward_max_age = timedelta(days=3)
     cur.execute(f"""
-        SELECT b.ShopKey, b.ResourceKey, b.EndBalance, b.EndPrice, b.ResourceShopKey,
+        SELECT b.ShopKey, b.ResourceKey, b.EndBalance, {end_mass_expr}, {end_density_expr},
+               b.EndPrice, b.ResourceShopKey,
                s.DatetimeShiftBegin
         FROM balance b
         JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
         WHERE b.ShopKey IN (%s)
-          AND b.BeginMass IS NOT NULL
+          AND {balance_mass_record_condition}
           AND {shift_business_day} < '%s'
         ORDER BY b.ShopKey, s.DatetimeShiftBegin DESC, b.ResourceKey
     """ % (','.join(str(k) for k in station_keys), ym_start))
@@ -720,18 +841,25 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             if corrected:
                 rk = corrected
         else:
-            rk = _infer_resource_code_daily(rk, r[3], rsk=r[4], sk=sk)
+            rk = _infer_resource_code_daily(rk, r[5], rsk=r[6], sk=sk)
         if rk < 100:
             continue
         key = (sk, rk)
-        shift_dt = r[5]
+        density = float(r[4] or 0)
+        shift_dt = r[7]
+        value = round(float(r[2] or 0), 3)
+        mass = _mass_from_db_mass_or_density(r[3], value, density)
         if sk not in RENOVATION_CARRY_FORWARD_STATIONS and month_start_dt - shift_dt > carry_forward_max_age:
             continue
         if key not in pre_month_bal_dt or shift_dt > pre_month_bal_dt[key]:
             pre_month_bal_dt[key] = shift_dt
-            pre_month_bal[key] = round(float(r[2] or 0), 3)
+            pre_month_bal[key] = value
+            pre_month_bal.mass[key] = mass
+            pre_month_bal.density[key] = _density_from_mass_volume(mass, pre_month_bal[key], density)
         elif shift_dt == pre_month_bal_dt[key]:
-            pre_month_bal[key] = round(pre_month_bal[key] + float(r[2] or 0), 3)
+            pre_month_bal[key] = round(pre_month_bal[key] + value, 3)
+            pre_month_bal.mass[key] = round(pre_month_bal.mass.get(key, 0) + mass, 3)
+            pre_month_bal.density[key] = _density_from_mass_volume(pre_month_bal.mass[key], pre_month_bal[key], density)
 
     prev_day_bal = pre_month_bal
     for day in actual_days:
@@ -784,12 +912,16 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         d_contract = daily_contract_cache.get(day_str, {})
         d_end_bal = daily_bal_cache.get(day_str, {})
         _today_start = daily_start_cache.get(day_str, {})
-        d_start_bal = {}
+        d_start_bal = _new_balance_map()
         for key in set(list(_today_start.keys()) + list(prev_day_bal.keys())):
             if key in _today_start and _today_start[key] > 0:
                 d_start_bal[key] = _today_start[key]
+                d_start_bal.mass[key] = getattr(_today_start, 'mass', {}).get(key, 0)
+                d_start_bal.density[key] = getattr(_today_start, 'density', {}).get(key, 0)
             elif key in prev_day_bal and prev_day_bal[key] > 0:
                 d_start_bal[key] = prev_day_bal[key]
+                d_start_bal.mass[key] = getattr(prev_day_bal, 'mass', {}).get(key, 0)
+                d_start_bal.density[key] = getattr(prev_day_bal, 'density', {}).get(key, 0)
         d_loss = daily_loss_cache.get(day_str, {})
         d_prices = daily_price_cache.get(day_str, {})
         d_sales_daily = {}
@@ -813,7 +945,8 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             current_row_d = _write_station_block(
                 ws_d, current_row_d, sk, info, d_sales_daily, d_ved, d_supply,
                 d_start_bal, d_end_bal, contract_data=d_contract,
-                loss_data=d_loss, is_monthly=False, fuel_keys=fuel_keys
+                loss_data=d_loss, is_monthly=False, fuel_keys=fuel_keys,
+                allow_fixed_density_fallback=_allow_fixed_density_fallback(day_str)
             )
             daily_subtotal_rows.append(current_row_d - 1)
 
@@ -829,8 +962,12 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 formula = '=' + '+'.join(parts)
                 _apply_style(ws_d, current_row_d, col, formula, bold=True, size=9, fill=_FILL_TOTAL)
 
-        merged = dict(prev_day_bal)
-        merged.update(d_end_bal)
+        merged = _new_balance_map()
+        for source in (prev_day_bal, d_end_bal):
+            for key, value in source.items():
+                merged[key] = value
+                merged.mass[key] = getattr(source, 'mass', {}).get(key, 0)
+                merged.density[key] = getattr(source, 'density', {}).get(key, 0)
         prev_day_bal = merged
 
         daily_no_fill_cols = {1, 2, 3, 4, 6, 7, 24}

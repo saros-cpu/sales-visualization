@@ -10,6 +10,7 @@ from export_excel import EXPORT_DIR, MONTH_NAMES_RU, openpyxl, os
 REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".monthly_report_index.json"
 WEEKLY_REPORT_DIR = Path(EXPORT_DIR) / "weekly"
 WEEKLY_REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".weekly_report_index.json"
+REPORT_DATA_VERSION = "db-true-mass-ai80-0.721-v2"
 WEEKLY_REPORT_NAME_PREFIX = "加油站零售周报表"
 
 
@@ -46,6 +47,8 @@ def _weekly_report_workbook(date_from, date_to):
     filename = item.get("file")
     if not filename or filename != _weekly_report_filename(date_from, date_to):
         return None
+    if item.get("dataVersion") != REPORT_DATA_VERSION:
+        return None
     path = WEEKLY_REPORT_DIR / filename
     return path if path.exists() else None
 
@@ -59,6 +62,7 @@ def _record_weekly_report_workbook(date_from, date_to, path, source="manual"):
         "dateTo": date_to,
         "updatedAt": path.stat().st_mtime if path.exists() else None,
         "source": source,
+        "dataVersion": REPORT_DATA_VERSION,
     }
     try:
         WEEKLY_REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -77,7 +81,7 @@ def _record_weekly_report_workbook(date_from, date_to, path, source="manual"):
         pass
 
 
-def _record_report_workbook(year_month, path, last_nonempty_day=None):
+def _record_report_workbook(year_month, path, last_nonempty_day=None, data_version=REPORT_DATA_VERSION):
     path = Path(path)
     data = _load_report_index()
     item = {
@@ -90,6 +94,7 @@ def _record_report_workbook(year_month, path, last_nonempty_day=None):
         previous_day = data[year_month].get("lastNonemptyDay")
         if previous_day is not None:
             item["lastNonemptyDay"] = previous_day
+    item["dataVersion"] = data_version
     data[year_month] = item
     try:
         temp_path = REPORT_INDEX_PATH.with_suffix(REPORT_INDEX_PATH.suffix + ".tmp")
@@ -135,7 +140,7 @@ def _latest_report_workbook(year_month):
             sheet = workbook["总表"] if "总表" in workbook.sheetnames else workbook[workbook.sheetnames[0]]
             title = str(sheet.cell(1, 1).value or "")
             if str(year) in title and month_ru and month_ru in title:
-                _record_report_workbook(year_month, path)
+                _record_report_workbook(year_month, path, data_version="legacy")
                 return path
         except Exception:
             continue
@@ -175,6 +180,8 @@ def _can_reuse_report_workbook(year_month, path):
     if (year, month) > (today.year, today.month):
         return False
     item = _load_report_index().get(year_month) or {}
+    if item.get("dataVersion") != REPORT_DATA_VERSION:
+        return False
     last_day = item.get("lastNonemptyDay") if item.get("file") == path.name else None
     if last_day is None:
         last_day = _workbook_last_nonempty_day(path)

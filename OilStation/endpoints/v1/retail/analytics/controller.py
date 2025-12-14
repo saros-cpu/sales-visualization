@@ -23,7 +23,17 @@ from constants import (
     SHOP_KEY_MAP,
 )
 from db import get_connection
-from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, SK29_RSK_MAP, SK30_RSK_MAP, STATION_RK_CORRECTIONS
+from export_excel import (
+    RESOURCE_DENSITY,
+    SK4_RSK_MAP,
+    SK6_RSK_MAP,
+    SK28_RSK_MAP,
+    SK29_RSK_MAP,
+    SK30_RSK_MAP,
+    STATION_RK_CORRECTIONS,
+    _infer_resource_code_daily,
+    _missing_density_fallback_density,
+)
 
 from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, get_report_month_inventory, query_month_summary
 from flask import Blueprint, jsonify, request
@@ -211,6 +221,18 @@ def _map_resource_key_to_name(rk, shop_key, price=0.0, rsk=None):
     if p <= 83:
         return RESOURCE_NAMES.get(104, 'АИ 95')
     return RESOURCE_NAMES.get(106, 'Д/Т')
+
+
+def _self_use_report_resource_key(rk, shop_key, price=0.0, rsk=None):
+    try:
+        return _infer_resource_code_daily(
+            _safe_int(rk),
+            float(price or 0),
+            _safe_int(rsk, None),
+            _safe_int(shop_key, None),
+        )
+    except (TypeError, ValueError):
+        return _safe_int(rk)
 from cache_store import get_cached, set_cached
 from constants import *
 from db import get_connection
@@ -250,7 +272,7 @@ def _build_self_use_month_response(year_month):
 
     cache_key = f'self_use:{year_month}'
     cached = get_cached(cache_key)
-    if cached and isinstance(cached.get('records'), list) and _self_use_snapshot_has_group_fields(cached):
+    if cached and isinstance(cached.get('records'), list) and _self_use_snapshot_has_group_fields(cached) and _self_use_snapshot_has_mass_fields(cached):
         return _normalize_self_use_snapshot(cached)
 
     conn = get_connection()
@@ -265,7 +287,8 @@ def _build_self_use_month_response(year_month):
                    DATE(s.TransactionDatetime) as trx_date,
                    TIME(s.TransactionDatetime) as trx_time,
                    s.PersonKey, CAST(p.Name AS BINARY) as plate_number,
-                   s.ResourceShopKey, p.COD_A, p.COD_OWN
+                   s.ResourceShopKey, p.COD_A, p.COD_OWN,
+                   s.Mass, s.Density
             FROM selling s
             LEFT JOIN person p ON s.PersonKey = p.PersonKey
             WHERE s.DerivedPaymentTypeKey = 2
@@ -276,6 +299,7 @@ def _build_self_use_month_response(year_month):
         records = []
         total_volume = 0.0
         total_amount = 0.0
+        total_mass = 0.0
         for r in cur.fetchall():
             sk = int(r[1]) if r[1] else 0
             rk = int(r[2]) if r[2] else 0
@@ -287,8 +311,17 @@ def _build_self_use_month_response(year_month):
             self_use_number = _self_use_number_for_record(pk, group_key, _safe_int(r[11]))
             total_volume += vol
             total_amount += amt
+            mass = float(r[12] or 0)
+            density = float(r[13] or 0)
+            price = amt / vol if vol else 0
+            report_rk = _self_use_report_resource_key(rk, sk, price, rsk)
+            if not mass and not density and vol:
+                density = _missing_density_fallback_density(report_rk, str(r[5]) if r[5] else ym_start)
+            if not mass and vol and density:
+                mass = vol * density
+            total_mass += mass
             info = SHOP_KEY_MAP.get(sk, {'name': f'Station-{sk}', 'short': '', 'region': ''})
-            product_name = _map_resource_key_to_name(rk, sk, amt / vol if vol else 0, rsk)
+            product_name = RESOURCE_NAMES.get(report_rk) or _map_resource_key_to_name(rk, sk, price, rsk)
             raw_name = r[8]
             if raw_name:
                 if isinstance(raw_name, bytes):
@@ -320,10 +353,12 @@ def _build_self_use_month_response(year_month):
                 'shopKey': sk,
                 'stationName': info['name'],
                 'stationShort': info.get('short', ''),
-                'resourceKey': rk,
+                'resourceKey': report_rk if report_rk >= 100 else rk,
                 'resourceShopKey': rsk,
                 'productName': product_name,
                 'volume': round(vol, 3),
+                'mass': round(mass, 3),
+                'density': round(density or (mass / vol if vol else 0), 3),
                 'amount': round(amt, 2),
                 'plateNumber': plate_number,
                 'personKey': pk,
@@ -336,6 +371,7 @@ def _build_self_use_month_response(year_month):
             'records': records,
             'summary': {
                 'totalVolume': round(total_volume, 2),
+                'totalWeightKg': round(total_mass, 2),
                 'totalAmount': round(total_amount, 2),
                 'totalRecords': len(records),
             },
@@ -357,6 +393,7 @@ def _build_self_use_month_response(year_month):
 def _normalize_self_use_snapshot(snapshot):
     changed = False
     records = snapshot.get('records', [])
+    total_mass = 0.0
     product_fallbacks = _self_use_snapshot_product_fallbacks(records)
     for rec in records:
         old_values = dict(rec)
@@ -365,7 +402,17 @@ def _normalize_self_use_snapshot(snapshot):
         rk = _safe_int(rec.get('resourceKey'))
         rsk = _safe_int(rec.get('resourceShopKey'))
         volume = round(float(rec.get('volume') or 0), 3)
+        mass = round(float(rec.get('mass') or 0), 3)
+        density = round(float(rec.get('density') or 0), 3)
         amount = round(float(rec.get('amount') or 0), 2)
+        price = amount / volume if volume else 0
+        report_rk = _self_use_report_resource_key(rk, sk, price, rsk)
+        if not mass and not density and volume:
+            density = round(_missing_density_fallback_density(report_rk, rec.get('date')), 3)
+        if not mass and volume and density:
+            mass = round(volume * density, 3)
+        if not density and volume and mass:
+            density = round(mass / volume, 3)
         person_key = _safe_int(rec.get('personKey'))
         group_key = _safe_int(rec.get('personGroup'))
         self_use_number = _self_use_number_for_record(
@@ -393,17 +440,26 @@ def _normalize_self_use_snapshot(snapshot):
             self_use_number=self_use_number,
         )
         rec['plateNumber'] = plate_number
-        product_name = _map_resource_key_to_name(rk, sk, amount / volume if volume else 0, rsk)
+        product_name = RESOURCE_NAMES.get(report_rk) or _map_resource_key_to_name(rk, sk, price, rsk)
         if product_name.startswith('Other-') and volume == 0 and amount == 0:
             product_name = product_fallbacks.get((sk, rk), product_name)
         rec['productName'] = product_name
+        rec['resourceKey'] = report_rk if report_rk >= 100 else rk
         rec['personKey'] = person_key
         rec['personGroup'] = group_key
         rec['selfUseNumber'] = self_use_number
         rec['volume'] = volume
+        rec['mass'] = mass
+        rec['density'] = density
         rec['amount'] = amount
+        total_mass += mass
         if old_values != rec:
             changed = True
+    summary = snapshot.setdefault('summary', {})
+    total_weight = round(total_mass, 2)
+    if summary.get('totalWeightKg') != total_weight:
+        summary['totalWeightKg'] = total_weight
+        changed = True
     if changed and snapshot.get('month'):
         set_cached(f"self_use:{snapshot['month']}", snapshot)
     return snapshot
@@ -412,6 +468,11 @@ def _normalize_self_use_snapshot(snapshot):
 def _self_use_snapshot_has_group_fields(snapshot):
     records = snapshot.get('records', [])
     return all('personGroup' in rec and 'selfUseNumber' in rec for rec in records)
+
+
+def _self_use_snapshot_has_mass_fields(snapshot):
+    records = snapshot.get('records', [])
+    return all('mass' in rec and 'density' in rec for rec in records)
 
 
 def _self_use_number_for_record(person_key, group_key=0, cod_own=0):
@@ -537,6 +598,7 @@ def api_retail_self_use_range():
     records = []
     total_volume = 0.0
     total_amount = 0.0
+    total_mass = 0.0
     for ym in months:
         snap = _build_self_use_month_response(ym)
         if not snap:
@@ -546,6 +608,7 @@ def api_retail_self_use_range():
                 records.append(rec)
                 total_volume += rec['volume']
                 total_amount += rec['amount']
+                total_mass += float(rec.get('mass') or 0)
 
     records.sort(key=lambda r: (r['date'], r['time']), reverse=True)
 
@@ -555,6 +618,7 @@ def api_retail_self_use_range():
         'records': records,
         'summary': {
             'totalVolume': round(total_volume, 2),
+            'totalWeightKg': round(total_mass, 2),
             'totalAmount': round(total_amount, 2),
             'totalRecords': len(records),
         },

@@ -24,10 +24,16 @@ from db import get_connection  # noqa: E402
 from endpoints.v1.retail.analytics.controller import (  # noqa: E402
     _apply_self_use_generator_rules,
     _map_resource_key_to_name as _self_use_resource_name,
+    _self_use_report_resource_key,
     _self_use_number_for_record,
     _normalize_self_use_plate,
 )
-from export_excel import EXPORT_DIR, RESOURCE_DENSITY  # noqa: E402
+from export_excel import (  # noqa: E402
+    EXPORT_DIR,
+    _allow_fixed_density_fallback,
+    _missing_density_fallback_density,
+    _selling_mass_expr,
+)
 from routes.analysis_report import _inventory_contract_totals  # noqa: E402
 from routes.analysis_report import _find_report_workbook_for_ym, _station_key_from_cell, _to_float  # noqa: E402
 from routes.analytics import (  # noqa: E402
@@ -256,12 +262,18 @@ def _add_aggregate(
     bonus_amount: float,
     total_volume: float,
     total_amount: float,
+    total_mass: float | None = None,
     txn_count: int = 0,
 ) -> None:
     if shop_key not in stations:
         return
     station = stations[shop_key]
-    tons = total_volume * float(RESOURCE_DENSITY.get(int(resource_key or 0), 0) or 0) / 1000
+    mass = float(total_mass or 0)
+    if not mass and total_volume:
+        density = _missing_density_fallback_density(resource_key, current_date)
+        if density:
+            mass = total_volume * density
+    tons = mass / 1000
     station["txnCount"] += int(txn_count or 0)
     station["volume"] += total_volume
     station["tons"] += tons
@@ -367,6 +379,16 @@ def _merge_db_missing_days(
         "END"
     )
     resource_key = report_resource_key_expr("s")
+    selling_mass = _selling_mass_expr(
+        "s",
+        use_ai80_missing_density_fallback=not _allow_fixed_density_fallback(start),
+    )
+    total_mass_expr = (
+        "SUM(CASE "
+        f"WHEN (s.DerivedPaymentTypeKey IS NULL OR s.DerivedPaymentTypeKey NOT IN (2, 3, 4)) "
+        f" AND s.BasePaymentTypeKey IN (1, 2) THEN {selling_mass} ELSE 0 END) "
+        f"+ SUM(CASE WHEN s.DerivedPaymentTypeKey = 3 THEN {selling_mass} ELSE 0 END)"
+    )
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -382,7 +404,8 @@ def _merge_db_missing_days(
                 {report_cash_amount_expr("s")} AS cash_amount,
                 {report_card_volume_expr("s")} AS card_volume,
                 {report_card_amount_expr("s")} AS card_amount,
-                {report_bonus_amount_expr("s")} AS bonus_amount
+                {report_bonus_amount_expr("s")} AS bonus_amount,
+                {total_mass_expr} AS total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {condition}
@@ -403,6 +426,7 @@ def _merge_db_missing_days(
                 card_volume,
                 card_amount,
                 bonus_amount,
+                total_mass,
             ) = row
             _add_aggregate(
                 stations=stations,
@@ -422,6 +446,7 @@ def _merge_db_missing_days(
                 bonus_amount=float(bonus_amount or 0),
                 total_volume=float(total_volume or 0),
                 total_amount=float(total_amount or 0),
+                total_mass=float(total_mass or 0),
                 txn_count=int(txn_count or 0),
             )
             merged_rows += 1
@@ -554,6 +579,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
                 card_volume = _to_float(row[15] if len(row) > 15 else None)
                 card_amount = _to_float(row[16] if len(row) > 16 else None)
                 total_volume = _to_float(row[18] if len(row) > 18 else None)
+                total_mass = _to_float(row[19] if len(row) > 19 else None) * 1000
                 total_amount = _to_float(row[20] if len(row) > 20 else None)
                 if not total_volume and (cash_volume or card_volume or bonus_volume):
                     total_volume = cash_volume + card_volume + bonus_volume
@@ -580,6 +606,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
                     bonus_amount=bonus_amount,
                     total_volume=total_volume,
                     total_amount=total_amount,
+                    total_mass=total_mass,
                 )
 
         _merge_db_missing_days(
@@ -830,7 +857,8 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
                    DATE(s.TransactionDatetime) as trx_date,
                    TIME(s.TransactionDatetime) as trx_time,
                    s.PersonKey, CAST(p.Name AS BINARY) as plate_number,
-                   s.ResourceShopKey, s.BasePrice, p.COD_A, p.COD_OWN
+                   s.ResourceShopKey, s.BasePrice, p.COD_A, p.COD_OWN,
+                   s.Mass, s.Density
             FROM selling s
             LEFT JOIN person p ON s.PersonKey = p.PersonKey
             WHERE s.DerivedPaymentTypeKey = 2
@@ -841,6 +869,7 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
         records = []
         total_volume = 0.0
         total_amount = 0.0
+        total_mass = 0.0
         by_station = {}
         by_resource = {}
         by_region = {}
@@ -858,14 +887,22 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
             base_price = float(r[10]) if len(r) > 10 and r[10] else None
             group_key = int(r[11]) if len(r) > 11 and r[11] else 0
             self_use_number = _self_use_number_for_record(pk, group_key, int(r[12]) if len(r) > 12 and r[12] else 0)
+            mass = float(r[13]) if len(r) > 13 and r[13] else 0.0
+            density = float(r[14]) if len(r) > 14 and r[14] else 0.0
             price = amt / vol if vol else base_price
+            report_rk = _self_use_report_resource_key(rk, sk, price, rsk)
+            if not mass and not density and vol:
+                density = _missing_density_fallback_density(report_rk, date_str)
+            if not mass and vol and density:
+                mass = vol * density
 
             total_volume += vol
             total_amount += amt
+            total_mass += mass
 
             info = SHOP_KEY_MAP.get(sk, {'name': f'Station-{sk}', 'short': '', 'region': ''})
             region = info.get('region', '')
-            product_name = _self_use_resource_name(rk, sk, price, rsk)
+            product_name = _self_use_resource_name(report_rk, sk, price, rsk)
             raw_name = r[8]
             if raw_name:
                 if isinstance(raw_name, bytes):
@@ -891,10 +928,12 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
                 'shopKey': sk,
                 'stationName': info['name'],
                 'stationShort': info.get('short', ''),
-                'resourceKey': rk,
+                'resourceKey': report_rk if report_rk >= 100 else rk,
                 'resourceShopKey': rsk,
                 'productName': product_name,
                 'volume': round(vol, 3),
+                'mass': round(mass, 3),
+                'density': round(density or (mass / vol if vol else 0), 3),
                 'amount': round(amt, 2),
                 'plateNumber': plate_number,
                 'personKey': pk,
@@ -907,9 +946,10 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
             by_station[sk]['amount'] += amt
             by_station[sk]['txnCount'] += 1
 
-            by_resource.setdefault(rk, {'resourceKey': rk, 'name': product_name, 'volume': 0.0, 'amount': 0.0})
-            by_resource[rk]['volume'] += vol
-            by_resource[rk]['amount'] += amt
+            resource_bucket = report_rk if report_rk >= 100 else rk
+            by_resource.setdefault(resource_bucket, {'resourceKey': resource_bucket, 'name': product_name, 'volume': 0.0, 'amount': 0.0})
+            by_resource[resource_bucket]['volume'] += vol
+            by_resource[resource_bucket]['amount'] += amt
 
             by_region.setdefault(region, {'volume': 0.0, 'amount': 0.0, 'activeCount': 0})
             by_region[region]['volume'] += vol
@@ -966,6 +1006,7 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
             'records': records,
             'summary': {
                 'totalVolume': round(total_volume, 2),
+                'totalWeightKg': round(total_mass, 2),
                 'totalAmount': round(total_amount, 2),
                 'totalRecords': len(records),
                 'activeStations': len(station_rows)

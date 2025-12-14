@@ -15,6 +15,8 @@ RESOURCE_NAMES = {102: 'АИ 80', 103: 'АИ 92', 104: 'АИ 95', 106: 'Д/Т', 
                   109: 'Д/Т', 110: 'ДТ -35'}
 RESOURCE_DENSITY = {102: 0.76, 103: 0.74, 104: 0.75, 106: 0.85, 108: 0.554,
                     109: 0.85, 110: 0.85}  # -15 柴油 和 -35 柴油密度统一为 0.85
+DB_TRUE_DATA_START = '2026-06-01'
+AI80_MISSING_DENSITY_FALLBACK = 0.721
 # STN-55(SK=28)特殊油罐映射：ResourceShopKey -> ResourceKey
 # SK=28 有6个油罐，全部 ResourceKey=0，通过 fuelbalance.ResourceName 区分
 SK28_RSK_MAP = {
@@ -96,6 +98,140 @@ EXPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'exports')
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
 
+class MetricMap(dict):
+    """Dict that keeps legacy volume values while carrying DB mass/density side data."""
+
+
+class BalanceMap(dict):
+    """Dict that keeps legacy balance liters while carrying DB mass/density side data."""
+
+
+def _selling_ai80_condition_expr(prefix=''):
+    p = f'{prefix}.' if prefix else ''
+    return (
+        f"({p}ResourceKey = 102 OR "
+        f"({p}ShopKey = 28 AND {p}ResourceShopKey = 7) OR "
+        f"({p}ShopKey = 6 AND {p}ResourceShopKey = 3) OR "
+        f"({p}ShopKey IN (7, 15) AND {p}ResourceKey = 104) OR "
+        f"({p}ShopKey = 29 AND {p}ResourceShopKey = 8) OR "
+        f"({p}ShopKey = 30 AND {p}ResourceShopKey = 8) OR "
+        f"({p}ResourceKey < 100 AND {p}BasePrice > 45 AND {p}BasePrice <= 65))"
+    )
+
+
+def _selling_mass_expr(prefix='', use_ai80_missing_density_fallback=False):
+    p = f'{prefix}.' if prefix else ''
+    ai80_fallback = ''
+    if use_ai80_missing_density_fallback:
+        ai80_fallback = (
+            f", CASE WHEN {_selling_ai80_condition_expr(prefix)} "
+            f"THEN {p}Volume * {AI80_MISSING_DENSITY_FALLBACK} ELSE NULL END"
+        )
+    return (
+        f"COALESCE(NULLIF({p}Mass, 0), NULLIF({p}MassReal, 0), "
+        f"NULLIF({p}MassCalculation, 0), {p}Volume * NULLIF({p}Density, 0), "
+        f"{p}Volume * NULLIF({p}DensityReal, 0), "
+        f"{p}Volume * NULLIF({p}DensityCalculation, 0), "
+        f"{p}Volume * NULLIF({p}PumpDensity, 0){ai80_fallback}, 0)"
+    )
+
+
+def _supply_mass_expr(prefix=''):
+    p = f'{prefix}.' if prefix else ''
+    return (
+        f"COALESCE(NULLIF({p}Mass, 0), NULLIF({p}MassTTN, 0), "
+        f"NULLIF({p}TankerMass, 0), {p}Volume * NULLIF({p}Density, 0), "
+        f"{p}Volume * NULLIF({p}DensityTTN, 0), "
+        f"{p}Volume * NULLIF({p}DocDensity, 0), 0)"
+    )
+
+
+def _balance_begin_mass_expr(prefix='b'):
+    p = f'{prefix}.' if prefix else ''
+    return (
+        f"COALESCE(NULLIF({p}BeginMass, 0), NULLIF({p}BeginMassReal, 0), "
+        f"NULLIF({p}BeginMassCalculation, 0), {p}BeginBalance * NULLIF({p}BeginDensity, 0), "
+        f"{p}BeginBalance * NULLIF({p}BeginDensityReal, 0), "
+        f"{p}BeginBalance * NULLIF({p}BeginDensityCalculation, 0), 0)"
+    )
+
+
+def _balance_end_mass_expr(prefix='b'):
+    p = f'{prefix}.' if prefix else ''
+    return (
+        f"COALESCE(NULLIF({p}EndMass, 0), NULLIF({p}EndMassReal, 0), "
+        f"NULLIF({p}EndMassCalculation, 0), {p}EndBalance * NULLIF({p}EndDensity, 0), "
+        f"{p}EndBalance * NULLIF({p}EndDensityReal, 0), "
+        f"{p}EndBalance * NULLIF({p}EndDensityCalculation, 0), 0)"
+    )
+
+
+def _balance_begin_density_expr(prefix='b'):
+    p = f'{prefix}.' if prefix else ''
+    return f"COALESCE(NULLIF({p}BeginDensity, 0), NULLIF({p}BeginDensityReal, 0), NULLIF({p}BeginDensityCalculation, 0), 0)"
+
+
+def _balance_end_density_expr(prefix='b'):
+    p = f'{prefix}.' if prefix else ''
+    return f"COALESCE(NULLIF({p}EndDensity, 0), NULLIF({p}EndDensityReal, 0), NULLIF({p}EndDensityCalculation, 0), 0)"
+
+
+def _mass_kg_to_tons(value):
+    return round(float(value or 0) / 1000, 3)
+
+
+def _allow_fixed_density_fallback(period_start=None):
+    if not period_start:
+        return True
+    try:
+        period_day = datetime.strptime(str(period_start)[:10], '%Y-%m-%d').date()
+        cutoff_day = datetime.strptime(DB_TRUE_DATA_START, '%Y-%m-%d').date()
+        return period_day < cutoff_day
+    except (TypeError, ValueError):
+        return True
+
+
+def _missing_density_fallback_density(resource_key, period_start=None, allow_fixed_density_fallback=None):
+    try:
+        rk = int(resource_key or 0)
+    except (TypeError, ValueError):
+        rk = 0
+    if allow_fixed_density_fallback is None:
+        allow_fixed_density_fallback = _allow_fixed_density_fallback(period_start)
+    if allow_fixed_density_fallback:
+        return float(RESOURCE_DENSITY.get(rk, 0) or 0)
+    if rk == 102:
+        return AI80_MISSING_DENSITY_FALLBACK
+    return 0
+
+
+def _mass_from_db_mass_or_density(mass_kg, volume_liters, density=0):
+    mass = float(mass_kg or 0)
+    volume = float(volume_liters or 0)
+    db_density = float(density or 0)
+    if mass > 0:
+        return round(mass, 3)
+    if volume > 0 and db_density > 0:
+        return round(volume * db_density, 3)
+    return 0
+
+
+def _density_from_mass_volume(mass_kg, volume_liters, fallback=0):
+    volume = float(volume_liters or 0)
+    mass = float(mass_kg or 0)
+    if volume > 0 and mass > 0:
+        return round(mass / volume, 3)
+    return round(float(fallback or 0), 3)
+
+
+def _metric_mass(metric_map, shop_key, resource_key, default=0):
+    return float(getattr(metric_map, 'mass', {}).get((shop_key, resource_key), default) or 0)
+
+
+def _metric_density(metric_map, shop_key, resource_key, default=0):
+    return float(getattr(metric_map, 'density', {}).get((shop_key, resource_key), default) or 0)
+
+
 def _make_cell_style(bold=False, size=10, h_align='center', v_align='center', wrap=False):
     return {
         'font': Font(name='Arial', bold=bold, size=size),
@@ -133,6 +269,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
 
     ym_start_dt = datetime.strptime(ym_start, '%Y-%m-%d')
     selling_by_business_day = selling_business_day_subquery("selling", ym_start, ym_end, station_keys)
+    allow_fixed_density_fallback = _allow_fixed_density_fallback(ym_start)
 
     # 价格分桶 SQL 表达式：对旧编码/RK=0 在数据库层面直接按价格分组为标准 ResourceKey
     # SK=28(STN-55)有6个油罐全部 RK=0，用 ResourceShopKey 精确映射
@@ -149,6 +286,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
             WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
             WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+            WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+            WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+            WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
             WHEN ResourceKey >= 100 THEN ResourceKey
             WHEN BasePrice <= 0    THEN ResourceKey
@@ -175,14 +315,21 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             existing['total_vol'] = round(existing['total_vol'] + row_data['total_vol'], 3)
             existing['total_amt'] = round(existing['total_amt'] + row_data['total_amt'], 2)
             existing['bonus_amt'] = round(existing['bonus_amt'] + row_data['bonus_amt'], 2)
+            existing['cash_mass'] = round(existing.get('cash_mass', 0) + row_data.get('cash_mass', 0), 3)
+            existing['card_mass'] = round(existing.get('card_mass', 0) + row_data.get('card_mass', 0), 3)
+            existing['total_mass'] = round(existing.get('total_mass', 0) + row_data.get('total_mass', 0), 3)
             new_total = existing['total_vol']
             if new_total > 0:
                 existing['avg_price'] = round(existing['total_amt'] / new_total, 2)
+                existing['density'] = _density_from_mass_volume(existing.get('total_mass', 0), new_total, existing.get('density', 0))
 
     # 查询正常零售数据（排除自用油DPT=2、合同DPT=3、测试DPT=4）
     # GROUP BY 使用价格分桶，确保 RK=0/旧编码按油品正确分组
     # SK=28(STN-55)全部 RK=0，用 ResourceShopKey 精确映射6种油品
     # bonus_vol 用 BonusOutCost/BasePrice 逐笔累加（非加权均价反算）
+    selling_mass_expr = _selling_mass_expr(
+        use_ai80_missing_density_fallback=not allow_fixed_density_fallback
+    )
     cur.execute(f"""
         SELECT ShopKey,
             CASE
@@ -201,6 +348,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -218,7 +368,11 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             SUM(ShopCost) as total_amt,
             SUM(BonusOutCost) as bonus_amt,
             SUM(BasePrice * Volume) / NULLIF(SUM(Volume), 0) as avg_price,
-            SUM(CASE WHEN BasePrice > 0 THEN BonusOutCost / BasePrice ELSE 0 END) as bonus_vol
+            SUM(CASE WHEN BasePrice > 0 THEN BonusOutCost / BasePrice ELSE 0 END) as bonus_vol,
+            SUM(CASE WHEN BasePaymentTypeKey = 1 AND COALESCE(DerivedPaymentTypeKey, 0) <> 5 THEN {selling_mass_expr} ELSE 0 END) as cash_mass,
+            SUM(CASE WHEN BasePaymentTypeKey = 2 OR DerivedPaymentTypeKey = 5 THEN {selling_mass_expr} ELSE 0 END) as card_mass,
+            SUM({selling_mass_expr}) as total_mass,
+            SUM({selling_mass_expr}) / NULLIF(SUM(Volume), 0) as weighted_density
         FROM {selling_by_business_day}
         WHERE business_day >= %s AND business_day < %s
           AND (DerivedPaymentTypeKey IS NULL OR DerivedPaymentTypeKey NOT IN (2, 3, 4))
@@ -239,6 +393,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -258,6 +415,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         avg_price = float(r[9] or 0)
         bonus_amt = float(r[8] or 0)
         bonus_vol = float(r[10] or 0)
+        total_mass = float(r[13] or 0)
+        fallback_density = _missing_density_fallback_density(
+            rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+        )
         _merge_sales(sales_data, sk, rk, {
             'cash_vol': round(float(r[2] or 0), 3),
             'cash_amt': round(float(r[3] or 0), 2),
@@ -268,6 +429,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             'bonus_amt': round(bonus_amt, 2),
             'bonus_vol': round(bonus_vol, 3),
             'avg_price': round(avg_price, 2),
+            'cash_mass': round(float(r[11] or 0), 3),
+            'card_mass': round(float(r[12] or 0), 3),
+            'total_mass': round(total_mass, 3),
+            'density': _density_from_mass_volume(total_mass, float(r[6] or 0), r[14] or fallback_density),
         })
 
     # 查询自用油（DerivedPayType=2），按价格分桶分组
@@ -289,6 +454,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -298,7 +466,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN BasePrice <= 83   THEN 104
                 ELSE 106
             END as inferred_rk,
-            SUM(Volume) as ved_vol
+            SUM(Volume) as ved_vol,
+            SUM({selling_mass_expr}) as ved_mass,
+            SUM({selling_mass_expr}) / NULLIF(SUM(Volume), 0) as weighted_density
         FROM {selling_by_business_day}
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 2
@@ -319,6 +489,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -329,7 +502,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 ELSE 106
             END
     """, (ym_start, ym_end))
-    ved_data = {}
+    ved_data = MetricMap()
+    ved_data.mass = {}
+    ved_data.density = {}
     for r in cur.fetchall():
         sk = int(r[0])
         rk = int(r[1])
@@ -339,6 +514,12 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         if sk not in ved_data:
             ved_data[sk] = {}
         ved_data[sk][rk] = round(ved_data[sk].get(rk, 0) + vol, 3)
+        key = (sk, rk)
+        ved_data.mass[key] = round(ved_data.mass.get(key, 0) + float(r[3] or 0), 3)
+        fallback_density = _missing_density_fallback_density(
+            rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+        )
+        ved_data.density[key] = _density_from_mass_volume(ved_data.mass[key], ved_data[sk][rk], r[4] or fallback_density)
 
     # 查询合同销售（DerivedPayType=3），按价格分桶分组
     cur.execute(f"""
@@ -359,6 +540,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -370,7 +554,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             END as inferred_rk,
             SUM(Volume) as contract_vol,
             SUM(ShopCost) as contract_amt,
-            SUM(ShopCost) / NULLIF(SUM(Volume), 0) as contract_price
+            SUM(ShopCost) / NULLIF(SUM(Volume), 0) as contract_price,
+            SUM({selling_mass_expr}) as contract_mass,
+            SUM({selling_mass_expr}) / NULLIF(SUM(Volume), 0) as weighted_density
         FROM {selling_by_business_day}
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 3
@@ -391,6 +577,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
                 WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
                 WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
+                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
+                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
+                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
 
                 WHEN ResourceKey >= 100 THEN ResourceKey
                 WHEN BasePrice <= 0    THEN ResourceKey
@@ -410,17 +599,25 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         vol = round(float(r[2] or 0), 3)
         amt = round(float(r[3] or 0), 2)
         contract_price_val = round(float(r[4] or 0), 2)
+        mass = round(float(r[5] or 0), 3)
+        fallback_density = _missing_density_fallback_density(
+            rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+        )
+        density = _density_from_mass_volume(mass, vol, r[6] or fallback_density)
         if sk not in contract_data:
             contract_data[sk] = {}
         if rk not in contract_data[sk]:
-            contract_data[sk][rk] = {'vol': vol, 'amt': amt, 'price': contract_price_val}
+            contract_data[sk][rk] = {'vol': vol, 'amt': amt, 'price': contract_price_val, 'mass': mass, 'density': density}
         else:
             existing = contract_data[sk][rk]
             new_vol = round(existing['vol'] + vol, 3)
             new_amt = round(existing['amt'] + amt, 2)
+            new_mass = round(existing.get('mass', 0) + mass, 3)
             contract_data[sk][rk] = {
                 'vol': new_vol, 'amt': new_amt,
                 'price': round(new_amt / new_vol, 2) if new_vol > 0 else 0,
+                'mass': new_mass,
+                'density': _density_from_mass_volume(new_mass, new_vol, existing.get('density', density)),
             }
 
     # 查询转运（supply 表）
@@ -512,9 +709,11 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
     for r in cur.fetchall():
         selling_price_ref[(int(r[0]), int(r[1]))] = float(r[2] or 0)
 
-    cur.execute("""
+    supply_mass_expr = _supply_mass_expr()
+    cur.execute(f"""
         SELECT ShopKey, ResourceKey, SUM(Volume) as supply_vol,
-            AVG(Density) as avg_density, ResourceShopKey
+            AVG(Density) as avg_density, ResourceShopKey,
+            SUM({supply_mass_expr}) as supply_mass
         FROM supply
         WHERE AcceptDateTime >= %s AND AcceptDateTime < %s
           AND NOT ((AcceptDateTime >= '2026-06-22 00:00:00'
@@ -527,13 +726,16 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                        AND Volume BETWEEN 50 AND 500))
         GROUP BY ShopKey, ResourceKey, ResourceShopKey
     """, (ym_start, ym_end))
-    supply_data = {}
+    supply_data = MetricMap()
+    supply_data.mass = {}
+    supply_data.density = {}
     for r in cur.fetchall():
         sk = int(r[0])
         orig_rk = int(r[1])
         vol = round(float(r[2] or 0), 3)
         avg_density = float(r[3] or 0)
         rsk = r[4]
+        mass = round(float(r[5] or 0), 3)
 
         if orig_rk >= 100:
             rk = orig_rk  # 标准编码，直接使用
@@ -578,13 +780,20 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         if sk not in supply_data:
             supply_data[sk] = {}
         supply_data[sk][rk] = round(supply_data[sk].get(rk, 0) + vol, 3)
+        key = (sk, rk)
+        supply_data.mass[key] = round(supply_data.mass.get(key, 0) + mass, 3)
+        fallback_density = _missing_density_fallback_density(
+            rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+        )
+        supply_data.density[key] = _density_from_mass_volume(supply_data.mass[key], supply_data[sk][rk], avg_density or fallback_density)
 
     # 29/30 号站今天录入了转运数据，需要用排除 today 后的范围补充查询
     today_str = datetime.now().strftime('%Y-%m-%d')
     if ym_end == today_str:
-        cur.execute("""
+        cur.execute(f"""
             SELECT ShopKey, ResourceKey, SUM(Volume) as supply_vol,
-                AVG(Density) as avg_density, ResourceShopKey
+                AVG(Density) as avg_density, ResourceShopKey,
+                SUM({supply_mass_expr}) as supply_mass
             FROM supply
             WHERE AcceptDateTime >= %s AND AcceptDateTime < DATE_ADD(%s, INTERVAL 1 DAY)
               AND ShopKey IN (29, 30)
@@ -597,6 +806,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             vol = round(float(r[2] or 0), 3)
             avg_density = float(r[3] or 0)
             rsk = r[4]
+            mass = round(float(r[5] or 0), 3)
 
             if orig_rk >= 100:
                 rk = orig_rk
@@ -619,6 +829,12 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             if sk not in supply_data:
                 supply_data[sk] = {}
             supply_data[sk][rk] = round(supply_data[sk].get(rk, 0) + vol, 3)
+            key = (sk, rk)
+            supply_data.mass[key] = round(supply_data.mass.get(key, 0) + mass, 3)
+            fallback_density = _missing_density_fallback_density(
+                rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+            )
+            supply_data.density[key] = _density_from_mass_volume(supply_data.mass[key], supply_data[sk][rk], avg_density or fallback_density)
 
 
     # 查询 fuelbalance 获取起初量和期末量（月初/月末最近记录）
@@ -672,25 +888,37 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         return rc  # 无法推断，保持原值
 
     # 起初量/期末量：从 balance 表取油罐记录的实际测量值（BeginBalance/EndBalance）
-    # 筛选条件：BeginMass IS NOT NULL（仅油罐记录，排除仓库/批发记录）
+    # 筛选条件：有任一质量字段（仅油罐记录，排除仓库/批发记录）
     # RK=0 时通过 EndPrice 或 ResourceShopKey 推断油品类型
     # 损耗 = EndBalanceCalculation - EndBalance
 
     # --- 起初量：月初第一天班次的 BeginBalance ---
     # 使用当月第一天的班次数据作为起初量，若无数据则不返回起初量
     shift_business_day = shift_business_date_expr("s")
+    begin_mass_expr = _balance_begin_mass_expr("b")
+    end_mass_expr = _balance_end_mass_expr("b")
+    begin_density_expr = _balance_begin_density_expr("b")
+    end_density_expr = _balance_end_density_expr("b")
+    balance_mass_record_condition = (
+        "(b.BeginMass IS NOT NULL OR b.BeginMassReal IS NOT NULL OR "
+        "b.BeginMassCalculation IS NOT NULL OR b.EndMass IS NOT NULL OR "
+        "b.EndMassReal IS NOT NULL OR b.EndMassCalculation IS NOT NULL)"
+    )
     cur.execute(f"""
-        SELECT b.ShopKey, b.ResourceKey, b.BeginBalance, b.EndPrice, b.ResourceShopKey,
+        SELECT b.ShopKey, b.ResourceKey, b.BeginBalance, {begin_mass_expr}, {begin_density_expr},
+               b.EndPrice, b.ResourceShopKey,
                s.DatetimeShiftBegin
         FROM balance b
         JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
         WHERE b.ShopKey IN (%s)
-          AND b.BeginMass IS NOT NULL
+          AND {balance_mass_record_condition}
           AND {shift_business_day} >= '%s'
           AND {shift_business_day} < DATE_ADD('%s', INTERVAL 1 DAY)
         ORDER BY b.ShopKey, b.ResourceKey, s.DatetimeShiftBegin ASC
     """ % (','.join(str(k) for k in station_keys), ym_start, ym_start))
-    start_balance = {}
+    start_balance = BalanceMap()
+    start_balance.mass = {}
+    start_balance.density = {}
     start_balance_dt = {}
     for r in cur.fetchall():
         sk, rk = int(r[0]), int(r[1])
@@ -699,32 +927,44 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             if corrected:
                 rk = corrected
         else:
-            rk = _infer_resource_code(rk, r[3], rsk=r[4], sk=sk)
+            rk = _infer_resource_code(rk, r[5], rsk=r[6], sk=sk)
         if rk < 100:
             continue
         key = (sk, rk)
         val = round(float(r[2] or 0), 3)
-        shift_dt = r[5]
+        density = float(r[4] or 0)
+        mass = _mass_from_db_mass_or_density(r[3], val, density)
+        fallback_density = _missing_density_fallback_density(
+            rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+        )
+        shift_dt = r[7]
         # 月初起初量：取月首第一班；若同一班次有多个油罐，则累加
         if key not in start_balance_dt or shift_dt < start_balance_dt[key]:
             start_balance_dt[key] = shift_dt
             start_balance[key] = val
+            start_balance.mass[key] = mass
+            start_balance.density[key] = _density_from_mass_volume(mass, val, density or fallback_density)
         elif shift_dt == start_balance_dt[key]:
             start_balance[key] = round(start_balance[key] + val, 3)
+            start_balance.mass[key] = round(start_balance.mass.get(key, 0) + mass, 3)
+            start_balance.density[key] = _density_from_mass_volume(start_balance.mass[key], start_balance[key], density or fallback_density)
 
     # --- 期末量：当月最后一天班次的 EndBalance ---
     cur.execute(f"""
-        SELECT b.ShopKey, b.ResourceKey, b.EndBalance, b.EndPrice, b.ResourceShopKey,
+        SELECT b.ShopKey, b.ResourceKey, b.EndBalance, {end_mass_expr}, {end_density_expr},
+               b.EndPrice, b.ResourceShopKey,
                s.DatetimeShiftBegin
         FROM balance b
         JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
         WHERE b.ShopKey IN (%s)
-          AND b.BeginMass IS NOT NULL
+          AND {balance_mass_record_condition}
           AND {shift_business_day} >= '%s'
           AND {shift_business_day} < '%s'
         ORDER BY b.ShopKey, b.ResourceKey, s.DatetimeShiftBegin DESC
     """ % (','.join(str(k) for k in station_keys), ym_start, ym_end))
-    end_balance = {}
+    end_balance = BalanceMap()
+    end_balance.mass = {}
+    end_balance.density = {}
     end_balance_dt = {}
     for r in cur.fetchall():
         sk, rk = int(r[0]), int(r[1])
@@ -733,28 +973,38 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             if corrected:
                 rk = corrected
         else:
-            rk = _infer_resource_code(rk, r[3], rsk=r[4], sk=sk)
+            rk = _infer_resource_code(rk, r[5], rsk=r[6], sk=sk)
         if rk < 100:
             continue
         key = (sk, rk)
         val = round(float(r[2] or 0), 3)
-        shift_dt = r[5]
+        density = float(r[4] or 0)
+        mass = _mass_from_db_mass_or_density(r[3], val, density)
+        fallback_density = _missing_density_fallback_density(
+            rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+        )
+        shift_dt = r[7]
         # 月末期末量：取月末最后一班；若同一班次有多个油罐，则累加
         if key not in end_balance_dt or shift_dt > end_balance_dt[key]:
             end_balance_dt[key] = shift_dt
             end_balance[key] = val
+            end_balance.mass[key] = mass
+            end_balance.density[key] = _density_from_mass_volume(mass, val, density or fallback_density)
         elif shift_dt == end_balance_dt[key]:
             end_balance[key] = round(end_balance[key] + val, 3)
+            end_balance.mass[key] = round(end_balance.mass.get(key, 0) + mass, 3)
+            end_balance.density[key] = _density_from_mass_volume(end_balance.mass[key], end_balance[key], density or fallback_density)
 
     # 29/30 号站补充查询当天平衡数据（exclude_today 排除的部分）
     if ym_end == datetime.now().strftime('%Y-%m-%d'):
         cur.execute(f"""
-            SELECT b.ShopKey, b.ResourceKey, b.EndBalance, b.EndPrice, b.ResourceShopKey,
+            SELECT b.ShopKey, b.ResourceKey, b.EndBalance, {end_mass_expr}, {end_density_expr},
+                   b.EndPrice, b.ResourceShopKey,
                    s.DatetimeShiftBegin
             FROM balance b
             JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
             WHERE b.ShopKey IN (29, 30)
-              AND b.BeginMass IS NOT NULL
+              AND {balance_mass_record_condition}
               AND {shift_business_day} >= '{ym_end}'
               AND {shift_business_day} < DATE_ADD('{ym_end}', INTERVAL 1 DAY)
             ORDER BY b.ShopKey, b.ResourceKey, s.DatetimeShiftBegin DESC
@@ -767,7 +1017,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 if corrected:
                     rk = corrected
             else:
-                rk = _infer_resource_code(rk, r[3], rsk=r[4], sk=sk)
+                rk = _infer_resource_code(rk, r[5], rsk=r[6], sk=sk)
             if rk < 100:
                 continue
             key = (sk, rk)
@@ -775,24 +1025,34 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 continue
             seen.add(key)
             val = round(float(r[2] or 0), 3)
-            shift_dt = r[5]
+            density = float(r[4] or 0)
+            mass = _mass_from_db_mass_or_density(r[3], val, density)
+            fallback_density = _missing_density_fallback_density(
+                rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+            )
+            shift_dt = r[7]
             if key not in end_balance_dt or shift_dt >= end_balance_dt.get(key, shift_dt):
                 end_balance_dt[key] = shift_dt
                 end_balance[key] = val
+                end_balance.mass[key] = mass
+                end_balance.density[key] = _density_from_mass_volume(mass, val, density or fallback_density)
 
     # 对装修停业站（如 SK=1/2），若新月份内没有任何新班次，
     # 则沿用月初前最新一期末量作为当月起初量；且当月期末量=起初量。
-    pre_month_latest_bal = {}
+    pre_month_latest_bal = BalanceMap()
+    pre_month_latest_bal.mass = {}
+    pre_month_latest_bal.density = {}
     pre_month_latest_dt = {}
     carry_sks = sorted(station_keys)
     if carry_sks:
         cur.execute(f"""
-            SELECT b.ShopKey, b.ResourceKey, b.EndBalance, b.EndPrice, b.ResourceShopKey,
+            SELECT b.ShopKey, b.ResourceKey, b.EndBalance, {end_mass_expr}, {end_density_expr},
+                   b.EndPrice, b.ResourceShopKey,
                    s.DatetimeShiftBegin
             FROM balance b
             JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
             WHERE b.ShopKey IN (%s)
-              AND b.BeginMass IS NOT NULL
+              AND {balance_mass_record_condition}
               AND {shift_business_day} < '%s'
             ORDER BY b.ShopKey, s.DatetimeShiftBegin DESC, b.ResourceKey
         """ % (','.join(str(k) for k in carry_sks), ym_start))
@@ -803,16 +1063,26 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 if corrected:
                     rk = corrected
             else:
-                rk = _infer_resource_code(rk, r[3], rsk=r[4], sk=sk)
+                rk = _infer_resource_code(rk, r[5], rsk=r[6], sk=sk)
             if rk < 100:
                 continue
             key = (sk, rk)
-            shift_dt = r[5]
+            density = float(r[4] or 0)
+            fallback_density = _missing_density_fallback_density(
+                rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+            )
+            shift_dt = r[7]
+            val = round(float(r[2] or 0), 3)
+            mass = _mass_from_db_mass_or_density(r[3], val, density)
             if key not in pre_month_latest_dt or shift_dt > pre_month_latest_dt[key]:
                 pre_month_latest_dt[key] = shift_dt
-                pre_month_latest_bal[key] = round(float(r[2] or 0), 3)
+                pre_month_latest_bal[key] = val
+                pre_month_latest_bal.mass[key] = mass
+                pre_month_latest_bal.density[key] = _density_from_mass_volume(mass, pre_month_latest_bal[key], density or fallback_density)
             elif shift_dt == pre_month_latest_dt[key]:
-                pre_month_latest_bal[key] = round(pre_month_latest_bal[key] + float(r[2] or 0), 3)
+                pre_month_latest_bal[key] = round(pre_month_latest_bal[key] + val, 3)
+                pre_month_latest_bal.mass[key] = round(pre_month_latest_bal.mass.get(key, 0) + mass, 3)
+                pre_month_latest_bal.density[key] = _density_from_mass_volume(pre_month_latest_bal.mass[key], pre_month_latest_bal[key], density or fallback_density)
 
     # --- 油罐损耗：当月所有班次损耗之和 ---
     cur.execute(f"""
@@ -821,7 +1091,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         FROM balance b
         JOIN shift s ON b.ShiftKey = s.ShiftKey AND b.ShopKey = s.ShopKey
         WHERE b.ShopKey IN (%s)
-          AND b.BeginMass IS NOT NULL
+          AND {balance_mass_record_condition}
           AND {shift_business_day} >= '%s'
           AND {shift_business_day} < '%s'
         GROUP BY b.ShopKey, b.ResourceKey, b.EndPrice, b.ResourceShopKey
@@ -854,17 +1124,36 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
     for key in active_balance_keys:
         if key not in start_balance and key in pre_month_latest_bal:
             start_balance[key] = pre_month_latest_bal[key]
+            start_balance.mass[key] = pre_month_latest_bal.mass.get(key, 0)
+            fallback_density = _missing_density_fallback_density(
+                key[1], allow_fixed_density_fallback=allow_fixed_density_fallback
+            )
+            start_balance.density[key] = pre_month_latest_bal.density.get(key, fallback_density)
         if key not in end_balance:
             if key in start_balance:
                 end_balance[key] = start_balance[key]
+                end_balance.mass[key] = start_balance.mass.get(key, 0)
+                fallback_density = _missing_density_fallback_density(
+                    key[1], allow_fixed_density_fallback=allow_fixed_density_fallback
+                )
+                end_balance.density[key] = start_balance.density.get(key, fallback_density)
             elif key in pre_month_latest_bal:
                 end_balance[key] = pre_month_latest_bal[key]
+                end_balance.mass[key] = pre_month_latest_bal.mass.get(key, 0)
+                fallback_density = _missing_density_fallback_density(
+                    key[1], allow_fixed_density_fallback=allow_fixed_density_fallback
+                )
+                end_balance.density[key] = pre_month_latest_bal.density.get(key, fallback_density)
 
     return sales_data, ved_data, supply_data, contract_data, start_balance, end_balance, loss_data
 
 
 def _build_daily_sheet_data(cur, day, station_keys):
     """查询单日数据（使用价格分桶 GROUP BY，与 _build_sheet_data 逻辑一致）"""
+    day_start = day.strftime('%Y-%m-%d')
+    day_end = (day + timedelta(days=1)).strftime('%Y-%m-%d')
+    return _build_sheet_data(cur, day_start, day_end, station_keys)
+
     day_start = day.strftime('%Y-%m-%d 00:00:00')
     day_end = (day + timedelta(days=1)).strftime('%Y-%m-%d 00:00:00')
     selling_by_business_day = selling_business_day_subquery("selling", ym_start_str, ym_end_str, station_keys)
@@ -1271,7 +1560,7 @@ def _get_station_fuel_keys(shop_key, start_bal, end_bal, sales_data, ved_data, s
 
 def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_data,
                          start_bal, end_bal, contract_data=None, loss_data=None,
-                          is_monthly=True, fuel_keys=None):
+                         is_monthly=True, fuel_keys=None, allow_fixed_density_fallback=True):
     """写入一个站点的 n_fuel 行油品数据 + 小计行，返回下一行号
     列布局（新增辅助列）：
       1=编号 (合并 n_fuel 行), 2=辅助列 (中俄文站名), 3=加油站名称 (合并 n_fuel 行), 4=油品名，5=密度，6~26=数值
@@ -1309,7 +1598,9 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
 
     for i, rk in enumerate(fuel_keys):
         fuel_name = _resource_name_for_report(shop_key, rk)
-        density = RESOURCE_DENSITY.get(rk, 0)
+        fixed_density = _missing_density_fallback_density(
+            rk, allow_fixed_density_fallback=allow_fixed_density_fallback
+        )
         sd = sales_data.get(shop_key, {}).get(rk, {})
         vd = ved_data.get(shop_key, {}).get(rk, 0)
         sp = supply_data.get(shop_key, {}).get(rk, 0)
@@ -1318,6 +1609,8 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
         has_end_balance = bool(end_bal and balance_key in end_bal)
         sb = start_bal.get(balance_key, 0) if start_bal else 0
         eb = end_bal.get(balance_key, 0) if end_bal else 0
+        sb_mass = _metric_mass(start_bal, shop_key, rk)
+        eb_mass = _metric_mass(end_bal, shop_key, rk)
         ct = cd.get(shop_key, {}).get(rk, {})
 
         if not has_start_balance and has_end_balance:
@@ -1325,14 +1618,17 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
                 pass
             else:
                 sb = eb
+                sb_mass = eb_mass
                 has_start_balance = True
         if not has_end_balance and has_start_balance:
             eb = sb
+            eb_mass = sb_mass
             has_end_balance = True
 
         # 装修停业站在无销售且无新班次时，期末量应与当前起初量一致。
         if shop_key in RENOVATION_CARRY_FORWARD_STATIONS and sb > 0 and eb == 0:
             eb = sb
+            eb_mass = sb_mass
             has_end_balance = True
 
         cash_vol = sd.get('cash_vol', 0)
@@ -1354,10 +1650,58 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
         contract_amt = ct.get('amt', 0)
         contract_price = ct.get('price', 0)
 
-        sb_ton = round(sb * density / 1000, 3)
-        sp_ton = round(sp * density / 1000, 3)
-        eb_ton = round(eb * density / 1000, 3)
-        total_ton = round(total_vol * density / 1000, 3)
+        cash_mass = float(sd.get('cash_mass') or 0)
+        card_mass = float(sd.get('card_mass') or 0)
+        total_mass = float(sd.get('total_mass') or 0)
+        contract_mass = float(ct.get('mass') or 0)
+        supply_mass = _metric_mass(supply_data, shop_key, rk)
+        sales_density = float(sd.get('density') or 0)
+        contract_density = float(ct.get('density') or 0)
+        supply_density = _metric_density(supply_data, shop_key, rk)
+        start_density = _metric_density(start_bal, shop_key, rk)
+        end_density = _metric_density(end_bal, shop_key, rk)
+        if not cash_mass and cash_vol and sales_density:
+            cash_mass = cash_vol * sales_density
+        if not card_mass and card_vol and sales_density:
+            card_mass = card_vol * sales_density
+        if not total_mass and total_vol and sales_density:
+            total_mass = total_vol * sales_density
+        if not contract_mass and contract_vol and contract_density:
+            contract_mass = contract_vol * contract_density
+        if not supply_mass and sp and supply_density:
+            supply_mass = sp * supply_density
+        if not sb_mass and sb and start_density:
+            sb_mass = sb * start_density
+        if not eb_mass and eb and end_density:
+            eb_mass = eb * end_density
+        if not cash_mass and cash_vol:
+            cash_mass = cash_vol * fixed_density
+        if not card_mass and card_vol:
+            card_mass = card_vol * fixed_density
+        if not total_mass and total_vol:
+            total_mass = total_vol * fixed_density
+        if not contract_mass and contract_vol:
+            contract_mass = contract_vol * fixed_density
+        if not supply_mass and sp:
+            supply_mass = sp * fixed_density
+        if not sb_mass and sb:
+            sb_mass = sb * fixed_density
+        if not eb_mass and eb:
+            eb_mass = eb * fixed_density
+
+        density = (
+            sales_density
+            or supply_density
+            or start_density
+            or end_density
+            or contract_density
+            or fixed_density
+        )
+
+        sb_ton = _mass_kg_to_tons(sb_mass)
+        sp_ton = _mass_kg_to_tons(supply_mass)
+        eb_ton = _mass_kg_to_tons(eb_mass)
+        total_ton = _mass_kg_to_tons(total_mass)
 
         # 活动判断：有无销售/转运/库存数据
         has_activity = (has_start_balance or has_end_balance or sp > 0 or total_vol > 0)
@@ -1372,6 +1716,7 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
             if sb == 0 and eb == 0 and total_vol == 0 and sp == 0 and vd == 0:
                 # 无实际数据，清零所有值（显示为空）
                 sb = eb = sp = total_vol = cash_vol = card_vol = vd = 0
+                sb_mass = eb_mass = supply_mass = total_mass = cash_mass = card_mass = contract_mass = 0
                 sb_ton = eb_ton = sp_ton = total_ton = 0
 
         r = row + i
@@ -1383,7 +1728,7 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
             # 月总表26列：列6~26（起初量...损耗）
             sales_total_vol = cash_vol + card_vol + contract_vol
             sales_total_amt = cash_amt + card_amt + contract_amt
-            sales_total_ton = round(sales_total_vol * density / 1000, 3)
+            sales_total_ton = _mass_kg_to_tons(cash_mass + card_mass + contract_mass)
             loss = ld.get((shop_key, rk), 0)
 
             if has_activity:
@@ -1439,7 +1784,7 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
             # 日分表24列：列6~23（起初量...损耗）
             sales_total_vol = cash_vol + card_vol + contract_vol
             sales_total_amt = cash_amt + card_amt + contract_amt
-            sales_total_ton = round(sales_total_vol * density / 1000, 3)
+            sales_total_ton = _mass_kg_to_tons(cash_mass + card_mass + contract_mass)
             loss = ld.get((shop_key, rk), 0)
 
             if has_activity:

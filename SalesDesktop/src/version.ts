@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.11';
-export const BUILD_DATE = '2026-07-17';
+export const VERSION = '3.8.12';
+export const BUILD_DATE = '2026-07-20';
 
 export interface ChangelogEntry {
   version: string;
@@ -14,6 +14,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.12',
+    date: '2026-07-20',
+    type: 'patch',
+    changes: [
+      '修复：零售日报、周报和自用油报表从 2026-06-01 起优先使用数据库真实密度、重量和吨位口径',
+      '修复：30 号站 AI80 缺失密度销售按 0.721 兜底计算，避免真实销售量吨位为 0',
+      '修复：外网客户端隔天生成或下载报表时自动刷新 access token，避免必须 Ctrl+R 后才能保存',
+      '优化：报表缓存版本升级，旧固定密度缓存不再复用',
+    ],
+  },
   {
     version: '3.8.11',
     date: '2026-07-17',

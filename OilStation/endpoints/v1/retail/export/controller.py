@@ -1,4 +1,3 @@
-import os
 from copy import copy
 from pathlib import Path
 
@@ -6,8 +5,18 @@ from flask import Blueprint, jsonify, request, send_file
 from loguru import logger
 
 from db import get_connection
-from export_excel import EXPORT_DIR, MONTH_NAMES_CN, RESOURCE_DENSITY, RESOURCE_NAMES
-from endpoints.v1.retail.export.service.workbook import _latest_report_workbook, _weekly_report_workbook
+from export_excel import (
+    RESOURCE_DENSITY,
+    RESOURCE_NAMES,
+    _allow_fixed_density_fallback,
+    _infer_resource_code_daily,
+    _missing_density_fallback_density,
+)
+from endpoints.v1.retail.export.service.workbook import (
+    _can_reuse_report_workbook,
+    _latest_report_workbook,
+    _weekly_report_workbook,
+)
 from endpoints.v1.retail.export.service.generator import generate_monthly_excel, generate_range_summary_excel
 from datetime import datetime, timedelta
 
@@ -33,7 +42,37 @@ def _self_use_float(value):
         return 0.0
 
 
+def _self_use_report_resource_key(record):
+    try:
+        resource_key = int(record.get('resourceKey') or 0)
+    except (TypeError, ValueError):
+        resource_key = 0
+    try:
+        shop_key = int(record.get('shopKey') or 0)
+    except (TypeError, ValueError):
+        shop_key = 0
+    try:
+        resource_shop_key = int(record.get('resourceShopKey') or 0) or None
+    except (TypeError, ValueError):
+        resource_shop_key = None
+    volume = _self_use_float(record.get('volume'))
+    amount = _self_use_float(record.get('amount'))
+    price = amount / volume if volume else 0
+    return _infer_resource_code_daily(resource_key, price, resource_shop_key, shop_key)
+
+
 def _self_use_density(record):
+    density = _self_use_float(record.get('density'))
+    if density:
+        return density
+    fallback_density = _missing_density_fallback_density(
+        _self_use_report_resource_key(record),
+        record.get('date'),
+    )
+    if fallback_density:
+        return fallback_density
+    if not _allow_fixed_density_fallback(record.get('date')):
+        return 0.0
     product_name = str(record.get('productName') or '').strip()
     density = SELF_USE_DENSITY_BY_PRODUCT.get(product_name)
     if density:
@@ -46,7 +85,13 @@ def _self_use_density(record):
 
 
 def _self_use_weight_kg(record):
-    return _self_use_float(record.get('volume')) * _self_use_density(record)
+    mass = _self_use_float(record.get('mass'))
+    if mass:
+        return mass
+    density = _self_use_density(record)
+    if not density:
+        return 0.0
+    return _self_use_float(record.get('volume')) * density
 
 
 def _group_self_use_totals_by_product(totals):
@@ -275,20 +320,19 @@ def api_export_monthly_excel(year_month):
 @export_api.route('/api/export/monthly/<year_month>/download')
 def api_export_download(year_month):
     cached_workbook = _latest_report_workbook(year_month)
-    if cached_workbook and cached_workbook.exists():
+    if cached_workbook and cached_workbook.exists() and _can_reuse_report_workbook(year_month, cached_workbook):
         return send_file(cached_workbook, as_attachment=True, download_name=cached_workbook.name)
 
-    y, m = int(year_month.split('-')[0]), int(year_month.split('-')[1])
-    month_cn = MONTH_NAMES_CN.get(m, f'{m}月')
-    yesterday = datetime.now() - timedelta(days=1)
-    gen_date = yesterday.strftime('%d.%m')
-    filename = f'加油站{month_cn}日销表{gen_date}.xlsx'
-    filepath = os.path.join(EXPORT_DIR, filename)
-    if not os.path.exists(filepath):
-        return jsonify({'error': 'File not found, please generate first'}), 404
+    conn = get_connection()
+    try:
+        result = generate_monthly_excel(conn, year_month, force_refresh=False)
+        workbook_path = Path(result.get('path') or '')
+    finally:
+        conn.close()
 
-    display_name = f'加油站{month_cn}日销表{gen_date}.xlsx'
-    return send_file(filepath, as_attachment=True, download_name=display_name)
+    if not workbook_path.exists():
+        return jsonify({'error': 'File not found, please generate first'}), 404
+    return send_file(workbook_path, as_attachment=True, download_name=workbook_path.name)
 
 
 def _parse_report_range():
