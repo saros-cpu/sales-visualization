@@ -2,7 +2,7 @@ import { Kgz3DMap } from './Kgz3DMap.js';
 import { GlobeMap } from './GlobeMap.js';
 
 const BASE_OPTIONS = {
-  basePath: '/assets/kgz-map/data/',
+  basePath: '/kgz-map/data/',
   showRoads: true,
   showRoadPanel: false,
   showLakeLabels: true,
@@ -12,7 +12,7 @@ const BASE_OPTIONS = {
 };
 
 const GLOBE_OPTIONS = {
-  basePath: '/assets/kgz-map/data/',
+  basePath: '/kgz-map/data/',
   radius: 10,
   showRoads: false
 };

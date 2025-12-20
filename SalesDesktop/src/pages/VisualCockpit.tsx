@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { Alert, App as AntApp, Button, Card, Col, Empty, Row, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd';
-import { ArrowsAltOutlined, CloseOutlined, EditOutlined, HolderOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons';
+import { ArrowsAltOutlined, CloseOutlined, EditOutlined, FullscreenOutlined, HolderOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -520,8 +520,12 @@ export default function VisualCockpit() {
   const [draggingComponentId, setDraggingComponentId] = useState<string>();
   const [resizingComponentId, setResizingComponentId] = useState<string>();
   const [savingLayout, setSavingLayout] = useState(false);
+  const [bigScreen, setBigScreen] = useState(false);
+  const bigScreenRef = useRef<HTMLDivElement | null>(null);
   const cleanupResizeRef = useRef<(() => void) | null>(null);
   const isAdmin = user?.role === 'admin';
+  const bigScreenAvailable = typeof document !== 'undefined' && Boolean(document.fullscreenEnabled);
+  const bigScreenLabel = i18n.language.startsWith('ru') ? 'Большой экран' : '大屏';
 
   const templates = query.data?.templates || [];
   const selectedTemplate = useMemo(() => {
@@ -573,6 +577,35 @@ export default function VisualCockpit() {
     setResizingComponentId(undefined);
     setSelectedComponentId(undefined);
     setLayoutEditing(false);
+  };
+
+  const scheduleViewportResize = () => {
+    window.setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+    window.setTimeout(() => window.dispatchEvent(new Event('resize')), 240);
+  };
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setBigScreen(document.fullscreenElement === bigScreenRef.current);
+      scheduleViewportResize();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && document.fullscreenElement === bigScreenRef.current) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  const enterBigScreen = async () => {
+    if (!bigScreenRef.current || !document.fullscreenEnabled) return;
+    if (layoutEditing) cancelLayoutEdit();
+    await bigScreenRef.current.requestFullscreen();
   };
 
   const saveLayout = async () => {
@@ -889,20 +922,25 @@ export default function VisualCockpit() {
   }));
 
   return (
-    <div>
+    <div ref={bigScreenRef} className={['cockpit-page', bigScreen ? 'is-big-screen' : ''].filter(Boolean).join(' ')}>
       <Row justify="space-between" className="page-toolbar">
         <Col>
           <h2>{t('nav.visualCockpit')}</h2>
           <Text type="secondary">{templateTitle(selectedTemplate, i18n.language)}</Text>
         </Col>
         <Col>
-          <Space wrap>
+          <Space wrap className="cockpit-toolbar-actions">
             <Select
               value={selectedTemplate.templateKey}
               onChange={setSelectedKey}
               style={{ width: 220 }}
               options={templates.map(item => ({ value: item.templateKey, label: templateTitle(item, i18n.language) }))}
             />
+            {bigScreenAvailable && (
+              <Button icon={<FullscreenOutlined />} onClick={enterBigScreen}>
+                {bigScreenLabel}
+              </Button>
+            )}
             {isAdmin && (
               layoutEditing ? (
                 <>

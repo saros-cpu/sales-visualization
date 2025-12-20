@@ -21,10 +21,12 @@ export default function RetailDashboard() {
   const [regionMap, setRegionMap] = useState({});
   const [footerMessages, setFooterMessages] = useState([]);
   const [cutoffText, setCutoffText] = useState('数据截止：--');
+  const [retailMapFullscreen, setRetailMapFullscreen] = useState(false);
 
   // 3D map refs
   const retailKgzMapRef = useRef(null);
   const retailKgzMapActiveRef = useRef(false);
+  const retailMapShellRef = useRef(null);
 
   // chart refs
   const regionBarChart = useChart();
@@ -92,6 +94,7 @@ export default function RetailDashboard() {
         const dd = dash.value;
         setDashData(dd);
 
+        const detailPayload = mapDetails.status === 'fulfilled' ? (mapDetails.value || {}) : {};
         const detailMap = new Map();
         if (mapDetails.status === 'fulfilled' && mapDetails.value?.items) {
           mapDetails.value.items.forEach(item => detailMap.set(Number(item.shopKey), item));
@@ -113,6 +116,7 @@ export default function RetailDashboard() {
             currentPrices: detail.prices || [],
             inventoryAsOf: detail.inventoryAsOf || '',
             priceAsOf: detail.priceAsOf || '',
+            snapshotGeneratedAt: detail.snapshotGeneratedAt || detailPayload.snapshotGeneratedAt || '',
           };
         });
         const depotList = (dd.depots || []).map(d => ({
@@ -337,6 +341,7 @@ export default function RetailDashboard() {
             inventory: s.currentInventory,
             inventoryByResource: s.inventoryByResource,
             inventoryAsOf: s.inventoryAsOf,
+            snapshotGeneratedAt: s.snapshotGeneratedAt,
           };
         }),
         points: []
@@ -382,7 +387,7 @@ export default function RetailDashboard() {
     if (window.USE_3D_KGZ_MAP === false) return false;
     try {
       const runtimeImport = (url) => new Function('url', 'return import(url)')(url);
-      const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260531-station-hover');
+      const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260720-time-label');
       const map = await mountRetailMap('#mapChart', { depots: [], stations: [] }, {
         showRoadPanel: false, showLakeLabels: true, showCities: true,
         showRegionLabels: false, showLegend: false, mode: 'retail',
@@ -485,6 +490,44 @@ export default function RetailDashboard() {
     };
   }, []);
 
+  const resizeRetailMap = useCallback(() => {
+    retailKgzMapRef.current?.resize?.();
+    mapChart.getInstance()?.resize();
+  }, [mapChart]);
+
+  const scheduleRetailMapResize = useCallback(() => {
+    window.setTimeout(resizeRetailMap, 60);
+    window.setTimeout(resizeRetailMap, 240);
+  }, [resizeRetailMap]);
+
+  const toggleRetailMapFullscreen = useCallback(async () => {
+    const shell = retailMapShellRef.current;
+    if (!shell || !document.fullscreenEnabled) return;
+    if (document.fullscreenElement === shell) {
+      await document.exitFullscreen();
+    } else {
+      await shell.requestFullscreen();
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setRetailMapFullscreen(document.fullscreenElement === retailMapShellRef.current);
+      scheduleRetailMapResize();
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && document.fullscreenElement === retailMapShellRef.current) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [scheduleRetailMapResize]);
+
   // Report generation
   const handleReport = async () => {
     const btn = document.getElementById('genYearReportBtn');
@@ -568,7 +611,22 @@ export default function RetailDashboard() {
               <div className="dot" />吉尔吉斯斯坦 · 加油站年销售热力
               <span style={{ marginLeft: 'auto', fontSize: 10, color: 'rgba(160,180,210,0.35)' }}>点击区域查看详情 · 滚轮缩放</span>
             </div>
-            <div className="panel-body"><div id="mapChart" /></div>
+            <div className="panel-body">
+              <div className="retail-map-stage" ref={retailMapShellRef}>
+                {document.fullscreenEnabled && !retailMapFullscreen && (
+                  <button
+                    type="button"
+                    className="map-fullscreen-btn"
+                    title={retailMapFullscreen ? '退出全屏' : '全屏'}
+                    aria-label={retailMapFullscreen ? '退出全屏' : '全屏'}
+                    onClick={toggleRetailMapFullscreen}
+                  >
+                    {retailMapFullscreen ? '×' : '⛶'}
+                  </button>
+                )}
+                <div id="mapChart" />
+              </div>
+            </div>
           </div>
           <div className="retail-panel retail-rank-panel">
             <div className="retail-panel-header"><div className="dot" />加油站年销售金额 TOP10</div>

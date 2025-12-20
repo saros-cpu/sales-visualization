@@ -93,6 +93,34 @@ function formatNumber(value, digits = 2) {
   });
 }
 
+function formatDateTimeText(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const cleaned = text.replace('T', ' ').replace(/\.\d+/, '').replace(/([+-]\d{2}:?\d{2}|Z)$/i, '').trim();
+  const match = cleaned.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/);
+  if (!match) return cleaned.slice(0, 16);
+  return match[2] ? `${match[1]} ${match[2]}` : match[1];
+}
+
+function hasTimePart(value) {
+  return /\d{1,2}:\d{2}/.test(String(value || ''));
+}
+
+function stationTimeRows(point) {
+  if (point.type !== 'station') return '';
+  const dataAsOf = formatDateTimeText(point.inventoryAsOf);
+  const snapshotGeneratedAt = formatDateTimeText(point.snapshotGeneratedAt);
+  const dataRow = dataAsOf && !hasTimePart(dataAsOf)
+    ? `<span class="kgz-map-tooltip-muted">数据日期：${escapeHtml(dataAsOf)}</span>`
+    : '';
+  const snapshotRow = snapshotGeneratedAt
+    ? `<span class="kgz-map-tooltip-muted">快照时间：${escapeHtml(snapshotGeneratedAt)}</span>`
+    : dataAsOf
+      ? `<span class="kgz-map-tooltip-muted">快照时间：${escapeHtml(dataAsOf)}</span>`
+    : '';
+  return `${dataRow}${snapshotRow}`;
+}
+
 function fuelDetailRows(point) {
   const rows = Array.isArray(point.inventoryByResource) ? point.inventoryByResource : [];
   if (!rows.length) return '';
@@ -512,9 +540,21 @@ export class Kgz3DMap {
   }
 
   async loadJson(file) {
-    const response = await fetch(`${this.options.basePath}${file}`);
-    if (!response.ok) throw new Error(`无法加载 ${file}`);
-    return response.json();
+    const fileBase = typeof window !== 'undefined' && window.location?.protocol === 'file:'
+      ? new URL('kgz-map/data/', window.location.href).href
+      : null;
+    const bases = [...new Set([this.options.basePath, fileBase, '/kgz-map/data/', '/assets/kgz-map/data/'].filter(Boolean))];
+    let lastError = null;
+    for (const base of bases) {
+      try {
+        const response = await fetch(`${base}${file}`);
+        if (!response.ok) throw new Error(`无法加载 ${file}`);
+        return response.json();
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error(`无法加载 ${file}`);
   }
 
   buildRegions(geojson) {
@@ -832,10 +872,8 @@ export class Kgz3DMap {
     const inventory = point.type === 'station'
       ? `<span>当前库存：${formatNumber(point.inventory || 0, 2)} L</span>`
       : '';
-    const asOf = point.type === 'station' && point.inventoryAsOf
-      ? `<span class="kgz-map-tooltip-muted">快照：${escapeHtml(point.inventoryAsOf)}</span>`
-      : '';
-    this.tooltip.innerHTML = `<strong>${escapeHtml(point.label || point.name || '业务点位')}</strong>${subtitle ? `<span>${escapeHtml(subtitle)}</span>` : ''}${region}${status}${inventory}${fuelDetailRows(point)}${asOf}`;
+    const timeRows = stationTimeRows(point);
+    this.tooltip.innerHTML = `<strong>${escapeHtml(point.label || point.name || '业务点位')}</strong>${subtitle ? `<span>${escapeHtml(subtitle)}</span>` : ''}${region}${status}${inventory}${fuelDetailRows(point)}${timeRows}`;
     this.tooltip.style.transform = `translate(${event.offsetX + 16}px, ${event.offsetY + 16}px)`;
     this.tooltip.classList.add('visible');
     this.renderer.domElement.style.cursor = 'pointer';

@@ -352,6 +352,43 @@ body {
   line-height: 32px;
 }
 
+.cockpit-page {
+  min-height: 0;
+}
+
+.cockpit-page:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  padding: 24px;
+  overflow: auto;
+  background:
+    linear-gradient(180deg, rgba(204, 0, 0, 0.08), transparent 220px),
+    linear-gradient(135deg, #f8fafc 0%, #eef2f7 46%, #ffffff 100%);
+}
+
+.cockpit-page.is-big-screen .page-toolbar {
+  margin-bottom: 18px;
+}
+
+.cockpit-page.is-big-screen .page-toolbar h2 {
+  font-size: 24px;
+  line-height: 34px;
+}
+
+.cockpit-page.is-big-screen .cockpit-toolbar-actions {
+  display: none;
+}
+
+.cockpit-page.is-big-screen .kpi-grid.cockpit-dense-grid {
+  gap: 18px;
+}
+
+.cockpit-page.is-big-screen .cockpit-component-card,
+.cockpit-page.is-big-screen .kpi-card,
+.cockpit-page.is-big-screen .chart-card {
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.09);
+}
+
 .table-toolbar {
   display: flex;
   justify-content: flex-end;

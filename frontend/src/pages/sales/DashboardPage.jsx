@@ -213,6 +213,7 @@ export default function DashboardPage() {
   const homeKgzMapRef = useRef(null);
   const echartsMapRef = useRef(null);
   const mapShellRef = useRef(null);
+  const [homeMapFullscreen, setHomeMapFullscreen] = useState(false);
 
   const { data: summary, loading: summaryLoading, reload: reloadSummary } = useApi(
     () => getSummary(year, month),
@@ -252,6 +253,44 @@ export default function DashboardPage() {
       setGenerating(false);
     }
   };
+
+  const resizeHomeMap = useCallback(() => {
+    homeKgzMapRef.current?.resize?.();
+    echartsMapRef.current?.resize?.();
+  }, []);
+
+  const scheduleHomeMapResize = useCallback(() => {
+    window.setTimeout(resizeHomeMap, 60);
+    window.setTimeout(resizeHomeMap, 240);
+  }, [resizeHomeMap]);
+
+  const toggleHomeMapFullscreen = useCallback(async () => {
+    const shell = mapShellRef.current;
+    if (!shell || !document.fullscreenEnabled) return;
+    if (document.fullscreenElement === shell) {
+      await document.exitFullscreen();
+    } else {
+      await shell.requestFullscreen();
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setHomeMapFullscreen(document.fullscreenElement === mapShellRef.current);
+      scheduleHomeMapResize();
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && document.fullscreenElement === mapShellRef.current) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [scheduleHomeMapResize]);
 
   // ── ECharts 回退地图 ──
   const initEChartsMap = useCallback(async () => {
@@ -304,7 +343,7 @@ export default function DashboardPage() {
   const initMap = useCallback(async () => {
     if (window.USE_3D_KGZ_MAP !== false) {
       try {
-        const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260614-inspect');
+        const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260720-time-label');
         mapShellRef.current?.classList.add('is-3d-map');
         const map = await mountHomeMap('#homeMapChart', {
           depots: depotPoints.map(p => ({
@@ -344,8 +383,7 @@ export default function DashboardPage() {
   useEffect(() => {
     initMap();
     const onResize = () => {
-      homeKgzMapRef.current?.resize?.();
-      echartsMapRef.current?.resize?.();
+      resizeHomeMap();
     };
     window.addEventListener('resize', onResize);
     return () => {
@@ -353,7 +391,7 @@ export default function DashboardPage() {
       homeKgzMapRef.current?.destroy?.();
       echartsMapRef.current?.dispose?.();
     };
-  }, [initMap]);
+  }, [initMap, resizeHomeMap]);
 
   const r = summary?.retail || {};
   const w = summary?.wholesale || {};
@@ -456,6 +494,17 @@ export default function DashboardPage() {
           <span className="map-hint">滚轮缩放 · 拖动查看</span>
         </div>
         <div className="map-shell" ref={mapShellRef}>
+          {document.fullscreenEnabled && !homeMapFullscreen && (
+            <button
+              type="button"
+              className="map-fullscreen-btn"
+              title={homeMapFullscreen ? '退出全屏' : '全屏'}
+              aria-label={homeMapFullscreen ? '退出全屏' : '全屏'}
+              onClick={toggleHomeMapFullscreen}
+            >
+              {homeMapFullscreen ? '×' : '⛶'}
+            </button>
+          )}
           <div id="homeMapChart"></div>
           <div className="map-legend">
             <span><i className="legend-dot hq"></i>STN-61</span>

@@ -1,4 +1,4 @@
-import { Kgz3DMap } from './Kgz3DMap.js?v=20260531-station-hover';
+import { Kgz3DMap } from './Kgz3DMap.js?v=20260720-time-label';
 
 const BASE_OPTIONS = {
   basePath: '/assets/kgz-map/data/',

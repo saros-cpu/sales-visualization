@@ -13,6 +13,7 @@ let updatePromptVisible = false;
 let closePromptVisible = false;
 let closePromptRequestId = 0;
 let updateProgressLastLoggedPercent = -1;
+let updateCheckInFlight = false;
 
 const runtimeConfig = loadRuntimeConfig(app);
 const appIcon = path.join(__dirname, '..', 'build', 'icon.ico');
@@ -177,6 +178,11 @@ function createWindow() {
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
     const key = String(input.key || '').toLowerCase();
+    if (key === 'f11') {
+      event.preventDefault();
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+      return;
+    }
     if (input.control && input.shift && key === 'i') {
       event.preventDefault();
       if (adminDevToolsEnabled) {
@@ -199,6 +205,22 @@ function emitUpdateStatus(nextStatus) {
   updateStatus = { ...updateStatus, ...nextStatus };
   mainWindow?.webContents.send('update-status', updateStatus);
   return updateStatus;
+}
+
+function isUpdateBusy() {
+  return ['checking', 'available', 'downloading', 'downloaded'].includes(updateStatus.status) || updateCheckInFlight;
+}
+
+function isDuplicateUpdateError(err) {
+  const message = String(err?.message || err || '').toLowerCase();
+  return [
+    'already',
+    'in progress',
+    'checkforupdates',
+    'check for updates',
+    'downloadupdate',
+    'download update',
+  ].some((text) => message.includes(text));
 }
 
 function formatLogArg(value) {
@@ -249,11 +271,23 @@ function setupUpdater() {
     if (!app.isPackaged) {
       return emitUpdateStatus({ status: 'unsupported', message: unsupportedMessage, autoCheck: false });
     }
+    if (isUpdateBusy()) {
+      appendUpdateLog('info', 'skip duplicate update check', updateStatus);
+      return updateStatus;
+    }
     try {
+      updateCheckInFlight = true;
       emitUpdateStatus({ status: 'checking', message: undefined });
-      return await autoUpdater.checkForUpdates();
+      await autoUpdater.checkForUpdates();
+      return updateStatus;
     } catch (err) {
+      if (isDuplicateUpdateError(err)) {
+        appendUpdateLog('warn', 'ignore duplicate update check error', err?.message || err);
+        return updateStatus;
+      }
       return emitUpdateStatus({ status: 'error', message: err?.message || String(err) });
+    } finally {
+      updateCheckInFlight = false;
     }
   };
 
@@ -263,9 +297,18 @@ function setupUpdater() {
     if (!app.isPackaged) {
       return emitUpdateStatus({ status: 'unsupported', message: unsupportedMessage, autoCheck: false });
     }
+    if (['downloading', 'downloaded', 'available'].includes(updateStatus.status)) {
+      appendUpdateLog('info', 'skip duplicate manual download', updateStatus);
+      return updateStatus;
+    }
     try {
-      return await autoUpdater.downloadUpdate();
+      await autoUpdater.downloadUpdate();
+      return updateStatus;
     } catch (err) {
+      if (isDuplicateUpdateError(err)) {
+        appendUpdateLog('warn', 'ignore duplicate manual download error', err?.message || err);
+        return updateStatus;
+      }
       return emitUpdateStatus({ status: 'error', message: err?.message || String(err) });
     }
   });
@@ -336,6 +379,10 @@ function setupUpdater() {
   });
   autoUpdater.on('error', (err) => {
     appendUpdateLog('error', 'update error', err?.stack || err?.message || err);
+    if (isDuplicateUpdateError(err)) {
+      appendUpdateLog('warn', 'ignore duplicate updater event error', updateStatus);
+      return;
+    }
     emitUpdateStatus({ status: 'error', message: err.message });
   });
 

@@ -3,8 +3,9 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.12';
+export const VERSION = '3.8.13';
 export const BUILD_DATE = '2026-07-20';
+export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
   version: string;
@@ -14,6 +15,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.13',
+    date: '2026-07-20',
+    type: 'patch',
+    changes: [
+      '修复：吉尔吉斯地图快照时间统一使用最新已结束班组时间，鼠标悬停展示“快照时间”并同步库存、价格时间口径',
+      '修复：打包客户端地图资源按本地 kgz-map/data 路径加载，避免 file 环境下地图 JSON 请求失败',
+      '新增：客户端地图、Web 首页地图和零售地图支持单图全屏，进入后隐藏全屏按钮并可按 Esc 退出',
+      '新增：客户端数据可视化页支持大屏模式，Electron 支持 F11 窗口全屏，图表在切换后自动重绘',
+      '优化：设置页补充开发者信息“Юрий”及安装包作者/发布者元数据',
+      '修复：客户端检查更新增加防重入，避免自动检查、手动检查和自动下载并发导致先闪红色错误再继续下载',
+    ],
+  },
   {
     version: '3.8.12',
     date: '2026-07-20',

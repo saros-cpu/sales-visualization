@@ -296,6 +296,74 @@ def _latest_report_workbook_for_map():
     return None, None
 
 
+def _report_workbook_snapshot_state(workbook_path):
+    stat = workbook_path.stat()
+    return {
+        "source": "retail_report_snapshot",
+        "sourceFile": workbook_path.name,
+        "sourceMtime": stat.st_mtime,
+        "snapshotGeneratedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="minutes"),
+    }
+
+
+def _latest_completed_shift_marker_for_map():
+    station_keys = sorted(SHOP_KEY_MAP.keys())
+    if not station_keys:
+        return None
+    station_key_sql = ",".join(str(key) for key in station_keys)
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT MAX(DatetimeShiftEnd)
+            FROM shift
+            WHERE ShopKey IN ({station_key_sql})
+              AND DatetimeShiftBegin IS NOT NULL
+              AND DatetimeShiftEnd IS NOT NULL
+              AND DatetimeShiftEnd > DatetimeShiftBegin
+              AND DatetimeShiftEnd >= DATE_SUB(NOW(), INTERVAL 180 DAY)
+            """
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def _station_map_details_cache_current(cached):
+    if not isinstance(cached, dict):
+        return True
+    _, workbook_path = _latest_report_workbook_for_map()
+    if not workbook_path:
+        latest_shift_end = _latest_completed_shift_marker_for_map()
+        if not latest_shift_end:
+            return cached.get("source") == "live_database" and bool(cached.get("snapshotGeneratedAt"))
+        try:
+            cached_mtime = float(cached.get("sourceMtime"))
+        except (TypeError, ValueError):
+            cached_mtime = None
+        return (
+            cached.get("source") == "live_database"
+            and cached_mtime is not None
+            and abs(cached_mtime - latest_shift_end.timestamp()) < 0.001
+        )
+    try:
+        snapshot_state = _report_workbook_snapshot_state(workbook_path)
+    except OSError:
+        return False
+    try:
+        cached_mtime = float(cached.get("sourceMtime"))
+    except (TypeError, ValueError):
+        cached_mtime = None
+    return (
+        cached.get("source") == snapshot_state["source"]
+        and cached.get("sourceFile") == snapshot_state["sourceFile"]
+        and cached_mtime is not None
+        and abs(cached_mtime - snapshot_state["sourceMtime"]) < 0.001
+    )
+
+
 def _report_sheet_last_nonempty_day(workbook):
     last_day = 0
     for sheet_name in workbook.sheetnames:
@@ -322,7 +390,8 @@ def _station_map_details_from_report_snapshot():
             sheet_name = "总表" if "总表" in workbook.sheetnames else workbook.sheetnames[0]
         sheet = workbook[sheet_name]
         snapshot_date = f"{ym}-{last_day:02d}" if ym and last_day else ym
-        snapshot_generated_at = datetime.fromtimestamp(workbook_path.stat().st_mtime).isoformat(timespec="minutes")
+        snapshot_state = _report_workbook_snapshot_state(workbook_path)
+        snapshot_generated_at = snapshot_state["snapshotGeneratedAt"]
         details = {
             shop_key: {
                 "shopKey": shop_key,
@@ -389,10 +458,8 @@ def _station_map_details_from_report_snapshot():
         return {
             "items": list(details.values()),
             "updatedAt": datetime.now().isoformat(timespec="seconds"),
-            "source": "retail_report_snapshot",
-            "sourceFile": workbook_path.name,
             "sourceSheet": sheet_name,
-            "snapshotGeneratedAt": snapshot_generated_at,
+            **snapshot_state,
         }
     except Exception:
         return None
@@ -403,7 +470,7 @@ def _station_map_details_from_report_snapshot():
 
 def _station_map_details_payload():
     cached = get_cached(STATION_MAP_DETAILS_CACHE_KEY)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and _station_map_details_cache_current(cached):
         return cached
 
     snapshot_payload = _station_map_details_from_report_snapshot()
@@ -428,22 +495,25 @@ def _station_map_details_payload():
     prices = {}
     price_dates = {}
     inventory_dates = {}
+    latest_shifts = {}
 
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute(
             f"""
-            SELECT ShopKey, ShiftKey, DatetimeShiftBegin
+            SELECT ShopKey, ShiftKey, DatetimeShiftEnd
             FROM shift
             WHERE ShopKey IN ({station_key_sql})
-              AND DatetimeShiftBegin >= DATE_SUB(NOW(), INTERVAL 180 DAY)
-            ORDER BY ShopKey, DatetimeShiftBegin DESC
+              AND DatetimeShiftBegin IS NOT NULL
+              AND DatetimeShiftEnd IS NOT NULL
+              AND DatetimeShiftEnd > DatetimeShiftBegin
+              AND DatetimeShiftEnd >= DATE_SUB(NOW(), INTERVAL 180 DAY)
+            ORDER BY ShopKey, DatetimeShiftEnd DESC
             """
         )
-        latest_shifts = {}
-        for shop_key, shift_key, shift_begin in cur.fetchall():
-            latest_shifts.setdefault(int(shop_key), (int(shift_key), shift_begin))
+        for shop_key, shift_key, shift_end in cur.fetchall():
+            latest_shifts.setdefault(int(shop_key), (int(shift_key), shift_end))
 
         if latest_shifts:
             conditions = " OR ".join(["(ShopKey = %s AND ShiftKey = %s)" for _ in latest_shifts])
@@ -505,10 +575,22 @@ def _station_map_details_payload():
         price_dt = max((price_dates.get((shop_key, rk)) for rk in resource_keys if price_dates.get((shop_key, rk))), default=None)
         detail["inventoryAsOf"] = inv_dt.isoformat(sep=" ", timespec="minutes") if hasattr(inv_dt, "isoformat") else None
         detail["priceAsOf"] = price_dt.isoformat(sep=" ", timespec="minutes") if hasattr(price_dt, "isoformat") else None
+        detail["snapshotGeneratedAt"] = detail["inventoryAsOf"] or detail["priceAsOf"]
+
+    latest_shift_end = max((shift_end for _, shift_end in latest_shifts.values() if shift_end), default=None)
+    generated_at = (
+        latest_shift_end.isoformat(sep=" ", timespec="minutes")
+        if hasattr(latest_shift_end, "isoformat")
+        else datetime.now().isoformat(timespec="minutes")
+    )
+    source_mtime = latest_shift_end.timestamp() if hasattr(latest_shift_end, "timestamp") else None
 
     payload = {
         "items": list(details.values()),
         "updatedAt": datetime.now().isoformat(timespec="seconds"),
+        "source": "live_database",
+        "snapshotGeneratedAt": generated_at,
+        "sourceMtime": source_mtime,
     }
     set_cached(STATION_MAP_DETAILS_CACHE_KEY, payload, ttl=STATION_MAP_DETAILS_TTL)
     return payload

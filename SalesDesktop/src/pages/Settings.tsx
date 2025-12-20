@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, Typography, Button, Space, Descriptions, Modal, Form, Input, message, Progress } from 'antd';
-import { LockOutlined, ReloadOutlined, DownloadOutlined, SyncOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import { LockOutlined, ReloadOutlined, SyncOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { changePassword } from '@/api/client';
 import { API_HOST } from '@/api/http';
 
-import { VERSION, BUILD_DATE, CHANGELOG } from '@/version';
+import { VERSION, BUILD_DATE, CHANGELOG, DEVELOPER } from '@/version';
 
 const UPDATE_MODULE_MISSING = '当前运行环境未检测到客户端更新模块，请确认正在使用桌面客户端安装版';
 const AUTO_UPDATE_HINT = '客户端启动后会自动检查更新，发现新版本会自动下载，下载完成后提示重启安装。';
@@ -67,19 +67,6 @@ export default function Settings() {
     }
   }, []);
 
-  const handleDownloadUpdate = useCallback(async () => {
-    if (!window.updater) {
-      setUpdateStatus({ status: 'unsupported', message: UPDATE_MODULE_MISSING, autoCheck: false });
-      message.warning(UPDATE_MODULE_MISSING);
-      return;
-    }
-    try {
-      await window.updater.downloadUpdate();
-    } catch (error) {
-      setUpdateStatus({ status: 'error', message: error instanceof Error ? error.message : String(error) });
-    }
-  }, []);
-
   const handleRestart = useCallback(async () => {
     if (!window.updater) {
       message.warning(UPDATE_MODULE_MISSING);
@@ -110,6 +97,7 @@ export default function Settings() {
         <Descriptions.Item label={t('common.backendUrl')}>{API_HOST}</Descriptions.Item>
         <Descriptions.Item label={t('common.currentUser')}>{user?.username} ({user?.role})</Descriptions.Item>
         <Descriptions.Item label={t('common.buildDate')}>{BUILD_DATE}</Descriptions.Item>
+        <Descriptions.Item label="开发者">{DEVELOPER}</Descriptions.Item>
       </Descriptions>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Card size="small" title={t('settings.appUpdate')}>
@@ -130,7 +118,6 @@ export default function Settings() {
             {updateStatus.status === 'available' && (
               <Space direction="vertical" style={{ width: '100%' }}>
                 <Typography.Text type="warning">{t('settings.updateAvailable', { version: updateStatus.version })}，正在自动下载...</Typography.Text>
-                <Button icon={<DownloadOutlined />} type="primary" onClick={handleDownloadUpdate}>{t('settings.downloadNow')}</Button>
               </Space>
             )}
             {updateStatus.status === 'downloading' && (
