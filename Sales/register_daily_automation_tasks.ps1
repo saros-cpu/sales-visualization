@@ -44,5 +44,6 @@ function Register-SalesDailyTask {
 Register-SalesDailyTask -TaskName "SalesVisualizationDailyExchangeRates" -TaskArgument "exchange_rates" -Time "07:30"
 Register-SalesDailyTask -TaskName "SalesVisualizationDailyMarketWatch" -TaskArgument "market_watch" -Time "07:30"
 Register-SalesDailyTask -TaskName "SalesVisualizationDailyRetailSnapshots" -TaskArgument "retail_snapshots" -Time "08:30"
+Register-SalesDailyTask -TaskName "SalesVisualizationDailyRetailAccountingReports" -TaskArgument "retail_accounting_reports" -Time "08:45"
 
 Write-Host "Registered daily automation tasks under $TaskPath"

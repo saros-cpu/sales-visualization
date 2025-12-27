@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.13';
-export const BUILD_DATE = '2026-07-20';
+export const VERSION = '3.8.14';
+export const BUILD_DATE = '2026-07-21';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.14',
+    date: '2026-07-21',
+    type: 'patch',
+    changes: [
+      '新增：吉方财务交接日报生成脚本，支持按日批量生成每个加油站交接报表并接入每日维护任务',
+      '修复：交接日报兼容4月、5月、6月历史模板，处理跨日/补保存班组、日期+站号文件名和老格式主表合计',
+      '优化：交接日报明细按物理油品、站内资源和供应单据分配销售与进油数据，避免同油品多行重复或漏填',
+      '验证：4月735份、5月791份、6月759份历史交接报表逐单元格和样式回归全部通过',
+      '约定：回测与临时测试报表清理后不进入发布包，正式生成结果用于后续客户端日报监测',
+    ],
+  },
   {
     version: '3.8.13',
     date: '2026-07-20',
