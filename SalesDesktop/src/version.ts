@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.14';
+export const VERSION = '3.8.15';
 export const BUILD_DATE = '2026-07-21';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.15',
+    date: '2026-07-21',
+    type: 'minor',
+    changes: [
+      '新增：系统健康增加吉方日报监测页签，可按业务日期查看应生成站、已生成站、缺失站和停业/暂停站',
+      '新增：客户端支持按选中日期手动生成/重生成吉方财务交接日报，便于数据修正后补跑',
+      '优化：吉方日报自动任务接入客户端手动补跑入口，生成警告和缺失站点在页面内集中提醒',
+      '修复：停业、装修、修路、迁址等影响销售的站点不再被误报为缺少日报',
+    ],
+  },
   {
     version: '3.8.14',
     date: '2026-07-21',

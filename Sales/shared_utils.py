@@ -257,7 +257,8 @@ def ensure_station_status_schema(cur):
         """
     )
     cur.execute("SELECT COUNT(*) FROM retail_station_status")
-    if cur.fetchone()[0]:
+    row = cur.fetchone()
+    if _column_value(row, 0, "COUNT(*)"):
         return
     default_rows = [
         (1, "renovation", "装修中", "装修停业，五月中恢复", True, True, False),
@@ -536,32 +537,37 @@ def active_station_statuses(cur):
     catalog = retail_station_catalog()
     statuses = {}
     for row in cur.fetchall():
-        shop_key = int(row[1])
+        shop_key = int(_column_value(row, 1, "shop_key"))
         if shop_key in statuses:
             continue
         station = catalog.get(shop_key, {"name": f"Station-{shop_key}", "short": "", "region": ""})
-        status_type = row[2]
-        affects_sales = bool(row[7])
+        status_type = _column_value(row, 2, "status_type")
+        affects_sales = bool(_column_value(row, 7, "affects_sales"))
         public_status = "normal" if status_type == "normal" else ("closed" if affects_sales else "warning")
-        reason = "" if status_type == "normal" else (row[10] or row[3] or STATION_STATUS_TYPES.get(status_type, status_type))
+        note = _column_value(row, 10, "note") or ""
+        status_label = _column_value(row, 3, "status_label")
+        reason = "" if status_type == "normal" else (note or status_label or STATION_STATUS_TYPES.get(status_type, status_type))
+        started_at = _column_value(row, 4, "started_at")
+        expected_resume_at = _column_value(row, 5, "expected_resume_at")
+        ended_at = _column_value(row, 6, "ended_at")
         statuses[shop_key] = {
-            "id": row[0],
+            "id": _column_value(row, 0, "id"),
             "shopKey": shop_key,
             "name": station["name"],
             "short": station["short"],
             "region": station["region"],
             "status": public_status,
             "statusType": status_type,
-            "statusLabel": row[3],
+            "statusLabel": status_label,
             "closedReason": reason,
-            "note": row[10] or "",
-            "startedAt": row[4].isoformat() if row[4] else None,
-            "expectedResumeAt": row[5].isoformat() if row[5] else None,
-            "endedAt": row[6].isoformat() if row[6] else None,
+            "note": note,
+            "startedAt": started_at.isoformat() if started_at else None,
+            "expectedResumeAt": expected_resume_at.isoformat() if expected_resume_at else None,
+            "endedAt": ended_at.isoformat() if ended_at else None,
             "affectsSales": affects_sales,
-            "affectsInventory": bool(row[8]),
-            "suppressAlerts": bool(row[9]),
-            "isActive": bool(row[11]),
+            "affectsInventory": bool(_column_value(row, 8, "affects_inventory")),
+            "suppressAlerts": bool(_column_value(row, 9, "suppress_alerts")),
+            "isActive": bool(_column_value(row, 11, "is_active")),
         }
     return statuses
 

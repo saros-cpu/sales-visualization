@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
+import sys
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -19,8 +22,10 @@ from shared_utils import (
     OILSTATION_ROOT,
     REFRESH_CACHE_LOCK,
     REFRESH_CACHE_STATUS,
+    active_station_statuses,
     ensure_automation_task_schema,
     record_automation_task,
+    retail_station_catalog_cached,
 )
 from .assistant import ensure_ai_call_schema
 from .audit_logs import ensure_audit_schema
@@ -112,6 +117,211 @@ def _cache_items() -> list[dict[str, Any]]:
         workbook_info["error"] = exc.__class__.__name__
     result.append(workbook_info)
     return result
+
+
+ACCOUNTING_REPORT_ROOT = Path(r"D:\每日销量日报")
+ACCOUNTING_REPORT_FILE_RE = re.compile(r"^(?:20\d{6})?(\d{3})(?:-(\d+))?\.xlsx$", re.IGNORECASE)
+
+
+def _parse_date_arg(value: str | None, default_day: date | None = None) -> date:
+    if not value:
+        return default_day or (date.today() - timedelta(days=1))
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("日期格式应为 YYYY-MM-DD") from exc
+
+
+def _accounting_day_folder(target_day: date) -> str:
+    return target_day.strftime("%Y%m%d")
+
+
+def _accounting_station_no(shop_key: int) -> str:
+    return f"{shop_key:03d}"
+
+
+def _accounting_file_station(file_name: str) -> tuple[int, int] | None:
+    match = ACCOUNTING_REPORT_FILE_RE.fullmatch(file_name)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2) or 0)
+
+
+def _station_payload(shop_key: int, catalog: dict[int, dict[str, Any]], status: dict[str, Any] | None = None) -> dict[str, Any]:
+    station = catalog.get(shop_key) or {"name": f"Station-{shop_key}", "short": "", "region": ""}
+    payload = {
+        "shopKey": shop_key,
+        "stationNo": _accounting_station_no(shop_key),
+        "name": station.get("name") or f"Station-{shop_key}",
+        "short": station.get("short") or "",
+        "region": station.get("region") or "",
+    }
+    if status:
+        payload.update({
+            "status": status.get("status"),
+            "statusType": status.get("statusType"),
+            "statusLabel": status.get("statusLabel"),
+            "closedReason": status.get("closedReason") or status.get("note") or "",
+            "expectedResumeAt": status.get("expectedResumeAt"),
+            "startedAt": status.get("startedAt"),
+        })
+    return payload
+
+
+def _latest_automation_row(cur, task_name: str) -> dict[str, Any] | None:
+    ensure_automation_task_schema(cur)
+    cur.execute(
+        """
+        SELECT task_name, status, started_at, finished_at, summary, error
+        FROM automation_task_runs
+        WHERE task_name = %s
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+        """,
+        (task_name,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    item = dict(row)
+    for key in ("started_at", "finished_at"):
+        value = item.get(key)
+        item[key] = value.isoformat(sep=" ") if isinstance(value, datetime) else str(value) if value else None
+    try:
+        item["summary"] = json.loads(item["summary"]) if item.get("summary") else None
+    except Exception:
+        pass
+    return item
+
+
+def _accounting_report_status(cur, target_day: date) -> dict[str, Any]:
+    catalog = retail_station_catalog_cached()
+    statuses = active_station_statuses(cur)
+    closed_statuses = {
+        int(shop_key): status
+        for shop_key, status in statuses.items()
+        if status.get("affectsSales")
+    }
+    expected_shop_keys = [
+        shop_key
+        for shop_key in sorted(catalog)
+        if shop_key not in closed_statuses
+    ]
+    output_dir = ACCOUNTING_REPORT_ROOT / _accounting_day_folder(target_day)
+    archive_candidates = [
+        ACCOUNTING_REPORT_ROOT / f"{_accounting_day_folder(target_day)}.rar",
+        ACCOUNTING_REPORT_ROOT / f"{_accounting_day_folder(target_day)}.zip",
+    ]
+    generated_files: list[dict[str, Any]] = []
+    generated_shop_keys: set[int] = set()
+    unrecognized_files: list[str] = []
+    if output_dir.exists():
+        for path in sorted(output_dir.glob("*.xlsx"), key=lambda p: p.name):
+            parsed = _accounting_file_station(path.name)
+            stat = path.stat()
+            file_info = {
+                "file": path.name,
+                "path": str(path),
+                "size": stat.st_size,
+                "updatedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(sep=" ", timespec="seconds"),
+            }
+            if parsed:
+                shop_key, sequence = parsed
+                generated_shop_keys.add(shop_key)
+                file_info.update({
+                    "shopKey": shop_key,
+                    "stationNo": _accounting_station_no(shop_key),
+                    "sequence": sequence,
+                    "station": _station_payload(shop_key, catalog),
+                    "closed": shop_key in closed_statuses,
+                })
+            else:
+                unrecognized_files.append(path.name)
+            generated_files.append(file_info)
+
+    missing_shop_keys = [shop_key for shop_key in expected_shop_keys if shop_key not in generated_shop_keys]
+    closed_stations = [_station_payload(shop_key, catalog, status) for shop_key, status in sorted(closed_statuses.items())]
+    unexpected_files = [
+        item
+        for item in generated_files
+        if item.get("shopKey") and int(item["shopKey"]) not in expected_shop_keys
+    ]
+    archive = None
+    for path in archive_candidates:
+        if path.exists():
+            stat = path.stat()
+            archive = {
+                "file": path.name,
+                "path": str(path),
+                "size": stat.st_size,
+                "updatedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(sep=" ", timespec="seconds"),
+            }
+            break
+
+    latest = _latest_automation_row(cur, "retail_accounting_reports")
+    warnings: list[str] = []
+    skipped: list[dict[str, Any]] = []
+    latest_summary = latest.get("summary") if isinstance(latest, dict) else None
+    if isinstance(latest_summary, dict) and latest_summary.get("targetDate") == target_day.isoformat():
+        warnings = list(latest_summary.get("warnings") or [])
+        skipped = list(latest_summary.get("skipped") or [])
+
+    if missing_shop_keys:
+        status = "warning"
+    elif not output_dir.exists():
+        status = "pending"
+    else:
+        status = "ok"
+
+    return {
+        "targetDate": target_day.isoformat(),
+        "checkedAt": datetime.now().isoformat(sep=" ", timespec="seconds"),
+        "status": status,
+        "reportRoot": str(ACCOUNTING_REPORT_ROOT),
+        "outputDir": str(output_dir),
+        "outputExists": output_dir.exists(),
+        "archive": archive,
+        "expectedCount": len(expected_shop_keys),
+        "generatedStationCount": len(generated_shop_keys & set(expected_shop_keys)),
+        "generatedFileCount": len(generated_files),
+        "missingCount": len(missing_shop_keys),
+        "closedCount": len(closed_stations),
+        "unexpectedFileCount": len(unexpected_files),
+        "expectedStations": [_station_payload(shop_key, catalog) for shop_key in expected_shop_keys],
+        "missingStations": [_station_payload(shop_key, catalog) for shop_key in missing_shop_keys],
+        "closedStations": closed_stations,
+        "generatedFiles": generated_files,
+        "unexpectedFiles": unexpected_files,
+        "unrecognizedFiles": unrecognized_files,
+        "warnings": warnings,
+        "skipped": skipped,
+        "latestRun": latest,
+    }
+
+
+def _run_retail_accounting_report_task(target_day: date | None = None, force: bool = True) -> dict[str, Any]:
+    script = OILSTATION_ROOT / "scripts" / "generate_accounting_handover_reports.py"
+    if not script.exists():
+        raise RuntimeError(f"吉方会计日报脚本不存在：{script}")
+    args = [sys.executable, str(script), "--archive"]
+    if target_day:
+        args.extend(["--date", target_day.isoformat()])
+    if force:
+        args.append("--force")
+    completed = subprocess.run(
+        args,
+        cwd=str(OILSTATION_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+    output = (completed.stdout or completed.stderr or "").strip()
+    if completed.returncode != 0:
+        raise RuntimeError(output[-1200:] or f"吉方会计日报脚本退出码 {completed.returncode}")
+    try:
+        return json.loads(output)
+    except Exception as exc:
+        raise RuntimeError("吉方会计日报脚本返回内容不是 JSON") from exc
 
 
 def _overall_status(cache_items: list[dict[str, Any]], api_summary: dict[str, Any], automation: list[dict[str, Any]]) -> str:
@@ -260,6 +470,18 @@ def _run_market_watch_task(cur) -> dict[str, Any]:
         return _automation_error_payload(exc)
 
 
+def _run_retail_accounting_reports_task(cur, target_day: date | None = None, force: bool = True) -> dict[str, Any]:
+    try:
+        result = _run_retail_accounting_report_task(target_day=target_day, force=force)
+        status = "success" if not result.get("warnings") else "failed"
+        error = "; ".join(result.get("warnings") or []) or None
+        record_automation_task(cur, "retail_accounting_reports", status, result, error)
+        return {"status": status, "summary": result, "error": error}
+    except Exception as exc:
+        record_automation_task(cur, "retail_accounting_reports", "failed", {}, str(exc))
+        return _automation_error_payload(exc)
+
+
 def _retail_snapshot_worker():
     status = "success"
     error = None
@@ -349,12 +571,56 @@ def system_health():
         conn.close()
 
 
+@bp_v2.route("/system/accounting-reports/status", methods=["GET"])
+@jwt_required()
+@permission_required("system_health:view")
+def accounting_report_status():
+    try:
+        target_day = _parse_date_arg(request.args.get("date"))
+    except ValueError as exc:
+        return jsonify({"code": 4221, "message": str(exc), "data": None}), 422
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            data = _accounting_report_status(cur, target_day)
+            return jsonify({"code": 0, "message": "success", "data": data})
+    finally:
+        conn.close()
+
+
+@bp_v2.route("/system/accounting-reports/generate", methods=["POST"])
+@jwt_required()
+def generate_accounting_reports():
+    payload = request.get_json(silent=True) or {}
+    try:
+        target_day = _parse_date_arg(payload.get("date"))
+    except ValueError as exc:
+        return jsonify({"code": 4221, "message": str(exc), "data": None}), 422
+
+    user_id = int(get_jwt_identity())
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            _, error_response = _require_system_manage(cur, user_id)
+            if error_response:
+                return error_response
+            result = _run_retail_accounting_reports_task(cur, target_day=target_day, force=True)
+            conn.commit()
+            status_data = _accounting_report_status(cur, target_day)
+            return jsonify({"code": 0, "message": "success", "data": {"run": result, "status": status_data}})
+    except Exception as exc:
+        conn.rollback()
+        return jsonify({"code": 5001, "message": str(exc), "data": None}), 500
+    finally:
+        conn.close()
+
+
 @bp_v2.route("/system/automation-tasks/run", methods=["POST"])
 @jwt_required()
 def run_automation_task():
     payload = request.get_json(silent=True) or {}
     task = payload.get("task")
-    allowed = {"exchange_rates", "market_watch", "retail_snapshots", "all"}
+    allowed = {"exchange_rates", "market_watch", "retail_snapshots", "retail_accounting_reports", "all"}
     if task not in allowed:
         return jsonify({"code": 4221, "message": "请选择有效的自动任务", "data": None}), 422
 
@@ -371,6 +637,8 @@ def run_automation_task():
                 results["exchangeRates"] = _run_exchange_task(cur)
             if task in {"market_watch", "all"}:
                 results["marketWatch"] = _run_market_watch_task(cur)
+            if task in {"retail_accounting_reports", "all"}:
+                results["retailAccountingReports"] = _run_retail_accounting_reports_task(cur, force=True)
             conn.commit()
     except Exception as exc:
         conn.rollback()

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, message, Popconfirm, Row, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, DatePicker, message, Popconfirm, Row, Space, Table, Tabs, Tag, Typography } from 'antd';
 import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 import { useApiQuery } from '@/hooks/useApi';
-import { getSystemHealth, runAutomationTask, type AutomationTaskKey } from '@/api/system';
+import { generateAccountingReports, getAccountingReportStatus, getSystemHealth, runAutomationTask, type AutomationTaskKey } from '@/api/system';
 import KpiCard, { KpiGrid } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -15,12 +16,33 @@ function statusColor(status?: string) {
   return 'orange';
 }
 
+function formatBytes(value?: number) {
+  const bytes = Number(value || 0);
+  if (!bytes) return '-';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function SystemHealth() {
   const { t } = useTranslation();
   const { user, can } = useAuth();
   const query = useApiQuery(['system-health'], getSystemHealth, { refetchInterval: 60000 });
   const [runningTask, setRunningTask] = useState<AutomationTaskKey | null>(null);
+  const [accountingDate, setAccountingDate] = useState(dayjs().subtract(1, 'day'));
+  const [generatingAccounting, setGeneratingAccounting] = useState(false);
+  const accountingDateText = accountingDate.format('YYYY-MM-DD');
+  const accountingQuery = useApiQuery(
+    ['accounting-report-status', accountingDateText],
+    () => getAccountingReportStatus(accountingDateText),
+    { refetchInterval: 60000 },
+  );
   const data = query.data || {};
+  const accounting = accountingQuery.data || {};
+  const missingStations = accounting.missingStations || [];
+  const generatedFiles = accounting.generatedFiles || [];
+  const closedStations = accounting.closedStations || [];
+  const accountingWarnings = accounting.warnings || [];
+  const accountingSkipped = accounting.skipped || [];
   const cacheItems = data.cache?.items || [];
   const apiRecent = data.api?.recent || [];
   const apiTop = data.api?.topPaths24h || [];
@@ -36,6 +58,7 @@ export default function SystemHealth() {
     { task: 'exchange_rates', label: t('systemHealth.runExchangeRates') },
     { task: 'market_watch', label: t('systemHealth.runMarketWatch') },
     { task: 'retail_snapshots', label: t('systemHealth.runRetailSnapshots') },
+    { task: 'retail_accounting_reports', label: t('systemHealth.runRetailAccountingReports') },
     { task: 'all', label: t('systemHealth.runAllTasks') },
   ];
 
@@ -55,6 +78,25 @@ export default function SystemHealth() {
       message.error(err?.message || t('systemHealth.runFailed'));
     } finally {
       setRunningTask(null);
+    }
+  };
+
+  const handleGenerateAccounting = async () => {
+    setGeneratingAccounting(true);
+    try {
+      const result = await generateAccountingReports(accountingDateText);
+      const hasWarnings = result?.run?.status === 'failed' || (result?.status?.warnings || []).length > 0;
+      if (hasWarnings || (result?.status?.missingCount || 0) > 0) {
+        message.warning(t('systemHealth.accountingGenerateWarning'));
+      } else {
+        message.success(t('systemHealth.accountingGenerateSuccess'));
+      }
+      await accountingQuery.refetch();
+      await query.refetch();
+    } catch (err: any) {
+      message.error(err?.message || t('systemHealth.accountingGenerateFailed'));
+    } finally {
+      setGeneratingAccounting(false);
     }
   };
 
@@ -139,6 +181,121 @@ export default function SystemHealth() {
                   { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any, row: any) => v || (row.missingKeys?.length ? row.missingKeys.join(', ') : '-') },
                 ]}
               />
+            ),
+          },
+          {
+            key: 'accounting',
+            label: t('systemHealth.accountingReports'),
+            children: (
+              <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                <Space wrap>
+                  <span>{t('systemHealth.accountingDate')}</span>
+                  <DatePicker
+                    value={accountingDate}
+                    allowClear={false}
+                    disabledDate={(current) => Boolean(current && current.isAfter(dayjs(), 'day'))}
+                    onChange={(value) => {
+                      if (value) setAccountingDate(value);
+                    }}
+                  />
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={() => accountingQuery.refetch()}
+                    loading={accountingQuery.isFetching}
+                  >
+                    {t('common.update')}
+                  </Button>
+                  {canRunAutomation && (
+                    <Popconfirm
+                      title={t('systemHealth.accountingGenerateConfirm')}
+                      okText={t('common.confirm')}
+                      cancelText={t('common.cancel')}
+                      onConfirm={handleGenerateAccounting}
+                    >
+                      <Button
+                        type="primary"
+                        icon={<PlayCircleOutlined />}
+                        loading={generatingAccounting}
+                      >
+                        {t('systemHealth.accountingGenerate')}
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </Space>
+
+                <Alert
+                  showIcon
+                  type={(accounting.missingCount || 0) > 0 ? 'warning' : accounting.status === 'ok' ? 'success' : 'info'}
+                  message={(accounting.missingCount || 0) > 0
+                    ? t('systemHealth.accountingMissingMessage', { count: accounting.missingCount })
+                    : accounting.status === 'ok'
+                      ? t('systemHealth.accountingOkMessage')
+                      : t('systemHealth.accountingPendingMessage')}
+                  description={accounting.outputDir ? t('systemHealth.accountingOutputDir', { path: accounting.outputDir }) : undefined}
+                />
+
+                <KpiGrid items={[
+                  { key: 'expected', title: t('systemHealth.accountingExpected'), value: accounting.expectedCount ?? 0, span: 6 },
+                  { key: 'generated', title: t('systemHealth.accountingGenerated'), value: accounting.generatedStationCount ?? 0, span: 6 },
+                  { key: 'missing', title: t('systemHealth.accountingMissing'), value: accounting.missingCount ?? 0, tone: (accounting.missingCount ?? 0) > 0 ? 'danger' : 'success', span: 6 },
+                  { key: 'closed', title: t('systemHealth.accountingClosed'), value: accounting.closedCount ?? 0, span: 6 },
+                ]} />
+
+                {(accountingWarnings.length > 0 || accountingSkipped.length > 0) && (
+                  <Alert
+                    showIcon
+                    type="warning"
+                    message={t('systemHealth.accountingWarnings')}
+                    description={[...accountingWarnings, ...accountingSkipped.map((item: any) => `${String(item.shopKey || '').padStart(3, '0')}: ${item.reason || '-'}`)].slice(0, 12).join('；')}
+                  />
+                )}
+
+                <Table
+                  size="small"
+                  rowKey="stationNo"
+                  dataSource={missingStations}
+                  pagination={false}
+                  loading={accountingQuery.isFetching}
+                  title={() => t('systemHealth.accountingMissingStations')}
+                  columns={[
+                    { title: t('systemHealth.stationNo'), dataIndex: 'stationNo', width: 90 },
+                    { title: t('retail.station'), dataIndex: 'name', width: 180 },
+                    { title: t('retail.ruName'), dataIndex: 'short', width: 180 },
+                    { title: t('retail.regionTab'), dataIndex: 'region', width: 140 },
+                  ]}
+                />
+
+                <Table
+                  size="small"
+                  rowKey="file"
+                  dataSource={generatedFiles}
+                  pagination={{ pageSize: 12 }}
+                  title={() => t('systemHealth.accountingGeneratedFiles')}
+                  columns={[
+                    { title: t('systemHealth.stationNo'), dataIndex: 'stationNo', width: 90, render: (v: any) => v || '-' },
+                    { title: t('systemHealth.fileName'), dataIndex: 'file', width: 220 },
+                    { title: t('retail.station'), dataIndex: ['station', 'name'], width: 180, render: (v: any) => v || '-' },
+                    { title: t('systemHealth.size'), dataIndex: 'size', width: 100, render: (v: number) => formatBytes(v) },
+                    { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170 },
+                    { title: t('common.status'), dataIndex: 'closed', width: 110, render: (v: boolean) => v ? <Tag color="orange">{t('common.closed')}</Tag> : <Tag color="green">{t('common.ok')}</Tag> },
+                  ]}
+                />
+
+                <Table
+                  size="small"
+                  rowKey="stationNo"
+                  dataSource={closedStations}
+                  pagination={false}
+                  title={() => t('systemHealth.accountingClosedStations')}
+                  columns={[
+                    { title: t('systemHealth.stationNo'), dataIndex: 'stationNo', width: 90 },
+                    { title: t('retail.station'), dataIndex: 'name', width: 180 },
+                    { title: t('common.status'), dataIndex: 'statusLabel', width: 140 },
+                    { title: t('retail.expectedResume'), dataIndex: 'expectedResumeAt', width: 150, render: (v: any) => v || '-' },
+                    { title: t('common.remark'), dataIndex: 'closedReason' },
+                  ]}
+                />
+              </Space>
             ),
           },
           {
