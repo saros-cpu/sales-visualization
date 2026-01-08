@@ -6,6 +6,12 @@
 
 ## 版本更新记录
 
+### 2026-07-21 (v3.8.16)
+
+- **自动更新修复**：修复未签名 Windows 安装包因 `publisherName` 签名校验导致客户端下载后拒绝安装的问题。
+- **打包配置**：关闭 Windows 更新签名校验，避免没有代码签名证书时自动更新链路被阻断。
+- **更新兜底**：主进程增加 electron-updater 签名校验运行时兜底，后续版本继续支持自动更新。
+
 ### 2026-07-21 (v3.8.15)
 
 - **吉方日报监测**：系统健康新增“吉方日报”页签，按业务日期展示应生成站、已生成站、缺失站和停业/暂停站。
@@ -874,7 +880,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.8.15（与 version.ts 对齐）
+├── package.json              # 版本 3.8.16（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

@@ -10,8 +10,7 @@ files:
 win:
   target: nsis
   icon: build/icon.ico
-  signtoolOptions:
-    publisherName: "CJSC «ExampleCo Petroleum Company «ExampleCo»"
+  verifyUpdateCodeSignature: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

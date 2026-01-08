@@ -2,6 +2,26 @@
 
 ## 版本历史
 
+### v3.8.16 (2026-07-21)
+
+**Windows 客户端自动更新签名校验修复**：
+
+1. **问题原因**
+   - 旧打包配置在 `app-update.yml` 中写入 `publisherName`。
+   - 当前安装包未配置正式代码签名证书，electron-updater 下载后执行 Windows 签名校验失败。
+   - 表现为 `New version ... is not signed by the application owner`。
+
+2. **修复内容**
+   - `electron-builder.yml` 设置 `win.verifyUpdateCodeSignature: false`，不再为未签名包写入更新签名强校验。
+   - 移除未配套证书的 `signtoolOptions.publisherName` 配置。
+   - 主进程初始化 updater 时增加 `verifyUpdateCodeSignature = async () => null` 兜底。
+
+3. **发布影响**
+   - 已安装旧版本因本地旧 `app-update.yml` 仍包含 `publisherName`，无法通过自动更新安装未签名包。
+   - 本次需要手动下载安装 `3.8.16` 一次；安装后后续自动更新可恢复正常。
+
+---
+
 ### v3.8.15 (2026-07-21)
 
 **吉方财务交接日报客户端监测模块**：
@@ -926,4 +946,4 @@ if (e.key === 'Delete' && isAdmin) {
 
 **文档维护**：每次版本更新后更新此文档
 
-**最后更新**：2026-07-21（v3.8.15）
+**最后更新**：2026-07-21（v3.8.16）

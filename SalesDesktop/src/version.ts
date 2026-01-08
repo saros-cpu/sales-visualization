@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.15';
+export const VERSION = '3.8.16';
 export const BUILD_DATE = '2026-07-21';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.16',
+    date: '2026-07-21',
+    type: 'patch',
+    changes: [
+      '修复：Windows 未签名安装包因 publisherName 校验导致自动更新失败的问题',
+      '优化：打包配置关闭 Windows 更新签名校验，避免无代码签名证书时客户端下载后拒绝安装',
+      '优化：主进程增加 electron-updater 签名校验运行时兜底，后续版本更新链路保持可用',
+    ],
+  },
   {
     version: '3.8.15',
     date: '2026-07-21',

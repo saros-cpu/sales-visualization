@@ -337,6 +337,9 @@ function setupUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
+  if (process.platform === 'win32' && 'verifyUpdateCodeSignature' in autoUpdater) {
+    autoUpdater.verifyUpdateCodeSignature = async () => null;
+  }
   autoUpdater.setFeedURL({ provider: 'generic', url: runtimeConfig.updateUrl });
 
   autoUpdater.on('checking-for-update', () => {
