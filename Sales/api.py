@@ -94,7 +94,7 @@ def handle_options_preflight():
         resp = app.make_default_options_response()
         return add_cors_headers(resp)
 
-APP_BUILD = "2026-07-16-fastapiadmin-feature-upgrade-v3.6.0"
+APP_BUILD = "2026-07-21-ai-assistant-range-fix-v3.8.17"
 PROJECT_ROOT = Path(__file__).resolve().parent
 OILSTATION_ROOT = PROJECT_ROOT.parent / "OilStation"
 SHARED_ASSETS_ROOT = PROJECT_ROOT.parent / "assets"
@@ -489,7 +489,11 @@ def download_desktop(filename: str):
     if filename != "latest.yml" and not allowed_installer:
         return jsonify({"error": "not_found"}), 404
     desktop_root = PROJECT_ROOT.parent / "SalesDesktop"
-    candidates = [desktop_root / filename, desktop_root / "release_build" / filename]
+    candidates = [
+        desktop_root / "download" / filename,
+        desktop_root / filename,
+        desktop_root / "release_build" / filename,
+    ]
     filepath = next((item for item in candidates if item.is_file()), None)
     if filepath is None:
         return jsonify({"error": "file_not_ready"}), 404

@@ -82,9 +82,53 @@ def register_assistant_routes(app):
         return month_map.get(text)
 
 
+    _ASSISTANT_DATE_PATTERN = (
+        r"(20\d{2})\s*(?:年|[-/.])\s*"
+        r"(\d{1,2})\s*(?:月|[-/.])\s*"
+        r"(\d{1,2})\s*(?:日|号)?"
+    )
+    _ASSISTANT_RANGE_PATTERN = r"(?:至|到|--?|—|~|～)"
+
+    def _assistant_safe_date(year, month, day):
+        try:
+            return date(int(year), int(month), int(day))
+        except (TypeError, ValueError):
+            return None
+
+
+    def _assistant_explicit_date_range(text):
+        full_range = re.search(
+            rf"{_ASSISTANT_DATE_PATTERN}\s*{_ASSISTANT_RANGE_PATTERN}\s*{_ASSISTANT_DATE_PATTERN}",
+            text,
+        )
+        if full_range:
+            start = _assistant_safe_date(*full_range.group(1, 2, 3))
+            end_day = _assistant_safe_date(*full_range.group(4, 5, 6))
+            if start and end_day and end_day >= start:
+                label = f"{start.year}年{start.month}月{start.day}日至{end_day.year}年{end_day.month}月{end_day.day}日"
+                return label, start, end_day + timedelta(days=1)
+
+        same_year_range = re.search(
+            rf"{_ASSISTANT_DATE_PATTERN}\s*{_ASSISTANT_RANGE_PATTERN}\s*"
+            r"(\d{1,2})\s*月\s*(\d{1,2})\s*(?:日|号)?",
+            text,
+        )
+        if same_year_range:
+            start = _assistant_safe_date(*same_year_range.group(1, 2, 3))
+            end_day = _assistant_safe_date(same_year_range.group(1), same_year_range.group(4), same_year_range.group(5))
+            if start and end_day and end_day >= start:
+                label = f"{start.year}年{start.month}月{start.day}日至{end_day.month}月{end_day.day}日"
+                return label, start, end_day + timedelta(days=1)
+
+        return None
+
+
     def _assistant_period(question):
         today = date.today()
         text = _assistant_prepare_question_text(question)
+        explicit_range = _assistant_explicit_date_range(text)
+        if explicit_range:
+            return explicit_range
         if "昨天" in text:
             start = today - timedelta(days=1)
             return "昨天", start, today
@@ -547,6 +591,25 @@ def register_assistant_routes(app):
             ]
             payloads = [item for item in payloads if item]
             return _merge_retail_snapshot_payloads(payloads) if payloads else None
+
+        if start.day == 1:
+            payloads = []
+            cursor = start
+            while cursor < end:
+                next_year, next_month = _month_after(cursor.year, cursor.month)
+                next_month_start = date(next_year, next_month, 1)
+                if next_month_start > end:
+                    payloads = []
+                    break
+                ym = f"{cursor.year}-{cursor.month:02d}"
+                payload = _read_retail_snapshot("monthly", ym)
+                if not payload:
+                    payloads = []
+                    break
+                payloads.append(payload)
+                cursor = next_month_start
+            if payloads and cursor == end:
+                return _merge_retail_snapshot_payloads(payloads)
 
         # Daily snapshots are generated only after a business day is complete.
         # If the requested range includes today, use completed days only and avoid

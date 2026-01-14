@@ -8,6 +8,7 @@ import {
   getKnowledgeArticle,
   getKnowledgeArticles,
   getKnowledgeBootstrap,
+  reindexKnowledgeAttachments,
   updateKnowledgeArticle,
 } from '../../api/knowledge';
 
@@ -42,6 +43,17 @@ function statusLabel(status) {
   return { published: '已发布', draft: '草稿', archived: '已归档' }[status] || status || '草稿';
 }
 
+function extractionStatusLabel(status) {
+  return {
+    ok: '已解析',
+    empty: '无文本',
+    unsupported: '不支持解析',
+    failed: '解析失败',
+    missing: '文件缺失',
+    pending: '待解析',
+  }[status || 'pending'] || '待解析';
+}
+
 export default function KnowledgePage() {
   const { user } = useOutletContext() || {};
   const [spaces, setSpaces] = useState([]);
@@ -53,12 +65,14 @@ export default function KnowledgePage() {
   const [selectedId, setSelectedId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [canManage, setCanManage] = useState(false);
+  const [canReindex, setCanReindex] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [statusText, setStatusText] = useState('正在读取知识库...');
   const isAdmin = user?.role === 'admin';
   const mayManage = isAdmin || canManage;
+  const mayReindex = isAdmin || canReindex || (user?.permissionCodes || []).includes('knowledge:reindex');
 
   const visibleCategories = useMemo(
     () => categories.filter(item => !spaceId || String(item.spaceId) === String(spaceId)),
@@ -75,6 +89,7 @@ export default function KnowledgePage() {
     setSpaces(data.spaces || []);
     setCategories(data.categories || []);
     setCanManage(Boolean(data.canManage));
+    setCanReindex(Boolean(data.canReindex));
     if (!spaceId && data.spaces?.[0]) setSpaceId(String(data.spaces[0].id));
   };
 
@@ -175,6 +190,13 @@ export default function KnowledgePage() {
     await deleteKnowledgeAttachment(attachmentId);
     setStatusText('附件已删除');
     await loadArticle(selected.id);
+  };
+
+  const reindexAttachments = async () => {
+    if (!mayReindex) return;
+    const result = await reindexKnowledgeAttachments(200);
+    setStatusText(`已重建 ${result?.updated ?? 0} 个附件索引`);
+    if (selected?.id) await loadArticle(selected.id);
   };
 
   return (
@@ -297,10 +319,11 @@ export default function KnowledgePage() {
                     <h2>{selected.title}</h2>
                     <span>{selected.spaceName || '知识库'} · {selected.categoryName || '未分类'} · {statusLabel(selected.status)}</span>
                   </div>
-                  {mayManage && (
+                  {(mayManage || mayReindex) && (
                     <div className="knowledge-actions compact">
-                      <button onClick={startEdit}>编辑</button>
-                      {selected.status !== 'archived' && <button onClick={archive}>归档</button>}
+                      {mayManage && <button onClick={startEdit}>编辑</button>}
+                      {mayReindex && <button onClick={reindexAttachments}>重建索引</button>}
+                      {mayManage && selected.status !== 'archived' && <button onClick={archive}>归档</button>}
                     </div>
                   )}
                 </div>
@@ -320,6 +343,7 @@ export default function KnowledgePage() {
                       <button className="ghost-button" onClick={() => downloadKnowledgeAttachment(item.id, item.originalName)}>
                         {item.originalName}
                       </button>
+                      <span>{extractionStatusLabel(item.extractionStatus)}</span>
                       {isAdmin && (
                         <button className="ghost-button danger-button" onClick={() => deleteAttachment(item.id)}>
                           删除

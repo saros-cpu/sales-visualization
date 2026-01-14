@@ -196,6 +196,13 @@ def as_float(value, default: float = 0.0) -> float:
         return default
 
 
+def as_int(value, default: int | None = 0) -> int | None:
+    number = as_float(value, None)
+    if number is None:
+        return default
+    return int(number)
+
+
 def money_decimal(value) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -324,9 +331,9 @@ def integer_words(number: int) -> str:
 
 
 def amount_words_ru(value) -> str:
-    amount = money_decimal(value)
-    negative = amount < 0
-    amount = abs(amount)
+    raw_amount = Decimal(str(value or 0))
+    negative = raw_amount < 0
+    amount = abs(raw_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     rubles = int(amount)
     kopecks = int((amount - Decimal(rubles)) * 100)
     parts = [
@@ -1068,6 +1075,96 @@ def load_collection(cur, shift_range: ShiftRange) -> dict:
     }
 
 
+def decode_cp1251_mojibake(value) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        decoded = text.encode("latin1").decode("cp1251")
+    except UnicodeError:
+        return text
+    return decoded if re.search(r"[А-Яа-яЁё]", decoded) else text
+
+
+def load_worker_name(cur, shop_key: int, worker_key: int) -> str:
+    lookups = [
+        (
+            """
+            SELECT Name
+            FROM localuser
+            WHERE ShopKey = %s
+              AND UserKey = %s
+              AND COALESCE(Deleted, 0) = 0
+            ORDER BY LocalUserKey DESC
+            LIMIT 1
+            """,
+            (shop_key, worker_key),
+        ),
+        (
+            """
+            SELECT Name
+            FROM shopuser
+            WHERE ShopKey = %s
+              AND UserKey = %s
+            ORDER BY ShopUserKey DESC
+            LIMIT 1
+            """,
+            (shop_key, worker_key),
+        ),
+        (
+            """
+            SELECT Name
+            FROM `user`
+            WHERE UserKey = %s
+            LIMIT 1
+            """,
+            (worker_key,),
+        ),
+    ]
+    for sql, params in lookups:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        name = decode_cp1251_mojibake(row.get("Name")) if row else ""
+        if name:
+            return name
+    return ""
+
+
+def load_shift_operator(cur, shift_range: ShiftRange) -> str:
+    placeholders = sql_in(shift_range.shift_keys)
+    worker_queries = [
+        f"""
+        SELECT ShopWorkerKey
+        FROM payment_collection
+        WHERE ShopKey = %s
+          AND ShiftKey IN ({placeholders})
+          AND COALESCE(ShopWorkerKey, 0) <> 0
+        GROUP BY ShopWorkerKey
+        ORDER BY COUNT(*) DESC, SUM(COALESCE(Collect, 0)) DESC, ShopWorkerKey DESC
+        LIMIT 1
+        """,
+        f"""
+        SELECT ShopWorkerKey
+        FROM selling
+        WHERE ShopKey = %s
+          AND ShiftKey IN ({placeholders})
+          AND COALESCE(ShopWorkerKey, 0) <> 0
+        GROUP BY ShopWorkerKey
+        ORDER BY COUNT(*) DESC, SUM(COALESCE(ShopCost, 0)) DESC, ShopWorkerKey DESC
+        LIMIT 1
+        """,
+    ]
+    for sql in worker_queries:
+        cur.execute(sql, (shift_range.shop_key, *shift_range.shift_keys))
+        row = cur.fetchone()
+        worker_key = int(row.get("ShopWorkerKey") or 0) if row else 0
+        if worker_key:
+            name = load_worker_name(cur, shift_range.shop_key, worker_key)
+            if name:
+                return name
+    return ""
+
+
 def grouped_by_resource(rows: list[dict]) -> dict[int, list[dict]]:
     grouped: dict[int, list[dict]] = defaultdict(list)
     for row in rows:
@@ -1106,11 +1203,14 @@ def iter_main_specs(ws) -> list[dict]:
             continue
         if ws.cell(row, 3).value not in ("л", "л."):
             continue
+        tank_number = as_int(ws.cell(row, 17).value, None)
         specs.append(
             {
                 "row": row,
                 "resource": current_resource,
                 "is_product_row": resource is not None,
+                "is_tank_row": resource is not None or tank_number is not None,
+                "tank_number": tank_number,
                 "template_begin": as_float(ws.cell(row, 13).value, None),
                 "template_end": as_float(ws.cell(row, 10).value, None),
                 "template_tank_begin": as_float(ws.cell(row, 5).value, None),
@@ -1184,20 +1284,32 @@ def assign_tank_rows(ws, tank_rows: list[dict]) -> dict[int, dict | None]:
     used: set[int] = set()
     assigned: dict[int, dict | None] = {}
     for spec in iter_main_specs(ws):
-        if not spec["is_product_row"]:
+        if not spec["is_tank_row"]:
             continue
         row = spec["row"]
         candidates = grouped.get(spec["resource"], [])
-        assigned[row] = best_match(
-            candidates,
-            used,
-            [
-                ("BeginBalance", spec["template_tank_end"]),
-                ("BeginBalance", spec["template_tank_begin"]),
-                ("EndBalance", spec["template_tank_end"]),
-                ("EndBalance", spec["template_tank_begin"]),
-            ],
-        )
+        tank_number = spec.get("tank_number")
+        match = None
+        if tank_number is not None:
+            for candidate in candidates:
+                if id(candidate) in used:
+                    continue
+                if int(candidate.get("WarehouseCode") or 0) == tank_number:
+                    used.add(id(candidate))
+                    match = candidate
+                    break
+        if match is None:
+            match = best_match(
+                candidates,
+                used,
+                [
+                    ("BeginBalance", spec["template_tank_end"]),
+                    ("BeginBalance", spec["template_tank_begin"]),
+                    ("EndBalance", spec["template_tank_end"]),
+                    ("EndBalance", spec["template_tank_begin"]),
+                ],
+            )
+        assigned[row] = match
     return assigned
 
 
@@ -1205,7 +1317,7 @@ def tank_density_by_resource(ws, tank_rows: list[dict]) -> dict[int, float]:
     result: dict[int, float] = {}
     assignments = assign_tank_rows(ws, tank_rows)
     for spec in iter_main_specs(ws):
-        if not spec["is_product_row"]:
+        if not spec["is_tank_row"]:
             continue
         tank = assignments.get(spec["row"])
         if not tank:
@@ -1303,6 +1415,8 @@ def fill_main_table(
     tank_assignments = assign_tank_rows(ws, tank_rows)
     supplied_once_without_tank: set[int] = set()
     all_supply_volume = sum(float(item.get("volume") or 0) for item in supply.values())
+    has_previous_product_row = False
+    previous_product_had_supply = False
     for spec in iter_main_specs(ws):
         row_number = spec["row"]
         counter = counter_assignments.get(row_number)
@@ -1319,38 +1433,39 @@ def fill_main_table(
         else:
             warnings.append(f"{shift_range.shop_key:03d}: 未匹配机表行 {row_number}")
 
-        if not spec["is_product_row"]:
-            continue
-
         resource = spec["resource"]
         tank = tank_assignments.get(row_number)
-        if tank:
-            begin = float(tank.get("BeginBalance") or 0)
-            end = float(tank.get("EndBalance") or 0)
-            calc = float(tank.get("EndBalanceCalculation") or end)
-            diff = 0.0 if abs(end) < 0.000001 and abs(calc) > 0.000001 else round_float(end - calc, 2)
-            display_end = calc if (abs(end) < 0.000001 and abs(calc) > 0.000001) or abs(end - calc) < 0.001 else end
-            begin_value = round_float(begin, 2)
-            if preserve_template_main_display and abs(begin_value) < 0.000001 and ws.cell(row_number, 5).value in (None, ""):
-                pass
-            else:
-                ws.cell(row_number, 5).value = begin_value
+        if spec["is_tank_row"]:
+            if tank:
+                begin = float(tank.get("BeginBalance") or 0)
+                end = float(tank.get("EndBalance") or 0)
+                calc = float(tank.get("EndBalanceCalculation") or end)
+                diff = 0.0 if abs(end) < 0.000001 and abs(calc) > 0.000001 else round_float(end - calc, 2)
+                display_end = calc if (abs(end) < 0.000001 and abs(calc) > 0.000001) or abs(end - calc) < 0.001 else end
+                begin_value = round_float(begin, 2)
+                if preserve_template_main_display and abs(begin_value) < 0.000001 and ws.cell(row_number, 5).value in (None, ""):
+                    pass
+                else:
+                    ws.cell(row_number, 5).value = begin_value
 
-            existing_display_end = parse_cash_cell(ws.cell(row_number, 26).value)
-            if (
-                preserve_template_main_display
-                and existing_display_end is not None
-                and abs(existing_display_end - float(display_end)) < 0.001
-            ):
-                pass
+                existing_display_end = parse_cash_cell(ws.cell(row_number, 26).value)
+                if (
+                    preserve_template_main_display
+                    and existing_display_end is not None
+                    and abs(existing_display_end - float(display_end)) < 0.001
+                ):
+                    pass
+                else:
+                    ws.cell(row_number, 26).value = comma_number(display_end, 6, trim=True)
+                ws.cell(row_number, 30).value = round_float(calc, 2)
+                ws.cell(row_number, 32).value = value_or_blank(ws.cell(row_number, 32).value, max(diff, 0), 2)
+                ws.cell(row_number, 36).value = value_or_blank(ws.cell(row_number, 36).value, min(diff, 0), 2)
+                ws.cell(row_number, 38).value = 0.0
             else:
-                ws.cell(row_number, 26).value = comma_number(display_end, 6, trim=True)
-            ws.cell(row_number, 30).value = round_float(calc, 2)
-            ws.cell(row_number, 32).value = value_or_blank(ws.cell(row_number, 32).value, max(diff, 0), 2)
-            ws.cell(row_number, 36).value = value_or_blank(ws.cell(row_number, 36).value, min(diff, 0), 2)
-            ws.cell(row_number, 38).value = 0.0
-        else:
-            warnings.append(f"{shift_range.shop_key:03d}: 未匹配油罐行 {row_number}")
+                warnings.append(f"{shift_range.shop_key:03d}: 未匹配油罐行 {row_number}")
+
+        if not spec["is_product_row"]:
+            continue
 
         item = supply.get(resource, {})
         entries = item.get("entries") or []
@@ -1369,9 +1484,9 @@ def fill_main_table(
         if not matched_by_tank and resource not in supplied_once_without_tank:
             supplied_once_without_tank.add(resource)
             volume = float(item.get("volume") or 0)
-        if preserve_supply_values is not None and row_number in preserve_supply_values:
-            ws.cell(row_number, 6).value = preserve_supply_values[row_number]
-        elif preserve_template_main_display:
+        has_supply = abs(volume) >= 0.000001
+        show_zero_supply = not has_previous_product_row or previous_product_had_supply
+        if preserve_template_main_display:
             existing_supply = as_float(ws.cell(row_number, 6).value, None)
             if (
                 existing_supply is not None
@@ -1381,8 +1496,14 @@ def fill_main_table(
                 pass
             else:
                 ws.cell(row_number, 6).value = value_or_blank(ws.cell(row_number, 6).value, volume, 2)
+        elif has_supply:
+            ws.cell(row_number, 6).value = round_float(volume, 2)
+        elif show_zero_supply:
+            ws.cell(row_number, 6).value = 0.0
         else:
-            ws.cell(row_number, 6).value = value_or_blank(ws.cell(row_number, 6).value, volume, 2)
+            ws.cell(row_number, 6).value = ""
+        has_previous_product_row = True
+        previous_product_had_supply = has_supply
     return warnings
 
 
@@ -1521,7 +1642,7 @@ def fill_detail_table(ws, supply: dict[int, dict], sales: dict[int, dict], templ
 
         ws.cell(row_number, 7).value = detail_doc_value(ws.cell(row_number, 7).value, supply_docs, template_matches_shift)
         ws.cell(row_number, 10).value = round_float(supply_volume, 2)
-        ws.cell(row_number, 13).value = comma_number(supply_density, 15, trim=True) if supply_density else 0
+        ws.cell(row_number, 13).value = comma_number(supply_density, 15, trim=True) if supply_density else "0"
         ws.cell(row_number, 14).value = round_float(supply_mass, 2)
         ws.cell(row_number, 16).value = comma_number(supply_temperature, 13, trim=True) if supply_temperature else 0
         ws.cell(row_number, 19).value = round_float(sales_item.get("talon_sber", 0), 2, adjust_float_tail=True)
@@ -1579,7 +1700,6 @@ def fill_cash_table(ws, collection: dict, preserve_template_zero_cash: bool = Fa
     depot_cash = float(collection.get("depot_cash") or 0)
     total_cash = round_float(incoming + cash_sales, 2, adjust_float_tail=True)
     handover = round_float(total_cash - collect - depot_cash, 2, adjust_float_tail=True)
-    zero_words = amount_words_ru(0)
 
     amounts = {
         cash_row + 2: incoming,
@@ -1599,6 +1719,8 @@ def fill_cash_table(ws, collection: dict, preserve_template_zero_cash: bool = Fa
             and abs(round_float(existing_amount, 2, adjust_float_tail=True) - round_float(amount, 2, adjust_float_tail=True)) < 0.005
         )
         if abs(amount) < 0.000001:
+            zero_basis = existing_amount if existing_amount is not None and existing_amount < 0 else amount
+            zero_words = amount_words_ru(zero_basis)
             if preserve_existing_cash and isinstance(existing_words, str):
                 words = existing_words
             else:
@@ -1613,6 +1735,17 @@ def fill_cash_table(ws, collection: dict, preserve_template_zero_cash: bool = Fa
 
 def update_shift_header(ws, shift_range: ShiftRange) -> None:
     ws["K3"].value = f"Смена с {dt_text(shift_range.begin)} до {dt_text(shift_range.end)}"
+
+
+def update_operator_header(ws, operator_name: str) -> None:
+    operator_name = operator_name.strip()
+    if not operator_name:
+        return
+    prefix = "Состав смены: оператор:"
+    existing = str(ws["A3"].value or "")
+    if not existing.startswith(prefix) or not existing[len(prefix):].strip():
+        return
+    ws["A3"].value = f"{prefix} {operator_name}"
 
 
 def generate_station_report(
@@ -1645,6 +1778,7 @@ def generate_station_report(
     else:
         collection["incoming"] = load_cash_carryover(cur, shift_range) if cash_carryover is None else cash_carryover
 
+    update_operator_header(ws, load_shift_operator(cur, shift_range))
     if not template_matches_shift:
         update_shift_header(ws, shift_range)
     warnings = fill_main_table(

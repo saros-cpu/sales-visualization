@@ -33,6 +33,11 @@ from .authz import permission_required
 from .permission_service import has_permission
 
 
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+DESKTOP_ROOT = WORKSPACE_ROOT / "SalesDesktop"
+DESKTOP_DOWNLOAD_ROOT = DESKTOP_ROOT / "download"
+
+
 def _file_info(path: Path, required_keys: set[str] | None = None) -> dict[str, Any]:
     result = {
         "path": str(path),
@@ -117,6 +122,123 @@ def _cache_items() -> list[dict[str, Any]]:
         workbook_info["error"] = exc.__class__.__name__
     result.append(workbook_info)
     return result
+
+
+def _parse_latest_yml(text: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for line in text.splitlines():
+        match = re.match(r"^\s*([A-Za-z0-9_]+)\s*:\s*(.*?)\s*$", line)
+        if not match:
+            continue
+        value = match.group(2).strip().strip("\"'")
+        if value:
+            result[match.group(1)] = value
+    return result
+
+
+def _desktop_update_status() -> dict[str, Any]:
+    latest_path = DESKTOP_DOWNLOAD_ROOT / "latest.yml"
+    files: list[dict[str, Any]] = []
+    latest_info = _file_info(latest_path)
+    latest_info.update({"key": "latest", "label": "latest.yml"})
+    files.append(latest_info)
+    metadata: dict[str, str] = {}
+    error = None
+    try:
+        if latest_path.exists():
+            metadata = _parse_latest_yml(latest_path.read_text(encoding="utf-8-sig"))
+    except Exception as exc:
+        error = exc.__class__.__name__
+
+    version = metadata.get("version")
+    installer_name = Path(metadata.get("path") or "").name
+    installer_path = DESKTOP_DOWNLOAD_ROOT / installer_name if installer_name else None
+    blockmap_path = DESKTOP_DOWNLOAD_ROOT / f"{installer_name}.blockmap" if installer_name else None
+
+    if installer_path:
+        installer_info = _file_info(installer_path)
+        installer_info.update({"key": "installer", "label": installer_name})
+        files.append(installer_info)
+    if blockmap_path:
+        blockmap_info = _file_info(blockmap_path)
+        blockmap_info.update({"key": "blockmap", "label": blockmap_path.name})
+        files.append(blockmap_info)
+
+    expected_name = f"SalesDesktop Setup {version}.exe" if version else None
+    warnings: list[str] = []
+    if not latest_path.exists():
+        warnings.append("latest.yml_missing")
+    if not version:
+        warnings.append("version_missing")
+    if not installer_path or not installer_path.exists():
+        warnings.append("installer_missing")
+    if not blockmap_path or not blockmap_path.exists():
+        warnings.append("blockmap_missing")
+    if expected_name and installer_name and installer_name != expected_name:
+        warnings.append("installer_version_mismatch")
+    if error:
+        warnings.append(error)
+
+    return {
+        "status": "ok" if not warnings else "warning",
+        "downloadRoot": str(DESKTOP_DOWNLOAD_ROOT),
+        "version": version,
+        "path": installer_name or None,
+        "sha512": metadata.get("sha512"),
+        "files": files,
+        "warnings": warnings,
+    }
+
+
+def _knowledge_index_status(cur) -> dict[str, Any]:
+    from .knowledge import KNOWLEDGE_UPLOAD_ROOT, ensure_knowledge_schema
+
+    ensure_knowledge_schema(cur)
+    cur.execute("""
+        SELECT extraction_status, COUNT(*) AS total
+        FROM knowledge_attachments
+        GROUP BY extraction_status
+    """)
+    counts = {
+        str(row.get("extraction_status") or "pending"): int(row.get("total") or 0)
+        for row in cur.fetchall()
+    }
+    cur.execute("SELECT COUNT(*) AS total FROM knowledge_attachments")
+    total_row = cur.fetchone() or {}
+    cur.execute("SELECT MAX(extracted_at) AS last_extracted_at FROM knowledge_attachments")
+    last_row = cur.fetchone() or {}
+    cur.execute("SELECT id, article_id, stored_name FROM knowledge_attachments")
+    missing_files = []
+    for row in cur.fetchall():
+        path = KNOWLEDGE_UPLOAD_ROOT / str(row.get("article_id")) / str(row.get("stored_name") or "")
+        if not path.exists():
+            missing_files.append(int(row.get("id") or 0))
+
+    failed = counts.get("failed", 0)
+    pending = counts.get("pending", 0)
+    missing = counts.get("missing", 0) + len(missing_files)
+    last_extracted_at = last_row.get("last_extracted_at")
+    warnings = []
+    if pending:
+        warnings.append("pending")
+    if failed:
+        warnings.append("failed")
+    if missing:
+        warnings.append("missing_files")
+
+    return {
+        "status": "ok" if not warnings else "warning",
+        "attachmentCount": int(total_row.get("total") or 0),
+        "indexedCount": counts.get("ok", 0),
+        "pendingCount": pending,
+        "failedCount": failed,
+        "emptyCount": counts.get("empty", 0),
+        "unsupportedCount": counts.get("unsupported", 0),
+        "missingFileCount": missing,
+        "counts": counts,
+        "lastExtractedAt": last_extracted_at.isoformat(sep=" ") if isinstance(last_extracted_at, datetime) else None,
+        "warnings": warnings,
+    }
 
 
 ACCOUNTING_REPORT_ROOT = Path(r"D:\每日销量日报")
@@ -324,12 +446,20 @@ def _run_retail_accounting_report_task(target_day: date | None = None, force: bo
         raise RuntimeError("吉方会计日报脚本返回内容不是 JSON") from exc
 
 
-def _overall_status(cache_items: list[dict[str, Any]], api_summary: dict[str, Any], automation: list[dict[str, Any]]) -> str:
+def _overall_status(
+    cache_items: list[dict[str, Any]],
+    api_summary: dict[str, Any],
+    automation: list[dict[str, Any]],
+    knowledge: dict[str, Any] | None = None,
+    updater: dict[str, Any] | None = None,
+) -> str:
     if any(not item.get("exists") or not item.get("valid") for item in cache_items):
         return "warning"
     if api_summary.get("failed24h", 0) > 0:
         return "warning"
     if any(item.get("status") == "failed" for item in automation[:10]):
+        return "warning"
+    if any(item and item.get("status") != "ok" for item in (knowledge, updater)):
         return "warning"
     return "ok"
 
@@ -552,7 +682,9 @@ def system_health():
             api = _api_summary(cur)
             automation = _automation_rows(cur)
             ai = _ai_status(cur)
-            status = _overall_status(cache_items, api, automation)
+            knowledge = _knowledge_index_status(cur)
+            updater = _desktop_update_status()
+            status = _overall_status(cache_items, api, automation, knowledge, updater)
             return jsonify({"code": 0, "message": "success", "data": {
                 "status": status,
                 "checkedAt": datetime.now().isoformat(sep=" "),
@@ -561,11 +693,15 @@ def system_health():
                     "backend": {"status": "ok"},
                     "database": {"status": "ok" if db_ok else "error"},
                     "openrouter": {"status": "ok" if ai["configured"] else "warning"},
+                    "knowledgeIndex": {"status": knowledge["status"]},
+                    "desktopUpdate": {"status": updater["status"]},
                 },
                 "api": api,
                 "cache": {"items": cache_items, "refresh": dict(REFRESH_CACHE_STATUS)},
                 "automation": automation,
                 "ai": ai,
+                "knowledge": knowledge,
+                "updater": updater,
             }})
     finally:
         conn.close()

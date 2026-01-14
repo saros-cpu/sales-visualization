@@ -25,6 +25,9 @@ export interface KnowledgeAttachment {
   originalName: string;
   fileSize: number;
   mimeType?: string;
+  extractionStatus?: 'pending' | 'ok' | 'empty' | 'unsupported' | 'failed' | 'missing';
+  extractionError?: string;
+  extractedAt?: string;
   createdAt?: string;
 }
 
@@ -85,9 +88,10 @@ export async function getKnowledgeBootstrap(): Promise<{
   spaces: KnowledgeSpace[];
   categories: KnowledgeCategory[];
   canManage: boolean;
+  canReindex: boolean;
 }> {
   const res = await client.get('/knowledge/bootstrap');
-  return res.data || { spaces: [], categories: [], canManage: false };
+  return res.data || { spaces: [], categories: [], canManage: false, canReindex: false };
 }
 
 export async function getKnowledgeArticles(params: Record<string, any> = {}): Promise<{
@@ -128,7 +132,15 @@ export async function uploadKnowledgeAttachment(articleId: number, file: File) {
     body: form,
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.message || `HTTP ${res.status}`);
+  if (!res.ok) {
+    const fallback = body?.message || `HTTP ${res.status}`;
+    const messages: Record<string, string> = {
+      attachment_too_large: '附件超过大小限制',
+      attachment_type_not_allowed: '不支持的附件类型',
+      file_required: '请选择附件',
+    };
+    throw new Error(messages[String(fallback)] || fallback);
+  }
   return body?.data ?? body;
 }
 
@@ -139,5 +151,10 @@ export async function downloadKnowledgeAttachment(id: number, filename: string) 
 
 export async function deleteKnowledgeAttachment(id: number) {
   const res = await client.delete(`/knowledge/attachments/${id}`);
+  return res.data;
+}
+
+export async function reindexKnowledgeAttachments(limit = 100) {
+  const res = await client.post('/knowledge/attachments/reindex', { limit });
   return res.data;
 }

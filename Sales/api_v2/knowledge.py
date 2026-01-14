@@ -5,9 +5,11 @@ import mimetypes
 import os
 import re
 import uuid
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree as ET
 
 import pymysql
 from flask import jsonify, request, send_file
@@ -21,6 +23,27 @@ from .permission_service import ensure_permission_schema, get_effective_auth, ha
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 KNOWLEDGE_UPLOAD_ROOT = PROJECT_ROOT / "knowledge_uploads"
+KNOWLEDGE_MAX_ATTACHMENT_BYTES = int(os.getenv("SALES_KNOWLEDGE_MAX_ATTACHMENT_MB", "50")) * 1024 * 1024
+KNOWLEDGE_MAX_EXTRACTED_CHARS = int(os.getenv("SALES_KNOWLEDGE_MAX_EXTRACTED_CHARS", "200000"))
+KNOWLEDGE_ALLOWED_ATTACHMENT_EXTENSIONS = {
+    ".csv",
+    ".doc",
+    ".docx",
+    ".gif",
+    ".jpeg",
+    ".jpg",
+    ".md",
+    ".pdf",
+    ".png",
+    ".ppt",
+    ".pptx",
+    ".rar",
+    ".rtf",
+    ".txt",
+    ".xls",
+    ".xlsx",
+    ".zip",
+}
 KNOWLEDGE_SEARCH_KEYWORDS = (
     "报表中心", "报表", "模板", "分享", "导出", "下载",
     "零售", "批发", "合同", "称重", "支付方式", "现金", "刷卡", "金额", "单位", "万", "索姆",
@@ -33,6 +56,12 @@ KNOWLEDGE_SEARCH_KEYWORDS = (
 
 def _safe_execute(cur, sql: str, params: tuple[Any, ...] | None = None) -> None:
     cur.execute(sql, params or ())
+
+
+def _ensure_column(cur, table: str, column: str, ddl: str) -> None:
+    cur.execute(f"SHOW COLUMNS FROM {table} LIKE %s", (column,))
+    if not cur.fetchone():
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
 
 
 def ensure_knowledge_schema(cur) -> None:
@@ -126,6 +155,10 @@ def ensure_knowledge_schema(cur) -> None:
             KEY idx_article (article_id, created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """)
+    _ensure_column(cur, "knowledge_attachments", "extraction_status", "extraction_status VARCHAR(32) NOT NULL DEFAULT 'pending' AFTER mime_type")
+    _ensure_column(cur, "knowledge_attachments", "extracted_text", "extracted_text LONGTEXT NULL AFTER extraction_status")
+    _ensure_column(cur, "knowledge_attachments", "extraction_error", "extraction_error VARCHAR(255) NULL AFTER extracted_text")
+    _ensure_column(cur, "knowledge_attachments", "extracted_at", "extracted_at TIMESTAMP NULL AFTER extraction_error")
     _seed_knowledge_catalog(cur)
 
 
@@ -501,8 +534,125 @@ def _can_manage(cur, user: dict[str, Any]) -> bool:
     return user["role"] == "admin" or has_permission(cur, user["id"], "knowledge:manage", user["role"])
 
 
+def _can_reindex(cur, user: dict[str, Any]) -> bool:
+    return user["role"] == "admin" or has_permission(cur, user["id"], "knowledge:reindex", user["role"])
+
+
 def _can_delete_attachment(user: dict[str, Any]) -> bool:
     return user["role"] == "admin"
+
+
+def _attachment_extension(original_name: str, safe_name: str = "") -> str:
+    return Path(safe_name or original_name or "").suffix.lower()
+
+
+def _attachment_allowed(original_name: str, safe_name: str = "") -> bool:
+    return _attachment_extension(original_name, safe_name) in KNOWLEDGE_ALLOWED_ATTACHMENT_EXTENSIONS
+
+
+def _decode_text_bytes(data: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-16", "gb18030", "cp1251", "latin-1"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="ignore")
+
+
+def _normalize_extracted_text(text: str) -> str:
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", " ", text or "")
+    text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = text.strip()
+    if len(text) > KNOWLEDGE_MAX_EXTRACTED_CHARS:
+        text = text[:KNOWLEDGE_MAX_EXTRACTED_CHARS].rstrip()
+    return text
+
+
+def _xml_text_nodes(xml_bytes: bytes) -> list[str]:
+    root = ET.fromstring(xml_bytes)
+    values: list[str] = []
+    for node in root.iter():
+        tag = str(node.tag).rsplit("}", 1)[-1]
+        if tag in {"t", "v"} and node.text:
+            values.append(node.text)
+    return values
+
+
+def _extract_from_zip_xml(path: Path, member_prefixes: tuple[str, ...]) -> str:
+    values: list[str] = []
+    with zipfile.ZipFile(path) as archive:
+        for name in archive.namelist():
+            if not name.endswith(".xml") or not any(name.startswith(prefix) for prefix in member_prefixes):
+                continue
+            try:
+                values.extend(_xml_text_nodes(archive.read(name)))
+            except Exception:
+                continue
+    return _normalize_extracted_text("\n".join(value for value in values if value))
+
+
+def _extract_from_text_file(path: Path, ext: str) -> str:
+    text = _decode_text_bytes(path.read_bytes())
+    if ext == ".rtf":
+        text = re.sub(r"\\'[0-9a-fA-F]{2}", " ", text)
+        text = re.sub(r"\\[a-zA-Z]+-?\d* ?", " ", text)
+        text = text.replace("{", " ").replace("}", " ")
+    return _normalize_extracted_text(text)
+
+
+def _extract_from_pdf(path: Path) -> str:
+    try:
+        from pypdf import PdfReader  # type: ignore
+    except Exception:
+        try:
+            from PyPDF2 import PdfReader  # type: ignore
+        except Exception as exc:
+            raise RuntimeError("pdf_parser_not_available") from exc
+    reader = PdfReader(str(path))
+    parts = []
+    for page in reader.pages[:100]:
+        try:
+            parts.append(page.extract_text() or "")
+        except Exception:
+            continue
+    return _normalize_extracted_text("\n".join(parts))
+
+
+def _extract_from_legacy_office(path: Path) -> str:
+    data = path.read_bytes()
+    parts: list[str] = []
+    for match in re.finditer(rb"(?:[\x20-\x7e]\x00){4,}", data):
+        parts.append(match.group(0).decode("utf-16le", errors="ignore"))
+    for match in re.finditer(rb"[\x20-\x7e]{6,}", data):
+        parts.append(match.group(0).decode("latin-1", errors="ignore"))
+    for match in re.finditer(rb"(?:[\x00-\x7f][\x04-\x05]){4,}", data):
+        parts.append(match.group(0).decode("utf-16le", errors="ignore"))
+    return _normalize_extracted_text("\n".join(parts))
+
+
+def _extract_attachment_text(path: Path, original_name: str) -> tuple[str, str, str | None]:
+    ext = Path(original_name or path.name).suffix.lower()
+    try:
+        if ext in {".txt", ".md", ".csv", ".rtf"}:
+            text = _extract_from_text_file(path, ext)
+        elif ext == ".docx":
+            text = _extract_from_zip_xml(path, ("word/",))
+        elif ext == ".pptx":
+            text = _extract_from_zip_xml(path, ("ppt/slides/", "ppt/notesSlides/"))
+        elif ext == ".xlsx":
+            text = _extract_from_zip_xml(path, ("xl/sharedStrings.xml", "xl/worksheets/"))
+        elif ext == ".pdf":
+            text = _extract_from_pdf(path)
+        elif ext in {".doc", ".ppt", ".xls"}:
+            text = _extract_from_legacy_office(path)
+        else:
+            return "unsupported", "", None
+        if not text:
+            return "empty", "", None
+        return "ok", text, None
+    except Exception as exc:
+        return "failed", "", str(exc)[:255]
 
 
 def _role_codes(user: dict[str, Any]) -> set[str]:
@@ -572,6 +722,9 @@ def _attachment_item(row: dict[str, Any]) -> dict[str, Any]:
         "originalName": row["original_name"],
         "fileSize": int(row.get("file_size") or 0),
         "mimeType": row.get("mime_type"),
+        "extractionStatus": row.get("extraction_status") or "pending",
+        "extractionError": row.get("extraction_error") or "",
+        "extractedAt": _time_text(row.get("extracted_at")),
         "createdAt": _time_text(row.get("created_at")),
     }
 
@@ -685,9 +838,16 @@ def _query_articles(cur, user: dict[str, Any], include_archived_for_manager: boo
     if q:
         terms = _search_terms(q)
         for term in terms:
-            where.append("(a.title LIKE %s OR a.summary LIKE %s OR a.content LIKE %s OR a.tags_json LIKE %s)")
+            where.append("""(
+                a.title LIKE %s OR a.summary LIKE %s OR a.content LIKE %s OR a.tags_json LIKE %s
+                OR EXISTS (
+                    SELECT 1 FROM knowledge_attachments f
+                    WHERE f.article_id = a.id AND f.extracted_text LIKE %s
+                    LIMIT 1
+                )
+            )""")
             like = f"%{term}%"
-            params.extend([like, like, like, like])
+            params.extend([like, like, like, like, like])
 
     _safe_execute(cur, f"""
         SELECT a.*, s.space_name, c.category_name
@@ -715,6 +875,7 @@ def knowledge_bootstrap():
             if error:
                 return error
             can_manage = _can_manage(cur, user)
+            can_reindex = _can_reindex(cur, user)
             conn.commit()
             _safe_execute(cur, """
                 SELECT id, space_key, space_name, description, sort_order
@@ -753,6 +914,7 @@ def knowledge_bootstrap():
                 "spaces": spaces,
                 "categories": categories,
                 "canManage": can_manage,
+                "canReindex": can_reindex,
             }})
     finally:
         conn.close()
@@ -826,7 +988,7 @@ def create_knowledge_article():
             user, error = _require_view(cur)
             if error:
                 return error
-            if not _can_manage(cur, user):
+            if not _can_reindex(cur, user):
                 return _forbidden()
             try:
                 item = _article_payload(data)
@@ -953,21 +1115,49 @@ def upload_knowledge_attachment(article_id: int):
             file = request.files.get("file")
             if not file or not file.filename:
                 return jsonify({"code": 4221, "message": "file_required", "data": None}), 422
+            if request.content_length and request.content_length > KNOWLEDGE_MAX_ATTACHMENT_BYTES:
+                return jsonify({"code": 4130, "message": "attachment_too_large", "data": {
+                    "maxBytes": KNOWLEDGE_MAX_ATTACHMENT_BYTES,
+                }}), 413
             article_dir = KNOWLEDGE_UPLOAD_ROOT / str(article_id)
             article_dir.mkdir(parents=True, exist_ok=True)
             original_name = file.filename
             safe_name = secure_filename(original_name)
-            ext = Path(safe_name or original_name).suffix[:20]
+            if not _attachment_allowed(original_name, safe_name):
+                return jsonify({"code": 4150, "message": "attachment_type_not_allowed", "data": {
+                    "allowedExtensions": sorted(KNOWLEDGE_ALLOWED_ATTACHMENT_EXTENSIONS),
+                }}), 415
+            ext = _attachment_extension(original_name, safe_name)[:20]
             stored_name = f"{uuid.uuid4().hex}{ext}"
             saved_path = article_dir / stored_name
             file.save(saved_path)
             size = saved_path.stat().st_size
+            if size > KNOWLEDGE_MAX_ATTACHMENT_BYTES:
+                try:
+                    saved_path.unlink()
+                except OSError:
+                    pass
+                return jsonify({"code": 4130, "message": "attachment_too_large", "data": {
+                    "maxBytes": KNOWLEDGE_MAX_ATTACHMENT_BYTES,
+                }}), 413
             mime_type = file.mimetype or mimetypes.guess_type(original_name)[0]
+            extraction_status, extracted_text, extraction_error = _extract_attachment_text(saved_path, original_name)
             _safe_execute(cur, """
                 INSERT INTO knowledge_attachments
-                    (article_id, original_name, stored_name, file_size, mime_type, uploaded_by)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (article_id, original_name, stored_name, size, mime_type, user["id"]))
+                    (article_id, original_name, stored_name, file_size, mime_type,
+                     extraction_status, extracted_text, extraction_error, extracted_at, uploaded_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+            """, (
+                article_id,
+                original_name,
+                stored_name,
+                size,
+                mime_type,
+                extraction_status,
+                extracted_text,
+                extraction_error,
+                user["id"],
+            ))
             conn.commit()
             return jsonify({"code": 0, "message": "success", "data": {
                 "id": cur.lastrowid,
@@ -975,6 +1165,8 @@ def upload_knowledge_attachment(article_id: int):
                 "originalName": original_name,
                 "fileSize": size,
                 "mimeType": mime_type,
+                "extractionStatus": extraction_status,
+                "extractionError": extraction_error or "",
             }})
     finally:
         conn.close()
@@ -1039,6 +1231,33 @@ def delete_knowledge_attachment(attachment_id: int):
         conn.close()
 
 
+@bp_v2.route("/knowledge/attachments/reindex", methods=["POST"])
+@jwt_required()
+def reindex_knowledge_attachments():
+    payload = request.get_json(silent=True) or {}
+    try:
+        limit = max(1, min(int(payload.get("limit") or 100), 500))
+    except Exception:
+        limit = 100
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            ensure_knowledge_schema(cur)
+            user, error = _require_view(cur)
+            if error:
+                return error
+            if not _can_manage(cur, user):
+                return _forbidden()
+            result = _reindex_knowledge_attachments(cur, limit=limit)
+            conn.commit()
+            return jsonify({"code": 0, "message": "success", "data": result})
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def _snippet(text: str, query: str, max_len: int = 180) -> str:
     compact = re.sub(r"\s+", " ", text or "").strip()
     if len(compact) <= max_len:
@@ -1059,6 +1278,72 @@ def _snippet(text: str, query: str, max_len: int = 180) -> str:
     return prefix + compact[start:end].rstrip() + suffix
 
 
+def _attachment_search_text(cur, article_id: int, query: str) -> str:
+    terms = _search_terms(query)
+    if not terms:
+        return ""
+    where = []
+    params: list[Any] = [article_id]
+    for term in terms:
+        where.append("extracted_text LIKE %s")
+        params.append(f"%{term}%")
+    _safe_execute(cur, f"""
+        SELECT original_name, extracted_text
+        FROM knowledge_attachments
+        WHERE article_id = %s
+          AND extraction_status = 'ok'
+          AND ({' OR '.join(where)})
+        ORDER BY created_at DESC, id DESC
+        LIMIT 3
+    """, tuple(params))
+    parts = []
+    for row in cur.fetchall():
+        text = _snippet(row.get("extracted_text") or "", query, max_len=260)
+        if text:
+            parts.append(f"{row.get('original_name') or 'attachment'}: {text}")
+    return "\n".join(parts)
+
+
+def _reindex_knowledge_attachments(cur, limit: int = 100) -> dict[str, Any]:
+    _safe_execute(cur, """
+        SELECT id, article_id, original_name, stored_name
+        FROM knowledge_attachments
+        WHERE extraction_status IN ('pending', 'failed')
+           OR extraction_status IS NULL
+        ORDER BY id ASC
+        LIMIT %s
+    """, (limit,))
+    rows = list(cur.fetchall())
+    updated = 0
+    missing = 0
+    failed = 0
+    for row in rows:
+        path = KNOWLEDGE_UPLOAD_ROOT / str(row["article_id"]) / row["stored_name"]
+        if not path.exists():
+            status, text, error = "missing", "", "file_missing"
+            missing += 1
+        else:
+            status, text, error = _extract_attachment_text(path, row.get("original_name") or path.name)
+            if status == "failed":
+                failed += 1
+        _safe_execute(cur, """
+            UPDATE knowledge_attachments
+            SET extraction_status = %s,
+                extracted_text = %s,
+                extraction_error = %s,
+                extracted_at = NOW()
+            WHERE id = %s
+        """, (status, text, error, row["id"]))
+        updated += 1
+    return {
+        "scanned": len(rows),
+        "updated": updated,
+        "missing": missing,
+        "failed": failed,
+        "limit": limit,
+    }
+
+
 @bp_v2.route("/knowledge/search", methods=["GET"])
 @jwt_required()
 def search_knowledge():
@@ -1074,7 +1359,8 @@ def search_knowledge():
             items = []
             for row in rows:
                 item = _article_row_to_item(row)
-                item["snippet"] = _snippet(" ".join([row.get("summary") or "", row.get("content") or ""]), q)
+                attachment_text = _attachment_search_text(cur, int(row["id"]), q) if q else ""
+                item["snippet"] = _snippet(" ".join([row.get("summary") or "", row.get("content") or "", attachment_text]), q)
                 items.append(item)
             conn.commit()
             return jsonify({"code": 0, "message": "success", "data": {"items": items, "total": len(items)}})
@@ -1106,9 +1392,16 @@ def search_knowledge_snippets(user_id: int, question: str, limit: int = 3) -> li
             where = ["a.status = 'published'", "a.allow_ai = TRUE"]
             params: list[Any] = []
             for term in terms:
-                where.append("(a.title LIKE %s OR a.summary LIKE %s OR a.content LIKE %s OR a.tags_json LIKE %s)")
+                where.append("""(
+                    a.title LIKE %s OR a.summary LIKE %s OR a.content LIKE %s OR a.tags_json LIKE %s
+                    OR EXISTS (
+                        SELECT 1 FROM knowledge_attachments f
+                        WHERE f.article_id = a.id AND f.extracted_text LIKE %s
+                        LIMIT 1
+                    )
+                )""")
                 like = f"%{term}%"
-                params.extend([like, like, like, like])
+                params.extend([like, like, like, like, like])
             _safe_execute(cur, f"""
                 SELECT a.*, s.space_name, c.category_name
                 FROM knowledge_articles a
@@ -1122,6 +1415,7 @@ def search_knowledge_snippets(user_id: int, question: str, limit: int = 3) -> li
             conn.commit()
             result = []
             for row in rows[:limit]:
+                attachment_text = _attachment_search_text(cur, int(row["id"]), query)
                 result.append({
                     "id": row["id"],
                     "title": row["title"],
@@ -1129,7 +1423,7 @@ def search_knowledge_snippets(user_id: int, question: str, limit: int = 3) -> li
                     "categoryName": row.get("category_name"),
                     "moduleKey": row.get("module_key") or "",
                     "tags": _json_list(row.get("tags_json")),
-                    "snippet": _snippet(" ".join([row.get("summary") or "", row.get("content") or ""]), query),
+                    "snippet": _snippet(" ".join([row.get("summary") or "", row.get("content") or "", attachment_text]), query),
                     "updatedAt": _time_text(row.get("updated_at") or row.get("created_at")),
                 })
             return result

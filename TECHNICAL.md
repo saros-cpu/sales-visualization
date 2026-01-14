@@ -2,6 +2,46 @@
 
 ## 版本历史
 
+### 本地待验收 (2026-07-21)
+
+**运行治理与知识库索引增强**：
+
+1. **知识库附件解析**
+   - `knowledge_attachments` 增加 `extraction_status`、`extracted_text`、`extraction_error`、`extracted_at`。
+   - 支持上传后解析 `docx/pptx/xlsx/pdf/txt/md/csv/rtf` 等附件文本，旧版 Office 格式做尽力解析。
+   - 文章搜索和 AI 助手知识库引用同时检索文章正文与附件解析文本。
+
+2. **权限细分**
+   - 附件删除继续保持仅管理员可执行。
+   - 附件重建索引拆分为 `knowledge:reindex`，不再直接复用 `knowledge:manage`。
+
+3. **系统健康运行治理**
+   - `/api/v2/system/health` 增加 `knowledge` 与 `updater` 摘要。
+   - 客户端系统健康新增运行治理页签，显示知识库索引统计、更新目录版本、安装包和 blockmap 状态。
+
+4. **发布前自检**
+   - 新增 `scripts/preflight-release.ps1`。
+   - 检查 Python 编译、客户端 TypeScript、Web 构建、敏感文档 Git 跟踪、Nginx `/download/` 路由和更新包完整性。
+
+---
+
+### v3.8.17 (2026-07-21)
+
+**AI 助手跨月日期区间汇总修复**：
+
+1. **日期解析**
+   - `_assistant_period` 优先识别完整起止日期区间。
+   - 支持 `2026年1月1日到2026年6月30日`、`2026-01-01 至 2026-06-30` 等表达。
+
+2. **快照汇总**
+   - `_retail_snapshot_for_period` 支持连续完整多月直接读取并合并 `monthly_*.json`。
+   - 避免跨月整区间退化为单月或逐日快照缺失时降级。
+
+3. **发布信息**
+   - 客户端版本、后端 `APP_BUILD` 和桌面自动更新包同步到 `3.8.17`。
+
+---
+
 ### v3.8.16 (2026-07-21)
 
 **Windows 客户端自动更新签名校验修复**：
@@ -865,7 +905,7 @@ if (e.key === 'Delete' && isAdmin) {
 2. **tsc + vite build 验证** — `npx tsc --noEmit && npx vite build`，确保编译和构建通过
 3. **提交** — `git add` + `git commit`，提交信息写明版本号与改动摘要
 4. **打包客户端** — `npm run electron:build` 生成安装包、`.blockmap` 和 `latest.yml`
-5. **部署到服务器** — 将 `release_build/SalesDesktop Setup {version}.exe`、对应 `.blockmap` 和 `latest.yml` 复制到 `SalesDesktop/` 根目录，供 Nginx `/download/` 服务（公网 `http://198.51.100.10/download/`）
+5. **部署到服务器** — 将 `release_build/SalesDesktop Setup {version}.exe`、对应 `.blockmap` 和 `latest.yml` 同步到 `SalesDesktop/download/` 专用发布目录，供 Nginx `/download/` 服务（公网 `http://198.51.100.10/download/`）
 
 > ⚠️ 如果用户要求先不部署（如仍在开发中），则第 4-5 步暂缓，但第 1-3 步不能跳过。
 
@@ -946,4 +986,4 @@ if (e.key === 'Delete' && isAdmin) {
 
 **文档维护**：每次版本更新后更新此文档
 
-**最后更新**：2026-07-21（v3.8.16）
+**最后更新**：2026-07-21（v3.8.17）

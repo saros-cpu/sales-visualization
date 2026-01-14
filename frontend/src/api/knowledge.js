@@ -22,3 +22,6 @@ export const downloadKnowledgeAttachment = (id, filename) =>
 
 export const deleteKnowledgeAttachment = (id) =>
   del(`/api/v2/knowledge/attachments/${id}`);
+
+export const reindexKnowledgeAttachments = (limit = 100) =>
+  post('/api/v2/knowledge/attachments/reindex', { limit });

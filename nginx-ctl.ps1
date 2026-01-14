@@ -7,13 +7,27 @@ $action = if ($args[0]) { $args[0] } else { "status" }
 
 # Sync project nginx.conf to nginx home before any action
 if ($action -ne "status" -and (Test-Path $projectConf)) {
-    (Get-Content $projectConf -Raw) -replace "__PROJECT_ROOT__", $PSScriptRoot.Replace("\", "/") | Set-Content "$nginxHome\conf\nginx.conf" -Force
+    $nginxConfig = (Get-Content $projectConf -Raw) -replace "__PROJECT_ROOT__", $PSScriptRoot.Replace("\", "/")
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText((Join-Path $nginxHome "conf\nginx.conf"), $nginxConfig, $utf8NoBom)
     if (Test-Path "$PSScriptRoot\mime.types") {
         Copy-Item "$PSScriptRoot\mime.types" "$nginxHome\conf\mime.types" -Force
     }
 }
 
 Push-Location $nginxHome
+$nginxExe = (Resolve-Path ".\nginx.exe").Path
+
+function Stop-SalesNginx {
+    .\nginx.exe -s stop 2>$null
+    Start-Sleep -Seconds 1
+    $remaining = Get-Process -Name "nginx" -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -eq $nginxExe
+    }
+    if ($remaining) {
+        $remaining | Stop-Process -Force
+    }
+}
 
 switch ($action) {
     "start" {
@@ -29,12 +43,11 @@ switch ($action) {
         }
     }
     "stop" {
-        .\nginx.exe -s stop
+        Stop-SalesNginx
         Write-Host "Nginx stopped"
     }
     "restart" {
-        .\nginx.exe -s stop
-        Start-Sleep -Seconds 1
+        Stop-SalesNginx
         Start-Process -FilePath ".\nginx.exe" -WindowStyle Hidden
         Start-Sleep -Seconds 1
         $proc = Get-Process -Name "nginx" -ErrorAction SilentlyContinue

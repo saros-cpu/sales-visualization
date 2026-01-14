@@ -39,6 +39,7 @@ import {
   getKnowledgeArticle,
   getKnowledgeArticles,
   getKnowledgeBootstrap,
+  reindexKnowledgeAttachments,
   updateKnowledgeArticle,
   uploadKnowledgeAttachment,
   type KnowledgeArticle,
@@ -91,6 +92,25 @@ function fileSizeText(size?: number) {
   return `${value} B`;
 }
 
+function extractionStatusText(status?: string) {
+  const map: Record<string, string> = {
+    ok: '已解析',
+    empty: '无可提取文本',
+    unsupported: '暂不支持解析',
+    failed: '解析失败',
+    missing: '文件缺失',
+    pending: '待解析',
+  };
+  return map[status || 'pending'] || '待解析';
+}
+
+function extractionStatusColor(status?: string) {
+  if (status === 'ok') return 'green';
+  if (status === 'failed' || status === 'missing') return 'red';
+  if (status === 'empty' || status === 'unsupported') return 'default';
+  return 'orange';
+}
+
 export default function KnowledgeBase() {
   const { t } = useTranslation();
   const { message } = AntApp.useApp();
@@ -109,10 +129,12 @@ export default function KnowledgeBase() {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<KnowledgeArticle | null>(null);
+  const [canReindex, setCanReindex] = useState(false);
   const [form] = Form.useForm();
   const formSpaceId = Form.useWatch('spaceId', form);
   const isAdmin = user?.role === 'admin';
   const mayManage = canManage || isAdmin || can('knowledge:manage');
+  const mayReindex = canReindex || isAdmin || can('knowledge:reindex');
 
   const activeSpace = useMemo(() => spaces.find(item => item.id === spaceId) || spaces[0], [spaces, spaceId]);
   const visibleCategories = useMemo(
@@ -129,6 +151,7 @@ export default function KnowledgeBase() {
     setSpaces(data.spaces || []);
     setCategories(data.categories || []);
     setCanManage(Boolean(data.canManage));
+    setCanReindex(Boolean(data.canReindex));
     if (!spaceId && data.spaces?.[0]) setSpaceId(data.spaces[0].id);
   };
 
@@ -278,6 +301,20 @@ export default function KnowledgeBase() {
       await loadArticle(selectedArticle.id);
     } catch (err: any) {
       message.error(err?.message || t('common.deleteFailedRetry'));
+    }
+  };
+
+  const reindexAttachments = async () => {
+    if (!mayReindex) {
+      message.error(t('common.noPermission'));
+      return;
+    }
+    try {
+      const result = await reindexKnowledgeAttachments(200);
+      message.success(`已重建 ${result?.updated ?? 0} 个附件索引`);
+      if (selectedArticle?.id) await loadArticle(selectedArticle.id);
+    } catch (err: any) {
+      message.error(err?.message || '附件索引重建失败');
     }
   };
 
@@ -434,11 +471,22 @@ export default function KnowledgeBase() {
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Text strong><PaperClipOutlined /> 附件</Text>
-                    {mayManage && selectedArticle.status !== 'archived' && (
-                      <Upload customRequest={uploadAttachment} showUploadList={false}>
-                        <Button icon={<UploadOutlined />}>上传附件</Button>
-                      </Upload>
-                    )}
+                    <Space>
+                      {mayManage && selectedArticle.status !== 'archived' && (
+                        <Upload
+                          customRequest={uploadAttachment}
+                          showUploadList={false}
+                          accept=".doc,.docx,.ppt,.pptx,.xls,.xlsx,.pdf,.txt,.md,.csv,.rtf,.zip,.rar,.png,.jpg,.jpeg,.gif"
+                        >
+                          <Button icon={<UploadOutlined />}>上传附件</Button>
+                        </Upload>
+                      )}
+                      {mayReindex && (
+                        <Button icon={<ReloadOutlined />} onClick={reindexAttachments}>
+                          重建索引
+                        </Button>
+                      )}
+                    </Space>
                   </Space>
                   <List
                     size="small"
@@ -471,7 +519,20 @@ export default function KnowledgeBase() {
                       >
                         <List.Item.Meta
                           title={item.originalName}
-                          description={`${fileSizeText(item.fileSize)} · ${item.createdAt || '-'}`}
+                          description={(
+                            <Space size={6} wrap>
+                              <Text type="secondary">{fileSizeText(item.fileSize)}</Text>
+                              <Text type="secondary">{item.createdAt || '-'}</Text>
+                              <Tag color={extractionStatusColor(item.extractionStatus)}>
+                                {extractionStatusText(item.extractionStatus)}
+                              </Tag>
+                              {item.extractionError && (
+                                <Tooltip title={item.extractionError}>
+                                  <Text type="danger">解析信息</Text>
+                                </Tooltip>
+                              )}
+                            </Space>
+                          )}
                         />
                       </List.Item>
                     )}

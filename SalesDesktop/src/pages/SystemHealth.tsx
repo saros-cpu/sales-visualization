@@ -48,6 +48,9 @@ export default function SystemHealth() {
   const apiTop = data.api?.topPaths24h || [];
   const automation = data.automation || [];
   const ai = data.ai || {};
+  const knowledge = data.knowledge || {};
+  const updater = data.updater || {};
+  const updaterFiles = updater.files || [];
   const canRunAutomation = user?.role === 'admin' || can('system_health:manage');
 
   const serviceCards = useMemo(() => Object.entries(data.services || {}).map(([key, value]: [string, any]) => ({
@@ -181,6 +184,54 @@ export default function SystemHealth() {
                   { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any, row: any) => v || (row.missingKeys?.length ? row.missingKeys.join(', ') : '-') },
                 ]}
               />
+            ),
+          },
+          {
+            key: 'governance',
+            label: t('systemHealth.governance'),
+            children: (
+              <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                <Alert
+                  showIcon
+                  type={knowledge.status === 'ok' && updater.status === 'ok' ? 'success' : 'warning'}
+                  message={knowledge.status === 'ok' && updater.status === 'ok'
+                    ? t('systemHealth.governanceOk')
+                    : t('systemHealth.governanceWarning')}
+                  description={updater.downloadRoot ? t('systemHealth.updateRoot', { path: updater.downloadRoot }) : undefined}
+                />
+                <KpiGrid items={[
+                  { key: 'attachments', title: t('systemHealth.attachmentCount'), value: knowledge.attachmentCount ?? 0, span: 6 },
+                  { key: 'indexed', title: t('systemHealth.indexedCount'), value: knowledge.indexedCount ?? 0, tone: (knowledge.failedCount ?? 0) > 0 ? 'danger' : 'success', span: 6 },
+                  { key: 'pending', title: t('systemHealth.pendingCount'), value: knowledge.pendingCount ?? 0, tone: (knowledge.pendingCount ?? 0) > 0 ? 'warning' : 'success', span: 6 },
+                  { key: 'failed', title: t('systemHealth.failedCount'), value: knowledge.failedCount ?? 0, goodWhen: 'down', tone: (knowledge.failedCount ?? 0) > 0 ? 'danger' : 'success', span: 6 },
+                  { key: 'unsupported', title: t('systemHealth.unsupportedCount'), value: knowledge.unsupportedCount ?? 0, span: 6 },
+                  { key: 'missingFiles', title: t('systemHealth.missingFileCount'), value: knowledge.missingFileCount ?? 0, goodWhen: 'down', tone: (knowledge.missingFileCount ?? 0) > 0 ? 'danger' : 'success', span: 6 },
+                  { key: 'updateVersion', title: t('systemHealth.updateVersion'), value: updater.version || '-', span: 6 },
+                  { key: 'lastExtracted', title: t('systemHealth.lastExtracted'), value: knowledge.lastExtractedAt || '-', span: 6 },
+                ]} />
+                {((knowledge.warnings || []).length > 0 || (updater.warnings || []).length > 0) && (
+                  <Alert
+                    showIcon
+                    type="warning"
+                    message={t('systemHealth.governanceWarnings')}
+                    description={[...(knowledge.warnings || []), ...(updater.warnings || [])].join(', ')}
+                  />
+                )}
+                <Table
+                  size="small"
+                  rowKey="key"
+                  dataSource={updaterFiles}
+                  pagination={false}
+                  title={() => t('systemHealth.updateFiles')}
+                  columns={[
+                    { title: t('systemHealth.updateFile'), dataIndex: 'label', width: 260 },
+                    { title: t('common.status'), dataIndex: 'exists', width: 110, render: (_: any, row: any) => <Tag color={row.exists && row.valid ? 'green' : 'red'}>{row.exists && row.valid ? t('common.ok') : t('common.failed')}</Tag> },
+                    { title: t('systemHealth.size'), dataIndex: 'size', width: 120, render: (v: number) => formatBytes(v) },
+                    { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170, render: (v: any) => v || '-' },
+                    { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any) => v || '-' },
+                  ]}
+                />
+              </Space>
             ),
           },
           {

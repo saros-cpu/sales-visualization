@@ -644,6 +644,21 @@
     "cache": "缓存监控",
     "automation": "自动任务",
     "ai": "AI 状态",
+    "governance": "运行治理",
+    "governanceOk": "知识库索引与客户端更新源状态正常",
+    "governanceWarning": "知识库索引或客户端更新源需要检查",
+    "governanceWarnings": "治理提醒",
+    "attachmentCount": "附件总数",
+    "indexedCount": "已索引",
+    "pendingCount": "待索引",
+    "failedCount": "失败",
+    "unsupportedCount": "不支持解析",
+    "missingFileCount": "文件缺失",
+    "lastExtracted": "最近索引",
+    "updateVersion": "发布版本",
+    "updateRoot": "更新目录：{{path}}",
+    "updateFiles": "更新文件",
+    "updateFile": "文件",
     "manualRunHint": "手动执行用于自动任务失败后的补救，正常情况下无需每天点击。零售/自用油快照会进入后台队列执行。",
     "runConfirm": "确认手动执行该自动任务？",
     "runExchangeRates": "补跑汇率快照",
@@ -707,7 +722,9 @@
       "api": "后端接口",
       "cache": "缓存文件",
       "automation": "自动任务",
-      "ai": "AI 服务"
+      "ai": "AI 服务",
+      "knowledgeIndex": "知识库索引",
+      "desktopUpdate": "客户端更新源"
     }
   },
   "map": {

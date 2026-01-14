@@ -6,6 +6,19 @@
 
 ## 版本更新记录
 
+### 2026-07-21 (本地待验收)
+
+- **运行治理**：系统健康新增运行治理状态，检查知识库附件索引和客户端 `/download` 更新源完整性。
+- **知识库索引**：附件上传后解析文本入库，搜索和 AI 只读引用可命中附件内容；重建索引拆分为 `knowledge:reindex` 权限。
+- **代码图谱**：初始化本机 CodeGraph 索引，`.codegraph/` 与 `.code-review-graph/` 纳入忽略。
+- **发布自检**：新增 `scripts/preflight-release.ps1`，用于提交/打包/部署前统一检查 Python、客户端、Web、敏感文档和更新包。
+
+### 2026-07-21 (v3.8.17)
+
+- **AI 助手日期区间修复**：优先识别完整起止日期，避免“2026年1月1日到2026年6月30日”被误判为 1 月。
+- **零售快照汇总**：连续完整多月区间直接合并月度快照，跨月零售销量、吨位和金额按区间汇总返回。
+- **发布同步**：客户端、后端构建标识和桌面更新包版本同步到 `3.8.17`。
+
 ### 2026-07-21 (v3.8.16)
 
 - **自动更新修复**：修复未签名 Windows 安装包因 `publisherName` 签名校验导致客户端下载后拒绝安装的问题。
@@ -880,7 +893,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.8.16（与 version.ts 对齐）
+├── package.json              # 版本 3.8.17（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）
@@ -904,7 +917,7 @@ SalesDesktop/
 │   └── hooks/                # 自定义 hooks
 ├── dist/                     # Vite 构建产物（dev: :5173, prod: electron loadFile）
 ├── release_build/            # 安装包输出目录
-└── latest.yml                # 自动更新清单
+└── download/                 # Nginx /download/ 专用发布目录（latest.yml + 当前安装包）
 ```
 
 **架构特点**：

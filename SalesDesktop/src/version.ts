@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.16';
+export const VERSION = '3.8.17';
 export const BUILD_DATE = '2026-07-21';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.17',
+    date: '2026-07-21',
+    type: 'patch',
+    changes: [
+      '修复：AI 助手优先识别完整日期区间，避免“2026年1月1日到2026年6月30日”被误判为 1 月',
+      '优化：零售快照查询支持连续完整多月直接合并月度快照，提升跨月汇总准确性和速度',
+      '发布：同步客户端、后端构建标识和更新包版本信息到 3.8.17',
+    ],
+  },
   {
     version: '3.8.16',
     date: '2026-07-21',

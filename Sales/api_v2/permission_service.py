@@ -60,6 +60,7 @@ PERMISSION_CATALOG = [
     ("map:view", "map", "view", "menu", "View map", 100),
     ("knowledge:view", "knowledge", "view", "menu", "View knowledge base", 105),
     ("knowledge:manage", "knowledge", "manage", "api", "Manage knowledge base", 106),
+    ("knowledge:reindex", "knowledge", "reindex", "button", "Rebuild knowledge attachment index", 107),
     ("users:view", "users", "view", "menu", "View users", 110),
     ("users:create", "users", "create", "button", "Create user", 111),
     ("users:update", "users", "update", "button", "Update user", 112),
