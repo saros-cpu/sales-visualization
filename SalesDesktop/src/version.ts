@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.17';
+export const VERSION = '3.8.18';
 export const BUILD_DATE = '2026-07-21';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.18',
+    date: '2026-07-21',
+    type: 'patch',
+    changes: [
+      '修复：自用油报表改为直接按原软件报表编号24数据来源生成，车牌/司机取 report24 Driver，不再使用项目内车牌映射或发电机特例兜底',
+      '修复：自用油筛选条件统一为 BasePaymentTypeKey=2 且 DerivedPaymentTypeKey=2，升数、金额、质量逐笔对齐原24来源',
+      '优化：自用油导出重量列只使用原始 Mass，不再通过密度补算，避免与原24导出数据产生差异',
+    ],
+  },
   {
     version: '3.8.17',
     date: '2026-07-21',

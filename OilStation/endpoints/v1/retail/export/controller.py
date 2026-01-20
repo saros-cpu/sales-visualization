@@ -6,11 +6,7 @@ from loguru import logger
 
 from db import get_connection
 from export_excel import (
-    RESOURCE_DENSITY,
     RESOURCE_NAMES,
-    _allow_fixed_density_fallback,
-    _infer_resource_code_daily,
-    _missing_density_fallback_density,
 )
 from endpoints.v1.retail.export.service.workbook import (
     _can_reuse_report_workbook,
@@ -29,12 +25,6 @@ SELF_USE_COMPANY_IDS = {
     11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
     35, 40, 43, 44, 45, 46, 55, 56,
 }
-SELF_USE_DENSITY_BY_PRODUCT = {
-    product_name: float(RESOURCE_DENSITY.get(resource_key, 0) or 0)
-    for resource_key, product_name in RESOURCE_NAMES.items()
-}
-
-
 def _self_use_float(value):
     try:
         return float(value or 0)
@@ -42,56 +32,8 @@ def _self_use_float(value):
         return 0.0
 
 
-def _self_use_report_resource_key(record):
-    try:
-        resource_key = int(record.get('resourceKey') or 0)
-    except (TypeError, ValueError):
-        resource_key = 0
-    try:
-        shop_key = int(record.get('shopKey') or 0)
-    except (TypeError, ValueError):
-        shop_key = 0
-    try:
-        resource_shop_key = int(record.get('resourceShopKey') or 0) or None
-    except (TypeError, ValueError):
-        resource_shop_key = None
-    volume = _self_use_float(record.get('volume'))
-    amount = _self_use_float(record.get('amount'))
-    price = amount / volume if volume else 0
-    return _infer_resource_code_daily(resource_key, price, resource_shop_key, shop_key)
-
-
-def _self_use_density(record):
-    density = _self_use_float(record.get('density'))
-    if density:
-        return density
-    fallback_density = _missing_density_fallback_density(
-        _self_use_report_resource_key(record),
-        record.get('date'),
-    )
-    if fallback_density:
-        return fallback_density
-    if not _allow_fixed_density_fallback(record.get('date')):
-        return 0.0
-    product_name = str(record.get('productName') or '').strip()
-    density = SELF_USE_DENSITY_BY_PRODUCT.get(product_name)
-    if density:
-        return density
-    try:
-        resource_key = int(record.get('resourceKey') or 0)
-    except (TypeError, ValueError):
-        resource_key = 0
-    return float(RESOURCE_DENSITY.get(resource_key, 0) or 0)
-
-
 def _self_use_weight_kg(record):
-    mass = _self_use_float(record.get('mass'))
-    if mass:
-        return mass
-    density = _self_use_density(record)
-    if not density:
-        return 0.0
-    return _self_use_float(record.get('volume')) * density
+    return _self_use_float(record.get('mass'))
 
 
 def _group_self_use_totals_by_product(totals):

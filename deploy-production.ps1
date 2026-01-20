@@ -8,6 +8,8 @@ $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $frontendDir = Join-Path $projectRoot "frontend"
 $desktopDir = Join-Path $projectRoot "SalesDesktop"
 $desktopDownloadDir = Join-Path $desktopDir "download"
+$desktopReleaseBuildDir = Join-Path $desktopDir "release_build"
+$desktopUpdateRetention = 5
 $confSource = Join-Path $projectRoot "nginx.conf"
 
 Write-Host "====================================="
@@ -53,17 +55,53 @@ if ($latestSource) {
         exit 1
     }
 
-    Get-ChildItem -Path $desktopDownloadDir -File | Where-Object {
-        $_.Name -eq "latest.yml" -or $_.Name -like "SalesDesktop Setup *.exe" -or $_.Name -like "SalesDesktop Setup *.exe.blockmap"
-    } | Remove-Item -Force
-    Copy-Item $latestSource (Join-Path $desktopDownloadDir "latest.yml") -Force
-    Copy-Item $installerSource (Join-Path $desktopDownloadDir $installerName) -Force
+    $releaseInstallers = @()
+    if (Test-Path $desktopReleaseBuildDir) {
+        $releaseInstallers = Get-ChildItem -Path $desktopReleaseBuildDir -Filter "SalesDesktop Setup *.exe" -File | ForEach-Object {
+            if ($_.BaseName -match "^SalesDesktop Setup (?<version>\d+(?:\.\d+){1,3})$") {
+                [PSCustomObject]@{
+                    Name = $_.Name
+                    Version = [version]$Matches.version
+                    Path = $_.FullName
+                }
+            }
+        }
+    }
+    $selectedInstallers = @($releaseInstallers | Sort-Object Version -Descending | Select-Object -First $desktopUpdateRetention)
+    if (-not ($selectedInstallers | Where-Object { $_.Name -eq $installerName })) {
+        $selectedInstallers = @([PSCustomObject]@{
+            Name = $installerName
+            Version = $null
+            Path = $installerSource
+        }) + $selectedInstallers
+    }
+    $selectedInstallers = @($selectedInstallers | Group-Object Name | ForEach-Object { $_.Group[0] })
 
-    $blockmapSource = "$installerSource.blockmap"
-    if (Test-Path $blockmapSource) {
-        Copy-Item $blockmapSource (Join-Path $desktopDownloadDir "$installerName.blockmap") -Force
+    $keepNames = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
+    [void]$keepNames.Add("latest.yml")
+    foreach ($item in $selectedInstallers) {
+        [void]$keepNames.Add($item.Name)
+        $sourceBlockmap = "$($item.Path).blockmap"
+        if (Test-Path $sourceBlockmap) {
+            [void]$keepNames.Add("$($item.Name).blockmap")
+        }
+    }
+    Get-ChildItem -Path $desktopDownloadDir -File | Where-Object {
+        ($_.Name -eq "latest.yml" -or $_.Name -like "SalesDesktop Setup *.exe" -or $_.Name -like "SalesDesktop Setup *.exe.blockmap") -and -not $keepNames.Contains($_.Name)
+    } | Remove-Item -Force
+
+    Copy-Item $latestSource (Join-Path $desktopDownloadDir "latest.yml") -Force
+    foreach ($item in $selectedInstallers) {
+        Copy-Item $item.Path (Join-Path $desktopDownloadDir $item.Name) -Force
+        $sourceBlockmap = "$($item.Path).blockmap"
+        if (Test-Path $sourceBlockmap) {
+            Copy-Item $sourceBlockmap (Join-Path $desktopDownloadDir "$($item.Name).blockmap") -Force
+        } else {
+            Write-Host "  WARNING: Blockmap not found for $($item.Name)"
+        }
     }
     Write-Host "  Desktop update files ready: $desktopDownloadDir"
+    Write-Host "  Retained desktop updater versions: $($selectedInstallers.Name -join ', ')"
 } else {
     Write-Host "  WARNING: latest.yml not found, skipping desktop update file sync"
 }

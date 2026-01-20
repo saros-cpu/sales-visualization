@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -32,7 +33,6 @@ from export_excel import (
     SK30_RSK_MAP,
     STATION_RK_CORRECTIONS,
     _infer_resource_code_daily,
-    _missing_density_fallback_density,
 )
 
 from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, get_report_month_inventory, query_month_summary
@@ -40,128 +40,88 @@ from flask import Blueprint, jsonify, request
 from loguru import logger
 
 
-# Self-use plate mapping exported from the retail server software
-# (desktop 车牌对照.xlsx). 9001 = ExampleCo ХОЗ-НУЖДЫ, and person.COD_OWN
-# stores this 1-69 number. selling.PersonKey is only the database row id and
-# must not be treated as the plate number because it diverges after row 21.
-SELF_USE_HOZ_NEEDS_GROUP = 9001
 SELF_USE_GENERATOR_GROUP = 9002
-SELF_USE_PERSON_OVERRIDES = {
-    1: '01KG000AA',
-    2: '01KG000AA',
-    3: '01KG000AA',
-    4: '01KG000AA',
-    5: '01KG000AA',
-    6: '01KG000AA',
-    7: '01KG000AA',
-    8: '01KG000AA',
-    9: '01KG000AA',
-    10: '01KG000AA',
-    11: '01KG000AA',
-    12: '01KG000AA',
-    13: '01KG000AA',
-    14: '01KG000AA',
-    15: '01KG000AA',
-    16: '01KG000AA',
-    17: '01KG000AA',
-    18: '01KG000AA',
-    19: '01KG000AA',
-    20: '01KG000AA',
-    21: 'Генератор',
-    22: '01KG000AA-Водитель',
-    23: '01KG000AA-Водитель',
-    24: '01KG000AA-Водитель',
-    25: '01KG000AA-Водитель',
-    26: '01KG000AA-Водитель',
-    27: '01KG000AA-Водитель',
-    28: '01KG000AA-Водитель S-10',
-    29: '01KG000AA - Водитель',
-    30: '01KG000AA-Водитель',
-    31: '01KG000AA-Водитель',
-    32: '01KG000AA-Водитель',
-    33: '01KG000AA-Водитель',
-    34: '01KG000AA-Водитель',
-    35: '01KG000AA',
-    36: '01KG000AA-Водитель',
-    37: '01KG000AA-Водитель',
-    38: '01KG000AA-Водитель',
-    39: '01KG000AA-Водитель',
-    40: '01KG000AA',
-    41: '01KG000AA',
-    42: '01KG000AA - Водитель',
-    43: '01KG000AA',
-    44: '01KG000AA',
-    45: '01KG000AA',
-    46: '01KG000AA',
-    47: '01KG000AA-Бухгалтерия',
-    48: '01KG000AA-Водитель',
-    49: '01KG000AA-Водитель',
-    50: '01KG000AA-Водитель',
-    51: '01KG000AA',
-    52: '01KG000AA-Водитель',
-    53: '01KG000AA-Водитель',
-    54: '01KG000AA-Водитель',
-    55: '01KG000AA',
-    56: '01KG000AA',
-    57: '01KG000AA-Водитель',
-    58: '01KG000AA - Водитель',
-    59: '01KG000AA-Водитель',
-    60: '01KG000AA-Водитель',
-    61: '01KG000AA-Водитель',
-    62: '08G617ASK-Водитель',
-    63: '01KG000AA-Водитель',
-    64: '01KG000AA-Б.Водитель.А',
-    65: '01KG000AA-Б.Водитель.Б',
-    66: '01KG000AA-И.Водитель.Д',
-    67: '01KG000AA-Водитель',
-    68: '01KG000AA-Водитель',
-    69: '01KG000AA-Водитель',
-}
-
-# Self-use transactions whose PersonKey is wrong in the read-only ocw DB
-# (the retail software records a different self-use number). Keyed by
-# TransactionKey; value is the correct plate+driver per the retail software.
-SELF_USE_TXN_OVERRIDES = {
-    9273114: 'Генератор',
-    9312728: 'Генератор',
-    9422896: 'Генератор',
-    9482235: 'Генератор',
-    9507306: 'Генератор',
-}
-
-SELF_USE_GENERATOR_OVERRIDES = {
-    1: 'Генератор',
-}
-SELF_USE_GENERATOR_NUMBER = 1
-SELF_USE_2377SH_PLATE = '01KG000AA'
-SELF_USE_CTY-32_REGION = '\u695a\u6cb3\u5dde'
+SELF_USE_REPORT24_SOURCE_VERSION = 'report24-only-v1'
 
 
-def _self_use_generator_label():
-    return SELF_USE_GENERATOR_OVERRIDES.get(
-        SELF_USE_GENERATOR_NUMBER,
-        '\u0413\u0435\u043d\u0435\u0440\u0430\u0442\u043e\u0440',
-    )
+def _strip_retail_text(value):
+    return str(value or '').strip(' \t\r\n')
 
 
-def _self_use_txn_forces_generator(transaction_key):
-    override = SELF_USE_TXN_OVERRIDES.get(_safe_int(transaction_key))
-    return bool(override) and _compact_plate(override) == _compact_plate(_self_use_generator_label())
+def _encode_legacy_retail_text(value):
+    data = bytearray()
+    for char in str(value or ''):
+        code = ord(char)
+        if code <= 0xFF:
+            data.append(code)
+            continue
+        data.extend(char.encode('cp1252'))
+    return bytes(data)
 
 
-def _self_use_2377sh_outside_CTY-32(plate_number, station_info):
-    region = str((station_info or {}).get('region') or '').strip()
+def _retail_text_score(value):
+    text = str(value or '')
+    cyrillic = len(re.findall(r'[\u0400-\u04FF]', text))
+    latin_noise = len(re.findall(r'[\u00C0-\u00FF]', text))
+    direct_noise = len(re.findall(
+        r'(?:Ã|Â|Ð|Ñ|Гѓ|ГВ|Гў|вЂ|Р[ Ў“’Ћ†ІТВРђќ]|С[“‹]|Т[ђ‘]|Г[ѓВўЌі°§ ¤Ђ«ЁҐЊ±•ў©І®ЎЄђ‘])',
+        text,
+    ))
+    pair_noise = max(0, len(re.findall(r'[РСГ][\u0400-\u04FF]', text)) - 2)
+    replacement_noise = text.count('\ufffd')
     return (
-        bool(region)
-        and region != SELF_USE_CTY-32_REGION
-        and _compact_plate(plate_number) == _compact_plate(SELF_USE_2377SH_PLATE)
+        cyrillic * 5
+        - latin_noise * 6
+        - direct_noise * 35
+        - pair_noise * 25
+        - replacement_noise * 100
+        - max(0, len(text) - 160)
     )
 
 
-def _apply_self_use_generator_rules(plate_number, station_info, transaction_key=0, group_key=0, self_use_number=0):
-    if _self_use_txn_forces_generator(transaction_key) or _self_use_2377sh_outside_CTY-32(plate_number, station_info):
-        return _self_use_generator_label(), SELF_USE_GENERATOR_GROUP, SELF_USE_GENERATOR_NUMBER
-    return plate_number, group_key, self_use_number
+def _decode_retail_report_text(value):
+    if value is None:
+        return ''
+    if isinstance(value, bytes):
+        candidates = []
+        for encoding in ('utf-8', 'cp1251', 'latin1', 'cp1252'):
+            try:
+                candidates.append(_strip_retail_text(value.decode(encoding)))
+            except UnicodeError:
+                pass
+    else:
+        candidates = [_strip_retail_text(value)]
+
+    max_len = max([len(item) for item in candidates] + [0]) * 2 + 20
+    seen = set(candidates)
+    queue = list(candidates)
+    transforms = [
+        lambda text: _strip_retail_text(text.encode('latin1').decode('cp1251')),
+        lambda text: _strip_retail_text(text.encode('cp1252').decode('utf-8')),
+        lambda text: _strip_retail_text(text.encode('cp1251').decode('utf-8')),
+        lambda text: _strip_retail_text(text.encode('utf-8').decode('cp1251')),
+        lambda text: _strip_retail_text(text.encode('utf-8').decode('latin1')),
+        lambda text: _strip_retail_text(text.encode('cp1252').decode('cp1251')),
+        lambda text: _strip_retail_text(_encode_legacy_retail_text(text).decode('utf-8')),
+        lambda text: _strip_retail_text(_encode_legacy_retail_text(text).decode('cp1251')),
+    ]
+    for _ in range(5):
+        next_queue = []
+        for text in queue:
+            for transform in transforms:
+                try:
+                    candidate = transform(text)
+                except UnicodeError:
+                    continue
+                if len(candidate) > max_len or candidate in seen:
+                    continue
+                seen.add(candidate)
+                candidates.append(candidate)
+                next_queue.append(candidate)
+        queue = next_queue
+        if not queue:
+            break
+    return max(candidates, key=_retail_text_score) if candidates else ''
 
 
 def _map_resource_key_to_name(rk, shop_key, price=0.0, rsk=None):
@@ -272,7 +232,13 @@ def _build_self_use_month_response(year_month):
 
     cache_key = f'self_use:{year_month}'
     cached = get_cached(cache_key)
-    if cached and isinstance(cached.get('records'), list) and _self_use_snapshot_has_group_fields(cached) and _self_use_snapshot_has_mass_fields(cached):
+    if (
+        cached
+        and isinstance(cached.get('records'), list)
+        and _self_use_snapshot_has_group_fields(cached)
+        and _self_use_snapshot_has_mass_fields(cached)
+        and _self_use_snapshot_has_report24_fields(cached)
+    ):
         return _normalize_self_use_snapshot(cached)
 
     conn = get_connection()
@@ -286,12 +252,21 @@ def _build_self_use_month_response(year_month):
             SELECT s.TransactionKey, s.ShopKey, s.ResourceKey, s.Volume, s.ShopCost,
                    DATE(s.TransactionDatetime) as trx_date,
                    TIME(s.TransactionDatetime) as trx_time,
-                   s.PersonKey, CAST(p.Name AS BINARY) as plate_number,
+                   s.PersonKey, s.PersonShopKey, CAST(p.Name AS BINARY) as plate_number,
+                   CAST(driver.Parameters AS BINARY) as report24_driver,
                    s.ResourceShopKey, p.COD_A, p.COD_OWN,
                    s.Mass, s.Density
             FROM selling s
             LEFT JOIN person p ON s.PersonKey = p.PersonKey
-            WHERE s.DerivedPaymentTypeKey = 2
+            LEFT JOIN (
+                SELECT c.ShopKey, c.SeekKey,
+                       SUBSTR(MAX(CONCAT(CAST(c.DateTimeEnd AS CHAR), c.Parameters)), 20) AS Parameters
+                FROM change_log c
+                WHERE c.GuideKey = 590336
+                GROUP BY c.ShopKey, c.SeekKey
+            ) driver ON driver.ShopKey = s.ShopKey AND driver.SeekKey = s.PersonShopKey
+            WHERE s.BasePaymentTypeKey = 2
+              AND s.DerivedPaymentTypeKey = 2
               AND s.TransactionDatetime >= %s AND s.TransactionDatetime < %s
             ORDER BY s.TransactionDatetime DESC
         """, (ym_start, ym_end))
@@ -305,46 +280,27 @@ def _build_self_use_month_response(year_month):
             rk = int(r[2]) if r[2] else 0
             vol = float(r[3] or 0)
             amt = float(r[4] or 0)
-            rsk = int(r[9]) if r[9] else 0
-            group_key = _safe_int(r[10])
+            person_shop_key = _safe_int(r[8])
+            rsk = int(r[11]) if r[11] else 0
+            group_key = _safe_int(r[12])
             pk = int(r[7]) if r[7] else 0
-            self_use_number = _self_use_number_for_record(pk, group_key, _safe_int(r[11]))
+            self_use_number = _self_use_number_for_record(pk, group_key, _safe_int(r[13]))
             total_volume += vol
             total_amount += amt
-            mass = float(r[12] or 0)
-            density = float(r[13] or 0)
+            mass = float(r[14] or 0)
+            density = float(r[15] or 0)
             price = amt / vol if vol else 0
             report_rk = _self_use_report_resource_key(rk, sk, price, rsk)
-            if not mass and not density and vol:
-                density = _missing_density_fallback_density(report_rk, str(r[5]) if r[5] else ym_start)
-            if not mass and vol and density:
-                mass = vol * density
+            if not density and vol and mass:
+                density = mass / vol
             total_mass += mass
             info = SHOP_KEY_MAP.get(sk, {'name': f'Station-{sk}', 'short': '', 'region': ''})
             product_name = RESOURCE_NAMES.get(report_rk) or _map_resource_key_to_name(rk, sk, price, rsk)
-            raw_name = r[8]
-            if raw_name:
-                if isinstance(raw_name, bytes):
-                    plate_number = raw_name.decode('cp1251', errors='replace').strip()
-                else:
-                    plate_number = raw_name.strip()
-            else:
-                plate_number = ''
-            tk = int(r[0])
-            plate_number = _normalize_self_use_plate(
-                plate_number,
-                person_key=pk,
-                transaction_key=tk,
-                group_key=group_key,
-                self_use_number=self_use_number,
-            )
-            plate_number, group_key, self_use_number = _apply_self_use_generator_rules(
-                plate_number,
-                info,
-                transaction_key=tk,
-                group_key=group_key,
-                self_use_number=self_use_number,
-            )
+            raw_name = r[9]
+            raw_plate_number = _decode_retail_report_text(raw_name)
+            report24_driver = _decode_retail_report_text(r[10])
+            plate_number = report24_driver
+            plate_source = 'report24_driver'
 
             records.append({
                 'transactionKey': int(r[0]),
@@ -361,13 +317,18 @@ def _build_self_use_month_response(year_month):
                 'density': round(density or (mass / vol if vol else 0), 3),
                 'amount': round(amt, 2),
                 'plateNumber': plate_number,
+                'rawPlateNumber': raw_plate_number,
+                'report24Driver': report24_driver,
+                'plateSource': plate_source,
                 'personKey': pk,
+                'personShopKey': person_shop_key,
                 'personGroup': group_key,
                 'selfUseNumber': self_use_number,
             })
 
         result = {
             'month': year_month,
+            'sourceVersion': SELF_USE_REPORT24_SOURCE_VERSION,
             'records': records,
             'summary': {
                 'totalVolume': round(total_volume, 2),
@@ -394,7 +355,6 @@ def _normalize_self_use_snapshot(snapshot):
     changed = False
     records = snapshot.get('records', [])
     total_mass = 0.0
-    product_fallbacks = _self_use_snapshot_product_fallbacks(records)
     for rec in records:
         old_values = dict(rec)
         tk = _safe_int(rec.get('transactionKey'))
@@ -407,42 +367,25 @@ def _normalize_self_use_snapshot(snapshot):
         amount = round(float(rec.get('amount') or 0), 2)
         price = amount / volume if volume else 0
         report_rk = _self_use_report_resource_key(rk, sk, price, rsk)
-        if not mass and not density and volume:
-            density = round(_missing_density_fallback_density(report_rk, rec.get('date')), 3)
-        if not mass and volume and density:
-            mass = round(volume * density, 3)
         if not density and volume and mass:
             density = round(mass / volume, 3)
         person_key = _safe_int(rec.get('personKey'))
         group_key = _safe_int(rec.get('personGroup'))
-        self_use_number = _self_use_number_for_record(
-            person_key,
-            group_key,
-            _safe_int(rec.get('selfUseNumber')),
-        )
+        self_use_number = _safe_int(rec.get('selfUseNumber'))
         info = SHOP_KEY_MAP.get(sk, {'name': rec.get('stationName') or f'Station-{sk}', 'short': rec.get('stationShort') or '', 'region': ''})
 
         rec['time'] = str(rec.get('time') or '')
         rec['stationName'] = info.get('name') or rec.get('stationName') or f'Station-{sk}'
         rec['stationShort'] = info.get('short') or rec.get('stationShort') or ''
-        plate_number = _normalize_self_use_plate(
-            rec.get('plateNumber'),
-            person_key=person_key,
-            transaction_key=tk,
-            group_key=group_key,
-            self_use_number=self_use_number,
-        )
-        plate_number, group_key, self_use_number = _apply_self_use_generator_rules(
-            plate_number,
-            info,
-            transaction_key=tk,
-            group_key=group_key,
-            self_use_number=self_use_number,
-        )
+        raw_plate_number = _decode_retail_report_text(rec.get('rawPlateNumber') or rec.get('plateNumber'))
+        report24_driver = _decode_retail_report_text(rec.get('report24Driver'))
+        plate_number = report24_driver
+        plate_source = 'report24_driver'
         rec['plateNumber'] = plate_number
+        rec['rawPlateNumber'] = raw_plate_number
+        rec['report24Driver'] = report24_driver
+        rec['plateSource'] = plate_source
         product_name = RESOURCE_NAMES.get(report_rk) or _map_resource_key_to_name(rk, sk, price, rsk)
-        if product_name.startswith('Other-') and volume == 0 and amount == 0:
-            product_name = product_fallbacks.get((sk, rk), product_name)
         rec['productName'] = product_name
         rec['resourceKey'] = report_rk if report_rk >= 100 else rk
         rec['personKey'] = person_key
@@ -461,6 +404,7 @@ def _normalize_self_use_snapshot(snapshot):
         summary['totalWeightKg'] = total_weight
         changed = True
     if changed and snapshot.get('month'):
+        snapshot['sourceVersion'] = SELF_USE_REPORT24_SOURCE_VERSION
         set_cached(f"self_use:{snapshot['month']}", snapshot)
     return snapshot
 
@@ -475,6 +419,18 @@ def _self_use_snapshot_has_mass_fields(snapshot):
     return all('mass' in rec and 'density' in rec for rec in records)
 
 
+def _self_use_snapshot_has_report24_fields(snapshot):
+    records = snapshot.get('records', [])
+    return (
+        snapshot.get('sourceVersion') == SELF_USE_REPORT24_SOURCE_VERSION
+        and all(
+        'report24Driver' in rec
+            and rec.get('plateSource') == 'report24_driver'
+        for rec in records
+        )
+    )
+
+
 def _self_use_number_for_record(person_key, group_key=0, cod_own=0):
     person_key = _safe_int(person_key)
     group_key = _safe_int(group_key)
@@ -486,24 +442,6 @@ def _self_use_number_for_record(person_key, group_key=0, cod_own=0):
     return cod_own
 
 
-def _self_use_snapshot_product_fallbacks(records):
-    counts = {}
-    for rec in records:
-        sk = _safe_int(rec.get('shopKey'))
-        rk = _safe_int(rec.get('resourceKey'))
-        rsk = _safe_int(rec.get('resourceShopKey'))
-        volume = round(float(rec.get('volume') or 0), 3)
-        amount = round(float(rec.get('amount') or 0), 2)
-        if volume == 0 and amount == 0:
-            continue
-        product_name = _map_resource_key_to_name(rk, sk, amount / volume if volume else 0, rsk)
-        if product_name.startswith('Other-'):
-            continue
-        bucket = counts.setdefault((sk, rk), {})
-        bucket[product_name] = bucket.get(product_name, 0) + 1
-    return {key: next(iter(bucket)) for key, bucket in counts.items() if len(bucket) == 1}
-
-
 def _safe_int(value, default=0):
     try:
         if value is None or value == '':
@@ -511,59 +449,6 @@ def _safe_int(value, default=0):
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
-def _normalize_self_use_plate(value, person_key=0, transaction_key=0, group_key=0, self_use_number=0):
-    if transaction_key in SELF_USE_TXN_OVERRIDES:
-        return SELF_USE_TXN_OVERRIDES[transaction_key]
-
-    group_key = _safe_int(group_key)
-    self_use_number = _safe_int(self_use_number)
-    person_key = _safe_int(person_key)
-    if group_key == SELF_USE_GENERATOR_GROUP:
-        mapped = SELF_USE_GENERATOR_OVERRIDES.get(self_use_number)
-        return mapped or 'Генератор'
-    if group_key in (0, SELF_USE_HOZ_NEEDS_GROUP) and self_use_number in SELF_USE_PERSON_OVERRIDES:
-        return SELF_USE_PERSON_OVERRIDES[self_use_number]
-
-    plate = str(value or '').strip()
-    numeric_plate = _safe_int(plate, None)
-    if group_key in (0, SELF_USE_HOZ_NEEDS_GROUP) and numeric_plate in SELF_USE_PERSON_OVERRIDES:
-        return SELF_USE_PERSON_OVERRIDES[numeric_plate]
-
-    plate = _repair_cp1251_mojibake(plate)
-    canonical = _canonical_self_use_plate(plate)
-    if canonical:
-        return canonical
-    if group_key == 0 and self_use_number == 0 and person_key in SELF_USE_PERSON_OVERRIDES:
-        return SELF_USE_PERSON_OVERRIDES[person_key]
-    return canonical
-
-
-def _repair_cp1251_mojibake(value):
-    if not value:
-        return ''
-    try:
-        return value.encode('latin1').decode('cp1251').strip()
-    except UnicodeError:
-        return value.strip()
-
-
-def _compact_plate(value):
-    return ''.join(str(value or '').upper().split())
-
-
-def _canonical_self_use_plate(value):
-    compact = _compact_plate(value)
-    if not compact:
-        return ''
-    for mapped in SELF_USE_PERSON_OVERRIDES.values():
-        if _compact_plate(mapped) == compact:
-            return mapped
-    for mapped in SELF_USE_TXN_OVERRIDES.values():
-        if _compact_plate(mapped) == compact:
-            return mapped
-    return value
 
 
 @analytics_api.route('/api/retail/self-use/<year_month>')

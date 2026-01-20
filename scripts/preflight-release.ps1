@@ -104,6 +104,29 @@ Invoke-Check "Desktop updater package files" {
     if ($latestText -notmatch "(?m)^\s*path:\s*SalesDesktop Setup $([regex]::Escape($version))\.exe\s*$") {
         throw "latest.yml path does not match installer name"
     }
+
+    $releaseBuildRoot = Join-Path $RepoRoot "SalesDesktop/release_build"
+    if (Test-Path -LiteralPath $releaseBuildRoot -PathType Container) {
+        $currentVersion = [version]$version
+        $previousInstaller = Get-ChildItem -Path $releaseBuildRoot -Filter "SalesDesktop Setup *.exe" -File | ForEach-Object {
+            if ($_.BaseName -match "^SalesDesktop Setup (?<version>\d+(?:\.\d+){1,3})$") {
+                [PSCustomObject]@{
+                    Name = $_.Name
+                    Version = [version]$Matches.version
+                }
+            }
+        } | Where-Object { $_.Version -lt $currentVersion } | Sort-Object Version -Descending | Select-Object -First 1
+
+        if ($previousInstaller) {
+            $previousInstallerPath = Join-Path $downloadRoot $previousInstaller.Name
+            $previousBlockmapPath = "$previousInstallerPath.blockmap"
+            foreach ($path in @($previousInstallerPath, $previousBlockmapPath)) {
+                if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                    throw "missing retained previous updater artifact $path"
+                }
+            }
+        }
+    }
 }
 
 Invoke-Check "Nginx download route shape" {

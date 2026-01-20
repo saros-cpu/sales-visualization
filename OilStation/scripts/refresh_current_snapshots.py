@@ -22,11 +22,11 @@ from cache_store import set_cached  # noqa: E402
 from constants import CLOSED_STATIONS, DEPOT_COORDS, SHOP_COORDS, SHOP_KEY_MAP  # noqa: E402
 from db import get_connection  # noqa: E402
 from endpoints.v1.retail.analytics.controller import (  # noqa: E402
-    _apply_self_use_generator_rules,
     _map_resource_key_to_name as _self_use_resource_name,
     _self_use_report_resource_key,
     _self_use_number_for_record,
-    _normalize_self_use_plate,
+    _decode_retail_report_text,
+    SELF_USE_REPORT24_SOURCE_VERSION,
 )
 from export_excel import (  # noqa: E402
     EXPORT_DIR,
@@ -856,12 +856,21 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
             SELECT s.TransactionKey, s.ShopKey, s.ResourceKey, s.Volume, s.ShopCost,
                    DATE(s.TransactionDatetime) as trx_date,
                    TIME(s.TransactionDatetime) as trx_time,
-                   s.PersonKey, CAST(p.Name AS BINARY) as plate_number,
+                   s.PersonKey, s.PersonShopKey, CAST(p.Name AS BINARY) as plate_number,
+                   CAST(driver.Parameters AS BINARY) as report24_driver,
                    s.ResourceShopKey, s.BasePrice, p.COD_A, p.COD_OWN,
                    s.Mass, s.Density
             FROM selling s
             LEFT JOIN person p ON s.PersonKey = p.PersonKey
-            WHERE s.DerivedPaymentTypeKey = 2
+            LEFT JOIN (
+                SELECT c.ShopKey, c.SeekKey,
+                       SUBSTR(MAX(CONCAT(CAST(c.DateTimeEnd AS CHAR), c.Parameters)), 20) AS Parameters
+                FROM change_log c
+                WHERE c.GuideKey = 590336
+                GROUP BY c.ShopKey, c.SeekKey
+            ) driver ON driver.ShopKey = s.ShopKey AND driver.SeekKey = s.PersonShopKey
+            WHERE s.BasePaymentTypeKey = 2
+              AND s.DerivedPaymentTypeKey = 2
               AND s.TransactionDatetime >= %s AND s.TransactionDatetime < %s
             ORDER BY s.TransactionDatetime DESC
         """, (ym_start, ym_end))
@@ -883,18 +892,17 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
             date_str = str(r[5]) if r[5] else ''
             time_str = str(r[6]) if r[6] else ''
             pk = int(r[7]) if r[7] else 0
-            rsk = int(r[9]) if r[9] else 0
-            base_price = float(r[10]) if len(r) > 10 and r[10] else None
-            group_key = int(r[11]) if len(r) > 11 and r[11] else 0
-            self_use_number = _self_use_number_for_record(pk, group_key, int(r[12]) if len(r) > 12 and r[12] else 0)
-            mass = float(r[13]) if len(r) > 13 and r[13] else 0.0
-            density = float(r[14]) if len(r) > 14 and r[14] else 0.0
+            person_shop_key = int(r[8]) if r[8] else 0
+            rsk = int(r[11]) if r[11] else 0
+            base_price = float(r[12]) if len(r) > 12 and r[12] else None
+            group_key = int(r[13]) if len(r) > 13 and r[13] else 0
+            self_use_number = _self_use_number_for_record(pk, group_key, int(r[14]) if len(r) > 14 and r[14] else 0)
+            mass = float(r[15]) if len(r) > 15 and r[15] else 0.0
+            density = float(r[16]) if len(r) > 16 and r[16] else 0.0
             price = amt / vol if vol else base_price
             report_rk = _self_use_report_resource_key(rk, sk, price, rsk)
-            if not mass and not density and vol:
-                density = _missing_density_fallback_density(report_rk, date_str)
-            if not mass and vol and density:
-                mass = vol * density
+            if not density and vol and mass:
+                density = mass / vol
 
             total_volume += vol
             total_amount += amt
@@ -903,23 +911,11 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
             info = SHOP_KEY_MAP.get(sk, {'name': f'Station-{sk}', 'short': '', 'region': ''})
             region = info.get('region', '')
             product_name = _self_use_resource_name(report_rk, sk, price, rsk)
-            raw_name = r[8]
-            if raw_name:
-                if isinstance(raw_name, bytes):
-                    plate_number = raw_name.decode('cp1251', errors='replace').strip()
-                else:
-                    plate_number = str(raw_name).strip()
-            else:
-                plate_number = ''
-            tk = int(r[0])
-            plate_number = _normalize_self_use_plate(plate_number, pk, tk, group_key, self_use_number)
-            plate_number, group_key, self_use_number = _apply_self_use_generator_rules(
-                plate_number,
-                info,
-                transaction_key=tk,
-                group_key=group_key,
-                self_use_number=self_use_number,
-            )
+            raw_name = r[9]
+            raw_plate_number = _decode_retail_report_text(raw_name)
+            report24_driver = _decode_retail_report_text(r[10])
+            plate_number = report24_driver
+            plate_source = 'report24_driver'
 
             records.append({
                 'transactionKey': int(r[0]),
@@ -936,7 +932,11 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
                 'density': round(density or (mass / vol if vol else 0), 3),
                 'amount': round(amt, 2),
                 'plateNumber': plate_number,
+                'rawPlateNumber': raw_plate_number,
+                'report24Driver': report24_driver,
+                'plateSource': plate_source,
                 'personKey': pk,
+                'personShopKey': person_shop_key,
                 'personGroup': group_key,
                 'selfUseNumber': self_use_number,
             })
@@ -1003,6 +1003,7 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
 
         return {
             'month': ym,
+            'sourceVersion': SELF_USE_REPORT24_SOURCE_VERSION,
             'records': records,
             'summary': {
                 'totalVolume': round(total_volume, 2),
