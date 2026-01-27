@@ -36,6 +36,7 @@ from .permission_service import has_permission
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 DESKTOP_ROOT = WORKSPACE_ROOT / "SalesDesktop"
 DESKTOP_DOWNLOAD_ROOT = DESKTOP_ROOT / "download"
+REPORT_COMPARE_ROOT = WORKSPACE_ROOT / "report_compare_outputs"
 
 
 def _file_info(path: Path, required_keys: set[str] | None = None) -> dict[str, Any]:
@@ -238,6 +239,112 @@ def _knowledge_index_status(cur) -> dict[str, Any]:
         "counts": counts,
         "lastExtractedAt": last_extracted_at.isoformat(sep=" ") if isinstance(last_extracted_at, datetime) else None,
         "warnings": warnings,
+    }
+
+
+def _load_json_file(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _latest_report_audit_status() -> dict[str, Any]:
+    if not REPORT_COMPARE_ROOT.exists():
+        return {"status": "unknown", "found": False, "warnings": ["report_compare_outputs_missing"]}
+
+    summaries = sorted(
+        REPORT_COMPARE_ROOT.rglob("对比摘要.json"),
+        key=lambda item: item.stat().st_mtime if item.exists() else 0,
+        reverse=True,
+    )
+    if not summaries:
+        return {"status": "unknown", "found": False, "warnings": ["report_audit_summary_missing"]}
+
+    summary_path = summaries[0]
+    data = _load_json_file(summary_path) or {}
+    diff_counts = data.get("diffCounts") if isinstance(data.get("diffCounts"), dict) else {}
+    period = data.get("period") if isinstance(data.get("period"), dict) else {}
+    try:
+        month_vs_254 = int(diff_counts.get("monthVs254") or 0)
+    except (TypeError, ValueError):
+        month_vs_254 = 0
+
+    workbook = data.get("comparisonWorkbook")
+    workbook_path = Path(str(workbook)) if workbook else None
+    original_workbook = data.get("originalPathWorkbook")
+    warnings: list[str] = []
+    if month_vs_254 > 0:
+        warnings.append("month_vs_254_pending")
+    if workbook_path and not workbook_path.exists():
+        warnings.append("comparison_workbook_missing")
+
+    return {
+        "status": "ok" if not warnings else "warning",
+        "found": True,
+        "summaryPath": str(summary_path),
+        "periodStart": period.get("start"),
+        "periodEnd": period.get("endInclusive"),
+        "monthVs254": month_vs_254,
+        "day20Vs84": int(diff_counts.get("day20Vs84") or 0),
+        "selfUseVs24": int(diff_counts.get("selfUseVs24") or 0),
+        "accountingVs84": int(diff_counts.get("accountingVs84") or 0),
+        "comparisonWorkbook": workbook,
+        "comparisonWorkbookExists": bool(workbook_path and workbook_path.exists()),
+        "originalPathWorkbook": original_workbook,
+        "updatedAt": datetime.fromtimestamp(summary_path.stat().st_mtime).isoformat(sep=" ", timespec="seconds"),
+        "warnings": warnings,
+    }
+
+
+def _retail_alert_status(cur) -> dict[str, Any]:
+    period = _active_month()
+    try:
+        cur.execute("""
+            SELECT insight_date, period_key, language, trend_anomalies, suggestions, source_summary, ai_status, generated_at
+            FROM retail_alert_insights
+            WHERE period_key = %s AND language = 'zh'
+            ORDER BY generated_at DESC
+            LIMIT 1
+        """, (period,))
+        row = cur.fetchone()
+    except pymysql.err.MySQLError as exc:
+        return {
+            "status": "unknown",
+            "periodKey": period,
+            "anomalyCount": 0,
+            "suggestions": [],
+            "warnings": [exc.__class__.__name__],
+        }
+    if not row:
+        return {
+            "status": "warning",
+            "periodKey": period,
+            "anomalyCount": 0,
+            "suggestions": [],
+            "warnings": ["retail_alert_insight_missing"],
+        }
+
+    try:
+        anomalies = json.loads(row.get("trend_anomalies") or "[]")
+    except Exception:
+        anomalies = []
+    try:
+        suggestions = json.loads(row.get("suggestions") or "[]")
+    except Exception:
+        suggestions = []
+    anomaly_count = len(anomalies) if isinstance(anomalies, list) else 0
+    generated_at = row.get("generated_at")
+    return {
+        "status": "warning" if anomaly_count else "ok",
+        "periodKey": row.get("period_key") or period,
+        "insightDate": row.get("insight_date").isoformat() if hasattr(row.get("insight_date"), "isoformat") else row.get("insight_date"),
+        "anomalyCount": anomaly_count,
+        "suggestions": suggestions[:5] if isinstance(suggestions, list) else [],
+        "aiStatus": row.get("ai_status"),
+        "generatedAt": generated_at.isoformat(sep=" ") if isinstance(generated_at, datetime) else str(generated_at) if generated_at else None,
+        "warnings": [],
     }
 
 
@@ -452,6 +559,7 @@ def _overall_status(
     automation: list[dict[str, Any]],
     knowledge: dict[str, Any] | None = None,
     updater: dict[str, Any] | None = None,
+    action_items: list[dict[str, Any]] | None = None,
 ) -> str:
     if any(not item.get("exists") or not item.get("valid") for item in cache_items):
         return "warning"
@@ -461,7 +569,192 @@ def _overall_status(
         return "warning"
     if any(item and item.get("status") != "ok" for item in (knowledge, updater)):
         return "warning"
+    if any(item.get("severity") in {"danger", "warning"} for item in (action_items or [])):
+        return "warning"
     return "ok"
+
+
+def _action_center(
+    cache_items: list[dict[str, Any]],
+    api_summary: dict[str, Any],
+    automation: list[dict[str, Any]],
+    ai: dict[str, Any],
+    knowledge: dict[str, Any],
+    updater: dict[str, Any],
+    accounting: dict[str, Any],
+    retail_alerts: dict[str, Any],
+    report_audit: dict[str, Any],
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+
+    def add(
+        code: str,
+        severity: str,
+        category: str,
+        title: str,
+        detail: str,
+        owner: str,
+        action: str,
+        *,
+        count: int | None = None,
+        updated_at: str | None = None,
+    ) -> None:
+        items.append({
+            "code": code,
+            "severity": severity,
+            "category": category,
+            "title": title,
+            "detail": detail,
+            "owner": owner,
+            "action": action,
+            "count": count,
+            "updatedAt": updated_at,
+        })
+
+    invalid_cache = [item for item in cache_items if not item.get("exists") or not item.get("valid")]
+    if invalid_cache:
+        add(
+            "cache_invalid",
+            "warning",
+            "cache",
+            "缓存快照需要刷新",
+            f"{len(invalid_cache)} 个快照缺失或结构异常：{', '.join(item.get('label') or item.get('key') or '-' for item in invalid_cache[:4])}",
+            "运维/数据",
+            "补跑零售/自用油快照，或检查报表索引文件。",
+            count=len(invalid_cache),
+        )
+
+    failed_api = int(api_summary.get("failed24h") or 0)
+    if failed_api:
+        add(
+            "api_failed_24h",
+            "danger" if failed_api >= 5 else "warning",
+            "api",
+            "24 小时内存在接口失败",
+            f"最近 24 小时失败接口 {failed_api} 次，请优先查看 API 调用页签的失败路径。",
+            "运维",
+            "按失败路径检查后端日志、token 过期、下载白名单或网络状态。",
+            count=failed_api,
+        )
+
+    failed_tasks = [item for item in automation if item.get("status") == "failed"]
+    if failed_tasks:
+        add(
+            "automation_failed",
+            "danger",
+            "automation",
+            "自动任务最近执行失败",
+            f"{len(failed_tasks)} 个任务失败：{', '.join(str(item.get('task_name') or '-') for item in failed_tasks[:4])}",
+            "运维",
+            "查看自动任务页签错误信息，修复后按需手动补跑。",
+            count=len(failed_tasks),
+        )
+
+    missing_count = int(accounting.get("missingCount") or 0)
+    if missing_count:
+        add(
+            "accounting_reports_missing",
+            "warning",
+            "report",
+            "吉方交接日报缺站",
+            f"{accounting.get('targetDate') or '上一业务日'} 有 {missing_count} 个应生成站点缺少日报。",
+            "财务/运维",
+            "进入吉方日报页签确认缺站，必要时重新生成。",
+            count=missing_count,
+            updated_at=accounting.get("checkedAt"),
+        )
+
+    knowledge_issues = int(knowledge.get("failedCount") or 0) + int(knowledge.get("missingFileCount") or 0)
+    pending_count = int(knowledge.get("pendingCount") or 0)
+    if knowledge_issues or pending_count:
+        add(
+            "knowledge_index_attention",
+            "danger" if knowledge_issues else "warning",
+            "knowledge",
+            "知识库附件索引需要处理",
+            f"失败/缺失 {knowledge_issues} 个，待索引 {pending_count} 个。",
+            "管理员",
+            "进入知识库执行附件重建索引，失败附件需检查源文件。",
+            count=knowledge_issues + pending_count,
+            updated_at=knowledge.get("lastExtractedAt"),
+        )
+
+    updater_warnings = list(updater.get("warnings") or [])
+    if updater_warnings:
+        add(
+            "desktop_update_attention",
+            "danger" if any("missing" in str(item) for item in updater_warnings) else "warning",
+            "release",
+            "客户端更新源需要检查",
+            f"更新源提醒：{', '.join(str(item) for item in updater_warnings)}。",
+            "发布维护",
+            "确认 latest.yml、安装包、blockmap 三件套版本和文件大小一致。",
+            count=len(updater_warnings),
+        )
+
+    ai_failed = int(ai.get("failed7d") or 0)
+    if ai_failed:
+        add(
+            "ai_failed_7d",
+            "warning",
+            "ai",
+            "AI 助手近期调用失败",
+            f"最近 7 天 AI 调用失败 {ai_failed} 次。",
+            "运维",
+            "检查 OpenRouter 配置、模型可用性和网络访问；业务接口保持只读。",
+            count=ai_failed,
+            updated_at=ai.get("lastCalledAt"),
+        )
+
+    anomaly_count = int(retail_alerts.get("anomalyCount") or 0)
+    if anomaly_count:
+        add(
+            "retail_trend_anomaly",
+            "warning",
+            "retail",
+            "零售趋势存在异常提醒",
+            f"{retail_alerts.get('periodKey') or _active_month()} 检测到 {anomaly_count} 条趋势异常。",
+            "销售管理",
+            "进入零售预警页核查异常日期、站点营业状态、库存和价格调整。",
+            count=anomaly_count,
+            updated_at=retail_alerts.get("generatedAt"),
+        )
+    elif retail_alerts.get("warnings"):
+        add(
+            "retail_alert_insight_missing",
+            "warning",
+            "retail",
+            "零售预警洞察未生成",
+            f"{retail_alerts.get('periodKey') or _active_month()} 暂未找到零售预警洞察记录。",
+            "销售管理/运维",
+            "补跑零售/自用油快照，或进入零售预警页刷新洞察。",
+            count=1,
+        )
+
+    month_vs_254 = int(report_audit.get("monthVs254") or 0)
+    if report_audit.get("found") and month_vs_254:
+        add(
+            "report_254_pending",
+            "warning",
+            "report",
+            "零售总表 254 差异待确认",
+            f"{report_audit.get('periodStart') or '-'} 至 {report_audit.get('periodEnd') or '-'} 机器摘要仍有 {month_vs_254} 个差异项。",
+            "报表维护",
+            "打开综合对比工作簿逐项确认，并把结论写入报表验数记录。",
+            count=month_vs_254,
+            updated_at=report_audit.get("updatedAt"),
+        )
+
+    severity_order = {"danger": 0, "warning": 1, "info": 2}
+    items.sort(key=lambda item: (severity_order.get(item["severity"], 9), item["category"], item["code"]))
+    summary = {
+        "openCount": len(items),
+        "dangerCount": sum(1 for item in items if item["severity"] == "danger"),
+        "warningCount": sum(1 for item in items if item["severity"] == "warning"),
+        "infoCount": sum(1 for item in items if item["severity"] == "info"),
+        "status": "ok" if not items else "warning",
+    }
+    return {"summary": summary, "items": items}
 
 
 def _api_summary(cur) -> dict[str, Any]:
@@ -684,7 +977,21 @@ def system_health():
             ai = _ai_status(cur)
             knowledge = _knowledge_index_status(cur)
             updater = _desktop_update_status()
-            status = _overall_status(cache_items, api, automation, knowledge, updater)
+            accounting = _accounting_report_status(cur, date.today() - timedelta(days=1))
+            retail_alerts = _retail_alert_status(cur)
+            report_audit = _latest_report_audit_status()
+            action_center = _action_center(
+                cache_items,
+                api,
+                automation,
+                ai,
+                knowledge,
+                updater,
+                accounting,
+                retail_alerts,
+                report_audit,
+            )
+            status = _overall_status(cache_items, api, automation, knowledge, updater, action_center["items"])
             return jsonify({"code": 0, "message": "success", "data": {
                 "status": status,
                 "checkedAt": datetime.now().isoformat(sep=" "),
@@ -702,6 +1009,10 @@ def system_health():
                 "ai": ai,
                 "knowledge": knowledge,
                 "updater": updater,
+                "accountingLatest": accounting,
+                "retailAlerts": retail_alerts,
+                "reportAudit": report_audit,
+                "actionCenter": action_center,
             }})
     finally:
         conn.close()

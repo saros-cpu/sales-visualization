@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.18';
+export const VERSION = '3.8.19';
 export const BUILD_DATE = '2026-07-21';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.19',
+    date: '2026-07-21',
+    type: 'minor',
+    changes: [
+      '新增：系统健康增加提醒中心，汇总 API、缓存、自动任务、知识库索引、客户端更新源、吉方日报、零售异常和报表差异待处理事项',
+      '新增：运行治理接入零售预警洞察和最新报表比对摘要，突出 254 总表差异收口状态',
+      '优化：系统健康顶部 KPI 增加待处理事项数量，管理员可先看提醒再进入具体页签处理',
+    ],
+  },
   {
     version: '3.8.18',
     date: '2026-07-21',

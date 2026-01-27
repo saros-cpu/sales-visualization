@@ -16,6 +16,13 @@ function statusColor(status?: string) {
   return 'orange';
 }
 
+function severityColor(severity?: string) {
+  if (severity === 'danger') return 'red';
+  if (severity === 'warning') return 'orange';
+  if (severity === 'info') return 'blue';
+  return 'default';
+}
+
 function formatBytes(value?: number) {
   const bytes = Number(value || 0);
   if (!bytes) return '-';
@@ -51,12 +58,22 @@ export default function SystemHealth() {
   const knowledge = data.knowledge || {};
   const updater = data.updater || {};
   const updaterFiles = updater.files || [];
+  const actionCenter = data.actionCenter || {};
+  const actionSummary = actionCenter.summary || {};
+  const retailAlerts = data.retailAlerts || {};
+  const reportAudit = data.reportAudit || {};
   const canRunAutomation = user?.role === 'admin' || can('system_health:manage');
 
   const serviceCards = useMemo(() => Object.entries(data.services || {}).map(([key, value]: [string, any]) => ({
     key,
     status: value?.status || 'unknown',
   })), [data.services]);
+  const actionItems = useMemo(() => {
+    const severityRank: Record<string, number> = { danger: 0, warning: 1, info: 2 };
+    return [...(actionCenter.items || [])].sort((a: any, b: any) => (
+      (severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9)
+    ));
+  }, [actionCenter.items]);
   const automationActions: Array<{ task: AutomationTaskKey; label: string }> = [
     { task: 'exchange_rates', label: t('systemHealth.runExchangeRates') },
     { task: 'market_watch', label: t('systemHealth.runMarketWatch') },
@@ -109,12 +126,51 @@ export default function SystemHealth() {
       extra={<Button icon={<ReloadOutlined />} onClick={() => query.refetch()} loading={query.isFetching}>{t('common.update')}</Button>}
     >
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={8}><KpiCard title={t('systemHealth.overall')} value={data.status || '-'} tone={data.status === 'ok' ? 'success' : 'warning'} /></Col>
-        <Col xs={24} sm={8}><KpiCard title={t('systemHealth.apiFailed24h')} value={data.api?.failed24h ?? 0} goodWhen="down" tone={(data.api?.failed24h ?? 0) > 0 ? 'danger' : 'success'} /></Col>
-        <Col xs={24} sm={8}><KpiCard title={t('systemHealth.aiFailed7d')} value={ai.failed7d ?? 0} goodWhen="down" tone={(ai.failed7d ?? 0) > 0 ? 'danger' : 'success'} /></Col>
+        <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.overall')} value={data.status || '-'} tone={data.status === 'ok' ? 'success' : 'warning'} /></Col>
+        <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.actionOpenCount')} value={actionSummary.openCount ?? 0} goodWhen="down" tone={(actionSummary.openCount ?? 0) > 0 ? 'warning' : 'success'} /></Col>
+        <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.apiFailed24h')} value={data.api?.failed24h ?? 0} goodWhen="down" tone={(data.api?.failed24h ?? 0) > 0 ? 'danger' : 'success'} /></Col>
+        <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.aiFailed7d')} value={ai.failed7d ?? 0} goodWhen="down" tone={(ai.failed7d ?? 0) > 0 ? 'danger' : 'success'} /></Col>
       </Row>
       <Tabs
         items={[
+          {
+            key: 'actions',
+            label: t('systemHealth.actionCenter'),
+            children: (
+              <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                <Alert
+                  showIcon
+                  type={actionItems.length ? 'warning' : 'success'}
+                  message={actionItems.length
+                    ? t('systemHealth.actionCenterWarning', { count: actionItems.length })
+                    : t('systemHealth.actionCenterOk')}
+                  description={actionItems[0]?.detail || t('systemHealth.actionCenterHint')}
+                />
+                <KpiGrid items={[
+                  { key: 'open', title: t('systemHealth.actionOpenCount'), value: actionSummary.openCount ?? 0, tone: (actionSummary.openCount ?? 0) > 0 ? 'warning' : 'success', span: 6 },
+                  { key: 'danger', title: t('systemHealth.actionDangerCount'), value: actionSummary.dangerCount ?? 0, tone: (actionSummary.dangerCount ?? 0) > 0 ? 'danger' : 'success', span: 6 },
+                  { key: 'warning', title: t('systemHealth.actionWarningCount'), value: actionSummary.warningCount ?? 0, tone: (actionSummary.warningCount ?? 0) > 0 ? 'warning' : 'success', span: 6 },
+                  { key: 'retailAnomaly', title: t('systemHealth.retailAnomalyCount'), value: retailAlerts.anomalyCount ?? 0, tone: (retailAlerts.anomalyCount ?? 0) > 0 ? 'warning' : 'success', span: 6 },
+                  { key: 'report254', title: t('systemHealth.report254Diff'), value: reportAudit.monthVs254 ?? 0, tone: (reportAudit.monthVs254 ?? 0) > 0 ? 'warning' : 'success', span: 6 },
+                ]} />
+                <Table
+                  size="small"
+                  rowKey={(row: any) => `${row.category}-${row.code}`}
+                  dataSource={actionItems}
+                  pagination={false}
+                  columns={[
+                    { title: t('systemHealth.severityTitle'), dataIndex: 'severity', width: 110, render: (v: string) => <Tag color={severityColor(v)}>{t(`systemHealth.severity.${v}`, { defaultValue: v })}</Tag> },
+                    { title: t('systemHealth.categoryTitle'), dataIndex: 'category', width: 120, render: (v: string) => t(`systemHealth.category.${v}`, { defaultValue: v }) },
+                    { title: t('systemHealth.actionTitle'), dataIndex: 'title', width: 190 },
+                    { title: t('systemHealth.actionDetail'), dataIndex: 'detail' },
+                    { title: t('systemHealth.owner'), dataIndex: 'owner', width: 120 },
+                    { title: t('systemHealth.suggestedAction'), dataIndex: 'action' },
+                    { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170, render: (v: any) => v || '-' },
+                  ]}
+                />
+              </Space>
+            ),
+          },
           {
             key: 'services',
             label: t('systemHealth.services'),

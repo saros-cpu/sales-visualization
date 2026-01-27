@@ -6,12 +6,17 @@
 
 ## 版本更新记录
 
-### 2026-07-21 (本地待验收)
+### 2026-07-21 (v3.8.18)
 
+- **自用油报表对齐原 24**：查询和导出改为直接按原软件报表编号 24 数据来源生成，筛选条件固定为 `BasePaymentTypeKey=2 AND DerivedPaymentTypeKey=2`。
+- **车牌/司机口径修复**：自用油车牌号取原 24 Driver 来源（`change_log GuideKey=590336`），不再使用项目车牌映射、发电机特例或 `person.Name` 兜底。
+- **重量口径修复**：自用油重量只取 `selling.Mass`，不再通过密度补算，7 月 1 日至 7 月 20 日 289 笔与原 24 来源对比无差异。
+- **发布同步**：客户端、Web、后端和自动更新包版本同步到 `3.8.18`，生产环境已部署。
 - **运行治理**：系统健康新增运行治理状态，检查知识库附件索引和客户端 `/download` 更新源完整性。
 - **知识库索引**：附件上传后解析文本入库，搜索和 AI 只读引用可命中附件内容；重建索引拆分为 `knowledge:reindex` 权限。
 - **代码图谱**：初始化本机 CodeGraph 索引，`.codegraph/` 与 `.code-review-graph/` 纳入忽略。
 - **发布自检**：新增 `scripts/preflight-release.ps1`，用于提交/打包/部署前统一检查 Python、客户端、Web、敏感文档和更新包。
+- **维护文档**：核心文档新增/补充报表口径、API 接口调用和维护交接资料，便于后续其他软件接手。
 
 ### 2026-07-21 (v3.8.17)
 
@@ -893,7 +898,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.8.17（与 version.ts 对齐）
+├── package.json              # 版本 3.8.18（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）
@@ -921,7 +926,7 @@ SalesDesktop/
 ```
 
 **架构特点**：
-- **双端统一**：客户端直连生产 API（`http://198.51.100.10:8080`），不走本地服务器
+- **双端统一**：客户端直连生产入口（`http://198.51.100.10`，由 Nginx 转发到本机后端 `127.0.0.1:8900`），不走本地服务器
 - **双认证**：JWT Token（客户端）+ Session Cookie（Web 端），后端统一校验
 - **响应解包**：`http.ts` 自动解 `res.data.data → res.data`，API 封装层无感
 - **自动更新**：electron-updater + `latest.yml`，设置页触发检查更新
