@@ -387,7 +387,7 @@ export default function RetailDashboard() {
     if (window.USE_3D_KGZ_MAP === false) return false;
     try {
       const runtimeImport = (url) => new Function('url', 'return import(url)')(url);
-      const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260720-time-label');
+      const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260722-uniform-region');
       const map = await mountRetailMap('#mapChart', { depots: [], stations: [] }, {
         showRoadPanel: false, showLakeLabels: true, showCities: true,
         showRegionLabels: false, showLegend: false, mode: 'retail',

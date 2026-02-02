@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.19';
-export const BUILD_DATE = '2026-07-21';
+export const VERSION = '3.8.20';
+export const BUILD_DATE = '2026-07-22';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.20',
+    date: '2026-07-22',
+    type: 'patch',
+    changes: [
+      '优化：吉尔吉斯 3D 地图接入高精度行政区、国界、湖泊、道路和本地 Web Mercator 投影，提升边界细节与形状准确度',
+      '优化：地球视图接入高精度中国和中亚国家边界，并对基础边界与共享边界做去重，避免多重边界线叠加',
+      '修复：高精度区域数据中的分区颜色不再影响项目原有地图视觉，吉国行政区恢复统一深色填充',
+    ],
+  },
   {
     version: '3.8.19',
     date: '2026-07-21',

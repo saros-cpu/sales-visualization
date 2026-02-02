@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const DEFAULTS = {
   basePath: './data/',
+  precisionCountriesFile: 'precision_countries.geojson',
   radius: 10,
   autoRotateSpeed: 0.03,
   showRoads: true,
@@ -37,6 +38,8 @@ const HIGHLIGHT_COLOR = {
   KGZ: 0xef4444,
   default: 0x38bdf8
 };
+
+const BOUNDARY_INDEX_CELL_DEGREES = 0.5;
 
 const COUNTRY_RU = {
   '中国': 'Китай',
@@ -110,16 +113,145 @@ function polygonToFillGeometry(polygon, radius) {
   return geometry;
 }
 
-function polygonToLinePositions(polygon, radius) {
-  const positions = [];
+function isValidLngLat(coord) {
+  return Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1]);
+}
+
+function forEachPolygonSegment(polygon, callback) {
   for (const ring of polygon) {
     // 限制每个环的点数，防止栈溢出（保留 5000 点足够高精度）
     const limitedRing = ring.length > 5000 ? ring.slice(0, 5000) : ring;
-    const pts = limitedRing.map(([lng, lat]) => latLngToVec3(lng, lat, radius));
-    for (let i = 0; i < pts.length - 1; i++) {
-      positions.push(pts[i].x, pts[i].y, pts[i].z, pts[i + 1].x, pts[i + 1].y, pts[i + 1].z);
+    for (let i = 0; i < limitedRing.length - 1; i++) {
+      const from = limitedRing[i];
+      const to = limitedRing[i + 1];
+      if (isValidLngLat(from) && isValidLngLat(to)) callback(from, to);
     }
   }
+}
+
+function segmentBounds(from, to, padding = 0) {
+  return {
+    minLng: Math.min(from[0], to[0]) - padding,
+    maxLng: Math.max(from[0], to[0]) + padding,
+    minLat: Math.min(from[1], to[1]) - padding,
+    maxLat: Math.max(from[1], to[1]) + padding
+  };
+}
+
+function visitSegmentCells(bounds, cellSize, callback) {
+  const minX = Math.floor((bounds.minLng + 180) / cellSize);
+  const maxX = Math.floor((bounds.maxLng + 180) / cellSize);
+  const minY = Math.floor((bounds.minLat + 90) / cellSize);
+  const maxY = Math.floor((bounds.maxLat + 90) / cellSize);
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      if (callback(`${x}:${y}`) === false) return false;
+    }
+  }
+  return true;
+}
+
+function pointToSegmentDistanceSq(point, from, to, lngScale) {
+  const px = point[0] * lngScale;
+  const py = point[1];
+  const ax = from[0] * lngScale;
+  const ay = from[1];
+  const bx = to[0] * lngScale;
+  const by = to[1];
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq <= 1e-12) {
+    const ex = px - ax;
+    const ey = py - ay;
+    return ex * ex + ey * ey;
+  }
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  const projX = ax + t * dx;
+  const projY = ay + t * dy;
+  const ex = px - projX;
+  const ey = py - projY;
+  return ex * ex + ey * ey;
+}
+
+function segmentDistanceSq(a, b, c, d) {
+  const lngScale = Math.max(0.25, Math.cos(((a[1] + b[1] + c[1] + d[1]) / 4) * DEG2RAD));
+  const midAB = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const midCD = [(c[0] + d[0]) / 2, (c[1] + d[1]) / 2];
+  return Math.min(
+    pointToSegmentDistanceSq(a, c, d, lngScale),
+    pointToSegmentDistanceSq(b, c, d, lngScale),
+    pointToSegmentDistanceSq(c, a, b, lngScale),
+    pointToSegmentDistanceSq(d, a, b, lngScale),
+    pointToSegmentDistanceSq(midAB, c, d, lngScale),
+    pointToSegmentDistanceSq(midCD, a, b, lngScale)
+  );
+}
+
+function createBoundarySegmentIndex(geojson = null, cellSize = BOUNDARY_INDEX_CELL_DEGREES) {
+  const grid = new Map();
+  let nextId = 0;
+
+  const addSegment = (from, to) => {
+    if (!isValidLngLat(from) || !isValidLngLat(to)) return;
+    const segment = { id: nextId++, from, to, bounds: segmentBounds(from, to) };
+    visitSegmentCells(segment.bounds, cellSize, (key) => {
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(segment);
+    });
+  };
+
+  const hasNearbySegment = (from, to, thresholdDegrees) => {
+    if (!thresholdDegrees || !grid.size) return false;
+    if (Math.abs(from[0] - to[0]) > 30 || Math.abs(from[1] - to[1]) > 30) return false;
+    const thresholdSq = thresholdDegrees * thresholdDegrees;
+    const bounds = segmentBounds(from, to, thresholdDegrees);
+    const seen = new Set();
+    let found = false;
+    visitSegmentCells(bounds, cellSize, (key) => {
+      const bucket = grid.get(key);
+      if (!bucket) return true;
+      for (const segment of bucket) {
+        if (seen.has(segment.id)) continue;
+        seen.add(segment.id);
+        if (
+          segment.bounds.maxLng < bounds.minLng ||
+          segment.bounds.minLng > bounds.maxLng ||
+          segment.bounds.maxLat < bounds.minLat ||
+          segment.bounds.minLat > bounds.maxLat
+        ) {
+          continue;
+        }
+        if (segmentDistanceSq(from, to, segment.from, segment.to) <= thresholdSq) {
+          found = true;
+          return false;
+        }
+      }
+      return true;
+    });
+    return found;
+  };
+
+  if (geojson) {
+    for (const feature of geojson.features || []) {
+      for (const polygon of featurePolygons(feature)) {
+        forEachPolygonSegment(polygon, addSegment);
+      }
+    }
+  }
+
+  return { addSegment, hasNearbySegment };
+}
+
+function polygonToLinePositions(polygon, radius, options = {}) {
+  const positions = [];
+  forEachPolygonSegment(polygon, (from, to) => {
+    if (options.shouldSkipSegment?.(from, to)) return;
+    const a = latLngToVec3(from[0], from[1], radius);
+    const b = latLngToVec3(to[0], to[1], radius);
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    options.onKeepSegment?.(from, to);
+  });
   return positions;
 }
 
@@ -129,6 +261,14 @@ function featurePolygons(feature) {
   if (geometry.type === 'Polygon') return [geometry.coordinates];
   if (geometry.type === 'MultiPolygon') return geometry.coordinates;
   return [];
+}
+
+function featureIso3(feature) {
+  return feature?.properties?.ISO_A3 || feature?.properties?.iso_a3 || feature?.properties?.iso3 || feature?.properties?.ADM0_A3;
+}
+
+function featureIsoSet(geojson) {
+  return new Set((geojson?.features || []).map(featureIso3).filter((iso) => iso && iso !== '-99'));
 }
 
 function haversineKm(lng1, lat1, lng2, lat2) {
@@ -211,8 +351,9 @@ export class GlobeMap {
     this.buildGraticule();
     this.buildStars();
 
-    const [world, countries, points] = await Promise.all([
+    const [world, precisionCountries, countries, points] = await Promise.all([
       this.loadJson('world_countries.geojson').catch(() => null),
+      this.loadJson(this.options.precisionCountriesFile).catch(() => null),
       this.loadJson('business_countries.geojson').catch(() => null),
       this.loadJson('business_points.json').catch(() => null)
     ]);
@@ -221,7 +362,21 @@ export class GlobeMap {
       throw new Error('地球视图资源加载失败，请检查地图资源路径');
     }
 
-    if (world) {
+    if (precisionCountries) {
+      const precisionIsoSet = featureIsoSet(precisionCountries);
+      const precisionBoundaryIndex = createBoundarySegmentIndex(precisionCountries);
+      if (world) {
+        this.buildWorldOutline(world, {
+          excludeIso3: precisionIsoSet,
+          excludeNearIndex: precisionBoundaryIndex,
+          excludeNearThreshold: 0.18
+        });
+      }
+      this.buildWorldOutline(precisionCountries, {
+        dedupeSharedBoundaries: true,
+        dedupeNearThreshold: 0.08
+      });
+    } else if (world) {
       this.buildWorldOutline(world);
     }
     if (countries || world) this.buildCountries(countries || world);
@@ -404,31 +559,51 @@ export class GlobeMap {
     this.scene.add(this.stars);
   }
 
-  buildWorldOutline(geojson) {
+  buildWorldOutline(geojson, options = {}) {
     const positions = [];
-    const BOUNDARY_RADIUS = this.radius * 1.008;  // 增加偏移避免 z-fighting
+    const BOUNDARY_RADIUS = this.radius * (options.radiusScale ?? 1.008);  // 增加偏移避免 z-fighting
+    const excludeIso3 = options.excludeIso3 || new Set();
+    const excludeNearIndex = options.excludeNearIndex || null;
+    const excludeNearThreshold = options.excludeNearThreshold || 0;
+    const dedupeIndex = options.dedupeSharedBoundaries ? createBoundarySegmentIndex() : null;
+    const dedupeNearThreshold = options.dedupeNearThreshold || 0;
     for (const feature of geojson.features || []) {
-      const iso = feature.properties?.ISO_A3 || feature.properties?.iso_a3 || feature.properties?.iso3;
+      const iso = featureIso3(feature);
+      if (excludeIso3.has(iso)) continue;
+      const keptSegments = [];
       const polygons = featurePolygons(feature);
+      const shouldSkipSegment = (from, to) => {
+        if (excludeNearIndex?.hasNearbySegment(from, to, excludeNearThreshold)) return true;
+        if (dedupeIndex?.hasNearbySegment(from, to, dedupeNearThreshold)) return true;
+        return false;
+      };
       for (const polygon of polygons) {
-        const ringPositions = polygonToLinePositions(polygon, BOUNDARY_RADIUS);
+        const ringPositions = polygonToLinePositions(polygon, BOUNDARY_RADIUS, {
+          shouldSkipSegment,
+          onKeepSegment: (from, to) => keptSegments.push([from, to])
+        });
         positions.push(...ringPositions);
+      }
+      if (dedupeIndex) {
+        for (const [from, to] of keptSegments) dedupeIndex.addSegment(from, to);
       }
     }
     if (!positions.length) return;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     // 主边界线：不透明，稍微亮一点的颜色
-    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x9ac8e0, transparent: true, opacity: 0.9, depthWrite: true, depthTest: true });
+    const lineMaterial = new THREE.LineBasicMaterial({ color: options.color ?? 0x9ac8e0, transparent: true, opacity: options.opacity ?? 0.9, depthWrite: true, depthTest: true });
     const lines = new THREE.LineSegments(geometry, lineMaterial);
-    lines.renderOrder = -10;
+    lines.renderOrder = options.renderOrder ?? -10;
     this.worldGroup.add(lines);
     // 微光层
+    const glowOpacity = options.glowOpacity ?? 0;
+    if (glowOpacity <= 0) return;
     const glowGeom = new THREE.BufferGeometry();
     glowGeom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const glowMaterial = new THREE.LineBasicMaterial({ color: 0x6ab0d8, transparent: true, opacity: 0.35, depthWrite: true, depthTest: true });
+    const glowMaterial = new THREE.LineBasicMaterial({ color: options.glowColor ?? 0x6ab0d8, transparent: true, opacity: glowOpacity, depthWrite: true, depthTest: true });
     const glowLines = new THREE.LineSegments(glowGeom, glowMaterial);
-    glowLines.renderOrder = -10;
+    glowLines.renderOrder = options.renderOrder ?? -10;
     this.worldGroup.add(glowLines);
   }
 
@@ -436,7 +611,7 @@ export class GlobeMap {
     // 只标注业务相关的 10 个国家
     const businessISO3 = new Set(['AFG', 'BLR', 'CHN', 'GEO', 'KAZ', 'KGZ', 'RUS', 'TJK', 'TUR', 'UZB']);
     for (const feature of geojson.features || []) {
-      const iso = feature.properties?.ISO_A3 || feature.properties?.iso_a3 || feature.properties?.iso3;
+      const iso = featureIso3(feature);
       if (!businessISO3.has(iso)) continue;
       const name = this.isRu()
         ? (feature.properties?.name_ru || feature.properties?.name_en || iso)

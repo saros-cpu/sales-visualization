@@ -343,7 +343,7 @@ export default function DashboardPage() {
   const initMap = useCallback(async () => {
     if (window.USE_3D_KGZ_MAP !== false) {
       try {
-        const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260720-time-label');
+        const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260722-uniform-region');
         mapShellRef.current?.classList.add('is-3d-map');
         const map = await mountHomeMap('#homeMapChart', {
           depots: depotPoints.map(p => ({

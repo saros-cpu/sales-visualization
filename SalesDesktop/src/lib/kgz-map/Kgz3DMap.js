@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { geoToWorld } from './projection.js';
 
 const DEFAULTS = {
   basePath: './data/',
@@ -11,7 +12,8 @@ const DEFAULTS = {
   showLegend: true,
   viewOffsetX: 0,
   viewOffsetZ: 0,
-  mode: 'standalone'
+  mode: 'standalone',
+  regionColor: '#0a1e3c'
 };
 
 const ROAD_STYLE = {
@@ -51,9 +53,6 @@ const ROAD_OPACITY = {
 };
 
 const LAKE_SURFACE_Y = 0.718;
-const CENTER_LNG = 74;
-const CENTER_LAT = 41.5;
-const SCALE = 8;
 const REGION_ORDER = [
   'KGZ.8_1',
   'KGZ.9_1',
@@ -65,14 +64,6 @@ const REGION_ORDER = [
   'KGZ.6_1',
   'KGZ.1_1'
 ];
-
-function geoToWorld(lng, lat) {
-  const cosLat = Math.cos((lat * Math.PI) / 180);
-  return {
-    x: (lng - CENTER_LNG) * SCALE * cosLat,
-    z: -(lat - CENTER_LAT) * SCALE
-  };
-}
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -167,6 +158,40 @@ function featureTCTY-30apes(feature) {
   if (geometry.type === 'Polygon') return polygonTCTY-30apes(geometry.coordinates);
   if (geometry.type === 'MultiPolygon') return geometry.coordinates.flatMap(polygonTCTY-30apes);
   return [];
+}
+
+function geometryRings(geometry) {
+  if (!geometry) return [];
+  if (geometry.type === 'Polygon') return geometry.coordinates;
+  if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat();
+  return [];
+}
+
+function buildRingLineSegments(features, y, color, opacity) {
+  const vertices = [];
+  for (const feature of features || []) {
+    for (const ring of geometryRings(feature.geometry)) {
+      if (!Array.isArray(ring) || ring.length < 2) continue;
+      for (let i = 0; i < ring.length - 1; i++) {
+        const a = geoToWorld(ring[i][0], ring[i][1]);
+        const b = geoToWorld(ring[i + 1][0], ring[i + 1][1]);
+        vertices.push(a.x, y, a.z, b.x, y, b.z);
+      }
+    }
+  }
+  if (!vertices.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthTest: false,
+    depthWrite: false
+  });
+  const lines = new THREE.LineSegments(geometry, material);
+  lines.renderOrder = 110;
+  return lines;
 }
 
 function makeTextSprite(title, subtitle) {
@@ -451,7 +476,7 @@ export class Kgz3DMap {
     this.hoveredPoint = null;
     this.frame = null;
     this.needsRender = true;
-    this.clock = new THREE.Timer();
+    this.clock = new THREE.Clock();
   }
 
   async init() {
@@ -459,14 +484,18 @@ export class Kgz3DMap {
     this.container.innerHTML = '';
     this.createDom();
     this.createScene();
-    const [regions, roads, lakes, cities, majorRoads] = await Promise.all([
+    const [regions, countryBoundary, roads, lakes, cities, majorRoads, manifest] = await Promise.all([
       this.loadJson('kgz_regions.json'),
+      this.loadJson('kgz_country_boundary.json').catch(() => null),
       this.options.showRoads ? this.loadJson('roads.json').catch(() => null) : null,
       this.loadJson('lakes.json').catch(() => null),
       this.loadJson('major_cities.json').catch(() => []),
-      this.loadJson('major_roads.json').catch(() => [])
+      this.loadJson('major_roads.json').catch(() => []),
+      this.loadJson('manifest.json').catch(() => null)
     ]);
+    this.dataManifest = manifest;
     this.buildRegions(regions);
+    if (countryBoundary) this.buildCountryBoundary(countryBoundary);
     if (lakes) this.buildLakes(lakes);
     if (roads) this.buildRoads(roads, majorRoads);
     if (this.options.showRoads) {
@@ -561,7 +590,7 @@ export class Kgz3DMap {
     geojson.features.forEach((feature) => {
       const shapes = featureTCTY-30apes(feature);
       const props = feature.properties || {};
-      const color = new THREE.Color(props.color_hex || '#38bdf8');
+      const color = new THREE.Color(this.options.regionColor || '#0a1e3c');
       const material = new THREE.MeshStandardMaterial({
         color,
         roughness: 0.72,
@@ -602,6 +631,16 @@ export class Kgz3DMap {
       }
     });
     this.buildLegend(geojson.features);
+  }
+
+  buildCountryBoundary(geojson) {
+    const boundary = buildRingLineSegments(geojson.features || [], 0.92, 0xe0f2fe, 0.82);
+    if (!boundary) return;
+    boundary.userData = {
+      type: 'country-boundary',
+      source: geojson.source || geojson.features?.[0]?.properties?.source || null
+    };
+    this.regionGroup.add(boundary);
   }
 
   buildRoads(geojson, majorRoads = []) {
@@ -916,7 +955,7 @@ export class Kgz3DMap {
   animate() {
     this.frame = requestAnimationFrame(() => this.animate());
     const controlsChanged = this.controls.update();
-    if (this.needsRender || controlsChanged || this.clock.getElapsed() < 2) {
+    if (this.needsRender || controlsChanged || this.clock.getElapsedTime() < 2) {
       this.renderer.render(this.scene, this.camera);
       this.needsRender = false;
     }

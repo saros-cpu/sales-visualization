@@ -6,6 +6,20 @@
 
 ## 版本更新记录
 
+### 2026-07-22 (v3.8.20)
+
+- **地图精度升级**：从 `D:\map` 提取高精度吉国行政区、国界、湖泊、道路和全球国家边界数据，同步到桌面端和 Web 静态资源目录。
+- **3D 吉国地图**：坐标换算改为本地 Web Mercator 投影，行政区保留项目原有统一深色填充，继续支持油库、加油站、批发客户点位和库存/价格 Tooltip。
+- **地球视图**：新增中国和中亚国家高精度边界，基础全球边界按 ISO3 与空间位置跳过已覆盖边界段，高精度包内共享边界去重，避免多重边界线。
+- **发布同步**：客户端、Web、后端和自动更新包版本同步到 `3.8.20`。
+
+### 2026-07-21 (v3.8.19)
+
+- **提醒中心**：系统健康新增“提醒中心”页签，统一汇总 API 失败、缓存失效、自动任务失败、知识库索引、客户端更新源、吉方日报缺站、零售趋势异常和报表差异事项。
+- **254 收口状态**：运行治理读取最新本地报表比对摘要，突出零售总表对原软件 254 的差异待确认数量，不修改 24/84/254 已固定报表口径。
+- **零售异常汇总**：系统健康接入零售预警洞察，管理员可在健康页先看到异常数量，再进入零售预警页核查站点、库存和价格调整。
+- **发布同步**：源码提交 `51ebe51`，客户端、Web、后端和自动更新包版本同步到 `3.8.19`，生产环境已部署。
+
 ### 2026-07-21 (v3.8.18)
 
 - **自用油报表对齐原 24**：查询和导出改为直接按原软件报表编号 24 数据来源生成，筛选条件固定为 `BasePaymentTypeKey=2 AND DerivedPaymentTypeKey=2`。
@@ -810,6 +824,14 @@ C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe D:\SalesVisuali
 D:\SalesVisualization\assets\kgz-map
 ```
 
+2026-07-22 已从 `D:\map` 提取高精度地图内容，同步到：
+
+- `assets/kgz-map/data/`：Web 生产静态资源路径，Nginx 同时通过 `/kgz-map/` 提供别名。
+- `SalesDesktop/public/kgz-map/data/`：Electron/Vite 客户端静态资源路径。
+- `SalesDesktop/src/lib/kgz-map/`：桌面端直接 import 的 Three.js 地图库。
+
+本次升级将吉国行政区、国界、湖泊、道路和全球国家边界替换为更高精度 GeoJSON，并新增 `precision_countries.geojson` 与 `manifest.json`。3D 吉国地图坐标换算改为本地 Web Mercator 投影，保留现有油库、加油站、批发客户点位和库存/价格 Tooltip；行政区填充继续使用项目原有统一深色，不读取高精度数据里的分区 `color_hex`；地球视图保留现有业务点位和中俄文标签，并额外叠加高精度国家边界，基础全球边界会按 ISO3 和空间位置跳过已由高精度包覆盖的国家/边界段，高精度包内共享边界也会去重，避免中国等国家出现多线叠加。
+
 当前使用范围：
 
 - 主页：显示油库和批发客户点位。
@@ -898,7 +920,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.8.18（与 version.ts 对齐）
+├── package.json              # 版本 3.8.20（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

@@ -1,4 +1,4 @@
-import { Kgz3DMap } from './Kgz3DMap.js?v=20260720-time-label';
+import { Kgz3DMap } from './Kgz3DMap.js?v=20260722-uniform-region';
 
 const BASE_OPTIONS = {
   basePath: '/assets/kgz-map/data/',
