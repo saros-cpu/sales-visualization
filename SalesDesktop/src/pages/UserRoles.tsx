@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Table, Card, Checkbox, Button, Spin, Alert, message, Space } from 'antd';
+import { Table, Card, Checkbox, Button, message } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import client from '@/api/client';
+import PageState from '@/components/ui/PageState';
 
 interface ModuleItem {
   id: number;
@@ -110,8 +111,8 @@ export default function UserRoles() {
     }
   };
 
-  if (loading) return <Spin style={{ display: 'block', margin: '100px auto' }} />;
-  if (error) return <Alert type="error" message={t('common.error')} description={error} showIcon />;
+  if (loading) return <PageState status="loading" />;
+  if (error) return <PageState status="error" description={error} onRetry={fetchData} />;
 
   const columns = [
     { title: t('common.module'), dataIndex: 'moduleName', key: 'moduleName', width: 200, render: (_: string, record: ModuleItem) => getModuleName(record) },

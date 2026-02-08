@@ -1,5 +1,6 @@
 import { Component, Fragment, ReactNode } from 'react';
 import { Result, Button } from 'antd';
+import i18n from '@/i18n';
 
 interface Props { children: ReactNode; }
 interface State { hasError: boolean; retryKey: number; error?: unknown; }
@@ -35,8 +36,8 @@ export default class ErrorBoundary extends Component<Props, State> {
       return (
         <Result
           status="error"
-          title="页面加载出错"
-          extra={<Button type="primary" onClick={this.handleRetry}>重试</Button>}
+          title={i18n.t('common.pageLoadError')}
+          extra={<Button type="primary" onClick={this.handleRetry}>{i18n.t('common.retry')}</Button>}
         />
       );
     }

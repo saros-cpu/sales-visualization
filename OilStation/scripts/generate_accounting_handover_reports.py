@@ -31,6 +31,7 @@ from export_excel import _infer_resource_code_daily  # noqa: E402
 
 REPORT_ROOT = Path(r"D:\每日销量日报")
 DEFAULT_TEMPLATE_GLOB = r"20\d{6}"
+DEFAULT_RETENTION_FOLDERS = 7
 COUNTER_TOLERANCE = 0.05
 SHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -1846,6 +1847,91 @@ def archive_folder(output_dir: Path, archive_format: str = "rar") -> Path:
     return archive_path
 
 
+def report_day_folders(report_root: Path) -> list[Path]:
+    if not report_root.exists():
+        return []
+    return sorted(
+        [
+            item
+            for item in report_root.iterdir()
+            if item.is_dir()
+            and re.fullmatch(DEFAULT_TEMPLATE_GLOB, item.name)
+            and any(item.glob("*.xlsx"))
+        ],
+        key=lambda p: p.name,
+    )
+
+
+def latest_file_mtime(folder: Path) -> float:
+    latest = folder.stat().st_mtime
+    for file_path in folder.rglob("*"):
+        if file_path.is_file():
+            latest = max(latest, file_path.stat().st_mtime)
+    return latest
+
+
+def current_archive_for_folder(folder: Path) -> Path | None:
+    latest_source_mtime = latest_file_mtime(folder)
+    for suffix in (".rar", ".zip"):
+        archive_path = folder.parent / f"{folder.name}{suffix}"
+        if (
+            archive_path.exists()
+            and archive_path.stat().st_size > 0
+            and archive_path.stat().st_mtime + 1 >= latest_source_mtime
+        ):
+            return archive_path
+    return None
+
+
+def cleanup_old_report_folders(
+    report_root: Path,
+    keep_folders: int = DEFAULT_RETENTION_FOLDERS,
+    archive_format: str = "rar",
+    dry_run: bool = False,
+) -> dict:
+    keep_count = max(1, int(keep_folders or DEFAULT_RETENTION_FOLDERS))
+    folders = report_day_folders(report_root)
+    retained = folders[-keep_count:]
+    retained_names = {path.name for path in retained}
+    candidates = [path for path in folders if path.name not in retained_names]
+    items = []
+
+    for folder in candidates:
+        archive_path = current_archive_for_folder(folder)
+        archive_created = False
+        if archive_path is None:
+            archive_path = folder.parent / f"{folder.name}.{archive_format}"
+            if not dry_run:
+                archive_path = archive_folder(folder, archive_format=archive_format)
+                archive_created = True
+
+        deleted = False
+        if not dry_run:
+            if not archive_path.exists() or archive_path.stat().st_size <= 0:
+                raise RuntimeError(f"日报目录归档不存在或为空，拒绝删除: {folder}")
+            shutil.rmtree(folder)
+            deleted = True
+
+        items.append({
+            "folder": str(folder),
+            "archive": str(archive_path),
+            "archiveCreated": archive_created,
+            "deleted": deleted,
+            "dryRun": dry_run,
+        })
+
+    return {
+        "enabled": True,
+        "dryRun": dry_run,
+        "keepFolders": keep_count,
+        "folderCount": len(folders),
+        "retainedFolders": [path.name for path in retained],
+        "candidateCount": len(candidates),
+        "deletedCount": sum(1 for item in items if item["deleted"]),
+        "items": items,
+    }
+
+
 def generate_reports(
     target_day: date,
     report_root: Path = REPORT_ROOT,
@@ -1854,6 +1940,9 @@ def generate_reports(
     force: bool = False,
     archive: bool = False,
     archive_format: str = "rar",
+    retention_cleanup: bool = True,
+    retention_keep_folders: int = DEFAULT_RETENTION_FOLDERS,
+    retention_dry_run: bool = False,
 ) -> dict:
     template_path = template_dir or find_template_dir(report_root, target_day, None)
     output_path = output_dir or report_root / day_folder_name(target_day)
@@ -2013,6 +2102,15 @@ def generate_reports(
     if archive and generated:
         archive_path = archive_folder(output_path, archive_format=archive_format)
 
+    retention = {"enabled": False}
+    if archive and generated and retention_cleanup:
+        retention = cleanup_old_report_folders(
+            report_root,
+            keep_folders=retention_keep_folders,
+            archive_format=archive_format,
+            dry_run=retention_dry_run,
+        )
+
     warnings = []
     for item in generated:
         for warning in item.get("warnings") or []:
@@ -2028,6 +2126,7 @@ def generate_reports(
         "skipped": skipped,
         "warnings": warnings,
         "archive": str(archive_path) if archive_path else None,
+        "retention": retention,
     }
 
 
@@ -2040,6 +2139,9 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="先清空输出目录再生成")
     parser.add_argument("--archive", action="store_true", help="生成后打包")
     parser.add_argument("--archive-format", choices=["rar", "zip"], default="rar", help="优先打包格式")
+    parser.add_argument("--keep-folders", type=int, default=DEFAULT_RETENTION_FOLDERS, help="归档后保留最近几个日报文件夹，默认 7")
+    parser.add_argument("--no-retention-cleanup", action="store_true", help="生成后不自动归档清理旧日报文件夹")
+    parser.add_argument("--retention-dry-run", action="store_true", help="只预演旧日报文件夹清理，不删除目录")
     args = parser.parse_args()
 
     target_day = parse_day(args.date)
@@ -2051,6 +2153,9 @@ def main() -> None:
         force=args.force,
         archive=args.archive,
         archive_format=args.archive_format,
+        retention_cleanup=not args.no_retention_cleanup,
+        retention_keep_folders=args.keep_folders,
+        retention_dry_run=args.retention_dry_run,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

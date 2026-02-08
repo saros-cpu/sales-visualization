@@ -6,6 +6,14 @@
 
 ## 版本更新记录
 
+### 2026-07-22 (v3.8.21)
+
+- **系统健康收敛**：提醒中心和运行治理只评估当前有效自动任务，历史 `automation_all` 记录不再造成故障误报。
+- **质量与发布治理**：补充后端、桌面端和 Web 端关键单元测试，`preflight-release.ps1` 纳入 Python unittest、Vitest、桌面端类型检查和完整依赖审计。
+- **安全与依赖治理**：后端 CORS 与桌面端 API Host 改为白名单策略，桌面端升级到 Electron 43 / electron-builder 26，Python 后端依赖固定版本。
+- **客户端体验**：关闭确认、更新安装提示和报表中心迁入中俄双语文案，统一加载/错误状态并收敛桌面端构建分包提示。
+- **发布同步**：客户端、Web、后端和自动更新包版本同步到 `3.8.21`，确保已更新到 `3.8.20` 的外网客户端可检测到新版本。
+
 ### 2026-07-22 (v3.8.20)
 
 - **地图精度升级**：从 `D:\map` 提取高精度吉国行政区、国界、湖泊、道路和全球国家边界数据，同步到桌面端和 Web 静态资源目录。
@@ -717,6 +725,7 @@ D:\SalesVisualization\OilStation\cache_snapshots
 - `SalesVisualizationDailyExchangeRates`：每天 `07:30` 自动补齐汇率。
 - `SalesVisualizationDailyMarketWatch`：每天 `07:30` 自动获取市场观察。
 - `SalesVisualizationDailyRetailSnapshots`：每天 `08:30` 先强制刷新当月零售日销表，再生成零售日快照、当前月与年度派生快照，并预热区域同比环比数据。
+- `SalesVisualizationDailyRetailAccountingReports`：每天 `08:45` 自动生成吉方财务交接日报。
 - `SalesVisualizationProduction`：生产服务任务。
 
 注册自动任务：
@@ -771,6 +780,7 @@ D:\SalesVisualization\Sales\exports
 - 零售日快照完整性。
 - 当前月短期缓存状态。
 - 自动任务状态。
+- 自动任务健康只评估当前有效任务集：汇率、市场观察、零售快照、吉方日报；历史 `automation_all` 记录不会作为当前故障。
 - 最新汇率日期。
 - 最新市场观察日期。
 - 日志状态。
@@ -920,7 +930,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.8.20（与 version.ts 对齐）
+├── package.json              # 版本 3.8.21（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

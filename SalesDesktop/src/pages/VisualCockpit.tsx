@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { Alert, App as AntApp, Button, Card, Col, Empty, Row, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd';
+import { App as AntApp, Button, Card, Col, Empty, Row, Select, Space, Tag, Tooltip, Typography } from 'antd';
 import { ArrowsAltOutlined, CloseOutlined, EditOutlined, FullscreenOutlined, HolderOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { getCockpit, getManagementOverview, saveCockpitTemplate, type CockpitComponent, type CockpitTemplate, type ComponentDefinition, type KpiDefinition } from '@/api/management';
 import ChartCard from '@/components/ui/ChartCard';
+import PageState from '@/components/ui/PageState';
 import type { KpiTone } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { CHART_PALETTE } from '@/theme/charts';
@@ -907,8 +908,8 @@ export default function VisualCockpit() {
     );
   };
 
-  if (query.isLoading) return <Spin style={{ display: 'block', margin: '100px auto' }} />;
-  if (query.error) return <Alert type="error" message={t('common.error')} description={(query.error as Error).message} showIcon />;
+  if (query.isLoading) return <PageState status="loading" />;
+  if (query.error) return <PageState status="error" description={(query.error as Error).message} onRetry={() => query.refetch()} />;
 
   if (!selectedTemplate) {
     return <Card title={t('nav.visualCockpit')}><Empty description={t('cockpit.noTemplate')} /></Card>;

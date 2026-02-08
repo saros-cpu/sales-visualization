@@ -476,6 +476,7 @@ export class Kgz3DMap {
     this.hoveredPoint = null;
     this.frame = null;
     this.needsRender = true;
+    this.starGroup = null;
     this.clock = new THREE.Clock();
   }
 
@@ -484,6 +485,7 @@ export class Kgz3DMap {
     this.container.innerHTML = '';
     this.createDom();
     this.createScene();
+    this.buildStars();
     const [regions, countryBoundary, roads, lakes, cities, majorRoads, manifest] = await Promise.all([
       this.loadJson('kgz_regions.json'),
       this.loadJson('kgz_country_boundary.json').catch(() => null),
@@ -532,7 +534,7 @@ export class Kgz3DMap {
 
   createScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = null;
+    this.scene.background = new THREE.Color(0x010510);
     this.scene.fog = null;
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
     this.camera.position.set(0, 34, 42);
@@ -566,6 +568,38 @@ export class Kgz3DMap {
     const fill = new THREE.DirectionalLight(0x60a5fa, 0.38);
     fill.position.set(-22, 14, -18);
     this.scene.add(fill);
+  }
+
+  buildStars() {
+    this.starGroup = new THREE.Group();
+    const layers = [
+      { count: 4200, distanceMin: 120, distanceMax: 260, size: 1.8, color: 0xf8fbff, opacity: 0.96 },
+      { count: 1800, distanceMin: 180, distanceMax: 340, size: 2.85, color: 0xbfdbfe, opacity: 0.9 },
+      { count: 520, distanceMin: 240, distanceMax: 420, size: 4.2, color: 0xffffff, opacity: 0.82 }
+    ];
+
+    for (const layer of layers) {
+      const positions = [];
+      for (let i = 0; i < layer.count; i++) {
+        const distance = layer.distanceMin + Math.random() * (layer.distanceMax - layer.distanceMin);
+        const v = new THREE.Vector3().randomDirection().multiplyScalar(distance);
+        positions.push(v.x, v.y, v.z);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const material = new THREE.PointsMaterial({
+        color: layer.color,
+        size: layer.size,
+        transparent: true,
+        opacity: layer.opacity,
+        sizeAttenuation: false,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      this.starGroup.add(new THREE.Points(geometry, material));
+    }
+
+    this.scene.add(this.starGroup);
   }
 
   async loadJson(file) {
@@ -954,8 +988,14 @@ export class Kgz3DMap {
 
   animate() {
     this.frame = requestAnimationFrame(() => this.animate());
+    const elapsed = this.clock.getElapsedTime();
+    if (this.starGroup) {
+      this.starGroup.rotation.y = elapsed * 0.006;
+      this.starGroup.rotation.x = Math.sin(elapsed * 0.08) * 0.015;
+      this.needsRender = true;
+    }
     const controlsChanged = this.controls.update();
-    if (this.needsRender || controlsChanged || this.clock.getElapsedTime() < 2) {
+    if (this.needsRender || controlsChanged || elapsed < 2) {
       this.renderer.render(this.scene, this.camera);
       this.needsRender = false;
     }
@@ -1007,7 +1047,6 @@ export class Kgz3DMap {
   setOffsetX(x) {
     this.options.viewOffsetX = x;
     this.fitCamera();
-    console.log(`viewOffsetX set to ${x}, call __map3d.inspect() to verify`);
   }
 }
 

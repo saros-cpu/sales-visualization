@@ -14,7 +14,13 @@ export function entityTypeLabel(value) {
 }
 
 export function taskLabel(value) {
-  return { exchange_rates: '自动补充汇率', market_watch: '自动补充市场观察', retail_snapshots: '自动补充零售快照', all: '全部任务', automation_all: '全部任务' }[value] || value || '--';
+  return {
+    exchange_rates: '自动补充汇率',
+    market_watch: '自动补充市场观察',
+    retail_snapshots: '自动补充零售快照',
+    retail_accounting_reports: '自动生成吉方日报',
+    all: '全部任务',
+  }[value] || value || '--';
 }
 
 export function taskStatusLabel(value) {

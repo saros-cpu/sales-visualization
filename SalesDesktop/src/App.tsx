@@ -3,6 +3,7 @@ import { ClockCircleOutlined, LogoutOutlined, MinusCircleOutlined, ReloadOutline
 import { App as AntApp, Button, ConfigProvider, Modal, Space, Spin, Typography } from 'antd';
 import { Suspense, lazy, useEffect, useState, type ComponentType } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 import AuthRoute from '@/components/AuthRoute';
 import AppLayout from '@/layouts/AppLayout';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
@@ -79,6 +80,7 @@ const loading = (
 );
 
 function AppCloseGuard() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<AppCloseAction | null>(null);
 
@@ -114,7 +116,7 @@ function AppCloseGuard() {
 
   return (
     <Modal
-      title="关闭客户端"
+      title={t('appClose.title')}
       open={open}
       centered
       width={460}
@@ -130,7 +132,7 @@ function AppCloseGuard() {
             disabled={pendingAction === 'quit'}
             onClick={() => resolveClose('minimize')}
           >
-            最小化到任务栏
+            {t('appClose.minimize')}
           </Button>
           <Button
             danger
@@ -140,22 +142,23 @@ function AppCloseGuard() {
             disabled={pendingAction === 'minimize'}
             onClick={() => resolveClose('quit')}
           >
-            退出账号并关闭
+            {t('appClose.quit')}
           </Button>
         </Space>
       )}
     >
       <Typography.Paragraph style={{ marginBottom: 8 }}>
-        请选择本次关闭方式。
+        {t('appClose.prompt')}
       </Typography.Paragraph>
       <Typography.Text type="secondary">
-        最小化后可通过右下角任务栏托盘图标右键打开或关闭，也可以双击图标打开客户端。
+        {t('appClose.hint')}
       </Typography.Text>
     </Modal>
   );
 }
 
 function AppUpdateInstallGuard() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [info, setInfo] = useState<UpdateInstallInfo>({});
   const [pendingAction, setPendingAction] = useState<UpdateInstallAction | null>(null);
@@ -187,7 +190,7 @@ function AppUpdateInstallGuard() {
 
   return (
     <Modal
-      title="更新已准备好"
+      title={t('updateInstall.title')}
       open={open}
       centered
       width={460}
@@ -202,7 +205,7 @@ function AppUpdateInstallGuard() {
             disabled={pendingAction === 'restart'}
             onClick={() => resolveInstall('later')}
           >
-            稍后
+            {t('updateInstall.later')}
           </Button>
           <Button
             type="primary"
@@ -210,16 +213,16 @@ function AppUpdateInstallGuard() {
             loading={pendingAction === 'restart'}
             onClick={() => resolveInstall('restart')}
           >
-            立即重启安装
+            {t('updateInstall.restart')}
           </Button>
         </Space>
       )}
     >
       <Typography.Paragraph style={{ marginBottom: 8 }}>
-        新版本 {info.version || ''} 已下载完成。
+        {t('updateInstall.message', { version: info.version || '' })}
       </Typography.Paragraph>
       <Typography.Text type="secondary">
-        重启客户端后将自动安装更新；安装前会清除本地登录状态，重新打开后需要再次登录。
+        {t('updateInstall.hint')}
       </Typography.Text>
     </Modal>
   );

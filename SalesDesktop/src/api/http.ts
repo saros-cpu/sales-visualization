@@ -7,12 +7,30 @@ function normalizeHost(host: string) {
   return host.replace(/\/+$/, '');
 }
 
+function defaultAllowedApiHosts() {
+  const devHosts = ['localhost', '127.0.0.1'].flatMap((host) => [
+    `http://${host}:8900`,
+    `http://${host}:5173`,
+  ]);
+  return new Set([
+    normalizeHost(DEFAULT_PUBLIC_API_HOST),
+    ...devHosts,
+    ...(window.SALES_RUNTIME_CONFIG?.allowedHosts || []).map(normalizeHost),
+  ]);
+}
+
+function isAllowedApiHost(host: string) {
+  return defaultAllowedApiHosts().has(normalizeHost(host));
+}
+
 export function resolveApiHost() {
-  const configured = window.__SALES_API_HOST__
-    || window.SALES_RUNTIME_CONFIG?.apiHost
-    || localStorage.getItem('sales_api_host')
-    || import.meta.env.VITE_API_HOST;
-  const normalizedConfigured = configured ? normalizeHost(configured) : '';
+  const configuredHosts = [
+    window.__SALES_API_HOST__,
+    window.SALES_RUNTIME_CONFIG?.apiHost,
+    localStorage.getItem('sales_api_host'),
+    import.meta.env.VITE_API_HOST,
+  ].filter(Boolean).map((value) => normalizeHost(String(value)));
+  const normalizedConfigured = configuredHosts.find(isAllowedApiHost) || '';
   const isDevHost = import.meta.env.DEV || window.location.port === '5173';
   if (normalizedConfigured && !(isDevHost && normalizedConfigured === window.location.origin)) {
     return normalizedConfigured;

@@ -5,7 +5,9 @@ const DEFAULTS = {
   basePath: './data/',
   precisionCountriesFile: 'precision_countries.geojson',
   radius: 10,
-  autoRotateSpeed: 0.03,
+  autoRotate: true,
+  autoRotateSpeed: 0.026,
+  focusAnimationMs: 1300,
   showRoads: true,
   focusLng: 74.6,
   focusLat: 41.3,
@@ -74,6 +76,14 @@ function latLngToVec3(lng, lat, radius) {
   );
 }
 
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function nearestEquivalentAngle(current, target) {
+  return current + Math.atan2(Math.sin(target - current), Math.cos(target - current));
+}
+
 function dropClosing(ring) {
   if (ring.length > 1) {
     const a = ring[0];
@@ -117,13 +127,12 @@ function isValidLngLat(coord) {
   return Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1]);
 }
 
-function forEachPolygonSegment(polygon, callback) {
+function forEachPolygonSegment(polygon, callback, options = {}) {
   for (const ring of polygon) {
-    // 限制每个环的点数，防止栈溢出（保留 5000 点足够高精度）
-    const limitedRing = ring.length > 5000 ? ring.slice(0, 5000) : ring;
-    for (let i = 0; i < limitedRing.length - 1; i++) {
-      const from = limitedRing[i];
-      const to = limitedRing[i + 1];
+    const lineRing = prepareLineRing(ring, options.simplifyTolerance);
+    for (let i = 0; i < lineRing.length - 1; i++) {
+      const from = lineRing[i];
+      const to = lineRing[i + 1];
       if (isValidLngLat(from) && isValidLngLat(to)) callback(from, to);
     }
   }
@@ -174,6 +183,54 @@ function pointToSegmentDistanceSq(point, from, to, lngScale) {
   return ex * ex + ey * ey;
 }
 
+function sameLngLat(a, b) {
+  return Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+}
+
+function simplifyLine(points, toleranceDegrees) {
+  if (!toleranceDegrees || points.length <= 2) return points;
+  const toleranceSq = toleranceDegrees * toleranceDegrees;
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack = [[0, points.length - 1]];
+
+  while (stack.length) {
+    const [start, end] = stack.pop();
+    let maxDistanceSq = 0;
+    let index = -1;
+    const lngScale = Math.max(0.25, Math.cos(((points[start][1] + points[end][1]) / 2) * DEG2RAD));
+
+    for (let i = start + 1; i < end; i++) {
+      const distanceSq = pointToSegmentDistanceSq(points[i], points[start], points[end], lngScale);
+      if (distanceSq > maxDistanceSq) {
+        maxDistanceSq = distanceSq;
+        index = i;
+      }
+    }
+
+    if (maxDistanceSq > toleranceSq && index > start) {
+      keep[index] = 1;
+      stack.push([start, index], [index, end]);
+    }
+  }
+
+  const simplified = [];
+  for (let i = 0; i < points.length; i++) {
+    if (keep[i]) simplified.push(points[i]);
+  }
+  return simplified;
+}
+
+function prepareLineRing(ring, toleranceDegrees = 0) {
+  if (!Array.isArray(ring) || ring.length < 2) return [];
+  const closed = sameLngLat(ring[0], ring[ring.length - 1]);
+  const source = closed ? ring.slice(0, -1) : ring;
+  const simplified = simplifyLine(source, toleranceDegrees);
+  if (closed && simplified.length > 1) return [...simplified, simplified[0]];
+  return simplified;
+}
+
 function segmentDistanceSq(a, b, c, d) {
   const lngScale = Math.max(0.25, Math.cos(((a[1] + b[1] + c[1] + d[1]) / 4) * DEG2RAD));
   const midAB = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
@@ -188,7 +245,7 @@ function segmentDistanceSq(a, b, c, d) {
   );
 }
 
-function createBoundarySegmentIndex(geojson = null, cellSize = BOUNDARY_INDEX_CELL_DEGREES) {
+function createBoundarySegmentIndex(geojson = null, cellSize = BOUNDARY_INDEX_CELL_DEGREES, options = {}) {
   const grid = new Map();
   let nextId = 0;
 
@@ -235,7 +292,7 @@ function createBoundarySegmentIndex(geojson = null, cellSize = BOUNDARY_INDEX_CE
   if (geojson) {
     for (const feature of geojson.features || []) {
       for (const polygon of featurePolygons(feature)) {
-        forEachPolygonSegment(polygon, addSegment);
+        forEachPolygonSegment(polygon, addSegment, options);
       }
     }
   }
@@ -251,7 +308,7 @@ function polygonToLinePositions(polygon, radius, options = {}) {
     const b = latLngToVec3(to[0], to[1], radius);
     positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
     options.onKeepSegment?.(from, to);
-  });
+  }, options);
   return positions;
 }
 
@@ -333,7 +390,9 @@ export class GlobeMap {
     this.hoveredPoint = null;
     this.frame = null;
     this.needsRender = true;
-    this.autoRotate = false;
+    this.autoRotate = this.options.autoRotate !== false;
+    this.pointerOverGlobe = false;
+    this.focusTween = null;
     this.userAdjustedCamera = false;
     this.startedAt = performance.now();
     this.lastTick = this.startedAt;
@@ -364,17 +423,21 @@ export class GlobeMap {
 
     if (precisionCountries) {
       const precisionIsoSet = featureIsoSet(precisionCountries);
-      const precisionBoundaryIndex = createBoundarySegmentIndex(precisionCountries);
+      const precisionBoundaryIndex = createBoundarySegmentIndex(precisionCountries, BOUNDARY_INDEX_CELL_DEGREES, {
+        simplifyTolerance: 0.002
+      });
       if (world) {
         this.buildWorldOutline(world, {
           excludeIso3: precisionIsoSet,
           excludeNearIndex: precisionBoundaryIndex,
-          excludeNearThreshold: 0.18
+          excludeNearThreshold: 0.04,
+          simplifyTolerance: 0.02
         });
       }
       this.buildWorldOutline(precisionCountries, {
         dedupeSharedBoundaries: true,
-        dedupeNearThreshold: 0.08
+        dedupeNearThreshold: 0.04,
+        simplifyTolerance: 0.002
       });
     } else if (world) {
       this.buildWorldOutline(world);
@@ -418,7 +481,7 @@ export class GlobeMap {
 
   createScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = null;
+    this.scene.background = new THREE.Color(0x010510);
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 2000);
     this.camera.position.copy(this.focusDirection.clone().multiplyScalar(this.getFrameFitDistance(1)));
     this.camera.lookAt(0, 0, 0);
@@ -441,6 +504,7 @@ export class GlobeMap {
     this.controls.addEventListener('start', () => {
       this.interacting = true;
       this.userAdjustedCamera = true;
+      this.focusTween = null;
     });
     this.controls.addEventListener('end', () => { this.interacting = false; });
 
@@ -546,17 +610,33 @@ export class GlobeMap {
   }
 
   buildStars() {
-    const count = 2000;
-    const positions = [];
-    for (let i = 0; i < count; i++) {
-      const v = new THREE.Vector3().randomDirection().multiplyScalar(this.radius * (18 + Math.random() * 20));
-      positions.push(v.x, v.y, v.z);
+    this.starGroup = new THREE.Group();
+    const layers = [
+      { count: 4200, min: 18, max: 34, size: 1.8, color: 0xf8fbff, opacity: 0.96 },
+      { count: 1800, min: 28, max: 48, size: 2.85, color: 0xbfdbfe, opacity: 0.9 },
+      { count: 520, min: 36, max: 58, size: 4.2, color: 0xffffff, opacity: 0.82 }
+    ];
+    for (const layer of layers) {
+      const positions = [];
+      for (let i = 0; i < layer.count; i++) {
+        const distance = this.radius * (layer.min + Math.random() * (layer.max - layer.min));
+        const v = new THREE.Vector3().randomDirection().multiplyScalar(distance);
+        positions.push(v.x, v.y, v.z);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const material = new THREE.PointsMaterial({
+        color: layer.color,
+        size: layer.size,
+        transparent: true,
+        opacity: layer.opacity,
+        sizeAttenuation: false,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      this.starGroup.add(new THREE.Points(geometry, material));
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const material = new THREE.PointsMaterial({ color: 0xdbeafe, size: 0.35, transparent: true, opacity: 0.7, sizeAttenuation: true });
-    this.stars = new THREE.Points(geometry, material);
-    this.scene.add(this.stars);
+    this.scene.add(this.starGroup);
   }
 
   buildWorldOutline(geojson, options = {}) {
@@ -579,10 +659,11 @@ export class GlobeMap {
       };
       for (const polygon of polygons) {
         const ringPositions = polygonToLinePositions(polygon, BOUNDARY_RADIUS, {
+          simplifyTolerance: options.simplifyTolerance,
           shouldSkipSegment,
           onKeepSegment: (from, to) => keptSegments.push([from, to])
         });
-        positions.push(...ringPositions);
+        for (const value of ringPositions) positions.push(value);
       }
       if (dedupeIndex) {
         for (const [from, to] of keptSegments) dedupeIndex.addSegment(from, to);
@@ -825,11 +906,48 @@ export class GlobeMap {
 
   bindEvents() {
     this.onPointerMove = (event) => this.handlePointerMove(event);
-    this.onPointerLeave = () => this.clearHover();
+    this.onPointerLeave = () => this.handlePointerLeave();
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.addEventListener('pointerleave', this.onPointerLeave);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.container);
+  }
+
+  setPointerOverGlobe(isOverGlobe) {
+    if (this.pointerOverGlobe === isOverGlobe) return;
+    this.pointerOverGlobe = isOverGlobe;
+    if (isOverGlobe) {
+      this.focusOnKyrgyzstan();
+    } else {
+      this.focusTween = null;
+    }
+    this.requestRender();
+  }
+
+  handlePointerLeave() {
+    this.setPointerOverGlobe(false);
+    this.clearHover();
+  }
+
+  focusOnKyrgyzstan() {
+    const distance = Math.max(
+      this.getFrameFitDistance(this.camera.aspect || 1),
+      this.getManualMinDistance(),
+      this.camera.position.clone().sub(this.controls.target).length()
+    );
+    const endTarget = new THREE.Vector3(0, 0, 0);
+    const endCamera = endTarget.clone().add(this.focusDirection.clone().multiplyScalar(distance));
+    this.focusTween = {
+      startedAt: performance.now(),
+      duration: this.options.focusAnimationMs || 1300,
+      startCamera: this.camera.position.clone(),
+      endCamera,
+      startTarget: this.controls.target.clone(),
+      endTarget,
+      startRotationY: this.globeGroup.rotation.y,
+      endRotationY: nearestEquivalentAngle(this.globeGroup.rotation.y, 0)
+    };
+    this.requestRender();
   }
 
   handlePointerMove(event) {
@@ -838,6 +956,8 @@ export class GlobeMap {
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hit = this.raycaster.intersectObjects(this.pointMeshes, false)[0];
+    const globeHit = this.sphere ? this.raycaster.intersectObject(this.sphere, false)[0] : null;
+    this.setPointerOverGlobe(Boolean(hit || globeHit));
     if (hit) {
       if (this.hoveredPoint !== hit.object) {
         this.clearHover();
@@ -905,7 +1025,21 @@ export class GlobeMap {
     } catch {
       // Keep rendering with the browser clock if Three's timer is unavailable.
     }
-    const spinning = this.autoRotate && !this.interacting && !this.hoveredPoint;
+    if (this.focusTween) {
+      const progress = Math.min(1, (now - this.focusTween.startedAt) / this.focusTween.duration);
+      const eased = easeInOutCubic(progress);
+      this.camera.position.lerpVectors(this.focusTween.startCamera, this.focusTween.endCamera, eased);
+      this.controls.target.lerpVectors(this.focusTween.startTarget, this.focusTween.endTarget, eased);
+      this.globeGroup.rotation.y = THREE.MathUtils.lerp(this.focusTween.startRotationY, this.focusTween.endRotationY, eased);
+      this.controls.update();
+      this.needsRender = true;
+      if (progress >= 1) this.focusTween = null;
+    }
+    if (this.starGroup) {
+      this.starGroup.rotation.y += 0.0015 * delta;
+      this.needsRender = true;
+    }
+    const spinning = this.autoRotate && !this.interacting && !this.hoveredPoint && !this.pointerOverGlobe && !this.focusTween;
     if (spinning) {
       this.globeGroup.rotation.y += this.options.autoRotateSpeed * delta;
       this.needsRender = true;

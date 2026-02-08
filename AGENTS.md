@@ -15,12 +15,12 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `3.8.19`.
-- Current release commit: `51ebe51 feat: add system health action center`.
+- Current released client version: `3.8.20`.
+- Current release commit: `a896463 feat: upgrade map precision data`.
 - Production public entry: `http://198.51.100.10/`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `http://198.51.100.10/download/latest.yml`.
-- Current installer: `SalesDesktop Setup 3.8.19.exe`.
+- Current installer: `SalesDesktop Setup 3.8.20.exe`.
 
 ## Report Boundaries
 
@@ -113,9 +113,9 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.19.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.19.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.19.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.20.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.20.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.20.exe"
 ```
 
 ## CodeGraph Memory

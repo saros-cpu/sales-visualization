@@ -3,10 +3,19 @@ import { Alert, Button, Card, Col, DatePicker, message, Popconfirm, Row, Space, 
 import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { generateAccountingReports, getAccountingReportStatus, getSystemHealth, runAutomationTask, type AutomationTaskKey } from '@/api/system';
 import KpiCard, { KpiGrid } from '@/components/ui/KpiCard';
+import PageState from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  actionItemRoute,
+  asArray,
+  asRecord,
+  resolveSystemHealthTab,
+  textList,
+} from '@/utils/systemHealth';
 
 const { Text } = Typography;
 
@@ -32,6 +41,8 @@ function formatBytes(value?: number) {
 
 export default function SystemHealth() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user, can } = useAuth();
   const query = useApiQuery(['system-health'], getSystemHealth, { refetchInterval: 60000 });
   const [runningTask, setRunningTask] = useState<AutomationTaskKey | null>(null);
@@ -43,34 +54,42 @@ export default function SystemHealth() {
     () => getAccountingReportStatus(accountingDateText),
     { refetchInterval: 60000 },
   );
-  const data = query.data || {};
-  const accounting = accountingQuery.data || {};
-  const missingStations = accounting.missingStations || [];
-  const generatedFiles = accounting.generatedFiles || [];
-  const closedStations = accounting.closedStations || [];
-  const accountingWarnings = accounting.warnings || [];
-  const accountingSkipped = accounting.skipped || [];
-  const cacheItems = data.cache?.items || [];
-  const apiRecent = data.api?.recent || [];
-  const apiTop = data.api?.topPaths24h || [];
-  const automation = data.automation || [];
-  const ai = data.ai || {};
-  const knowledge = data.knowledge || {};
-  const updater = data.updater || {};
-  const updaterFiles = updater.files || [];
-  const actionCenter = data.actionCenter || {};
-  const actionSummary = actionCenter.summary || {};
-  const retailAlerts = data.retailAlerts || {};
-  const reportAudit = data.reportAudit || {};
+  const activeTab = useMemo(() => {
+    return resolveSystemHealthTab(location.search);
+  }, [location.search]);
+  const data = asRecord(query.data);
+  const accounting = asRecord(accountingQuery.data);
+  const api = asRecord(data.api);
+  const cache = asRecord(data.cache);
+  const services = asRecord(data.services);
+  const missingStations = asArray<any>(accounting.missingStations);
+  const generatedFiles = asArray<any>(accounting.generatedFiles);
+  const closedStations = asArray<any>(accounting.closedStations);
+  const accountingWarnings = asArray<any>(accounting.warnings);
+  const accountingSkipped = asArray<any>(accounting.skipped);
+  const cacheItems = asArray<any>(cache.items);
+  const apiRecent = asArray<any>(api.recent);
+  const apiTop = asArray<any>(api.topPaths24h);
+  const automation = asArray<any>(data.automation);
+  const ai = asRecord(data.ai);
+  const knowledge = asRecord(data.knowledge);
+  const updater = asRecord(data.updater);
+  const knowledgeWarnings = asArray<any>(knowledge.warnings);
+  const updaterWarnings = asArray<any>(updater.warnings);
+  const updaterFiles = asArray<any>(updater.files);
+  const actionCenter = asRecord(data.actionCenter);
+  const actionSummary = asRecord(actionCenter.summary);
+  const retailAlerts = asRecord(data.retailAlerts);
+  const reportAudit = asRecord(data.reportAudit);
   const canRunAutomation = user?.role === 'admin' || can('system_health:manage');
 
-  const serviceCards = useMemo(() => Object.entries(data.services || {}).map(([key, value]: [string, any]) => ({
+  const serviceCards = useMemo(() => Object.entries(services).map(([key, value]: [string, any]) => ({
     key,
     status: value?.status || 'unknown',
-  })), [data.services]);
+  })), [services]);
   const actionItems = useMemo(() => {
     const severityRank: Record<string, number> = { danger: 0, warning: 1, info: 2 };
-    return [...(actionCenter.items || [])].sort((a: any, b: any) => (
+    return [...asArray<any>(actionCenter.items)].sort((a: any, b: any) => (
       (severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9)
     ));
   }, [actionCenter.items]);
@@ -120,6 +139,21 @@ export default function SystemHealth() {
     }
   };
 
+  const handleTabChange = (key: string) => {
+    navigate({
+      pathname: location.pathname,
+      search: key === 'actions' ? '' : `?tab=${key}`,
+    });
+  };
+
+  if (query.isLoading) {
+    return <PageState status="loading" />;
+  }
+
+  if (query.error) {
+    return <PageState status="error" description={(query.error as Error)?.message} onRetry={() => query.refetch()} />;
+  }
+
   return (
     <Card
       title={t('systemHealth.title')}
@@ -128,10 +162,12 @@ export default function SystemHealth() {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.overall')} value={data.status || '-'} tone={data.status === 'ok' ? 'success' : 'warning'} /></Col>
         <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.actionOpenCount')} value={actionSummary.openCount ?? 0} goodWhen="down" tone={(actionSummary.openCount ?? 0) > 0 ? 'warning' : 'success'} /></Col>
-        <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.apiFailed24h')} value={data.api?.failed24h ?? 0} goodWhen="down" tone={(data.api?.failed24h ?? 0) > 0 ? 'danger' : 'success'} /></Col>
+        <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.apiFailed24h')} value={api.failed24h ?? 0} goodWhen="down" tone={(api.failed24h ?? 0) > 0 ? 'danger' : 'success'} /></Col>
         <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.aiFailed7d')} value={ai.failed7d ?? 0} goodWhen="down" tone={(ai.failed7d ?? 0) > 0 ? 'danger' : 'success'} /></Col>
       </Row>
       <Tabs
+        activeKey={activeTab}
+        onChange={handleTabChange}
         items={[
           {
             key: 'actions',
@@ -155,7 +191,7 @@ export default function SystemHealth() {
                 ]} />
                 <Table
                   size="small"
-                  rowKey={(row: any) => `${row.category}-${row.code}`}
+                  rowKey={(row: any) => row?.code || `${row?.category || 'item'}-${row?.title || row?.updatedAt || 'unknown'}`}
                   dataSource={actionItems}
                   pagination={false}
                   columns={[
@@ -164,7 +200,23 @@ export default function SystemHealth() {
                     { title: t('systemHealth.actionTitle'), dataIndex: 'title', width: 190 },
                     { title: t('systemHealth.actionDetail'), dataIndex: 'detail' },
                     { title: t('systemHealth.owner'), dataIndex: 'owner', width: 120 },
-                    { title: t('systemHealth.suggestedAction'), dataIndex: 'action' },
+                    {
+                      title: t('systemHealth.suggestedAction'),
+                      dataIndex: 'action',
+                      render: (value: string, row: any) => {
+                        const route = actionItemRoute(row);
+                        return (
+                          <Space wrap size={8}>
+                            <span>{value || '-'}</span>
+                            {route && (
+                              <Button size="small" onClick={() => navigate(route)}>
+                                {t('auditLogs.actions.view')}
+                              </Button>
+                            )}
+                          </Space>
+                        );
+                      },
+                    },
                     { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170, render: (v: any) => v || '-' },
                   ]}
                 />
@@ -234,10 +286,10 @@ export default function SystemHealth() {
                 pagination={false}
                 columns={[
                   { title: t('systemHealth.cacheItem'), dataIndex: 'label', width: 180 },
-                  { title: t('common.status'), dataIndex: 'valid', width: 100, render: (_: any, row: any) => <Tag color={row.exists && row.valid ? 'green' : 'red'}>{row.exists && row.valid ? t('common.ok') : t('common.failed')}</Tag> },
+                  { title: t('common.status'), dataIndex: 'valid', width: 100, render: (_: any, row: any) => <Tag color={row?.exists && row?.valid ? 'green' : 'red'}>{row?.exists && row?.valid ? t('common.ok') : t('common.failed')}</Tag> },
                   { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170 },
                   { title: t('systemHealth.size'), dataIndex: 'size', width: 100 },
-                  { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any, row: any) => v || (row.missingKeys?.length ? row.missingKeys.join(', ') : '-') },
+                  { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any, row: any) => v || textList(row?.missingKeys).join(', ') || '-' },
                 ]}
               />
             ),
@@ -265,12 +317,12 @@ export default function SystemHealth() {
                   { key: 'updateVersion', title: t('systemHealth.updateVersion'), value: updater.version || '-', span: 6 },
                   { key: 'lastExtracted', title: t('systemHealth.lastExtracted'), value: knowledge.lastExtractedAt || '-', span: 6 },
                 ]} />
-                {((knowledge.warnings || []).length > 0 || (updater.warnings || []).length > 0) && (
+                {(knowledgeWarnings.length > 0 || updaterWarnings.length > 0) && (
                   <Alert
                     showIcon
                     type="warning"
                     message={t('systemHealth.governanceWarnings')}
-                    description={[...(knowledge.warnings || []), ...(updater.warnings || [])].join(', ')}
+                    description={textList([...knowledgeWarnings, ...updaterWarnings]).join(', ')}
                   />
                 )}
                 <Table
@@ -281,7 +333,7 @@ export default function SystemHealth() {
                   title={() => t('systemHealth.updateFiles')}
                   columns={[
                     { title: t('systemHealth.updateFile'), dataIndex: 'label', width: 260 },
-                    { title: t('common.status'), dataIndex: 'exists', width: 110, render: (_: any, row: any) => <Tag color={row.exists && row.valid ? 'green' : 'red'}>{row.exists && row.valid ? t('common.ok') : t('common.failed')}</Tag> },
+                    { title: t('common.status'), dataIndex: 'exists', width: 110, render: (_: any, row: any) => <Tag color={row?.exists && row?.valid ? 'green' : 'red'}>{row?.exists && row?.valid ? t('common.ok') : t('common.failed')}</Tag> },
                     { title: t('systemHealth.size'), dataIndex: 'size', width: 120, render: (v: number) => formatBytes(v) },
                     { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170, render: (v: any) => v || '-' },
                     { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any) => v || '-' },
@@ -353,7 +405,7 @@ export default function SystemHealth() {
                     showIcon
                     type="warning"
                     message={t('systemHealth.accountingWarnings')}
-                    description={[...accountingWarnings, ...accountingSkipped.map((item: any) => `${String(item.shopKey || '').padStart(3, '0')}: ${item.reason || '-'}`)].slice(0, 12).join('；')}
+                    description={[...textList(accountingWarnings), ...accountingSkipped.map((item: any) => `${String(item?.shopKey || '').padStart(3, '0')}: ${item?.reason || '-'}`)].slice(0, 12).join('；')}
                   />
                 )}
 

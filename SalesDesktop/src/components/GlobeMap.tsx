@@ -67,7 +67,7 @@ export default function GlobeMap({ height = 'calc(100vh - 112px)' }: GlobeMapPro
       setError('');
       try {
         const basePath = resolveKgzDataPath();
-        const instance = await mountGlobeMap(el, { basePath, showRoads: false, language: i18n.language });
+        const instance = await mountGlobeMap(el, { basePath, showRoads: false, language: i18n.language, throwOnError: true });
         if (cancelled) {
           instance?.destroy?.();
           return;

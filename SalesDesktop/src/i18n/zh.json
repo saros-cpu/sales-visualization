@@ -24,7 +24,7 @@
     "management": "管理",
     "settings": "设置",
     "map": "3D 地图",
-    "exchange": "汇率与市场",
+    "exchange": "汇率查询",
     "reports": "报表中心",
     "knowledgeBase": "知识库",
     "aliases": "别名管理",
@@ -120,6 +120,7 @@
     "loading": "加载中...",
     "error": "出错了",
     "retry": "重试",
+    "pageLoadError": "页面加载出错",
     "save": "保存",
     "success": "成功",
     "failed": "失败",
@@ -324,6 +325,45 @@
       "approved": "已通过",
       "rejected": "已驳回"
     }
+  },
+  "appClose": {
+    "title": "关闭客户端",
+    "minimize": "最小化到任务栏",
+    "quit": "退出账号并关闭",
+    "prompt": "请选择本次关闭方式。",
+    "hint": "最小化后可通过右下角任务栏托盘图标右键打开或关闭，也可以双击图标打开客户端。"
+  },
+  "updateInstall": {
+    "title": "更新已准备好",
+    "later": "稍后",
+    "restart": "立即重启安装",
+    "message": "新版本 {{version}} 已下载完成。",
+    "hint": "重启客户端后将自动安装更新；安装前会清除本地登录状态，重新打开后需要再次登录。"
+  },
+  "reportsCenter": {
+    "run": "生成/下载",
+    "success": "报表已生成或下载已开始",
+    "failed": "报表生成失败",
+    "title": "报表中心",
+    "subtitle": "统一调用现有报表模板，保留原有模板格式与生成逻辑。",
+    "month": "报表月份",
+    "range": "日期范围",
+    "noPermission": "当前账号没有报表导出权限。",
+    "monthLabel": "{{month}} 月",
+    "monthlyTitle": "综合月度分析报告",
+    "monthlyDesc": "按月生成现有综合分析模板",
+    "yearlyTitle": "综合年度分析报告",
+    "yearlyDesc": "按年度生成现有综合分析模板",
+    "wholesaleTitle": "批发分析报告",
+    "wholesaleDesc": "按月调用批发分析报告模板",
+    "retailExcelTitle": "零售月度 Excel",
+    "retailExcelDesc": "按月导出零售日销表",
+    "retailRangeTitle": "零售日期范围报表",
+    "retailRangeDesc": "按日期范围生成零售周报/区间报表",
+    "selfUseTitle": "自用油报表",
+    "selfUseDesc": "按日期范围导出自用油明细",
+    "wholesaleDetailTitle": "批发明细 Excel",
+    "wholesaleDetailDesc": "按月导出批发明细数据"
   },
   "product": {
     "AI-80": "AI-80 (АИ-80)",

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Row, Col, Card, Select, Table, Tag, Button, Spin, Alert, Space } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import { Row, Col, Card, Select, Table, Tag, Button, Space } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
@@ -9,6 +9,7 @@ import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers';
 import { getExchangeRates, exportExchangeRates, ExchangeRateItem } from '@/api/exchange';
 import { KpiGrid } from '@/components/ui/KpiCard';
+import PageState from '@/components/ui/PageState';
 
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
@@ -20,7 +21,7 @@ export default function ExchangeRates() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const loadRates = useCallback(() => {
     setLoading(true);
     setError('');
     getExchangeRates(year, month)
@@ -29,8 +30,12 @@ export default function ExchangeRates() {
       .finally(() => setLoading(false));
   }, [year, month]);
 
-  if (loading) return <Spin style={{ display: 'block', margin: '100px auto' }} />;
-  if (error) return <Alert type="error" message={t('common.error')} description={error} showIcon />;
+  useEffect(() => {
+    loadRates();
+  }, [loadRates]);
+
+  if (loading) return <PageState status="loading" />;
+  if (error) return <PageState status="error" description={error} onRetry={loadRates} />;
 
   const items = data?.items || [];
   const sorted = [...items].reverse();

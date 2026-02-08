@@ -59,6 +59,10 @@ function flattenKeys(items: MenuItem[]): string[] {
   return items.flatMap(item => item.children ? [item.key, ...flattenKeys(item.children)] : [item.key]);
 }
 
+function openableKeys(items: MenuItem[]): string[] {
+  return items.flatMap(item => item.children?.length ? [item.key, ...openableKeys(item.children)] : []);
+}
+
 function findFirstPath(items: MenuItem[]): string | undefined {
   for (const item of items) {
     if (item.key.startsWith('/') && !item.children?.length) return item.key;
@@ -93,7 +97,15 @@ export default function AppLayout() {
   const { user, permissions, permissionCodes, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sales_sider_collapsed') === '1');
+  const [userOpenKeys, setUserOpenKeys] = useState<string[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('sales_menu_open_keys') || '[]');
+      return Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
 
   const filteredMenu = useMemo(() => {
     function filterItems(items: MenuItem[], inheritedModuleKey?: string): MenuItem[] {
@@ -142,7 +154,24 @@ export default function AppLayout() {
     return matched.sort((a, b) => b.length - a.length)[0] || '/';
   }, [location.pathname, filteredMenu]);
 
-  const openKeys = useMemo(() => findOpenKeys(filteredMenu, location.pathname), [filteredMenu, location.pathname]);
+  const routeOpenKeys = useMemo(() => findOpenKeys(filteredMenu, location.pathname), [filteredMenu, location.pathname]);
+  const validOpenKeys = useMemo(() => new Set(openableKeys(filteredMenu)), [filteredMenu]);
+
+  useEffect(() => {
+    setUserOpenKeys((previous) => {
+      const next = [...new Set([...previous.filter(key => validOpenKeys.has(key)), ...routeOpenKeys])];
+      return next.length === previous.length && next.every((key, index) => key === previous[index]) ? previous : next;
+    });
+  }, [routeOpenKeys, validOpenKeys]);
+
+  useEffect(() => {
+    localStorage.setItem('sales_menu_open_keys', JSON.stringify(userOpenKeys.filter(key => validOpenKeys.has(key))));
+  }, [userOpenKeys, validOpenKeys]);
+
+  const updateCollapsed = (value: boolean) => {
+    setCollapsed(value);
+    localStorage.setItem('sales_sider_collapsed', value ? '1' : '0');
+  };
 
   const switchLang = (lang: string) => {
     i18n.changeLanguage(lang);
@@ -165,7 +194,7 @@ export default function AppLayout() {
           collapsedWidth={72}
           width={216}
           trigger={null}
-          onCollapse={setCollapsed}
+          onCollapse={updateCollapsed}
           style={{ position: 'fixed', left: 0, top: 0, bottom: 0, height: '100vh', zIndex: 10 }}
         >
           <div className="app-sider-brand" style={{
@@ -179,7 +208,7 @@ export default function AppLayout() {
               <button
                 type="button"
                 className={`app-sider-brand-button${collapsed ? ' is-collapsed' : ''}`}
-                onClick={() => setCollapsed(value => !value)}
+                onClick={() => updateCollapsed(!collapsed)}
               >
                 <img src={logoSrc} alt="" style={{ width: collapsed ? 30 : 36, height: collapsed ? 30 : 36, flexShrink: 0 }} />
                 {!collapsed && (
@@ -198,7 +227,11 @@ export default function AppLayout() {
               mode="inline"
               inlineCollapsed={collapsed}
               selectedKeys={[selectedKey]}
-              defaultOpenKeys={openKeys}
+              openKeys={collapsed ? [] : userOpenKeys}
+              onOpenChange={(keys) => {
+                if (collapsed) return;
+                setUserOpenKeys(keys.map(String).filter(key => validOpenKeys.has(key)));
+              }}
               items={antMenuItems}
               onClick={({ key }) => {
                 const nextKey = String(key);

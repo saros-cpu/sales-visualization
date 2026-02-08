@@ -37,6 +37,12 @@ WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 DESKTOP_ROOT = WORKSPACE_ROOT / "SalesDesktop"
 DESKTOP_DOWNLOAD_ROOT = DESKTOP_ROOT / "download"
 REPORT_COMPARE_ROOT = WORKSPACE_ROOT / "report_compare_outputs"
+AUTOMATION_TASK_KEYS = {
+    "exchange_rates",
+    "market_watch",
+    "retail_snapshots",
+    "retail_accounting_reports",
+}
 
 
 def _file_info(path: Path, required_keys: set[str] | None = None) -> dict[str, Any]:
@@ -637,7 +643,10 @@ def _action_center(
             count=failed_api,
         )
 
-    failed_tasks = [item for item in automation if item.get("status") == "failed"]
+    failed_tasks = [
+        item for item in automation
+        if item.get("task_name") in AUTOMATION_TASK_KEYS and item.get("status") == "failed"
+    ]
     if failed_tasks:
         add(
             "automation_failed",
@@ -813,6 +822,8 @@ def _automation_rows(cur) -> list[dict[str, Any]]:
     result = []
     for row in cur.fetchall():
         item = dict(row)
+        if item.get("task_name") not in AUTOMATION_TASK_KEYS:
+            continue
         for key in ("started_at", "finished_at"):
             value = item.get(key)
             item[key] = value.isoformat(sep=" ") if isinstance(value, datetime) else str(value) if value else None
@@ -1067,7 +1078,7 @@ def generate_accounting_reports():
 def run_automation_task():
     payload = request.get_json(silent=True) or {}
     task = payload.get("task")
-    allowed = {"exchange_rates", "market_watch", "retail_snapshots", "retail_accounting_reports", "all"}
+    allowed = set(AUTOMATION_TASK_KEYS) | {"all"}
     if task not in allowed:
         return jsonify({"code": 4221, "message": "请选择有效的自动任务", "data": None}), 422
 

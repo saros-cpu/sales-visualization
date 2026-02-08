@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   App as AntApp,
   Button,
   Checkbox,
@@ -10,7 +9,6 @@ import {
   Modal,
   Select,
   Space,
-  Spin,
   Switch,
   Table,
   Tabs,
@@ -34,6 +32,7 @@ import {
   type RoleRecord,
 } from '@/api/organization';
 import { useAuth } from '@/contexts/AuthContext';
+import PageState from '@/components/ui/PageState';
 
 const { Text } = Typography;
 
@@ -590,8 +589,8 @@ export default function OrganizationPermissions() {
     }] : []),
   ];
 
-  if (loading) return <Spin style={{ display: 'block', margin: '100px auto' }} />;
-  if (error) return <Alert type="error" message={text.loadErrorTitle} description={error} showIcon />;
+  if (loading) return <PageState status="loading" />;
+  if (error) return <PageState status="error" title={text.loadErrorTitle} description={error} onRetry={reload} />;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

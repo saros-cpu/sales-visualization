@@ -37,6 +37,7 @@ async function mountWithFallback(MapClass, target, options, fallback) {
     return map;
   } catch (error) {
     console.error('[Kgz3DMap] mount failed:', error);
+    if (options.throwOnError) throw error;
     if (typeof fallback === 'function') {
       fallback(error);
     } else {

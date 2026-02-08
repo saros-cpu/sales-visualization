@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.20';
+export const VERSION = '3.8.21';
 export const BUILD_DATE = '2026-07-22';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.21',
+    date: '2026-07-22',
+    type: 'patch',
+    changes: [
+      '优化：系统健康自动任务只评估当前有效任务集，历史 automation_all 记录不再触发提醒中心误报',
+      '优化：补充桌面端、Web 端和后端系统健康单元测试，发布自检纳入 Vitest、Python unittest、完整 npm audit 和桌面端类型检查',
+      '优化：后端 CORS 与桌面端 API Host 改为白名单策略，桌面端依赖升级到 Electron 43 和 electron-builder 26',
+      '优化：报表中心、关闭确认和更新安装提示迁入中俄双语文案，统一 PageState 加载/错误状态并收敛构建分包提示',
+    ],
+  },
   {
     version: '3.8.20',
     date: '2026-07-22',

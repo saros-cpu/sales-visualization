@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$PythonExe = if ($env:SALES_PYTHON) { $env:SALES_PYTHON } else { "python" }
 $Failures = New-Object System.Collections.Generic.List[string]
 $Warnings = New-Object System.Collections.Generic.List[string]
 
@@ -67,16 +68,28 @@ Invoke-Check "Python syntax compile" {
         "Sales/api_v2/permission_service.py",
         "OilStation/scripts/generate_accounting_handover_reports.py"
     )
-    Invoke-External "python" (@("-m", "py_compile") + $files) $RepoRoot
+    Invoke-External $PythonExe (@("-m", "py_compile") + $files) $RepoRoot
+}
+
+Invoke-Check "Python unit tests" {
+    Invoke-External $PythonExe @("-m", "unittest", "discover", "-s", "Sales/tests") $RepoRoot
 }
 
 if (-not $SkipDesktopTypecheck) {
     Invoke-Check "Desktop TypeScript check" {
-        Invoke-External "npx" @("tsc", "--noEmit", "--pretty", "false") (Join-Path $RepoRoot "SalesDesktop")
+        Invoke-External "npm" @("run", "typecheck") (Join-Path $RepoRoot "SalesDesktop")
+    }
+
+    Invoke-Check "Desktop unit tests" {
+        Invoke-External "npm" @("test") (Join-Path $RepoRoot "SalesDesktop")
     }
 }
 
 if (-not $SkipFrontendBuild) {
+    Invoke-Check "Web frontend unit tests" {
+        Invoke-External "npm" @("test") (Join-Path $RepoRoot "frontend")
+    }
+
     Invoke-Check "Web frontend build" {
         Invoke-External "npm" @("run", "build") (Join-Path $RepoRoot "frontend")
     }

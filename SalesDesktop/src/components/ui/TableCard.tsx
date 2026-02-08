@@ -1,5 +1,6 @@
 import { Card, Table, Button } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useTranslation } from 'react-i18next';
 
 interface Props<T> {
   title: string;
@@ -22,12 +23,13 @@ export default function TableCard<T extends object>({
   rowKey,
   loading,
   onExport,
-  exportText = '导出',
+  exportText,
   pageSize = 20,
   scrollY,
   pagination,
   className,
 }: Props<T>) {
+  const { t } = useTranslation();
   const tableScroll = scrollY ? { x: 'max-content' as const, y: scrollY } : { x: 'max-content' as const };
 
   return (
@@ -35,7 +37,7 @@ export default function TableCard<T extends object>({
       title={title}
       size="small"
       className={['table-card', className].filter(Boolean).join(' ')}
-      extra={onExport && <Button onClick={onExport}>{exportText}</Button>}
+      extra={onExport && <Button onClick={onExport}>{exportText || t('common.export')}</Button>}
     >
       <div className="table-card-body-scroll">
         <Table<T>

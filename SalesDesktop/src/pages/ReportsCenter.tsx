@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Button, Card, Col, DatePicker, InputNumber, Row, Select, Space, Typography, message } from 'antd';
 import { FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useTranslation } from 'react-i18next';
 import {
   downloadMonthlyReport,
   downloadRetailRangeReport,
@@ -25,12 +26,13 @@ interface ReportCardProps {
   title: string;
   desc: string;
   icon: ReactNode;
+  runLabel: string;
   disabled?: boolean;
   loading?: boolean;
   onRun: () => void;
 }
 
-function ReportCard({ title, desc, icon, disabled, loading, onRun }: ReportCardProps) {
+function ReportCard({ title, desc, icon, runLabel, disabled, loading, onRun }: ReportCardProps) {
   return (
     <Card size="small" style={{ height: '100%' }}>
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -42,7 +44,7 @@ function ReportCard({ title, desc, icon, disabled, loading, onRun }: ReportCardP
           </div>
         </Space>
         <Button type="primary" block disabled={disabled} loading={loading} onClick={onRun}>
-          生成/下载
+          {runLabel}
         </Button>
       </Space>
     </Card>
@@ -50,6 +52,7 @@ function ReportCard({ title, desc, icon, disabled, loading, onRun }: ReportCardP
 }
 
 export default function ReportsCenter() {
+  const { t } = useTranslation();
   const { user, can } = useAuth();
   const now = dayjs();
   const [year, setYear] = useState(now.year());
@@ -64,16 +67,16 @@ export default function ReportsCenter() {
 
   const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, index) => ({
     value: index + 1,
-    label: `${index + 1} 月`,
-  })), []);
+    label: t('reportsCenter.monthLabel', { month: index + 1 }),
+  })), [t]);
 
   const run = async (key: string, task: () => Promise<unknown>) => {
     setRunning(key);
     try {
       await task();
-      message.success('报表已生成或下载已开始');
+      message.success(t('reportsCenter.success'));
     } catch (err: any) {
-      message.error(err?.message || '报表生成失败');
+      message.error(err?.message || t('reportsCenter.failed'));
     } finally {
       setRunning('');
     }
@@ -87,16 +90,16 @@ export default function ReportsCenter() {
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div>
-        <Title level={4} style={{ marginBottom: 4 }}>报表中心</Title>
-        <Text type="secondary">统一调用现有报表模板，保留原有模板格式与生成逻辑。</Text>
+        <Title level={4} style={{ marginBottom: 4 }}>{t('reportsCenter.title')}</Title>
+        <Text type="secondary">{t('reportsCenter.subtitle')}</Text>
       </div>
 
       <div>
         <Space wrap>
-          <span>报表月份</span>
+          <span>{t('reportsCenter.month')}</span>
           <InputNumber min={2020} max={2100} value={year} onChange={(value) => setYear(Number(value || now.year()))} />
           <Select style={{ width: 120 }} value={month} options={monthOptions} onChange={setMonth} />
-          <span>日期范围</span>
+          <span>{t('reportsCenter.range')}</span>
           <RangePicker
             value={range}
             onChange={(values) => {
@@ -108,16 +111,17 @@ export default function ReportsCenter() {
 
       {!canAnyReport && (
         <div className="page-inline-alert">
-          <Text type="danger">当前账号没有报表导出权限。</Text>
+          <Text type="danger">{t('reportsCenter.noPermission')}</Text>
         </div>
       )}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} xl={8}>
           <ReportCard
-            title="综合月度分析报告"
-            desc="按月生成现有综合分析模板"
+            title={t('reportsCenter.monthlyTitle')}
+            desc={t('reportsCenter.monthlyDesc')}
             icon={<FileTextOutlined />}
+            runLabel={t('reportsCenter.run')}
             disabled={!canAnyReport}
             loading={running === 'monthly'}
             onRun={() => run('monthly', () => downloadMonthlyReport(ym(year, month)))}
@@ -125,9 +129,10 @@ export default function ReportsCenter() {
         </Col>
         <Col xs={24} md={12} xl={8}>
           <ReportCard
-            title="综合年度分析报告"
-            desc="按年度生成现有综合分析模板"
+            title={t('reportsCenter.yearlyTitle')}
+            desc={t('reportsCenter.yearlyDesc')}
             icon={<FileTextOutlined />}
+            runLabel={t('reportsCenter.run')}
             disabled={!canAnyReport}
             loading={running === 'yearly'}
             onRun={() => run('yearly', () => downloadYearlyReport(year))}
@@ -135,9 +140,10 @@ export default function ReportsCenter() {
         </Col>
         <Col xs={24} md={12} xl={8}>
           <ReportCard
-            title="批发分析报告"
-            desc="按月调用批发分析报告模板"
+            title={t('reportsCenter.wholesaleTitle')}
+            desc={t('reportsCenter.wholesaleDesc')}
             icon={<FileTextOutlined />}
+            runLabel={t('reportsCenter.run')}
             disabled={!canWholesaleExport}
             loading={running === 'wholesale'}
             onRun={() => run('wholesale', () => downloadWholesaleReport({ year, month }))}
@@ -145,9 +151,10 @@ export default function ReportsCenter() {
         </Col>
         <Col xs={24} md={12} xl={8}>
           <ReportCard
-            title="零售月度 Excel"
-            desc="按月导出零售日销表"
+            title={t('reportsCenter.retailExcelTitle')}
+            desc={t('reportsCenter.retailExcelDesc')}
             icon={<FileExcelOutlined />}
+            runLabel={t('reportsCenter.run')}
             disabled={!canRetailExport}
             loading={running === 'retail-excel'}
             onRun={() => run('retail-excel', () => exportExcel(ym(year, month)))}
@@ -155,9 +162,10 @@ export default function ReportsCenter() {
         </Col>
         <Col xs={24} md={12} xl={8}>
           <ReportCard
-            title="零售日期范围报表"
-            desc="按日期范围生成零售周报/区间报表"
+            title={t('reportsCenter.retailRangeTitle')}
+            desc={t('reportsCenter.retailRangeDesc')}
             icon={<FileExcelOutlined />}
+            runLabel={t('reportsCenter.run')}
             disabled={!canRetailExport}
             loading={running === 'retail-range'}
             onRun={() => run('retail-range', () => {
@@ -168,9 +176,10 @@ export default function ReportsCenter() {
         </Col>
         <Col xs={24} md={12} xl={8}>
           <ReportCard
-            title="自用油报表"
-            desc="按日期范围导出自用油明细"
+            title={t('reportsCenter.selfUseTitle')}
+            desc={t('reportsCenter.selfUseDesc')}
             icon={<FileExcelOutlined />}
+            runLabel={t('reportsCenter.run')}
             disabled={!canRetailExport}
             loading={running === 'self-use'}
             onRun={() => run('self-use', () => {
@@ -181,9 +190,10 @@ export default function ReportsCenter() {
         </Col>
         <Col xs={24} md={12} xl={8}>
           <ReportCard
-            title="批发明细 Excel"
-            desc="按月导出批发明细数据"
+            title={t('reportsCenter.wholesaleDetailTitle')}
+            desc={t('reportsCenter.wholesaleDetailDesc')}
             icon={<FileExcelOutlined />}
+            runLabel={t('reportsCenter.run')}
             disabled={!canWholesaleExport}
             loading={running === 'wholesale-detail'}
             onRun={() => run('wholesale-detail', () => downloadWholesaleDetails(ym(year, month)))}

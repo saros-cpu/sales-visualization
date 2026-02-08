@@ -77,11 +77,16 @@ jwt = JWTManager(app)
 # CORS：手动处理跨域请求（Electron 加载本地文件时 origin 为 null 或 file://）
 import re
 _CORS_ORIGIN_RE = re.compile(r'^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^file://|^app://\.|^null$')
+_CORS_ALLOWED_ORIGINS = {
+    item.strip().rstrip("/")
+    for item in os.getenv("SALES_CORS_ORIGINS", "").split(",")
+    if item.strip()
+}
 
 @app.after_request
 def add_cors_headers(response):
-    origin = request.headers.get('Origin', '')
-    if _CORS_ORIGIN_RE.match(origin) or 'localhost' in origin:
+    origin = (request.headers.get('Origin') or '').rstrip("/")
+    if origin and (origin in _CORS_ALLOWED_ORIGINS or _CORS_ORIGIN_RE.match(origin)):
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
@@ -94,7 +99,7 @@ def handle_options_preflight():
         resp = app.make_default_options_response()
         return add_cors_headers(resp)
 
-APP_BUILD = "2026-07-21-ai-assistant-range-fix-v3.8.17"
+APP_BUILD = "2026-07-22-salesdesktop-v3.8.21"
 PROJECT_ROOT = Path(__file__).resolve().parent
 OILSTATION_ROOT = PROJECT_ROOT.parent / "OilStation"
 SHARED_ASSETS_ROOT = PROJECT_ROOT.parent / "assets"
