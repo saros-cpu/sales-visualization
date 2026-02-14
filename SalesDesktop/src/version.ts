@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.21';
+export const VERSION = '3.8.22';
 export const BUILD_DATE = '2026-07-22';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.22',
+    date: '2026-07-22',
+    type: 'patch',
+    changes: [
+      '修复：客户端左侧栏收缩后，鼠标悬停多级菜单恢复弹出子菜单，避免折叠状态无法进入子页面',
+      '修复：柱线混合图恢复柱状图数据在柱子内、折线图数据在点位上方的展示规则，并增加错位和留白减少重合',
+      '优化：折叠菜单弹出层层级、圆角和阴影，使收缩侧栏下的子菜单更稳定可读',
+    ],
+  },
   {
     version: '3.8.21',
     date: '2026-07-22',

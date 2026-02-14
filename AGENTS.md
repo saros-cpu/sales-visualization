@@ -15,12 +15,12 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `3.8.20`.
-- Current release commit: `a896463 feat: upgrade map precision data`.
+- Current released client version: `3.8.21`.
+- Current release commit: `cef53cc chore: bump desktop release to 3.8.21`.
 - Production public entry: `http://198.51.100.10/`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `http://198.51.100.10/download/latest.yml`.
-- Current installer: `SalesDesktop Setup 3.8.20.exe`.
+- Current installer: `SalesDesktop Setup 3.8.21.exe`.
 
 ## Report Boundaries
 
@@ -89,12 +89,15 @@ Before release or after non-trivial code changes, run the checks appropriate to 
 cd D:\SalesVisualization
 git diff --check
 python -B -m compileall -q Sales OilStation
+python -m unittest discover -s Sales/tests
 
 cd D:\SalesVisualization\SalesDesktop
-npx tsc --noEmit --pretty false
+npm run typecheck
+npm test
 npm run build
 
 cd D:\SalesVisualization\frontend
+npm test
 npm run build
 
 cd D:\SalesVisualization
@@ -113,18 +116,18 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.20.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.20.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.20.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.21.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.21.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.21.exe"
 ```
 
 ## CodeGraph Memory
 
 Current CodeGraph baseline:
 
-- Files: `299`
-- Nodes: `7,310`
-- Edges: `27,780`
+- Files: `308`
+- Nodes: `7,416`
+- Edges: `27,827`
 - DB size: `34.50 MB`
 - Status: `Index is up to date`
 

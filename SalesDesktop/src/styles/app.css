@@ -283,6 +283,21 @@ body {
   border-radius: 7px;
 }
 
+.ant-menu-submenu-popup {
+  z-index: 1200;
+}
+
+.ant-menu-submenu-popup .ant-menu {
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+}
+
+.ant-menu-submenu-popup .ant-menu-item,
+.ant-menu-submenu-popup .ant-menu-submenu-title {
+  height: 36px;
+  line-height: 36px;
+}
+
 .app-main-layout {
   background: #eef2f7;
   transition: margin-left 0.2s ease;

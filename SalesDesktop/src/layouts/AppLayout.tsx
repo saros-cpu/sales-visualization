@@ -227,7 +227,7 @@ export default function AppLayout() {
               mode="inline"
               inlineCollapsed={collapsed}
               selectedKeys={[selectedKey]}
-              openKeys={collapsed ? [] : userOpenKeys}
+              openKeys={collapsed ? undefined : userOpenKeys}
               onOpenChange={(keys) => {
                 if (collapsed) return;
                 setUserOpenKeys(keys.map(String).filter(key => validOpenKeys.has(key)));

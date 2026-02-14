@@ -126,7 +126,7 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
       outerBoundsMode: 'same' as const,
       outerBoundsContain: 'axisLabel' as const,
       top: mixedBarLine
-        ? Math.max(Number.parseFloat(existingGrid?.top) || 0, 76)
+        ? Math.max(Number.parseFloat(existingGrid?.top) || 0, 88)
         : existingGrid?.top,
       bottom: xHasCategory ? (Number.isFinite(existingBottom) ? Math.max(existingBottom, 68) : 68) : (existingGrid?.bottom ?? 32),
       left: hasHorizontalBar ? 8 : (mixedBarLine ? 56 : (existingGrid?.left ?? 48)),
@@ -145,23 +145,25 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
     };
   }
 
-  const series = rawSeries.map((item) => {
+  const series = rawSeries.map((item, seriesIndex) => {
     if (!item || !item.type) return item;
     const isHorizontalBar = isHorizontalBarSeries(item);
+    const lineSeriesIndex = rawSeries.slice(0, seriesIndex).filter((seriesItem) => seriesItem?.type === 'line').length;
     if (item.type === 'bar') {
       return {
         ...item,
         label: {
           ...(item.label || {}),
           show: true,
-          position: isHorizontalBar ? 'insideRight' : (mixedBarLine ? 'insideBottom' : 'top'),
-          distance: mixedBarLine && !isHorizontalBar ? 4 : undefined,
-          verticalAlign: mixedBarLine && !isHorizontalBar ? 'bottom' : undefined,
+          position: isHorizontalBar ? 'insideRight' : 'inside',
+          distance: isHorizontalBar ? undefined : 0,
+          verticalAlign: isHorizontalBar ? undefined : 'middle',
           formatter: seriesValue,
           fontSize: 10,
-          color: isHorizontalBar ? '#111827' : (mixedBarLine ? '#fff' : undefined),
-          textBorderWidth: isHorizontalBar ? 0 : undefined,
-          textShadowBlur: isHorizontalBar ? 0 : undefined,
+          color: isHorizontalBar ? '#111827' : '#fff',
+          textBorderColor: isHorizontalBar ? undefined : 'rgba(15, 23, 42, 0.32)',
+          textBorderWidth: isHorizontalBar ? 0 : 2,
+          textShadowBlur: 0,
         },
         labelLayout: isHorizontalBar
           ? (params: any) => {
@@ -187,20 +189,23 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
           ...(item.label || {}),
           show: true,
           position: 'top',
-          distance: mixedBarLine ? 24 : 6,
-          offset: mixedBarLine ? [0, -6] : undefined,
+          distance: mixedBarLine ? 18 + lineSeriesIndex * 12 : 6,
+          offset: mixedBarLine ? [0, -10 - lineSeriesIndex * 4] : undefined,
           formatter: seriesValue,
           fontSize: 10,
           color: '#111827',
           textBorderColor: '#fff',
           textBorderWidth: mixedBarLine ? 2 : 0,
+          backgroundColor: mixedBarLine ? 'rgba(255, 255, 255, 0.9)' : undefined,
+          borderRadius: mixedBarLine ? 3 : undefined,
+          padding: mixedBarLine ? [1, 3] : undefined,
         },
         labelLayout: mixedBarLine
           ? (params: any) => {
               const labelRect = params?.labelRect;
               if (!labelRect) return { hideOverlap: false };
               return {
-                y: Math.max(0, labelRect.y - 12),
+                y: Math.max(0, labelRect.y - 10 - lineSeriesIndex * 8),
                 hideOverlap: false,
                 moveOverlap: 'shiftY',
               };
