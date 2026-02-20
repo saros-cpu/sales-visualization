@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.8.22';
+export const VERSION = '3.8.23';
 export const BUILD_DATE = '2026-07-22';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.8.23',
+    date: '2026-07-22',
+    type: 'patch',
+    changes: [
+      '修复：柱线混合图按实际柱体像素边界避让折线标签，避免折线数值标签压到柱状图柱体上',
+      '优化：混合图内部先布局柱体再布局折线标签，同时保持原始颜色映射和 tooltip 顺序',
+      '测试：补充 ChartCard 混合柱线图标签避让单元测试，防止回归',
+    ],
+  },
   {
     version: '3.8.22',
     date: '2026-07-22',

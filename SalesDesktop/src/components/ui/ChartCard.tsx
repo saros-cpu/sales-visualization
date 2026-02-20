@@ -39,6 +39,38 @@ function isMixedBarLine(series: any[]) {
   return series.some((item) => item?.type === 'bar') && series.some((item) => item?.type === 'line');
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+type LayoutRect = { x: number; y: number; width: number; height: number };
+type BarBounds = { left: number; right: number; top: number; bottom: number };
+
+function toBarBounds(rect: LayoutRect): BarBounds {
+  const left = Math.min(rect.x, rect.x + rect.width);
+  const right = Math.max(rect.x, rect.x + rect.width);
+  const top = Math.min(rect.y, rect.y + rect.height);
+  const bottom = Math.max(rect.y, rect.y + rect.height);
+  return { left, right, top, bottom };
+}
+
+function mergeBarBounds(current: BarBounds | undefined, rect: LayoutRect): BarBounds {
+  const next = toBarBounds(rect);
+  if (!current) return next;
+  return {
+    left: Math.min(current.left, next.left),
+    right: Math.max(current.right, next.right),
+    top: Math.min(current.top, next.top),
+    bottom: Math.max(current.bottom, next.bottom),
+  };
+}
+
+function rectsOverlapX(labelRect: LayoutRect, bounds: BarBounds) {
+  const labelLeft = Math.min(labelRect.x, labelRect.x + labelRect.width);
+  const labelRight = Math.max(labelRect.x, labelRect.x + labelRect.width);
+  return labelRight >= bounds.left - 4 && labelLeft <= bounds.right + 4;
+}
+
 function horizontalBarMeta(option: EChartsOption) {
   const next: any = option || {};
   const xAxes = asArray<any>(next.xAxis);
@@ -64,12 +96,32 @@ function horizontalBarMeta(option: EChartsOption) {
   };
 }
 
-function withReadableLabels(option: EChartsOption): EChartsOption {
+function preservePaletteColor(item: any, palette: any[], originalIndex: number) {
+  const color = palette[originalIndex];
+  if (!color || item?.itemStyle?.color || item?.lineStyle?.color) return item;
+  if (item.type === 'line') {
+    return {
+      ...item,
+      itemStyle: { ...(item.itemStyle || {}), color },
+      lineStyle: { ...(item.lineStyle || {}), color },
+    };
+  }
+  if (item.type === 'bar') {
+    return {
+      ...item,
+      itemStyle: { ...(item.itemStyle || {}), color },
+    };
+  }
+  return item;
+}
+
+export function withReadableLabels(option: EChartsOption): EChartsOption {
   const next: any = { ...option };
   const xAxes = asArray<any>(next.xAxis);
   const yAxes = asArray<any>(next.yAxis);
   const xHasCategory = xAxes.some((axis) => axis?.type === 'category');
   const rawSeries = asArray<any>(next.series);
+  const palette = Array.isArray(next.color) ? next.color : [];
   const mixedBarLine = isMixedBarLine(rawSeries);
   const isHorizontalBarSeries = (item: any) => {
     if (!item || item.type !== 'bar') return false;
@@ -77,7 +129,9 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
     const yAxis = yAxes[item.yAxisIndex || 0] || yAxes[0] || {};
     return yAxis.type === 'category' && xAxis.type !== 'category';
   };
+  const isVerticalBarSeries = (item: any) => item?.type === 'bar' && !isHorizontalBarSeries(item);
   const hasHorizontalBar = rawSeries.some(isHorizontalBarSeries);
+  const mixedVerticalBarLine = mixedBarLine && xHasCategory && rawSeries.some(isVerticalBarSeries);
   const meta = horizontalBarMeta(option);
 
   const normalizeAxis = (axis: any, isX: boolean) => {
@@ -126,7 +180,7 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
       outerBoundsMode: 'same' as const,
       outerBoundsContain: 'axisLabel' as const,
       top: mixedBarLine
-        ? Math.max(Number.parseFloat(existingGrid?.top) || 0, 88)
+        ? Math.max(Number.parseFloat(existingGrid?.top) || 0, mixedVerticalBarLine ? 104 : 88)
         : existingGrid?.top,
       bottom: xHasCategory ? (Number.isFinite(existingBottom) ? Math.max(existingBottom, 68) : 68) : (existingGrid?.bottom ?? 32),
       left: hasHorizontalBar ? 8 : (mixedBarLine ? 56 : (existingGrid?.left ?? 48)),
@@ -145,13 +199,50 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
     };
   }
 
-  const series = rawSeries.map((item, seriesIndex) => {
+  const originalIndexByName = new Map<string, number>();
+  rawSeries.forEach((item, index) => {
+    if (item?.name != null && !originalIndexByName.has(String(item.name))) {
+      originalIndexByName.set(String(item.name), index);
+    }
+  });
+
+  const indexedSeries = rawSeries.map((item, originalIndex) => ({ item, originalIndex }));
+  const layoutSeries = mixedVerticalBarLine
+    ? [
+        ...indexedSeries.filter(({ item }) => isVerticalBarSeries(item)),
+        ...indexedSeries.filter(({ item }) => !isVerticalBarSeries(item)),
+      ]
+    : indexedSeries;
+  const verticalBarBoundsByDataIndex: Record<number, BarBounds> = {};
+
+  if (mixedVerticalBarLine) {
+    const tooltip = next.tooltip;
+    if (tooltip && !Array.isArray(tooltip) && typeof tooltip.formatter === 'function') {
+      const formatter = tooltip.formatter;
+      next.tooltip = {
+        ...tooltip,
+        formatter: (params: any, ...rest: any[]) => {
+          const orderedParams = Array.isArray(params)
+            ? [...params].sort((a, b) => {
+                const aIndex = originalIndexByName.get(String(a?.seriesName ?? '')) ?? Number.MAX_SAFE_INTEGER;
+                const bIndex = originalIndexByName.get(String(b?.seriesName ?? '')) ?? Number.MAX_SAFE_INTEGER;
+                return aIndex - bIndex;
+              })
+            : params;
+          return formatter(orderedParams, ...rest);
+        },
+      };
+    }
+  }
+
+  const series = layoutSeries.map(({ item, originalIndex }, seriesIndex) => {
     if (!item || !item.type) return item;
     const isHorizontalBar = isHorizontalBarSeries(item);
-    const lineSeriesIndex = rawSeries.slice(0, seriesIndex).filter((seriesItem) => seriesItem?.type === 'line').length;
+    const lineSeriesIndex = layoutSeries.slice(0, seriesIndex).filter((entry) => entry.item?.type === 'line').length;
+    const itemWithPalette = mixedVerticalBarLine ? preservePaletteColor(item, palette, originalIndex) : item;
     if (item.type === 'bar') {
       return {
-        ...item,
+        ...itemWithPalette,
         label: {
           ...(item.label || {}),
           show: true,
@@ -179,18 +270,26 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
               }
               return { hideOverlap: false };
             }
-          : undefined,
+          : mixedVerticalBarLine
+            ? (params: any) => {
+                const rect = params?.rect;
+                const dataIndex = params?.dataIndex;
+                if (rect && isFiniteNumber(dataIndex)) {
+                  verticalBarBoundsByDataIndex[dataIndex] = mergeBarBounds(verticalBarBoundsByDataIndex[dataIndex], rect);
+                }
+                return { hideOverlap: false };
+              }
+            : undefined,
       };
     }
     if (item.type === 'line') {
       return {
-        ...item,
+        ...itemWithPalette,
         label: {
           ...(item.label || {}),
           show: true,
           position: 'top',
-          distance: mixedBarLine ? 18 + lineSeriesIndex * 12 : 6,
-          offset: mixedBarLine ? [0, -10 - lineSeriesIndex * 4] : undefined,
+          distance: mixedBarLine ? 14 : 6,
           formatter: seriesValue,
           fontSize: 10,
           color: '#111827',
@@ -204,8 +303,18 @@ function withReadableLabels(option: EChartsOption): EChartsOption {
           ? (params: any) => {
               const labelRect = params?.labelRect;
               if (!labelRect) return { hideOverlap: false };
+              const bounds = isFiniteNumber(params?.dataIndex) ? verticalBarBoundsByDataIndex[params.dataIndex] : undefined;
+              const shouldAvoidBar = bounds && rectsOverlapX(labelRect, bounds) && labelRect.y + labelRect.height > bounds.top - 6;
+              if (shouldAvoidBar) {
+                const stackStep = Math.max(labelRect.height + 4, 15);
+                return {
+                  y: Math.max(2, bounds.top - 8 - labelRect.height - lineSeriesIndex * stackStep),
+                  verticalAlign: 'top',
+                  hideOverlap: false,
+                };
+              }
               return {
-                y: Math.max(0, labelRect.y - 10 - lineSeriesIndex * 8),
+                y: Math.max(2, labelRect.y - 8 - lineSeriesIndex * 6),
                 hideOverlap: false,
                 moveOverlap: 'shiftY',
               };
