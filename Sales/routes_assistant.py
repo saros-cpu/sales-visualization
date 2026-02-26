@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from functools import wraps
@@ -15,6 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 import pandas as pd
+import pymysql
 from flask import jsonify, request
 from db import get_connection
 from shared_utils import (
@@ -28,156 +30,1278 @@ from wholesale_service import summarize_wholesale_page
 from routes_data import chinese_market_item, market_source_display
 
 
-def register_assistant_routes(app):
-    """Register assistant routes."""
+_ASSISTANT_DIGIT_TRANSLATION = str.maketrans("０１２３４５６７８９", "0123456789")
+_ASSISTANT_MONTH_NAME_PATTERN = r"\d{1,2}|一|二|两|三|四|五|六|七|八|九|十|十一|十二"
+_ASSISTANT_QUARTER_NAME_PATTERN = r"[1-4]|一|二|三|四"
+_ASSISTANT_COUNT_NAME_PATTERN = r"\d{1,3}|[一二两俩三四五六七八九]?十[一二两俩三四五六七八九]?|[一二两俩三四五六七八九]"
+_ASSISTANT_SPRING_FESTIVAL_DATES = {
+    2024: (2, 10),
+    2025: (1, 29),
+    2026: (2, 17),
+    2027: (2, 6),
+    2028: (1, 26),
+    2029: (2, 13),
+    2030: (2, 3),
+}
+_ASSISTANT_DATE_PATTERN = (
+    r"(20\d{2}|\d{2})\s*(?:年|[-/.])\s*"
+    r"(\d{1,2})\s*(?:月|[-/.])\s*"
+    r"(\d{1,2})\s*(?:日|号)?"
+)
+_ASSISTANT_RANGE_PATTERN = r"(?:至|到|--?|—|~|～)"
+_ASSISTANT_TOOL_CATALOG = {
+    "retail_summary": {
+        "name": "retail_summary",
+        "description": "零售区间汇总",
+        "readOnly": True,
+        "dataSource": "retail_snapshots",
+    },
+    "retail_ranking": {
+        "name": "retail_ranking",
+        "description": "零售站点、油品、区域排行",
+        "readOnly": True,
+        "dataSource": "retail_snapshots",
+    },
+    "retail_trend": {
+        "name": "retail_trend",
+        "description": "零售日趋势",
+        "readOnly": True,
+        "dataSource": "retail_daily_snapshots",
+    },
+    "station_trend_anomaly": {
+        "name": "station_trend_anomaly",
+        "description": "站点销量下滑和异常波动识别",
+        "readOnly": True,
+        "dataSource": "retail_daily_snapshots",
+    },
+    "station_data_check": {
+        "name": "station_data_check",
+        "description": "站点数据上传和补传检查",
+        "readOnly": True,
+        "dataSource": "retail_snapshots",
+    },
+    "station_status": {
+        "name": "station_status",
+        "description": "站点营业状态查询",
+        "readOnly": True,
+        "dataSource": "station_status_catalog",
+    },
+    "accounting_report_status": {
+        "name": "accounting_report_status",
+        "description": "吉方财务交接日报生成和缺站状态",
+        "readOnly": True,
+        "dataSource": "accounting_handover_reports",
+    },
+    "wholesale_summary": {
+        "name": "wholesale_summary",
+        "description": "批发业务汇总和客户排行",
+        "readOnly": True,
+        "dataSource": "wholesale_snapshots",
+    },
+    "wholesale_review": {
+        "name": "wholesale_review",
+        "description": "批发复核异常提示",
+        "readOnly": True,
+        "dataSource": "wholesale_snapshots",
+    },
+    "combined_summary": {
+        "name": "combined_summary",
+        "description": "零售与批发合并经营汇总",
+        "readOnly": True,
+        "dataSource": "combined_snapshots",
+    },
+    "exchange_summary": {
+        "name": "exchange_summary",
+        "description": "汇率查询",
+        "readOnly": True,
+        "dataSource": "exchange_rates",
+    },
+    "market_summary": {
+        "name": "market_summary",
+        "description": "市场观察摘要",
+        "readOnly": True,
+        "dataSource": "market_watch",
+    },
+    "contract_summary": {
+        "name": "contract_summary",
+        "description": "合同只读查询",
+        "readOnly": True,
+        "dataSource": "contracts",
+    },
+    "density_summary": {
+        "name": "density_summary",
+        "description": "油品密度摘要",
+        "readOnly": True,
+        "dataSource": "density_records",
+    },
+    "retail_inventory": {
+        "name": "retail_inventory",
+        "description": "零售库存查询",
+        "readOnly": True,
+        "dataSource": "retail_snapshots",
+    },
+    "retail_price": {
+        "name": "retail_price",
+        "description": "零售均价查询",
+        "readOnly": True,
+        "dataSource": "retail_snapshots",
+    },
+    "retail_resource_share": {
+        "name": "retail_resource_share",
+        "description": "零售油品结构和占比",
+        "readOnly": True,
+        "dataSource": "retail_snapshots",
+    },
+    "retail_comparison": {
+        "name": "retail_comparison",
+        "description": "零售同比环比对比",
+        "readOnly": True,
+        "dataSource": "retail_snapshots",
+    },
+    "retail_kpi": {
+        "name": "retail_kpi",
+        "description": "零售年度 KPI 查询",
+        "readOnly": True,
+        "dataSource": "retail_kpi_snapshots",
+    },
+    "compound_query": {
+        "name": "compound_query",
+        "description": "复合自然语言问题拆解与只读工具编排",
+        "readOnly": True,
+        "dataSource": "assistant_tool_orchestration",
+    },
+}
+_ASSISTANT_FOLLOWUP_WORDS = (
+    "那",
+    "它",
+    "他",
+    "该站",
+    "这个站",
+    "这家站",
+    "刚才",
+    "上面",
+    "前面",
+    "继续",
+    "为什么",
+    "原因",
+    "呢",
+)
+_ASSISTANT_METRIC_WORDS = (
+    "金额",
+    "销售额",
+    "营业额",
+    "收入",
+    "索姆",
+    "人民币",
+    "元",
+    "吨",
+    "吨数",
+    "吨位",
+    "重量",
+    "销量",
+    "销售量",
+    "升",
+    "升数",
+    "油量",
+    "卖得",
+)
+_ASSISTANT_BUSINESS_LEXICON = {
+    "domains": {
+        "retail": ("零售", "加油站", "站点", "油站", "站里", "销售站"),
+        "wholesale": ("批发", "外运", "出口", "本地", "客户"),
+        "accounting": ("吉方", "交接日报", "会计日报", "财务交接", "日报缺", "缺站"),
+        "combined": ("合并", "总销售", "整体", "公司", "全部业务", "经营情况"),
+        "exchange": ("汇率", "美元", "人民币", "美金", "索姆/人民币"),
+        "market": ("市场", "行情", "观察", "原油", "成品油", "俄罗斯", "乌兹别克", "国际"),
+        "contract": ("合同", "协议"),
+        "density": ("密度",),
+    },
+    "metrics": {
+        "amount": ("金额", "销售额", "营业额", "收入", "钱", "索姆", "人民币", "元", "款"),
+        "volume": ("销量", "销售量", "升", "升数", "油量", "卖得", "卖了多少", "出油量"),
+        "tons": ("吨", "吨数", "吨位", "重量", "质量"),
+        "count": ("笔数", "单数", "交易数", "车次", "次数"),
+    },
+    "dimensions": {
+        "station": ("站点", "加油站", "哪家站", "哪个站", "各站", "站排行", "站点排行", "油站"),
+        "resource": ("油品", "产品", "品类", "资源", "汽油", "柴油", "д/т", "аи"),
+        "region": ("区域", "地区", "州", "各州"),
+        "customer": ("客户", "客户排行", "哪家客户"),
+        "date": ("每日", "日趋势", "按天", "每天"),
+    },
+    "intents": {
+        "summary": ("概况", "情况", "怎么样", "汇总", "总览", "统计", "数据"),
+        "ranking": ("排行", "排名", "top", "哪个", "哪家", "最高", "最多", "最好", "前几", "第一"),
+        "trend": ("趋势", "走势", "每日", "日销量", "波动"),
+        "trend_anomaly": ("掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常"),
+        "comparison": ("同比", "环比", "对比", "较去年", "较上月", "增长率", "变化"),
+        "status": ("状态", "停业", "暂停营业", "维修", "停电", "缺站"),
+        "data_availability": ("数据", "传回来", "补回来", "补传", "上传", "更新", "到了", "有没有"),
+    },
+}
+_ASSISTANT_DOMAIN_OPTIONS = ("零售", "批发", "合并", "吉方日报")
+_ASSISTANT_METRIC_OPTIONS = ("销量", "销售额", "吨数")
+_ASSISTANT_RANKING_DIMENSION_OPTIONS = ("站点", "油品", "区域", "客户")
 
-    def _assistant_question_score(value):
-        text = str(value or "")
-        score = len(re.findall(r"\d{1,2}", text))
-        for word in ("年", "月", "周", "今天", "昨天", "零售", "批发", "销量", "销售", "金额", "统计"):
-            if word in text:
-                score += 3
-        return score
+
+def _assistant_question_score(value):
+    text = str(value or "")
+    score = len(re.findall(r"\d{1,2}", text))
+    for word in ("年", "月", "周", "今天", "昨天", "零售", "批发", "销量", "销售", "金额", "数据", "统计"):
+        if word in text:
+            score += 3
+    return score
 
 
-    _ASSISTANT_DIGIT_TRANSLATION = str.maketrans("０１２３４５６７８９", "0123456789")
-
-    def _assistant_prepare_question_text(value):
-        text = str(value or "").strip().translate(_ASSISTANT_DIGIT_TRANSLATION)
-        candidates = [text]
-        for encoding in ("cp1252", "latin1", "gbk", "cp936"):
-            try:
-                candidate = text.encode(encoding, errors="ignore").decode("utf-8", errors="ignore")
-            except (LookupError, UnicodeError):
-                continue
-            if candidate and candidate not in candidates:
-                candidates.append(candidate.translate(_ASSISTANT_DIGIT_TRANSLATION))
-        return max(candidates, key=_assistant_question_score)
-
-
-    def _assistant_month_number(value):
-        text = str(value or "").strip()
-        if not text:
-            return None
+def _assistant_prepare_question_text(value):
+    text = str(value or "").strip().translate(_ASSISTANT_DIGIT_TRANSLATION)
+    candidates = [text]
+    for encoding in ("cp1252", "latin1", "gbk", "cp936"):
         try:
-            month = int(text)
-            return month if 1 <= month <= 12 else None
-        except ValueError:
-            pass
-        month_map = {
-            "一": 1,
-            "二": 2,
-            "两": 2,
-            "三": 3,
-            "四": 4,
-            "五": 5,
-            "六": 6,
-            "七": 7,
-            "八": 8,
-            "九": 9,
-            "十": 10,
-            "十一": 11,
-            "十二": 12,
-        }
-        return month_map.get(text)
+            candidate = text.encode(encoding, errors="ignore").decode("utf-8", errors="ignore")
+        except (LookupError, UnicodeError):
+            continue
+        if candidate and candidate not in candidates:
+            candidates.append(candidate.translate(_ASSISTANT_DIGIT_TRANSLATION))
+    return max(candidates, key=_assistant_question_score)
 
 
-    _ASSISTANT_DATE_PATTERN = (
-        r"(20\d{2})\s*(?:年|[-/.])\s*"
-        r"(\d{1,2})\s*(?:月|[-/.])\s*"
-        r"(\d{1,2})\s*(?:日|号)?"
-    )
-    _ASSISTANT_RANGE_PATTERN = r"(?:至|到|--?|—|~|～)"
+def _assistant_month_number(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        month = int(text)
+        return month if 1 <= month <= 12 else None
+    except ValueError:
+        pass
+    month_map = {
+        "一": 1,
+        "二": 2,
+        "两": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+        "十": 10,
+        "十一": 11,
+        "十二": 12,
+    }
+    return month_map.get(text)
 
-    def _assistant_safe_date(year, month, day):
-        try:
-            return date(int(year), int(month), int(day))
-        except (TypeError, ValueError):
-            return None
+
+def _assistant_count_number(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        number = int(text)
+        return number if number > 0 else None
+    except ValueError:
+        pass
+
+    digit_map = {
+        "一": 1,
+        "二": 2,
+        "两": 2,
+        "俩": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+    }
+    if text in digit_map:
+        return digit_map[text]
+    if "十" in text:
+        left, _, right = text.partition("十")
+        tens = digit_map.get(left, 1) if left else 1
+        ones = digit_map.get(right, 0) if right else 0
+        number = tens * 10 + ones
+        return number if number > 0 else None
+    return None
 
 
-    def _assistant_explicit_date_range(text):
-        full_range = re.search(
-            rf"{_ASSISTANT_DATE_PATTERN}\s*{_ASSISTANT_RANGE_PATTERN}\s*{_ASSISTANT_DATE_PATTERN}",
-            text,
-        )
-        if full_range:
-            start = _assistant_safe_date(*full_range.group(1, 2, 3))
-            end_day = _assistant_safe_date(*full_range.group(4, 5, 6))
-            if start and end_day and end_day >= start:
-                label = f"{start.year}年{start.month}月{start.day}日至{end_day.year}年{end_day.month}月{end_day.day}日"
-                return label, start, end_day + timedelta(days=1)
+def _assistant_year_number(value):
+    try:
+        year = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    if 0 <= year < 100:
+        year += 2000
+    return year if 1900 <= year <= 2099 else None
 
-        same_year_range = re.search(
-            rf"{_ASSISTANT_DATE_PATTERN}\s*{_ASSISTANT_RANGE_PATTERN}\s*"
-            r"(\d{1,2})\s*月\s*(\d{1,2})\s*(?:日|号)?",
-            text,
-        )
-        if same_year_range:
-            start = _assistant_safe_date(*same_year_range.group(1, 2, 3))
-            end_day = _assistant_safe_date(same_year_range.group(1), same_year_range.group(4), same_year_range.group(5))
-            if start and end_day and end_day >= start:
-                label = f"{start.year}年{start.month}月{start.day}日至{end_day.month}月{end_day.day}日"
-                return label, start, end_day + timedelta(days=1)
 
+def _assistant_context_year_number(value, today):
+    text = str(value or "").strip()
+    if not text:
+        return today.year
+    if text in {"今年", "本年", "当前年", "当年", "这个年"}:
+        return today.year
+    if text in {"去年", "上年", "上一年"}:
+        return today.year - 1
+    return _assistant_year_number(text)
+
+
+def _assistant_quarter_number(value):
+    text = str(value or "").strip().upper().lstrip("Q")
+    quarter_map = {"一": 1, "二": 2, "三": 3, "四": 4}
+    if text in quarter_map:
+        return quarter_map[text]
+    try:
+        quarter = int(text)
+    except (TypeError, ValueError):
+        return None
+    return quarter if 1 <= quarter <= 4 else None
+
+
+def _assistant_safe_date(year, month, day):
+    normalized_year = _assistant_year_number(year)
+    if normalized_year is None:
+        return None
+    try:
+        return date(normalized_year, int(month), int(day))
+    except (TypeError, ValueError):
         return None
 
 
-    def _assistant_period(question):
-        today = date.today()
-        text = _assistant_prepare_question_text(question)
-        explicit_range = _assistant_explicit_date_range(text)
-        if explicit_range:
-            return explicit_range
-        if "昨天" in text:
-            start = today - timedelta(days=1)
-            return "昨天", start, today
-        if "今天" in text or "今日" in text:
-            return "今天", today, today + timedelta(days=1)
-        current_monday = today - timedelta(days=today.weekday())
-        if "上周" in text or "上星期" in text:
-            start = current_monday - timedelta(days=7)
-            return "上周", start, current_monday
-        if "本周" in text or "这周" in text:
-            return "本周", current_monday, today + timedelta(days=1)
-        if "上月" in text:
-            first_this_month = today.replace(day=1)
-            last_month_end = first_this_month
-            if first_this_month.month == 1:
-                start = date(first_this_month.year - 1, 12, 1)
-            else:
-                start = date(first_this_month.year, first_this_month.month - 1, 1)
-            return "上月", start, last_month_end
-        match = re.search(r"(20\d{2})\s*[年/-]\s*(\d{1,2})\s*月?", text)
-        if match:
-            year = int(match.group(1))
-            month = int(match.group(2))
-            if 1 <= month <= 12:
-                start = date(year, month, 1)
-                end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-                return f"{year}年{month}月", start, end
-        relative_month = re.search(r"(?:当年|今年|本年|当前年|这个年)\s*(\d{1,2}|一|二|两|三|四|五|六|七|八|九|十|十一|十二)\s*月", text)
-        if not relative_month:
-            relative_month = re.search(r"(?<!\d)(\d{1,2}|一|二|两|三|四|五|六|七|八|九|十|十一|十二)\s*月(?:份)?(?=.*(?:零售|批发|销量|销售|金额|数据|统计))", text)
-        if not relative_month:
-            relative_month = re.search(r"(?<!\d)(\d{1,2}|一|二|两|三|四|五|六|七|八|九|十|十一|十二)\s*月(?:份)?(?!\s*\d)", text)
-        if relative_month:
-            month = _assistant_month_number(relative_month.group(1))
-            if month:
-                start = date(today.year, month, 1)
-                end = date(today.year + 1, 1, 1) if month == 12 else date(today.year, month + 1, 1)
-                return f"{today.year}年{month}月", start, end
-        if "本月" in text or "这个月" in text:
-            start = today.replace(day=1)
-            return "本月", start, today + timedelta(days=1)
-        year_match = re.search(r"(20\d{2})\s*年(?!\s*\d)", text)
-        if year_match:
-            year = int(year_match.group(1))
+def _assistant_shift_months(value, months):
+    month_index = value.year * 12 + value.month - 1 + months
+    year = month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _assistant_month_to_date(year, month, anchor_day):
+    day = min(int(anchor_day), monthrange(year, month)[1])
+    start = date(year, month, 1)
+    return start, date(year, month, day) + timedelta(days=1)
+
+
+def _assistant_calendar_period(text, today):
+    if _assistant_contains_any(text, ("月初到现在", "月初至今", "本月以来", "这个月以来")):
+        return "本月以来", today.replace(day=1), today + timedelta(days=1)
+    if _assistant_contains_any(text, ("年初到现在", "年初至今", "今年以来")):
+        return f"{today.year}年以来", date(today.year, 1, 1), today + timedelta(days=1)
+
+    if _assistant_contains_any(text, ("上个月同期", "上月同期")):
+        if _assistant_contains_any(text, ("比", "较", "对比", "环比")):
+            return "本月以来", today.replace(day=1), today + timedelta(days=1)
+        previous_month = _assistant_shift_months(today.replace(day=1), -1)
+        start, end = _assistant_month_to_date(previous_month.year, previous_month.month, today.day)
+        return "上个月同期", start, end
+
+    if _assistant_contains_any(text, ("去年同期", "上年同期")):
+        if _assistant_contains_any(text, ("比", "较", "对比", "同比")):
+            return "本月以来", today.replace(day=1), today + timedelta(days=1)
+        start, end = _assistant_month_to_date(today.year - 1, today.month, today.day)
+        return "去年同期", start, end
+
+    if _assistant_contains_any(text, ("春节期间", "春节假期")):
+        month_day = _ASSISTANT_SPRING_FESTIVAL_DATES.get(today.year)
+        if month_day:
+            start = date(today.year, month_day[0], month_day[1])
+            return f"{today.year}年春节期间", start, start + timedelta(days=7)
+    if "春节后" in text:
+        month_day = _ASSISTANT_SPRING_FESTIVAL_DATES.get(today.year)
+        if month_day:
+            start = date(today.year, month_day[0], month_day[1])
+            return f"{today.year}年春节后", start, today + timedelta(days=1)
+
+    if _assistant_contains_any(text, ("五一期间", "劳动节期间")):
+        return f"{today.year}年五一期间", date(today.year, 5, 1), date(today.year, 5, 6)
+    if _assistant_contains_any(text, ("五一后", "劳动节后")):
+        return f"{today.year}年五一后", date(today.year, 5, 1), today + timedelta(days=1)
+
+    return None
+
+
+def _assistant_rolling_period(text, today):
+    half_year = re.search(r"(?:最近|近|过去)\s*半\s*年", text)
+    if half_year:
+        return "最近半年", _assistant_shift_months(today, -6), today + timedelta(days=1)
+
+    match = re.search(
+        rf"(?:最近|近|过去|前)\s*({_ASSISTANT_COUNT_NAME_PATTERN})\s*(?:个\s*)?(天|日|周|星期|月|年)",
+        text,
+    )
+    if not match:
+        return None
+
+    count = _assistant_count_number(match.group(1))
+    unit = match.group(2)
+    if not count:
+        return None
+    if unit in {"天", "日"}:
+        if count > 3650:
+            return None
+        return f"最近{count}天", today - timedelta(days=count), today + timedelta(days=1)
+    if unit in {"周", "星期"}:
+        if count > 520:
+            return None
+        return f"最近{count}周", today - timedelta(days=count * 7), today + timedelta(days=1)
+    if unit == "月":
+        if count > 120:
+            return None
+        return f"最近{count}个月", _assistant_shift_months(today, -count), today + timedelta(days=1)
+    if unit == "年":
+        if count > 10:
+            return None
+        return f"最近{count}年", _assistant_shift_months(today, -count * 12), today + timedelta(days=1)
+    return None
+
+
+def _assistant_explicit_date_range(text):
+    full_range = re.search(
+        rf"{_ASSISTANT_DATE_PATTERN}\s*{_ASSISTANT_RANGE_PATTERN}\s*{_ASSISTANT_DATE_PATTERN}",
+        text,
+    )
+    if full_range:
+        start = _assistant_safe_date(*full_range.group(1, 2, 3))
+        end_day = _assistant_safe_date(*full_range.group(4, 5, 6))
+        if start and end_day and end_day >= start:
+            label = f"{start.year}年{start.month}月{start.day}日至{end_day.year}年{end_day.month}月{end_day.day}日"
+            return label, start, end_day + timedelta(days=1)
+
+    same_year_range = re.search(
+        rf"{_ASSISTANT_DATE_PATTERN}\s*{_ASSISTANT_RANGE_PATTERN}\s*"
+        r"(\d{1,2})\s*月\s*(\d{1,2})\s*(?:日|号)?",
+        text,
+    )
+    if same_year_range:
+        start = _assistant_safe_date(*same_year_range.group(1, 2, 3))
+        end_day = _assistant_safe_date(same_year_range.group(1), same_year_range.group(4), same_year_range.group(5))
+        if start and end_day and end_day >= start:
+            label = f"{start.year}年{start.month}月{start.day}日至{end_day.month}月{end_day.day}日"
+            return label, start, end_day + timedelta(days=1)
+
+    return None
+
+
+def _assistant_half_year_period(text, today):
+    year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年"
+    match = re.search(rf"(?<!\d)(?:({year_prefix})\s*年?\s*)?(上半年度?|前半年度?)", text)
+    if match:
+        year = _assistant_context_year_number(match.group(1), today)
+        if year is not None:
+            return f"{year}年上半年", date(year, 1, 1), date(year, 7, 1)
+
+    match = re.search(rf"(?<!\d)(?:({year_prefix})\s*年?\s*)?(下半年度?|后半年度?)", text)
+    if match:
+        year = _assistant_context_year_number(match.group(1), today)
+        if year is not None:
+            return f"{year}年下半年", date(year, 7, 1), date(year + 1, 1, 1)
+
+    return None
+
+
+def _assistant_quarter_period(text, today):
+    current_quarter = (today.month - 1) // 3 + 1
+    if "本季度" in text or "这个季度" in text or "当前季度" in text:
+        start_month = (current_quarter - 1) * 3 + 1
+        start = date(today.year, start_month, 1)
+        return f"{today.year}年第{current_quarter}季度", start, today + timedelta(days=1)
+    if "上季度" in text or "上个季度" in text or "上一季度" in text:
+        quarter = current_quarter - 1
+        year = today.year
+        if quarter == 0:
+            quarter = 4
+            year -= 1
+        start_month = (quarter - 1) * 3 + 1
+        start = date(year, start_month, 1)
+        end = date(year + 1, 1, 1) if quarter == 4 else date(year, start_month + 3, 1)
+        return f"{year}年第{quarter}季度", start, end
+
+    year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年"
+    match = re.search(
+        rf"(?<!\d)(?:({year_prefix})\s*年?\s*)?(?:第?\s*({_ASSISTANT_QUARTER_NAME_PATTERN})\s*季度|[Qq]\s*([1-4]))",
+        text,
+    )
+    if not match:
+        return None
+    year = _assistant_context_year_number(match.group(1), today)
+    quarter = _assistant_quarter_number(match.group(2) or match.group(3))
+    if year is None or quarter is None:
+        return None
+    start_month = (quarter - 1) * 3 + 1
+    start = date(year, start_month, 1)
+    end = date(year + 1, 1, 1) if quarter == 4 else date(year, start_month + 3, 1)
+    return f"{year}年第{quarter}季度", start, end
+
+
+def parse_assistant_period(question, today=None):
+    today = today or date.today()
+    text = _assistant_prepare_question_text(question)
+    explicit_range = _assistant_explicit_date_range(text)
+    if explicit_range:
+        return explicit_range
+    calendar_period = _assistant_calendar_period(text, today)
+    if calendar_period:
+        return calendar_period
+    rolling = _assistant_rolling_period(text, today)
+    if rolling:
+        return rolling
+    half_year = _assistant_half_year_period(text, today)
+    if half_year:
+        return half_year
+    quarter = _assistant_quarter_period(text, today)
+    if quarter:
+        return quarter
+    if "昨天" in text:
+        start = today - timedelta(days=1)
+        return "昨天", start, today
+    if "今天" in text or "今日" in text:
+        return "今天", today, today + timedelta(days=1)
+    current_monday = today - timedelta(days=today.weekday())
+    if "上周" in text or "上星期" in text:
+        start = current_monday - timedelta(days=7)
+        return "上周", start, current_monday
+    if "本周" in text or "这周" in text:
+        return "本周", current_monday, today + timedelta(days=1)
+    if "上月" in text:
+        first_this_month = today.replace(day=1)
+        last_month_end = first_this_month
+        if first_this_month.month == 1:
+            start = date(first_this_month.year - 1, 12, 1)
+        else:
+            start = date(first_this_month.year, first_this_month.month - 1, 1)
+        return "上月", start, last_month_end
+    match = re.search(r"(?<!\d)(20\d{2}|\d{2})\s*[年/-]\s*(\d{1,2})\s*月?", text)
+    if match:
+        year = _assistant_year_number(match.group(1))
+        month = int(match.group(2))
+        if year is not None and 1 <= month <= 12:
+            start = date(year, month, 1)
+            end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+            return f"{year}年{month}月", start, end
+    relative_year_month = re.search(
+        rf"(去年|上年|上一年|今年|本年|当前年|当年|这个年)\s*({_ASSISTANT_MONTH_NAME_PATTERN})\s*月",
+        text,
+    )
+    if relative_year_month:
+        year = _assistant_context_year_number(relative_year_month.group(1), today)
+        month = _assistant_month_number(relative_year_month.group(2))
+        if year is not None and month:
+            start = date(year, month, 1)
+            end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+            return f"{year}年{month}月", start, end
+    relative_month = re.search(rf"(?:当年|今年|本年|当前年|这个年)\s*({_ASSISTANT_MONTH_NAME_PATTERN})\s*月", text)
+    if not relative_month:
+        relative_month = re.search(rf"(?<!\d)({_ASSISTANT_MONTH_NAME_PATTERN})\s*月(?:份)?(?=.*(?:零售|批发|销量|销售|金额|数据|统计))", text)
+    if not relative_month:
+        relative_month = re.search(rf"(?<!\d)({_ASSISTANT_MONTH_NAME_PATTERN})\s*月(?:份)?(?!\s*\d)", text)
+    if relative_month:
+        month = _assistant_month_number(relative_month.group(1))
+        if month:
+            start = date(today.year, month, 1)
+            end = date(today.year + 1, 1, 1) if month == 12 else date(today.year, month + 1, 1)
+            return f"{today.year}年{month}月", start, end
+    if "本月" in text or "这个月" in text:
+        start = today.replace(day=1)
+        return "本月", start, today + timedelta(days=1)
+    year_match = re.search(r"(?<!\d)(20\d{2}|\d{2})\s*年(?!\s*\d)", text)
+    if year_match:
+        year = _assistant_year_number(year_match.group(1))
+        if year is not None:
             return f"{year}年", date(year, 1, 1), date(year + 1, 1, 1)
-        if "年销量" in text or "年度" in text or "全年" in text:
-            return f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
-        start = today - timedelta(days=7)
-        return "最近7天", start, today + timedelta(days=1)
+    if _assistant_contains_any(text, ("去年", "上年", "上一年")):
+        year = today.year - 1
+        return f"{year}年", date(year, 1, 1), date(today.year, 1, 1)
+    if _assistant_contains_any(text, ("今年", "本年", "当前年", "当年", "这个年")):
+        return f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
+    if "年销量" in text or "年度" in text or "全年" in text:
+        return f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
+    start = today - timedelta(days=7)
+    return "最近7天", start, today + timedelta(days=1)
+
+
+def _assistant_contains_any(text, words):
+    folded = str(text or "").casefold()
+    return any(str(word).casefold() in folded for word in words)
+
+
+def _assistant_matching_terms(text, words):
+    folded = str(text or "").casefold()
+    matches = []
+    for word in words:
+        item = str(word)
+        if item and item.casefold() in folded:
+            matches.append(item)
+    return matches
+
+
+def _assistant_business_terms(text):
+    result = {}
+    for category, groups in _ASSISTANT_BUSINESS_LEXICON.items():
+        category_matches = {}
+        for name, words in groups.items():
+            matches = _assistant_matching_terms(text, words)
+            if matches:
+                category_matches[name] = matches
+        result[category] = category_matches
+    return result
+
+
+def _assistant_has_explicit_domain(business_terms):
+    domains = business_terms.get("domains") if isinstance(business_terms, dict) else {}
+    return bool(domains)
+
+
+def _assistant_metric_from_terms(business_terms):
+    metrics = business_terms.get("metrics") if isinstance(business_terms, dict) else {}
+    for metric in ("amount", "tons", "volume"):
+        if metrics.get(metric):
+            return metric
+    return None
+
+
+def _assistant_domain_from_terms(business_terms, default="retail"):
+    domain_terms = business_terms.get("domains") if isinstance(business_terms, dict) else {}
+    if domain_terms.get("market"):
+        return "market"
+    if domain_terms.get("exchange"):
+        return "exchange"
+    if domain_terms.get("density"):
+        return "density"
+    if domain_terms.get("contract"):
+        return "contract"
+    if domain_terms.get("accounting"):
+        return "accounting"
+    if domain_terms.get("combined") and not domain_terms.get("retail"):
+        return "combined"
+    if domain_terms.get("wholesale"):
+        return "wholesale"
+    if domain_terms.get("retail"):
+        return "retail"
+    return default
+
+
+def _assistant_dimensions_from_terms(business_terms):
+    dimensions = []
+    dimension_terms = business_terms.get("dimensions") if isinstance(business_terms, dict) else {}
+    for dimension_name in ("station", "resource", "region", "customer"):
+        if dimension_terms.get(dimension_name):
+            dimensions.append(dimension_name)
+    return dimensions
+
+
+def _assistant_clarification_payload(
+    text,
+    *,
+    domain,
+    route,
+    explicit_dimensions,
+    explicit_metric,
+    business_terms,
+    followup,
+    context_domain=False,
+):
+    if followup:
+        return None
+
+    needs_domain = (
+        domain == "retail"
+        and not _assistant_has_explicit_domain(business_terms)
+        and not context_domain
+        and not explicit_dimensions
+        and _assistant_contains_any(text, ("数据", "情况", "怎么样", "统计", "分析", "看一下", "查一下"))
+    )
+    if needs_domain:
+        return {
+            "question": "我需要先确认业务范围：你想看零售、批发、合并，还是吉方日报？",
+            "missing": ["domain"],
+            "options": list(_ASSISTANT_DOMAIN_OPTIONS),
+        }
+
+    if route == "retail_ranking" and not explicit_dimensions:
+        return {
+            "question": "你想按哪个维度排行：站点、油品、区域，还是客户？",
+            "missing": ["dimension"],
+            "options": list(_ASSISTANT_RANKING_DIMENSION_OPTIONS),
+        }
+
+    metric_ambiguous = (
+        route == "retail_ranking"
+        and not explicit_metric
+        and _assistant_contains_any(text, ("最高", "最多", "第一", "排行", "排名", "top", "TOP"))
+        and not _assistant_contains_any(text, ("卖得", "销量", "销售量", "金额", "销售额", "营业额", "吨", "吨数"))
+    )
+    if metric_ambiguous:
+        return {
+            "question": "这个排行要按哪个指标看：销量、销售额，还是吨数？",
+            "missing": ["metric"],
+            "options": list(_ASSISTANT_METRIC_OPTIONS),
+        }
+
+    return None
+
+
+def _assistant_station_from_text(text):
+    catalog = retail_station_catalog_cached()
+    folded = str(text or "").casefold()
+    for match in re.finditer(r"(?<!\d)(\d{1,3})\s*(?:号\s*)?(?:站|加油站)", folded):
+        shop_key = int(match.group(1))
+        if shop_key in catalog:
+            return dict(catalog[shop_key])
+    for shop_key, item in catalog.items():
+        names = [
+            str(item.get("name") or "").strip(),
+            str(item.get("short") or "").strip(),
+            f"{shop_key}号站",
+            f"{shop_key}站",
+        ]
+        if any(name and name.casefold() in folded for name in names):
+            return dict(item)
+    return None
+
+
+def _assistant_period_payload(label, start, end):
+    end_day = end - timedelta(days=1)
+    return {
+        "label": label,
+        "start": start.isoformat(),
+        "endExclusive": end.isoformat(),
+        "endInclusive": end_day.isoformat(),
+    }
+
+
+def _assistant_period_from_payload(period):
+    if not isinstance(period, dict):
+        return None
+    try:
+        label = str(period.get("label") or "").strip() or "区间"
+        start = date.fromisoformat(str(period.get("start")))
+        end = date.fromisoformat(str(period.get("endExclusive")))
+    except (TypeError, ValueError):
+        return None
+    return (label, start, end) if end > start else None
+
+
+def _assistant_context_page(context):
+    context = _assistant_context_dict(context)
+    page = context.get("pageContext")
+    return page if isinstance(page, dict) else {}
+
+
+def _assistant_page_hints(page_context):
+    path = str(page_context.get("path") or page_context.get("pathname") or "").casefold()
+    page = str(page_context.get("page") or "").casefold()
+    module = str(page_context.get("module") or "").casefold()
+    search = page_context.get("searchParams") if isinstance(page_context.get("searchParams"), dict) else {}
+    hints = {"contextUsed": []}
+    if "retail" in path or module == "retail":
+        hints["domain"] = "retail"
+    if "wholesale" in path or module == "wholesale":
+        hints["domain"] = "wholesale"
+    if "contract" in path:
+        hints["domain"] = "contract"
+    if "exchange" in path:
+        hints["domain"] = "exchange"
+    if "system-health" in path and str(search.get("tab") or "").casefold() == "accounting":
+        hints["domain"] = "accounting"
+    if "station" in path or page == "station":
+        hints["dimensions"] = ["station"]
+    elif "resource" in path or page == "resource":
+        hints["dimensions"] = ["resource"]
+    elif "region" in path or page == "region":
+        hints["dimensions"] = ["region"]
+    elif "customer" in path or "customers" in path:
+        hints["dimensions"] = ["customer"]
+    if hints.get("domain") or hints.get("dimensions"):
+        hints["contextUsed"].append("page")
+    return hints
+
+
+def _assistant_shift_period(label, start, end, *, months=0, days=0, shifted_label=None):
+    if months:
+        shifted_start = _assistant_shift_months(start, months)
+        shifted_end = _assistant_shift_months(end, months)
+    else:
+        shifted_start = start + timedelta(days=days)
+        shifted_end = end + timedelta(days=days)
+    return {
+        "mode": shifted_label or label,
+        "period": _assistant_period_payload(shifted_label or label, shifted_start, shifted_end),
+    }
+
+
+def _assistant_comparison_payload(text, period_label, start, end):
+    if _assistant_contains_any(text, ("同比", "去年同期", "上年同期", "较去年", "比去年", "对比去年")):
+        payload = _assistant_shift_period(period_label, start, end, months=-12, shifted_label="去年同期")
+        payload["type"] = "year_over_year"
+        payload["description"] = "当前区间与去年同期对比"
+        return payload
+    if _assistant_contains_any(text, ("环比", "上月同期", "上个月同期", "较上月", "比上月", "比上个月", "对比上月")):
+        payload = _assistant_shift_period(period_label, start, end, months=-1, shifted_label="上月同期")
+        payload["type"] = "month_over_month"
+        payload["description"] = "当前区间与上月同期对比"
+        return payload
+    if _assistant_contains_any(text, ("较上周", "比上周", "上周同期")):
+        payload = _assistant_shift_period(period_label, start, end, days=-7, shifted_label="上周同期")
+        payload["type"] = "week_over_week"
+        payload["description"] = "当前区间与上周同期对比"
+        return payload
+    return None
+
+
+def _assistant_compound_segments(text):
+    normalized = str(text or "").strip()
+    if not normalized:
+        return []
+    if not _assistant_contains_any(normalized, ("、", "；", ";", "，", ",", "同时", "另外", "再看", "再查", "还有")):
+        return []
+    prepared = re.sub(r"(?:同时|另外|再看|再查|还有)", "；", normalized)
+    prepared = re.sub(r"[，,]\s*(?=(?:哪个|哪家|哪些|油品|站点|区域|客户|同比|环比|为什么|原因|排行|下滑|掉|总额|销量|营业额))", "；", prepared)
+    parts = [part.strip(" ，,、;；") for part in re.split(r"[;；、]", prepared) if part.strip(" ，,、;；")]
+    intentful = [
+        part for part in parts
+        if part not in {"为什么", "原因", "怎么回事"}
+        if _assistant_contains_any(part, (
+            "数据", "总额", "汇总", "销量", "销售额", "营业额", "排行", "最高", "最多",
+            "哪个", "哪家", "油品", "站", "区域", "客户", "下滑", "掉", "同比", "环比", "为什么", "原因", "缺站"
+        ))
+    ]
+    return intentful if len(intentful) >= 2 else []
+
+
+def _assistant_segment_has_period(text):
+    label, _, _ = parse_assistant_period(text)
+    return label != "最近7天"
+
+
+def _assistant_segment_has_domain(text):
+    return _assistant_has_explicit_domain(_assistant_business_terms(text))
+
+
+def _assistant_enrich_segment(segment, base_plan):
+    parts = []
+    period = base_plan.get("period") if isinstance(base_plan, dict) else {}
+    if isinstance(period, dict) and period.get("label") and not _assistant_segment_has_period(segment):
+        parts.append(str(period.get("label")))
+    if base_plan.get("domain") == "retail" and not _assistant_segment_has_domain(segment):
+        parts.append("零售")
+    parts.append(segment)
+    return "".join(parts)
+
+
+def _assistant_metric_from_text(text):
+    if _assistant_contains_any(text, ("金额", "销售额", "营业额", "收入", "索姆", "人民币", "元")):
+        return "amount"
+    if _assistant_contains_any(text, ("吨", "吨数", "吨位", "重量")):
+        return "tons"
+    if _assistant_contains_any(text, ("销量", "销售量", "升", "升数", "油量", "卖得")):
+        return "volume"
+    return "amount"
+
+
+def _assistant_tool_payload(route):
+    tool = _ASSISTANT_TOOL_CATALOG.get(route) or {
+        "name": route or "unknown",
+        "description": "业务只读查询",
+        "readOnly": True,
+        "dataSource": "business_snapshots",
+    }
+    return dict(tool)
+
+
+def _assistant_context_dict(context):
+    return context if isinstance(context, dict) else {}
+
+
+def _assistant_previous_plan(context):
+    context = _assistant_context_dict(context)
+    plan = context.get("lastAssistantPlan") or context.get("assistantPlan")
+    return plan if isinstance(plan, dict) else {}
+
+
+def _assistant_context_station(plan):
+    entities = plan.get("entities") if isinstance(plan, dict) else {}
+    station = entities.get("station") if isinstance(entities, dict) else None
+    if not isinstance(station, dict) or not station.get("shopKey"):
+        return None
+    return dict(station)
+
+
+def _assistant_period_from_plan(plan):
+    period = plan.get("period") if isinstance(plan, dict) else None
+    if not isinstance(period, dict):
+        return None
+    try:
+        label = str(period.get("label") or "").strip() or "上下文区间"
+        start = date.fromisoformat(str(period.get("start")))
+        end = date.fromisoformat(str(period.get("endExclusive")))
+    except (TypeError, ValueError):
+        return None
+    if end <= start:
+        return None
+    return label, start, end
+
+
+def _assistant_is_followup_question(text):
+    stripped = str(text or "").strip()
+    if not stripped:
+        return False
+    if stripped.startswith(("那", "那么", "还有", "继续")):
+        return True
+    if len(stripped) <= 8 and _assistant_contains_any(stripped, _ASSISTANT_FOLLOWUP_WORDS):
+        return True
+    return _assistant_contains_any(stripped, ("该站", "这个站", "这家站", "刚才", "上面", "前面"))
+
+
+def _assistant_metric_clarification():
+    return {
+        "question": "这个排行要按哪个指标看：销量、销售额，还是吨数？",
+        "missing": ["metric"],
+        "options": list(_ASSISTANT_METRIC_OPTIONS),
+    }
+
+
+def _assistant_route_for_domain(domain, previous_route="retail_summary", previous_intent="summary"):
+    if domain in {"market", "exchange", "density", "contract"}:
+        return f"{domain}_summary", "summary"
+    if domain == "accounting":
+        return "accounting_report_status", "status"
+    if domain == "combined":
+        return "combined_summary", "summary"
+    if domain == "wholesale":
+        return "wholesale_summary", "summary"
+    if str(previous_route or "").startswith("retail_") or previous_route in {"station_data_check", "station_trend_anomaly", "station_status"}:
+        return previous_route, previous_intent or "summary"
+    return "retail_summary", "summary"
+
+
+def _assistant_resolve_clarification_plan(text, previous_plan, today):
+    if not isinstance(previous_plan, dict) or not previous_plan.get("needsClarification"):
+        return None
+    previous_clarification = previous_plan.get("clarification") if isinstance(previous_plan.get("clarification"), dict) else {}
+    missing = previous_clarification.get("missing") if isinstance(previous_clarification, dict) else []
+    if not isinstance(missing, list) or not missing:
+        return None
+
+    business_terms = _assistant_business_terms(text)
+    current_domain = _assistant_domain_from_terms(business_terms, default=None)
+    current_dimensions = _assistant_dimensions_from_terms(business_terms)
+    current_metric = _assistant_metric_from_terms(business_terms)
+    previous_explicit = previous_plan.get("explicit") if isinstance(previous_plan.get("explicit"), dict) else {}
+
+    domain = str(previous_plan.get("domain") or "retail")
+    route = str(previous_plan.get("route") or "retail_summary")
+    intent = str(previous_plan.get("intent") or "summary")
+    metric = previous_plan.get("metric") if previous_plan.get("metric") in {"amount", "volume", "tons"} else "amount"
+    dimensions = [str(item) for item in (previous_plan.get("dimensions") or []) if item]
+    station = _assistant_station_from_text(text) or _assistant_context_station(previous_plan)
+    period = _assistant_period_from_plan(previous_plan)
+    if period:
+        period_label, start, end = period
+    else:
+        period_label, start, end = parse_assistant_period(str(previous_plan.get("normalizedQuestion") or text), today=today)
+
+    resolved = []
+    context_used = ["clarification", "period"]
+    domain_explicit = bool(previous_explicit.get("domain"))
+    dimensions_explicit = bool(previous_explicit.get("dimensions"))
+    metric_explicit = bool(previous_explicit.get("metric"))
+
+    if "domain" in missing:
+        if not current_domain:
+            return None
+        domain = current_domain
+        route, intent = _assistant_route_for_domain(domain, route, intent)
+        domain_explicit = True
+        resolved.append("domain")
+        context_used.append("domain")
+    elif current_domain:
+        domain = current_domain
+        route, intent = _assistant_route_for_domain(domain, route, intent)
+        domain_explicit = True
+
+    if "dimension" in missing:
+        if not current_dimensions:
+            return None
+        dimensions = current_dimensions
+        dimensions_explicit = True
+        resolved.append("dimensions")
+        context_used.append("dimensions")
+        if "customer" in dimensions and domain == "retail" and not current_domain:
+            domain = "wholesale"
+            route = "wholesale_summary"
+            intent = "ranking"
+        elif route == "retail_summary":
+            route = "retail_ranking"
+            intent = "ranking"
+    elif current_dimensions:
+        dimensions = current_dimensions
+        dimensions_explicit = True
+
+    if "metric" in missing:
+        if not current_metric:
+            return None
+        metric = current_metric
+        metric_explicit = True
+        resolved.append("metric")
+        context_used.append("metric")
+    elif current_metric:
+        metric = current_metric
+        metric_explicit = True
+
+    if route == "retail_ranking" and not dimensions:
+        dimensions = ["station"]
+
+    clarification = None
+    if route == "retail_ranking" and dimensions_explicit and not metric_explicit:
+        clarification = _assistant_metric_clarification()
+
+    confidence = 0.86 if not clarification else 0.48
+    return {
+        "normalizedQuestion": f"{previous_plan.get('normalizedQuestion') or ''} / 澄清：{text}".strip(" /"),
+        "domain": domain,
+        "intent": intent,
+        "route": route,
+        "metric": metric,
+        "dimensions": dimensions,
+        "entities": {"station": station} if station else {},
+        "period": _assistant_period_payload(period_label, start, end),
+        "tool": _assistant_tool_payload(route),
+        "contextUsed": list(dict.fromkeys(context_used)),
+        "businessTerms": business_terms,
+        "needsClarification": bool(clarification),
+        "clarification": clarification,
+        "clarificationResolved": {
+            "fromQuestion": previous_plan.get("normalizedQuestion"),
+            "answer": text,
+            "resolved": list(dict.fromkeys(resolved)),
+        },
+        "explicit": {
+            "domain": domain_explicit,
+            "dimensions": dimensions if dimensions_explicit else [],
+            "metric": metric_explicit,
+            "period": True,
+        },
+        "confidence": confidence,
+    }
+
+
+def build_assistant_query_plan(question, today=None, context=None, allow_compound=True):
+    today = today or date.today()
+    text = _assistant_prepare_question_text(question)
+    previous_plan = _assistant_previous_plan(context)
+    clarified_plan = _assistant_resolve_clarification_plan(text, previous_plan, today)
+    if clarified_plan:
+        return clarified_plan
+    followup = _assistant_is_followup_question(text) and bool(previous_plan)
+    context_used = []
+    business_terms = _assistant_business_terms(text)
+    page_hints = _assistant_page_hints(_assistant_context_page(context))
+    period_label, start, end = parse_assistant_period(text, today=today)
+    if followup and period_label == "最近7天":
+        previous_period = _assistant_period_from_plan(previous_plan)
+        if previous_period:
+            period_label, start, end = previous_period
+            context_used.append("period")
+    station = _assistant_station_from_text(text)
+    if followup and not station:
+        previous_station = _assistant_context_station(previous_plan)
+        if previous_station:
+            station = previous_station
+            context_used.append("station")
+    metric = _assistant_metric_from_terms(business_terms) or _assistant_metric_from_text(text)
+    explicit_metric = bool(_assistant_metric_from_terms(business_terms)) or _assistant_contains_any(text, _ASSISTANT_METRIC_WORDS)
+
+    dimensions = []
+    if station:
+        dimensions.append("station")
+    dimensions.extend(_assistant_dimensions_from_terms(business_terms))
+    if not dimensions and page_hints.get("dimensions") and _assistant_contains_any(text, ("这个", "该", "当前", "本页", "这里", "它", "这个页面")):
+        dimensions.extend(page_hints.get("dimensions") or [])
+        context_used.extend(page_hints.get("contextUsed") or [])
+    dimensions = list(dict.fromkeys(dimensions))
+    explicit_dimensions = list(dimensions)
+
+    domain = _assistant_domain_from_terms(business_terms)
+    if not _assistant_has_explicit_domain(business_terms) and page_hints.get("domain"):
+        domain = str(page_hints.get("domain"))
+        context_used.extend(page_hints.get("contextUsed") or [])
+    if domain == "accounting":
+        if period_label == "最近7天":
+            start = today - timedelta(days=1)
+            end = today
+            period_label = "昨天"
+
+    route = "retail_summary"
+    intent = "summary"
+
+    status_words = ("停业", "站点状态", "异常站点", "暂停营业", "维修", "停电", "装修", "修路", "迁址")
+    data_recovery_words = ("数据", "传回来", "补回来", "回来", "补传", "上传", "更新", "到了", "有没有")
+    trend_words = ("趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常")
+    comparison_words = ("同比", "环比", "对比", "较去年", "比去年", "较上月", "比上月", "比上个月", "上个月同期", "上月同期", "增长率", "变化")
+    ranking_words = ("排行", "排名", "top", "TOP", "哪个", "哪家", "最高", "最多", "最好", "卖得最好", "前几", "第一")
+
+    if domain in {"market", "exchange", "density", "contract"}:
+        route = f"{domain}_summary"
+        intent = "summary"
+    elif domain == "accounting":
+        route = "accounting_report_status"
+        intent = "status"
+    elif domain == "combined":
+        route = "combined_summary"
+        intent = "summary"
+    elif domain == "wholesale":
+        if _assistant_contains_any(text, ("审核", "复核", "异常", "提示", "未匹配")):
+            route = "wholesale_review"
+            intent = "review"
+        else:
+            route = "wholesale_summary"
+            intent = "ranking" if _assistant_contains_any(text, ranking_words) else "summary"
+    elif station and _assistant_contains_any(text, status_words) and _assistant_contains_any(text, data_recovery_words):
+        route = "station_data_check"
+        intent = "data_availability"
+    elif _assistant_contains_any(text, status_words):
+        route = "station_status"
+        intent = "status"
+    elif _assistant_contains_any(text, ("库存", "期末")):
+        route = "retail_inventory"
+        intent = "inventory"
+    elif _assistant_contains_any(text, ("价格", "单价", "售价", "零售价", "均价")):
+        route = "retail_price"
+        intent = "price"
+    elif _assistant_contains_any(text, ("占比", "结构", "油品结构", "油品占比", "构成")):
+        route = "retail_resource_share"
+        intent = "structure"
+    elif _assistant_contains_any(text, trend_words) and ("station" in dimensions or _assistant_contains_any(text, ("哪个站", "哪家站", "站点"))):
+        route = "station_trend_anomaly"
+        intent = "trend_anomaly"
+        if not explicit_metric:
+            metric = "volume"
+    elif _assistant_contains_any(text, trend_words):
+        route = "retail_trend"
+        intent = "trend"
+        if not explicit_metric:
+            metric = "volume"
+    elif _assistant_contains_any(text, comparison_words):
+        route = "retail_comparison"
+        intent = "comparison"
+        if period_label == "最近7天":
+            period_label = "本月以来"
+            start = today.replace(day=1)
+            end = today + timedelta(days=1)
+    elif _assistant_contains_any(text, ("KPI", "kpi", "关键指标", "累计", "年度指标")):
+        route = "retail_kpi"
+        intent = "kpi"
+    elif _assistant_contains_any(text, ranking_words):
+        route = "retail_ranking"
+        intent = "ranking"
+
+    previous_route = previous_plan.get("route") if isinstance(previous_plan, dict) else None
+    if followup and previous_route:
+        if route == "retail_summary" and previous_route != "retail_summary":
+            route = str(previous_route)
+            intent = str(previous_plan.get("intent") or intent)
+            context_used.append("route")
+        if route == previous_route and previous_plan.get("domain") and domain == "retail":
+            domain = str(previous_plan.get("domain"))
+            context_used.append("domain")
+        previous_dimensions = previous_plan.get("dimensions")
+        if route == previous_route and not dimensions and isinstance(previous_dimensions, list):
+            dimensions = [str(item) for item in previous_dimensions if item]
+            context_used.append("dimensions")
+        previous_metric = previous_plan.get("metric")
+        if route == previous_route and not explicit_metric and previous_metric in {"amount", "volume", "tons"}:
+            metric = previous_metric
+            context_used.append("metric")
+
+    if route == "retail_ranking" and not dimensions:
+        dimensions.append("station")
+    if route == "retail_resource_share" and "resource" not in dimensions:
+        dimensions.append("resource")
+    comparison = _assistant_comparison_payload(text, period_label, start, end)
+    execution_hints = []
+    if route in {"retail_comparison", "station_trend_anomaly", "retail_trend"}:
+        execution_hints.append("先读快照汇总，再按时间/维度解释变化，不直接拼 SQL")
+    if route == "station_trend_anomaly":
+        execution_hints.append("下滑原因按数据完整性、站点状态、油品结构、库存价格顺序排查")
+    assumptions = []
+    if route in {"retail_trend", "station_trend_anomaly"} and not explicit_metric:
+        assumptions.append("趋势、下滑、波动类问题未明确指标时默认按销量分析")
+
+    clarification = _assistant_clarification_payload(
+        text,
+        domain=domain,
+        route=route,
+        explicit_dimensions=explicit_dimensions,
+        explicit_metric=explicit_metric,
+        business_terms=business_terms,
+        followup=followup,
+        context_domain=bool(page_hints.get("domain")),
+    )
+
+    confidence = 0.55
+    if domain != "retail" or route != "retail_summary":
+        confidence += 0.2
+    if period_label != "最近7天":
+        confidence += 0.1
+    if station:
+        confidence += 0.1
+    if dimensions:
+        confidence += 0.05
+    if clarification:
+        confidence = min(confidence, 0.48)
+    confidence = min(confidence, 0.95)
+
+    plan = {
+        "normalizedQuestion": text,
+        "domain": domain,
+        "intent": intent,
+        "route": route,
+        "metric": metric,
+        "dimensions": dimensions,
+        "entities": {"station": station} if station else {},
+        "period": _assistant_period_payload(period_label, start, end),
+        "tool": _assistant_tool_payload(route),
+        "contextUsed": list(dict.fromkeys(context_used)),
+        "businessTerms": business_terms,
+        "comparison": comparison,
+        "executionHints": execution_hints,
+        "assumptions": assumptions,
+        "needsClarification": bool(clarification),
+        "clarification": clarification,
+        "explicit": {
+            "domain": _assistant_has_explicit_domain(business_terms),
+            "dimensions": explicit_dimensions,
+            "metric": explicit_metric,
+            "period": period_label != "最近7天",
+        },
+        "confidence": round(confidence, 2),
+    }
+    if allow_compound and not clarification:
+        segments = _assistant_compound_segments(text)
+        if segments:
+            subplans = []
+            for segment in segments[:5]:
+                enriched = _assistant_enrich_segment(segment, plan)
+                subplan = build_assistant_query_plan(enriched, today=today, context=context, allow_compound=False)
+                subplan["sourceSegment"] = segment
+                subplans.append(subplan)
+            if len(subplans) >= 2:
+                plan["intent"] = "compound"
+                plan["route"] = "compound_query"
+                plan["tool"] = _assistant_tool_payload("compound_query")
+                plan["subPlans"] = subplans
+                plan["executionHints"] = list(dict.fromkeys([*execution_hints, "按子问题顺序调用只读业务工具并合并结论"]))
+                plan["confidence"] = max(plan["confidence"], 0.86)
+    return plan
+
+
+def register_assistant_routes(app):
+    """Register assistant routes."""
+
+    def _assistant_period(question):
+        return parse_assistant_period(question)
 
 
     def _assistant_period_display(label, start, end):
@@ -1430,6 +2554,469 @@ def register_assistant_routes(app):
         )]
 
 
+    def _assistant_response(question, plan, **payload):
+        result = {"ok": True, "question": question, **payload}
+        result["assistantPlan"] = plan
+        return jsonify(result)
+
+
+    def _assistant_retail_data_for_period(start, end):
+        data = _retail_snapshot_for_period(start, end)
+        if not data:
+            response = open_oilstation(
+                "/api/assistant/retail-summary",
+                query_string={"start": start.isoformat(), "end": end.isoformat()},
+            )
+            data = response.get_json() if response.status_code < 400 else {}
+        return data or {}
+
+
+    def _assistant_retail_summary_metrics(data):
+        summary = data.get("summary") or {}
+        return {
+            "volume": float(summary.get("totalLiters") or 0),
+            "tons": float(summary.get("totalTons") or 0),
+            "amount": float(summary.get("totalSales") or 0),
+            "transactions": float(summary.get("totalTxn") or 0),
+        }
+
+
+    def _assistant_change_text(metric, current_value, baseline_value):
+        delta = current_value - baseline_value
+        pct = (delta / baseline_value * 100) if baseline_value else 0.0
+        direction = "增加" if delta >= 0 else "减少"
+        return f"{_assistant_metric_label(metric)}{direction} {_assistant_metric_format(metric, abs(delta))}（{pct:+.1f}%）"
+
+
+    def _assistant_retail_comparison_answer(label, current_data, comparison):
+        base_period = (comparison or {}).get("period") or {}
+        base_label = base_period.get("label") or (comparison or {}).get("mode") or "对比区间"
+        current = _assistant_retail_summary_metrics(current_data)
+        baseline = _assistant_retail_summary_metrics((comparison or {}).get("data") or {})
+        lines = [f"{label}与{base_label}零售对比："]
+        for metric in ("volume", "tons", "amount"):
+            lines.append(
+                f"  {_assistant_metric_label(metric)}：本期 {_assistant_metric_format(metric, current[metric])}，"
+                f"{base_label} {_assistant_metric_format(metric, baseline[metric])}，"
+                f"{_assistant_change_text(metric, current[metric], baseline[metric])}。"
+            )
+        lines.append("说明：这里按当前可读零售快照直接计算区间汇总对比；如需深层原因，可继续追问具体站点、油品或日期。")
+        return "\n".join(lines)
+
+
+    def _assistant_retail_comparison_tables(label, current_data, comparison):
+        base_period = (comparison or {}).get("period") or {}
+        base_label = base_period.get("label") or (comparison or {}).get("mode") or "对比区间"
+        current = _assistant_retail_summary_metrics(current_data)
+        baseline = _assistant_retail_summary_metrics((comparison or {}).get("data") or {})
+        rows = []
+        for metric in ("volume", "tons", "amount"):
+            delta = current[metric] - baseline[metric]
+            pct = (delta / baseline[metric] * 100) if baseline[metric] else 0.0
+            rows.append([
+                _assistant_metric_label(metric),
+                _assistant_metric_format(metric, current[metric]),
+                _assistant_metric_format(metric, baseline[metric]),
+                _assistant_metric_format(metric, delta),
+                f"{pct:+.1f}%",
+            ])
+        return [_assistant_table(f"{label}零售对比", ["指标", "本期", base_label, "变化", "变化率"], rows)]
+
+
+    def _assistant_enrich_comparison_data(plan):
+        comparison = plan.get("comparison") if isinstance(plan.get("comparison"), dict) else None
+        if not comparison:
+            return None
+        period = _assistant_period_from_payload(comparison.get("period"))
+        if not period:
+            return comparison
+        _, baseline_start, baseline_end = period
+        return {**comparison, "data": _assistant_retail_data_for_period(baseline_start, baseline_end)}
+
+
+    def _assistant_payload_for_plan(original_question, plan):
+        period = plan.get("period") or {}
+        start = date.fromisoformat(period.get("start"))
+        end = date.fromisoformat(period.get("endExclusive"))
+        label = _assistant_period_display(period.get("label") or "", start, end)
+        match_question = plan.get("normalizedQuestion") or original_question
+        route = plan.get("route")
+        if route == "station_trend_anomaly":
+            station = (plan.get("entities") or {}).get("station")
+            trend_data = _assistant_daily_trend_for_period(start, end)
+            return {
+                "periodLabel": label,
+                "queryStart": start.isoformat(),
+                "queryEndExclusive": end.isoformat(),
+                "answer": _assistant_station_trend_anomaly_answer(label, trend_data, station),
+                "tables": _assistant_station_trend_anomaly_tables(label, trend_data, station),
+                "data": trend_data,
+            }
+        if route == "retail_ranking":
+            dimension = next((item for item in plan.get("dimensions") or [] if item in {"resource", "region", "station"}), "station")
+            data = _assistant_retail_data_for_period(start, end)
+            metric = plan.get("metric") or "amount"
+            return {
+                "periodLabel": label,
+                "queryStart": start.isoformat(),
+                "queryEndExclusive": end.isoformat(),
+                "answer": _assistant_retail_ranking_answer(label, data, dimension, metric, match_question),
+                "tables": _assistant_retail_ranking_tables(label, data, dimension, metric),
+                "data": data,
+            }
+        if route == "retail_comparison":
+            data = _assistant_retail_data_for_period(start, end)
+            comparison = _assistant_enrich_comparison_data(plan)
+            if comparison:
+                return {
+                    "periodLabel": label,
+                    "queryStart": start.isoformat(),
+                    "queryEndExclusive": end.isoformat(),
+                    "answer": _assistant_retail_comparison_answer(label, data, comparison),
+                    "tables": _assistant_retail_comparison_tables(label, data, comparison),
+                    "data": {"current": data, "comparison": comparison},
+                }
+        data = _assistant_retail_data_for_period(start, end)
+        if data:
+            return {
+                "periodLabel": label,
+                "queryStart": start.isoformat(),
+                "queryEndExclusive": end.isoformat(),
+                "answer": _format_assistant_retail_answer(label, data),
+                "tables": _assistant_retail_tables(label, data, match_question),
+                "data": data,
+            }
+        return {
+            "periodLabel": label,
+            "queryStart": start.isoformat(),
+            "queryEndExclusive": end.isoformat(),
+            "answer": f"{label}暂时没有查到可用数据。",
+            "tables": [],
+            "data": {},
+        }
+
+
+    def _assistant_compound_payload(question, plan):
+        sub_results = []
+        summary_rows = []
+        tables = []
+        for index, subplan in enumerate((plan.get("subPlans") or [])[:5], start=1):
+            payload = _assistant_payload_for_plan(question, subplan)
+            answer = str(payload.get("answer") or "")
+            first_line = next((line.strip() for line in answer.splitlines() if line.strip()), "")
+            sub_results.append({"plan": subplan, **payload})
+            summary_rows.append([
+                index,
+                subplan.get("sourceSegment") or subplan.get("normalizedQuestion") or "--",
+                (subplan.get("tool") or {}).get("description") or subplan.get("route") or "--",
+                (subplan.get("period") or {}).get("label") or "--",
+                first_line[:180],
+            ])
+            for table in payload.get("tables") or []:
+                copied = dict(table)
+                copied["title"] = f"{index}. {copied.get('title') or subplan.get('sourceSegment') or '子问题'}"
+                tables.append(copied)
+        header = f"我把这个问题拆成 {len(sub_results)} 个只读查询，并按顺序完成："
+        lines = [header]
+        for row in summary_rows:
+            lines.append(f"{row[0]}. {row[1]}：{row[4] or '已完成查询。'}")
+        summary_table = _assistant_table("复合问题执行摘要", ["序号", "子问题", "工具", "时间", "结论"], summary_rows)
+        return {
+            "periodLabel": (plan.get("period") or {}).get("label") or "复合查询",
+            "answer": "\n".join(lines),
+            "tables": [summary_table, *tables[:8]],
+            "data": {"subResults": sub_results},
+        }
+
+
+    def _assistant_metric_label(metric):
+        return {"amount": "销售金额", "tons": "吨位", "volume": "销量"}.get(metric, "销售金额")
+
+
+    def _assistant_metric_value(row, metric):
+        if metric == "tons":
+            return float(row.get("tons") or 0)
+        if metric == "volume":
+            return float(row.get("volume") or 0)
+        return float(row.get("amount") or 0)
+
+
+    def _assistant_metric_format(metric, value):
+        if metric == "tons":
+            return _fmt_tons(value)
+        if metric == "volume":
+            return _fmt_volume(value)
+        return _fmt_amount(value, "索姆")
+
+
+    def _assistant_retail_ranking_rows(data, dimension, metric):
+        source_key = {"resource": "byResource", "region": "regions"}.get(dimension, "stations")
+        rows = [
+            item for item in (data.get(source_key) or [])
+            if _assistant_metric_value(item, metric) or float(item.get("volume") or 0) or float(item.get("amount") or 0)
+        ]
+        rows.sort(key=lambda item: _assistant_metric_value(item, metric), reverse=True)
+        return rows
+
+
+    def _assistant_retail_ranking_answer(label, data, dimension, metric, question):
+        dimension_label = {"resource": "油品", "region": "区域", "station": "站点"}.get(dimension, "站点")
+        rows = _assistant_retail_ranking_rows(data, dimension, metric)
+        if not rows:
+            return f"{label}暂无可用于{dimension_label}排行的零售数据。"
+        metric_label = _assistant_metric_label(metric)
+        total = sum(_assistant_metric_value(item, metric) for item in rows)
+        lines = [f"{label}零售{dimension_label}{metric_label}排行："]
+        for index, item in enumerate(rows[:10], start=1):
+            name = item.get("name") or item.get("region") or "--"
+            value = _assistant_metric_value(item, metric)
+            share = value / total * 100 if total else 0
+            detail = f"，占前列合计 {share:.1f}%" if total else ""
+            if dimension == "station":
+                detail += f"，区域 {item.get('region') or '--'}"
+            lines.append(f"{index}. {name}：{_assistant_metric_format(metric, value)}{detail}")
+        if _assistant_contains_any(question, ("为什么", "原因", "怎么回事")):
+            leader = rows[0]
+            leader_name = leader.get("name") or leader.get("region") or "--"
+            lines.append(
+                f"判断依据：{leader_name} 在该口径下的{metric_label}最高；"
+                "系统先按已结束班组销售数据排序，深层原因还需要结合价格、库存、站点状态和当地车流继续核查。"
+            )
+        return "\n".join(lines)
+
+
+    def _assistant_retail_ranking_tables(label, data, dimension, metric):
+        dimension_label = {"resource": "油品", "region": "区域", "station": "站点"}.get(dimension, "站点")
+        rows = _assistant_retail_ranking_rows(data, dimension, metric)
+        table_rows = []
+        for index, item in enumerate(rows[:12], start=1):
+            name = item.get("name") or item.get("region") or "--"
+            table_row = [
+                index,
+                name,
+                _fmt_volume(item.get("volume")),
+                _fmt_tons(item.get("tons")),
+                _fmt_amount(item.get("amount"), "索姆"),
+            ]
+            if dimension == "station":
+                table_row.insert(2, item.get("region") or "--")
+            table_rows.append(table_row)
+        columns = ["排名", dimension_label, "销量", "吨位", "销售金额"]
+        if dimension == "station":
+            columns.insert(2, "区域")
+        return [_assistant_table(f"{label}零售{dimension_label}排行", columns, table_rows)] if table_rows else []
+
+
+    def _assistant_daily_trend_for_period(start, end):
+        daily_rows = []
+        station_rows = {}
+        cursor = date(start.year, start.month, 1)
+        while cursor < end:
+            ym = f"{cursor.year}-{cursor.month:02d}"
+            snapshot = _read_daily_trend_snapshot(ym) or {}
+            for item in snapshot.get("daily") or []:
+                item_date = parse_date(item.get("date"))
+                if item_date and start <= item_date < end:
+                    daily_rows.append(item)
+            for shop_key, rows in (snapshot.get("stations") or {}).items():
+                clean_rows = []
+                for item in rows or []:
+                    item_date = parse_date(item.get("date"))
+                    if item_date and start <= item_date < end:
+                        clean_rows.append(item)
+                if clean_rows:
+                    station_rows.setdefault(str(shop_key), []).extend(clean_rows)
+            next_year, next_month = _month_after(cursor.year, cursor.month)
+            cursor = date(next_year, next_month, 1)
+        daily_rows.sort(key=lambda item: item.get("date") or "")
+        for rows in station_rows.values():
+            rows.sort(key=lambda item: item.get("date") or "")
+        return {"daily": daily_rows, "stations": station_rows}
+
+
+    def _assistant_average(values):
+        values = [float(value or 0) for value in values]
+        return sum(values) / len(values) if values else 0.0
+
+
+    def _assistant_station_trend_rows(trend_data, station=None):
+        catalog = retail_station_catalog_cached()
+        station_map = trend_data.get("stations") or {}
+        target_keys = [str(station.get("shopKey"))] if station else list(station_map.keys())
+        result = []
+        for shop_key in target_keys:
+            rows = station_map.get(str(shop_key)) or []
+            if len(rows) < 2:
+                continue
+            volumes = [float(item.get("volume") or 0) for item in rows]
+            amounts = [float(item.get("amount") or 0) for item in rows]
+            zero_days = [str(item.get("date") or "") for item in rows if float(item.get("volume") or 0) <= 0]
+            lowest_days = sorted(
+                ((str(item.get("date") or ""), float(item.get("volume") or 0)) for item in rows),
+                key=lambda item: item[1],
+            )[:3]
+            window = max(1, min(3, len(volumes) // 2))
+            first_avg = _assistant_average(volumes[:window])
+            last_avg = _assistant_average(volumes[-window:])
+            delta = last_avg - first_avg
+            pct = (delta / first_avg * 100) if first_avg else 0.0
+            info = catalog.get(int(shop_key)) if str(shop_key).isdigit() else {}
+            result.append({
+                "shopKey": int(shop_key) if str(shop_key).isdigit() else shop_key,
+                "name": (info or {}).get("name") or f"{shop_key}号站",
+                "region": (info or {}).get("region") or "--",
+                "firstAvg": first_avg,
+                "lastAvg": last_avg,
+                "delta": delta,
+                "pct": pct,
+                "totalVolume": sum(volumes),
+                "totalAmount": sum(amounts),
+                "zeroDays": zero_days,
+                "lowestDays": lowest_days,
+                "days": len(rows),
+            })
+        result.sort(key=lambda item: (item["pct"], item["delta"]))
+        return result
+
+
+    def _assistant_station_trend_anomaly_answer(label, trend_data, station=None):
+        rows = _assistant_station_trend_rows(trend_data, station)
+        if station:
+            if not rows:
+                return f"{label}{station.get('name')}没有足够的日趋势数据，暂时无法判断是否下滑。"
+            item = rows[0]
+            direction = "下降" if item["delta"] < 0 else "上升"
+            return "\n".join([
+                f"{label}{item['name']}日销量趋势：",
+                f"前段日均 {_fmt_volume(item['firstAvg'])}，后段日均 {_fmt_volume(item['lastAvg'])}，{direction} {_fmt_volume(abs(item['delta']))}（{item['pct']:+.1f}%）。",
+                f"区间合计 {_fmt_volume(item['totalVolume'])}，金额 {_fmt_amount(item['totalAmount'], '索姆')}，覆盖 {item['days']} 天。",
+                _assistant_station_trend_reason_line(item),
+            ])
+        falling = [item for item in rows if item["delta"] < 0]
+        if not falling:
+            return f"{label}没有发现明显下滑站点。"
+        lines = [f"{label}下滑最明显的站点（按前后段日均销量变化）："]
+        for index, item in enumerate(falling[:8], start=1):
+            lines.append(
+                f"{index}. {item['name']}（{item['region']}）："
+                f"{_fmt_volume(item['firstAvg'])} -> {_fmt_volume(item['lastAvg'])}，"
+                f"下降 {_fmt_volume(abs(item['delta']))}（{item['pct']:.1f}%）"
+            )
+        lines.append("原因排查建议：先看是否存在零销量/缺日，再看停业维修、补传状态、油品结构、库存和价格变化。")
+        return "\n".join(lines)
+
+
+    def _assistant_station_trend_reason_line(item):
+        zero_count = len(item.get("zeroDays") or [])
+        lowest = [
+            f"{day}:{_fmt_volume(value)}"
+            for day, value in (item.get("lowestDays") or [])
+            if day
+        ]
+        parts = ["原因排查："]
+        if zero_count:
+            parts.append(f"区间内有 {zero_count} 天零销量，优先核查停业、停电、补传或快照缺失。")
+        elif lowest:
+            parts.append("低销量日期：" + "、".join(lowest) + "。")
+        parts.append("若数据完整，再继续看油品结构、库存、价格和当地车流变化。")
+        return "".join(parts)
+
+
+    def _assistant_station_trend_anomaly_tables(label, trend_data, station=None):
+        rows = _assistant_station_trend_rows(trend_data, station)
+        rows = rows if station else [item for item in rows if item["delta"] < 0]
+        table_rows = [
+            [
+                item["name"],
+                item["region"],
+                _fmt_volume(item["firstAvg"]),
+                _fmt_volume(item["lastAvg"]),
+                _fmt_volume(item["delta"]),
+                f"{item['pct']:+.1f}%",
+                _fmt_volume(item["totalVolume"]),
+                len(item.get("zeroDays") or []),
+            ]
+            for item in rows[:12]
+        ]
+        return [_assistant_table(
+            f"{label}站点趋势变化",
+            ["站点", "区域", "前段日均", "后段日均", "变化", "变化率", "区间合计", "零销量天数"],
+            table_rows,
+        )] if table_rows else []
+
+
+    def _assistant_station_data_check_answer(label, data, station):
+        rows = [
+            item for item in data.get("stations") or []
+            if int(item.get("shopKey") or 0) == int(station.get("shopKey") or 0)
+        ]
+        station_name = station.get("name") or f"{station.get('shopKey')}号站"
+        if not rows:
+            return f"{label}{station_name}未在零售汇总快照中找到销售记录；如果刚补传数据，需要等待快照任务重新生成后再查。"
+        item = rows[0]
+        volume = float(item.get("volume") or 0)
+        amount = float(item.get("amount") or 0)
+        if volume or amount:
+            return (
+                f"{label}{station_name}已查到销售数据："
+                f"销量 {_fmt_volume(volume)}，金额 {_fmt_amount(amount, '索姆')}。"
+                "这说明该区间数据已经进入当前零售汇总口径。"
+            )
+        return f"{label}{station_name}有站点记录，但销量和金额为 0；需要继续核查该站是否停业、数据是否仍未补齐或该日确无销售。"
+
+
+    def _assistant_station_data_check_tables(label, data, station):
+        rows = [
+            item for item in data.get("stations") or []
+            if int(item.get("shopKey") or 0) == int(station.get("shopKey") or 0)
+        ]
+        if not rows:
+            return []
+        item = rows[0]
+        return [_assistant_table(
+            f"{label}{station.get('name')}数据检查",
+            ["站点", "区域", "销量", "吨位", "金额", "状态"],
+            [[
+                item.get("name") or station.get("name") or "--",
+                item.get("region") or station.get("region") or "--",
+                _fmt_volume(item.get("volume")),
+                _fmt_tons(item.get("tons")),
+                _fmt_amount(item.get("amount"), "索姆"),
+                item.get("status") or "--",
+            ]],
+        )]
+
+
+    def _assistant_accounting_report_answer(label, target_day):
+        try:
+            from api_v2.system import _accounting_report_status
+        except Exception:
+            return "吉方日报状态模块暂不可用。", [], {}
+        conn = get_connection()
+        try:
+            cur = conn.cursor(pymysql.cursors.DictCursor)
+            data = _accounting_report_status(cur, target_day)
+        finally:
+            conn.close()
+        missing_count = int(data.get("missingCount") or 0)
+        generated_count = int(data.get("generatedStationCount") or 0)
+        expected_count = int(data.get("expectedCount") or 0)
+        lines = [f"{label}吉方财务交接日报状态：应生成 {expected_count} 站，已生成 {generated_count} 站，缺少 {missing_count} 站。"]
+        if missing_count:
+            names = [item.get("name") or item.get("stationNo") or "--" for item in data.get("missingStations") or []]
+            lines.append("缺少站点：" + "、".join(names[:12]))
+        else:
+            lines.append("当前未发现缺少日报的应生成站点。")
+        if data.get("outputDir"):
+            lines.append(f"输出目录：{data.get('outputDir')}")
+        table_rows = [
+            [item.get("stationNo") or "--", item.get("name") or "--", item.get("region") or "--"]
+            for item in data.get("missingStations") or []
+        ]
+        tables = [_assistant_table(f"{label}吉方日报缺站", ["站号", "站点", "区域"], table_rows)] if table_rows else []
+        return "\n".join(lines), tables, data
+
+
     def _assistant_comparison_answer(label, monthly_data):
         comp = monthly_data.get("comparison") or {}
         mom = comp.get("mom") or {}
@@ -1489,76 +3076,165 @@ def register_assistant_routes(app):
         if not question:
             return jsonify({"error": "question_required"}), 400
 
-        label, start, end = _assistant_period(question)
-        label = _assistant_period_display(label, start, end)
-        if _assistant_has_any(question, ("停业", "站点状态", "异常站点", "暂停营业", "维修", "停电")):
-            return jsonify({
-                "ok": True,
-                "question": question,
-                "periodLabel": "当前",
-                "answer": _assistant_station_status_answer(),
-                "tables": _assistant_station_status_tables(),
-            })
-        if _assistant_has_any(question, ("趋势", "每日", "日趋势", "日销量", "走势")):
+        conversation_context = payload.get("conversationContext")
+        plan = build_assistant_query_plan(question, context=conversation_context)
+        period = plan.get("period") or {}
+        start = date.fromisoformat(period.get("start"))
+        end = date.fromisoformat(period.get("endExclusive"))
+        label = _assistant_period_display(period.get("label") or "", start, end)
+        match_question = plan.get("normalizedQuestion") or question
+        route = plan.get("route")
+
+        if plan.get("needsClarification"):
+            clarification = plan.get("clarification") or {}
+            answer = clarification.get("question") or "我需要先确认查询范围后再回答。"
+            options = clarification.get("options") or []
+            if options:
+                answer = f"{answer}\n可选：{'、'.join(str(item) for item in options)}。"
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=answer,
+                tables=[],
+                data={},
+                needsClarification=True,
+                clarification=clarification,
+            )
+
+        if route == "compound_query":
+            return _assistant_response(
+                question,
+                plan,
+                **_assistant_compound_payload(question, plan),
+            )
+
+        if route == "station_data_check" and (plan.get("entities") or {}).get("station"):
+            station = plan["entities"]["station"]
+            data = _assistant_retail_data_for_period(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_station_data_check_answer(label, data, station),
+                tables=_assistant_station_data_check_tables(label, data, station),
+                data=data,
+            )
+
+        if route == "station_trend_anomaly":
+            station = (plan.get("entities") or {}).get("station")
+            trend_data = _assistant_daily_trend_for_period(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_station_trend_anomaly_answer(label, trend_data, station),
+                tables=_assistant_station_trend_anomaly_tables(label, trend_data, station),
+                data=trend_data,
+            )
+
+        if route == "retail_ranking":
+            dimension = next((item for item in plan.get("dimensions") or [] if item in {"resource", "region", "station"}), "station")
+            data = _assistant_retail_data_for_period(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_retail_ranking_answer(label, data, dimension, plan.get("metric") or "amount", match_question),
+                tables=_assistant_retail_ranking_tables(label, data, dimension, plan.get("metric") or "amount"),
+                data=data,
+            )
+
+        if route == "accounting_report_status":
+            answer, tables, data = _assistant_accounting_report_answer(label, start)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=answer,
+                tables=tables,
+                data=data,
+            )
+
+        if route == "station_status" or _assistant_has_any(match_question, ("停业", "站点状态", "异常站点", "暂停营业", "维修", "停电")):
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="当前",
+                answer=_assistant_station_status_answer(),
+                tables=_assistant_station_status_tables(),
+            )
+        if route == "retail_trend" or _assistant_has_any(match_question, ("趋势", "每日", "日趋势", "日销量", "走势")):
             ym = f"{start.year}-{start.month:02d}"
             trend_data = _read_daily_trend_snapshot(ym)
             if trend_data:
-                return jsonify({
-                    "ok": True,
-                    "question": question,
-                    "periodLabel": ym,
-                    "answer": _assistant_daily_trend_answer(ym, trend_data),
-                    "tables": _assistant_daily_trend_tables(ym, trend_data),
-                    "data": trend_data,
-                })
-        if _assistant_has_any(question, ("同比", "环比", "对比", "较去年", "较上月")):
+                return _assistant_response(
+                    question,
+                    plan,
+                    periodLabel=ym,
+                    answer=_assistant_daily_trend_answer(ym, trend_data),
+                    tables=_assistant_daily_trend_tables(ym, trend_data),
+                    data=trend_data,
+                )
+        if route == "retail_comparison" and plan.get("comparison"):
+            data = _assistant_retail_data_for_period(start, end)
+            comparison = _assistant_enrich_comparison_data(plan)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_retail_comparison_answer(label, data, comparison),
+                tables=_assistant_retail_comparison_tables(label, data, comparison),
+                data={"current": data, "comparison": comparison},
+            )
+        if route == "retail_comparison" or _assistant_has_any(match_question, ("同比", "环比", "对比", "较去年", "较上月")):
             ym = f"{start.year}-{start.month:02d}"
             monthly_data = _read_retail_snapshot("monthly", ym)
             if monthly_data:
-                return jsonify({
-                    "ok": True,
-                    "question": question,
-                    "periodLabel": ym,
-                    "answer": _assistant_comparison_answer(ym, monthly_data),
-                    "tables": _assistant_comparison_tables(ym, monthly_data),
-                    "data": monthly_data,
-                })
-        if _assistant_has_any(question, ("占比", "结构", "油品结构", "油品占比", "构成")):
-            data = _retail_snapshot_for_period(start, end)
-            if not data:
-                response = open_oilstation(
-                    "/api/assistant/retail-summary",
-                    query_string={"start": start.isoformat(), "end": end.isoformat()},
+                return _assistant_response(
+                    question,
+                    plan,
+                    periodLabel=ym,
+                    answer=_assistant_comparison_answer(ym, monthly_data),
+                    tables=_assistant_comparison_tables(ym, monthly_data),
+                    data=monthly_data,
                 )
-                data = response.get_json() if response.status_code < 400 else {}
-            return jsonify({
-                "ok": True,
-                "question": question,
-                "periodLabel": label,
-                "answer": _assistant_resource_share_answer(label, data),
-                "tables": _assistant_retail_tables(label, data, question),
-                "data": data,
-            })
-        if _assistant_has_any(question, ("KPI", "关键指标", "累计", "年度指标", "今年")):
+        if route == "retail_resource_share" or _assistant_has_any(match_question, ("占比", "结构", "油品结构", "油品占比", "构成")):
+            data = _assistant_retail_data_for_period(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                answer=_assistant_resource_share_answer(label, data),
+                tables=_assistant_retail_tables(label, data, match_question),
+                data=data,
+            )
+        if route == "retail_kpi" or _assistant_has_any(match_question, ("KPI", "关键指标", "累计", "年度指标", "今年")):
             year = start.year
             kpi_data = _read_yearly_kpi_snapshot(year)
             if kpi_data:
-                return jsonify({
-                    "ok": True,
-                    "question": question,
-                    "periodLabel": f"{year}年",
-                    "answer": _assistant_yearly_kpi_answer(f"{year}年", kpi_data),
-                    "tables": _assistant_yearly_kpi_tables(f"{year}年", kpi_data),
-                    "data": kpi_data,
-                })
-        if _assistant_has_any(question, ("价格", "单价", "售价", "零售价")):
-            data = _retail_snapshot_for_period(start, end)
-            if not data:
-                response = open_oilstation(
-                    "/api/assistant/retail-summary",
-                    query_string={"start": start.isoformat(), "end": end.isoformat()},
+                return _assistant_response(
+                    question,
+                    plan,
+                    periodLabel=f"{year}年",
+                    answer=_assistant_yearly_kpi_answer(f"{year}年", kpi_data),
+                    tables=_assistant_yearly_kpi_tables(f"{year}年", kpi_data),
+                    data=kpi_data,
                 )
-                data = response.get_json() if response.status_code < 400 else {}
+        if route == "retail_price" or _assistant_has_any(match_question, ("价格", "单价", "售价", "零售价")):
+            data = _assistant_retail_data_for_period(start, end)
             resources = [item for item in (data.get("byResource") or []) if float(item.get("volume") or 0) > 0]
             lines = [f"{label}零售价格（均价 = 金额 ÷ 销量）："]
             price_rows = []
@@ -1575,32 +3251,32 @@ def register_assistant_routes(app):
             avg_price = total_amt / total_vol if total_vol else 0
             lines.append(f"  综合均价：{avg_price:.2f} 索姆/升")
             price_rows.append(["综合均价", f"{avg_price:.2f}", _fmt_volume(total_vol), _fmt_amount(total_amt, "索姆")])
-            return jsonify({
-                "ok": True,
-                "question": question,
-                "periodLabel": label,
-                "answer": "\n".join(lines),
-                "tables": [_assistant_table(f"{label}零售价格", ["油品", "均价(索姆/升)", "销量", "金额"], price_rows)],
-                "data": data,
-            })
-        if _assistant_has_any(question, ("市场", "行情", "观察", "原油", "成品油", "俄罗斯", "乌兹别克", "国际")):
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                answer="\n".join(lines),
+                tables=[_assistant_table(f"{label}零售价格", ["油品", "均价(索姆/升)", "销量", "金额"], price_rows)],
+                data=data,
+            )
+        if route == "market_summary" or _assistant_has_any(match_question, ("市场", "行情", "观察", "原油", "成品油", "俄罗斯", "乌兹别克", "国际")):
             conn = get_connection()
             try:
                 cur = conn.cursor()
                 answer, tables = _assistant_market_watch_answer(cur)
             finally:
                 conn.close()
-            return jsonify({"ok": True, "question": question, "periodLabel": "市场观察", "answer": answer, "tables": tables})
-        if "合同" in question:
+            return _assistant_response(question, plan, periodLabel="市场观察", answer=answer, tables=tables)
+        if route == "contract_summary" or "合同" in match_question:
             conn = get_connection()
             try:
                 cur = conn.cursor()
-                answer = _assistant_contract_answer(cur, question)
-                tables = _assistant_contract_tables(cur, question)
+                answer = _assistant_contract_answer(cur, match_question)
+                tables = _assistant_contract_tables(cur, match_question)
             finally:
                 conn.close()
-            return jsonify({"ok": True, "question": question, "periodLabel": "合同", "answer": answer, "tables": tables})
-        if _assistant_has_any(question, ("合并", "总销售", "整体", "公司", "总量", "总金额")):
+            return _assistant_response(question, plan, periodLabel="合同", answer=answer, tables=tables)
+        if route == "combined_summary" or _assistant_has_any(match_question, ("合并", "总销售", "整体", "公司", "总量", "总金额")):
             year, month = _assistant_year_month_from_period(start, end)
             conn = get_connection()
             try:
@@ -1608,17 +3284,17 @@ def register_assistant_routes(app):
                 data = _combined_data_from_snapshots(cur, year, month, start, end)
             finally:
                 conn.close()
-            return jsonify({
-                "ok": True,
-                "question": question,
-                "periodLabel": label,
-                "queryStart": start.isoformat(),
-                "queryEndExclusive": end.isoformat(),
-                "answer": _assistant_combined_answer(label, data),
-                "tables": _assistant_combined_tables(label, data),
-                "data": data,
-            })
-        if _assistant_has_any(question, ("审核", "复核", "异常", "提示", "未匹配")):
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_combined_answer(label, data),
+                tables=_assistant_combined_tables(label, data),
+                data=data,
+            )
+        if route == "wholesale_review" or _assistant_has_any(match_question, ("审核", "复核", "异常", "提示", "未匹配")):
             year, month = _assistant_year_month_from_period(start, end)
             conn = get_connection()
             try:
@@ -1627,8 +3303,8 @@ def register_assistant_routes(app):
                 answer = _assistant_review_answer(label, data)
             finally:
                 conn.close()
-            return jsonify({"ok": True, "question": question, "periodLabel": label, "answer": answer, "tables": _assistant_review_tables(label, data), "data": data})
-        if any(word in question for word in ("批发", "外运", "出口", "本地", "客户")):
+            return _assistant_response(question, plan, periodLabel=label, answer=answer, tables=_assistant_review_tables(label, data), data=data)
+        if route == "wholesale_summary" or any(word in match_question for word in ("批发", "外运", "出口", "本地", "客户")):
             year, month = _assistant_year_month_from_period(start, end)
             conn = get_connection()
             try:
@@ -1636,17 +3312,17 @@ def register_assistant_routes(app):
                 data = summarize_wholesale_page(cur, year, month)
             finally:
                 conn.close()
-            return jsonify({
-                "ok": True,
-                "question": question,
-                "periodLabel": label,
-                "queryStart": start.isoformat(),
-                "queryEndExclusive": end.isoformat(),
-                "answer": _format_assistant_wholesale_answer(label, data, question),
-                "tables": _assistant_wholesale_tables(label, data, question),
-                "data": data,
-            })
-        if "汇率" in question or "美元" in question or "人民币" in question:
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_format_assistant_wholesale_answer(label, data, match_question),
+                tables=_assistant_wholesale_tables(label, data, match_question),
+                data=data,
+            )
+        if route == "exchange_summary" or "汇率" in match_question or "美元" in match_question or "人民币" in match_question:
             conn = get_connection()
             try:
                 cur = conn.cursor()
@@ -1654,8 +3330,8 @@ def register_assistant_routes(app):
                 tables = _assistant_exchange_tables(cur, label, start, end)
             finally:
                 conn.close()
-            return jsonify({"ok": True, "question": question, "periodLabel": label, "answer": answer, "tables": tables})
-        if "密度" in question:
+            return _assistant_response(question, plan, periodLabel=label, answer=answer, tables=tables)
+        if route == "density_summary" or "密度" in match_question:
             conn = get_connection()
             try:
                 cur = conn.cursor()
@@ -1663,40 +3339,34 @@ def register_assistant_routes(app):
                 tables = _assistant_density_tables(cur)
             finally:
                 conn.close()
-            return jsonify({"ok": True, "question": question, "periodLabel": "当前", "answer": answer, "tables": tables})
-        if _assistant_has_any(question, ("库存", "期末")):
+            return _assistant_response(question, plan, periodLabel="当前", answer=answer, tables=tables)
+        if route == "retail_inventory" or _assistant_has_any(match_question, ("库存", "期末")):
             inventory_data = _retail_inventory_for_period(start, end)
             if inventory_data:
-                return jsonify({
-                    "ok": True,
-                    "question": question,
-                    "periodLabel": label,
-                    "queryStart": start.isoformat(),
-                    "queryEndExclusive": end.isoformat(),
-                    "answer": _assistant_retail_inventory_answer(label, inventory_data),
-                    "tables": _assistant_retail_inventory_tables(label, inventory_data),
-                    "data": inventory_data,
-                })
-        data = _retail_snapshot_for_period(start, end)
+                return _assistant_response(
+                    question,
+                    plan,
+                    periodLabel=label,
+                    queryStart=start.isoformat(),
+                    queryEndExclusive=end.isoformat(),
+                    answer=_assistant_retail_inventory_answer(label, inventory_data),
+                    tables=_assistant_retail_inventory_tables(label, inventory_data),
+                    data=inventory_data,
+                )
+        data = _assistant_retail_data_for_period(start, end)
         if not data:
-            response = open_oilstation(
-                "/api/assistant/retail-summary",
-                query_string={"start": start.isoformat(), "end": end.isoformat()},
-            )
-            if response.status_code >= 400:
-                return jsonify({"error": "retail_query_failed", "detail": response.get_data(as_text=True)}), 502
-            data = response.get_json() or {}
-        data["question"] = question
-        return jsonify({
-            "ok": True,
-            "question": question,
-            "periodLabel": label,
-            "queryStart": start.isoformat(),
-            "queryEndExclusive": end.isoformat(),
-            "answer": _format_assistant_retail_answer(label, data),
-            "tables": _assistant_retail_tables(label, data, question),
-            "data": data,
-        })
+            return jsonify({"error": "retail_query_failed", "detail": "empty_retail_response"}), 502
+        data["question"] = match_question
+        return _assistant_response(
+            question,
+            plan,
+            periodLabel=label,
+            queryStart=start.isoformat(),
+            queryEndExclusive=end.isoformat(),
+            answer=_format_assistant_retail_answer(label, data),
+            tables=_assistant_retail_tables(label, data, match_question),
+            data=data,
+        )
 
 
 

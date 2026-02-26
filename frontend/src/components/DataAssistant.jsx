@@ -27,6 +27,69 @@ function escapeHtml(value) {
   );
 }
 
+function createAssistantSessionId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `web-ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function compactAssistantPlan(plan) {
+  if (!plan || typeof plan !== 'object') return undefined;
+  return {
+    domain: plan.domain,
+    intent: plan.intent,
+    route: plan.route,
+    metric: plan.metric,
+    dimensions: plan.dimensions,
+    entities: plan.entities,
+    period: plan.period,
+    tool: plan.tool,
+    businessTerms: plan.businessTerms,
+    comparison: plan.comparison,
+    executionHints: plan.executionHints,
+    assumptions: plan.assumptions,
+    subPlans: Array.isArray(plan.subPlans) ? plan.subPlans.slice(0, 5).map(compactAssistantPlan).filter(Boolean) : undefined,
+    needsClarification: plan.needsClarification,
+    clarification: plan.clarification,
+    clarificationResolved: plan.clarificationResolved,
+    explicit: plan.explicit,
+    contextUsed: plan.contextUsed,
+  };
+}
+
+function buildPageContext() {
+  const params = Object.fromEntries(new URLSearchParams(window.location.search).entries());
+  const segments = window.location.pathname.split('/').filter(Boolean);
+  return {
+    path: window.location.pathname,
+    search: window.location.search,
+    hash: window.location.hash,
+    module: segments[0] || '',
+    page: segments[1] || (segments[0] || 'home'),
+    title: document.title,
+    searchParams: params,
+  };
+}
+
+function buildConversationContext(sessionId, previousQuestion, previousAnswer) {
+  const previousPlan = compactAssistantPlan(previousAnswer?.assistantPlan);
+  return {
+    sessionId,
+    pageContext: buildPageContext(),
+    lastAssistantPlan: previousPlan,
+    recentMessages: [
+      previousQuestion ? { role: 'user', content: previousQuestion.slice(0, 500) } : null,
+      previousAnswer?.answer ? {
+        role: 'assistant',
+        content: String(previousAnswer.answer).slice(0, 500),
+        periodLabel: previousAnswer.periodLabel,
+        assistantPlan: previousPlan,
+      } : null,
+    ].filter(Boolean),
+  };
+}
+
 function TableResult({ table }) {
   return (
     <section className="data-assistant-table">
@@ -53,7 +116,27 @@ function TableResult({ table }) {
   );
 }
 
-async function queryAssistant(question) {
+function PlanMeta({ plan }) {
+  if (!plan) return null;
+  return (
+    <div className="data-assistant-plan-meta">
+      {plan.period?.label && <span>{plan.period.label}</span>}
+      {plan.metric && <span>{plan.metric}</span>}
+      {plan.tool?.description && <span>{plan.tool.description}</span>}
+      {plan.comparison?.period?.label && <span>对比：{plan.comparison.period.label}</span>}
+      {Array.isArray(plan.subPlans) && plan.subPlans.length > 0 && <span>拆解 {plan.subPlans.length} 个子问题</span>}
+    </div>
+  );
+}
+
+async function queryAssistant(question, conversationContext) {
+  const body = {
+    question,
+    language: 'zh',
+    useLlm: true,
+    sessionId: conversationContext?.sessionId,
+    conversationContext,
+  };
   const token = localStorage.getItem('accessToken');
   if (token) {
     const res = await fetch('/api/v2/assistant/query', {
@@ -63,7 +146,7 @@ async function queryAssistant(question) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ question, language: 'zh', useLlm: true }),
+      body: JSON.stringify(body),
     });
     if (res.ok) {
       const body = await res.json();
@@ -75,7 +158,7 @@ async function queryAssistant(question) {
     }
   }
 
-  return post('/api/data-assistant/query?_=' + Date.now(), { question });
+  return post('/api/data-assistant/query?_=' + Date.now(), body);
 }
 
 export default function DataAssistant() {
@@ -85,6 +168,10 @@ export default function DataAssistant() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const abortRef = useRef(null);
+  const sessionIdRef = useRef(createAssistantSessionId());
+  const lastQuestionRef = useRef('');
+  const clarificationOptions = Array.isArray(answer?.clarification?.options) ? answer.clarification.options : [];
+  const showClarificationOptions = !loading && !error && clarificationOptions.length > 0;
 
   async function submitQuestion(question) {
     if (!question?.trim()) return;
@@ -96,8 +183,11 @@ export default function DataAssistant() {
     setAnswer(null);
 
     try {
-      const data = await queryAssistant(question.trim());
+      const text = question.trim();
+      const context = buildConversationContext(sessionIdRef.current, lastQuestionRef.current, answer);
+      const data = await queryAssistant(text, context);
       setAnswer(data);
+      lastQuestionRef.current = text;
     } catch (err) {
       setError(err.name === 'AbortError' ? '查询超时，请稍后重试。' : '查询失败：' + err.message);
     } finally {
@@ -151,13 +241,31 @@ export default function DataAssistant() {
               <span style={{ color: '#ef5350' }}>{error}</span>
             ) : answer?.tables?.length ? (
               <>
-                {answer?.answer && answer?.agent?.llmUsed && (
-                  <div className="data-assistant-summary">{answer.answer}</div>
-                )}
-                {answer.tables.map((table, i) => <TableResult key={i} table={table} />)}
+	                {answer?.answer && answer?.agent?.llmUsed && (
+	                  <div className="data-assistant-summary">{answer.answer}</div>
+	                )}
+	                <PlanMeta plan={answer?.assistantPlan} />
+	                {answer.tables.map((table, i) => <TableResult key={i} table={table} />)}
               </>
             ) : (
-              answer?.answer || '选择快捷问题或直接输入经营问题，结果会优先以表格显示。'
+	              <>
+	                <PlanMeta plan={answer?.assistantPlan} />
+	                {answer?.answer || '选择快捷问题或直接输入经营问题，结果会优先以表格显示。'}
+	              </>
+            )}
+            {showClarificationOptions && (
+              <div className="data-assistant-clarification-options">
+                {clarificationOptions.map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => { setInput(option); submitQuestion(option); }}
+                    disabled={loading}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>

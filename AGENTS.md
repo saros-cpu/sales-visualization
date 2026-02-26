@@ -15,12 +15,12 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `3.8.22`.
-- Current release commit: `bb12f95 fix: restore collapsed menu and chart labels`.
+- Current released client version: `3.8.23`.
+- Current release commit: `27514b1 fix: prevent mixed chart label overlap`.
 - Production public entry: `http://198.51.100.10/`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `http://198.51.100.10/download/latest.yml`.
-- Current installer: `SalesDesktop Setup 3.8.22.exe`.
+- Current installer: `SalesDesktop Setup 3.8.23.exe`.
 
 ## Report Boundaries
 
@@ -116,18 +116,18 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.22.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.22.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.22.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.23.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.23.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.8.23.exe"
 ```
 
 ## CodeGraph Memory
 
 Current CodeGraph baseline:
 
-- Files: `308`
-- Nodes: `7,416`
-- Edges: `27,793`
+- Files: `309`
+- Nodes: `7,434`
+- Edges: `27,830`
 - DB size: `34.50 MB`
 - Status: `Index is up to date`
 

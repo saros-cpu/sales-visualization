@@ -1195,6 +1195,20 @@ body {
   line-height: 1.65;
 }
 
+.global-ai-clarification-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.global-ai-clarification-options .ant-btn {
+  border-color: #bfd8ea;
+  color: #1a3a5c;
+  background: #f4f9fd;
+  font-weight: 700;
+}
+
 .global-ai-table {
   margin-top: 8px;
   border: 1px solid #d9e8f2;
@@ -1209,6 +1223,26 @@ body {
   color: #1a3a5c;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.global-ai-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 6px;
+  background: #eef6fb;
+}
+
+.global-ai-table-head .global-ai-table-title {
+  background: transparent;
+}
+
+.global-ai-plan-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
 }
 
 .global-ai-table table {

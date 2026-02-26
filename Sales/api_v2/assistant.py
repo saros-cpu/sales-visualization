@@ -97,13 +97,123 @@ def _record_ai_call(user_id: int | None, question: str, agent: dict[str, Any]) -
         pass
 
 
-def _legacy_assistant_query(question: str, language: str | None) -> tuple[dict[str, Any], int]:
+def _compact_assistant_plan(plan: Any) -> dict[str, Any]:
+    if not isinstance(plan, dict):
+        return {}
+    compact = {
+        "domain": plan.get("domain"),
+        "intent": plan.get("intent"),
+        "route": plan.get("route"),
+        "metric": plan.get("metric"),
+        "dimensions": plan.get("dimensions") if isinstance(plan.get("dimensions"), list) else [],
+        "period": plan.get("period") if isinstance(plan.get("period"), dict) else {},
+        "tool": plan.get("tool") if isinstance(plan.get("tool"), dict) else {},
+        "businessTerms": plan.get("businessTerms") if isinstance(plan.get("businessTerms"), dict) else {},
+        "comparison": plan.get("comparison") if isinstance(plan.get("comparison"), dict) else None,
+        "executionHints": plan.get("executionHints") if isinstance(plan.get("executionHints"), list) else [],
+        "assumptions": plan.get("assumptions") if isinstance(plan.get("assumptions"), list) else [],
+        "contextUsed": plan.get("contextUsed") if isinstance(plan.get("contextUsed"), list) else [],
+        "needsClarification": bool(plan.get("needsClarification")),
+        "clarification": plan.get("clarification") if isinstance(plan.get("clarification"), dict) else None,
+        "clarificationResolved": plan.get("clarificationResolved") if isinstance(plan.get("clarificationResolved"), dict) else None,
+        "explicit": plan.get("explicit") if isinstance(plan.get("explicit"), dict) else {},
+    }
+    entities = plan.get("entities")
+    if isinstance(entities, dict):
+        station = entities.get("station")
+        if isinstance(station, dict):
+            compact["entities"] = {"station": {
+                "shopKey": station.get("shopKey"),
+                "name": station.get("name"),
+                "short": station.get("short"),
+            }}
+    subplans = plan.get("subPlans")
+    if isinstance(subplans, list):
+        compact["subPlans"] = [_compact_assistant_plan(item) for item in subplans[:5] if isinstance(item, dict)]
+    return compact
+
+
+def _compact_conversation_context(value: Any, session_id: str | None = None) -> dict[str, Any]:
+    context = value if isinstance(value, dict) else {}
+    result: dict[str, Any] = {}
+    resolved_session = str(session_id or context.get("sessionId") or "").strip()
+    if resolved_session:
+        result["sessionId"] = resolved_session[:128]
+
+    previous_plan = _compact_assistant_plan(context.get("lastAssistantPlan") or context.get("assistantPlan"))
+    if previous_plan:
+        result["lastAssistantPlan"] = previous_plan
+
+    recent_messages = context.get("recentMessages")
+    if isinstance(recent_messages, list):
+        safe_messages = []
+        for item in recent_messages[-8:]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "")[:24]
+            content = str(item.get("content") or "").strip()
+            if role not in {"user", "assistant"} or not content:
+                continue
+            row = {"role": role, "content": content[:500]}
+            if item.get("periodLabel"):
+                row["periodLabel"] = str(item.get("periodLabel"))[:80]
+            if item.get("assistantPlan"):
+                row["assistantPlan"] = _compact_assistant_plan(item.get("assistantPlan"))
+            safe_messages.append(row)
+        if safe_messages:
+            result["recentMessages"] = safe_messages
+    page_context = context.get("pageContext")
+    if isinstance(page_context, dict):
+        safe_page: dict[str, Any] = {}
+        for key in ("path", "pathname", "search", "hash", "module", "page", "title"):
+            if page_context.get(key):
+                safe_page[key] = str(page_context.get(key))[:200]
+        search_params = page_context.get("searchParams")
+        if isinstance(search_params, dict):
+            safe_page["searchParams"] = {
+                str(key)[:80]: str(value)[:160]
+                for key, value in search_params.items()
+                if value is not None
+            }
+        if safe_page:
+            result["pageContext"] = safe_page
+    return result
+
+
+def _conversation_context_search_text(context: dict[str, Any]) -> str:
+    parts: list[str] = []
+    plan = context.get("lastAssistantPlan")
+    if isinstance(plan, dict):
+        parts.extend(str(plan.get(key) or "") for key in ("domain", "intent", "route", "metric"))
+        period = plan.get("period")
+        if isinstance(period, dict):
+            parts.append(str(period.get("label") or ""))
+        station = ((plan.get("entities") or {}).get("station") if isinstance(plan.get("entities"), dict) else None)
+        if isinstance(station, dict):
+            parts.extend(str(station.get(key) or "") for key in ("shopKey", "name", "short"))
+    messages = context.get("recentMessages")
+    if isinstance(messages, list):
+        parts.extend(str(item.get("content") or "") for item in messages[-3:] if isinstance(item, dict))
+    return " ".join(part for part in parts if part)
+
+
+def _legacy_assistant_query(
+    question: str,
+    language: str | None,
+    session_id: str | None = None,
+    conversation_context: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], int]:
     headers = {}
     auth = request.headers.get("Authorization")
     if auth:
         headers["Authorization"] = auth
+    body: dict[str, Any] = {"question": question, "language": language}
+    if session_id:
+        body["sessionId"] = session_id
+    if conversation_context:
+        body["conversationContext"] = conversation_context
     with current_app.test_client() as client:
-        resp = client.post("/api/data-assistant/query", json={"question": question, "language": language}, headers=headers)
+        resp = client.post("/api/data-assistant/query", json=body, headers=headers)
         payload = resp.get_json(silent=True) or {"ok": False, "answer": resp.get_data(as_text=True)}
         return payload, resp.status_code
 
@@ -130,6 +240,8 @@ def assistant_query():
     question = str(payload.get("question") or "").strip()
     language = payload.get("language")
     use_llm = payload.get("useLlm", True) is not False
+    session_id = str(payload.get("sessionId") or "").strip()[:128]
+    conversation_context = _compact_conversation_context(payload.get("conversationContext"), session_id)
     if not question:
         return jsonify({"code": 4221, "message": "question_required", "data": None}), 422
 
@@ -139,7 +251,7 @@ def assistant_query():
         _record_ai_call(user_id, question, result.get("agent") or {})
         return jsonify({"code": 0, "message": "success", "data": result})
 
-    source_payload, status = _legacy_assistant_query(question, language)
+    source_payload, status = _legacy_assistant_query(question, language, session_id, conversation_context)
     if status >= 400:
         result = {
             "ok": False,
@@ -151,9 +263,33 @@ def assistant_query():
         _record_ai_call(user_id, question, result["agent"])
         return jsonify({"code": 502, "message": "assistant_source_query_failed", "data": result}), 502
 
+    if source_payload.get("needsClarification") or (source_payload.get("assistantPlan") or {}).get("needsClarification"):
+        result = dict(source_payload)
+        result["sourceAnswer"] = str(source_payload.get("answer") or "")
+        result["agent"] = {
+            "mode": "read_only",
+            "provider": "business-rule-engine",
+            "model": "assistant-plan",
+            "llmUsed": False,
+            "status": "clarification_required",
+            "canModifyCode": False,
+            "canModifyFiles": False,
+            "canModifyBusinessData": False,
+        }
+        _record_ai_call(user_id, question, result["agent"])
+        return jsonify({"code": 0, "message": "success", "data": result})
+
+    if session_id:
+        source_payload["sessionId"] = session_id
+    if conversation_context:
+        source_payload["conversationContext"] = conversation_context
+
     knowledge_snippets: list[dict[str, Any]] = []
     try:
-        knowledge_snippets = search_knowledge_snippets(user_id, question, limit=3)
+        knowledge_query = " ".join(
+            part for part in (question, _conversation_context_search_text(conversation_context)) if part
+        )
+        knowledge_snippets = search_knowledge_snippets(user_id, knowledge_query, limit=3)
         if knowledge_snippets:
             source_payload["knowledge"] = knowledge_snippets
     except Exception as exc:

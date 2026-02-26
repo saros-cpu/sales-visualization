@@ -156,9 +156,19 @@ def _compact_tables(tables: Any) -> list[dict[str, Any]]:
 
 
 def compact_assistant_payload(payload: dict[str, Any], user_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    assistant_plan = payload.get("assistantPlan") if isinstance(payload.get("assistantPlan"), dict) else {}
     return {
         "question": payload.get("question"),
         "periodLabel": payload.get("periodLabel"),
+        "assistantPlan": _compact_value(assistant_plan),
+        "selectedTool": _compact_value(assistant_plan.get("tool") if isinstance(assistant_plan, dict) else {}),
+        "subPlans": _compact_value(assistant_plan.get("subPlans") if isinstance(assistant_plan, dict) else []),
+        "comparison": _compact_value(assistant_plan.get("comparison") if isinstance(assistant_plan, dict) else {}),
+        "executionHints": _compact_value(assistant_plan.get("executionHints") if isinstance(assistant_plan, dict) else []),
+        "assumptions": _compact_value(assistant_plan.get("assumptions") if isinstance(assistant_plan, dict) else []),
+        "contextUsed": _compact_value(assistant_plan.get("contextUsed") if isinstance(assistant_plan, dict) else []),
+        "conversationContext": _compact_value(payload.get("conversationContext")),
+        "knowledge": _compact_value(payload.get("knowledge")),
         "deterministicAnswer": payload.get("answer"),
         "tables": _compact_tables(payload.get("tables")),
         "data": _compact_value(payload.get("data")),
@@ -176,10 +186,20 @@ def _openrouter_chat(question: str, context: dict[str, Any], language: str) -> t
                 "role": "system",
                 "content": (
                     "You are a read-only business data assistant for an oil sales management system. "
-                    "You can only answer from the supplied JSON context. You cannot modify project code, files, "
+                    "You can only answer from the supplied JSON context. Use assistantPlan to understand the "
+                    "business domain, selected read-only tool, period, entities, metric, dimensions, and any "
+                    "context inherited from earlier turns. If assistantPlan.subPlans exists, explain that the "
+                    "question was decomposed and summarize each read-only tool result in order. If comparison exists, "
+                    "state the baseline period explicitly. Treat deterministicAnswer and tables as authoritative. "
+                    "Mention executionHints and assumptions when they materially affect interpretation. "
+                    "If assistantPlan.needsClarification is true, ask the clarification question and do not assume "
+                    "missing domain, metric, dimension, station, or period values. "
+                    "If the user asks a follow-up, preserve the resolved period/entities from assistantPlan unless "
+                    "the current question explicitly changes them. You cannot modify project code, files, "
                     "database rows, contracts, aliases, cache, or business records. You cannot run commands or "
                     "call write APIs. If a user asks for a modifying action, refuse briefly and offer a read-only check. "
-                    "Answer in Chinese when language=zh, and in Russian when language=ru. Be concise."
+                    "Answer in Chinese when language=zh, and in Russian when language=ru. Be concise and mention "
+                    "the data period when it matters."
                 ),
             },
             {

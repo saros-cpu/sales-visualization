@@ -71,6 +71,45 @@ function rectsOverlapX(labelRect: LayoutRect, bounds: BarBounds) {
   return labelRight >= bounds.left - 4 && labelLeft <= bounds.right + 4;
 }
 
+function categoryCount(option: any) {
+  return Math.max(0, ...asArray<any>(option?.xAxis).map((axis) => (axis?.type === 'category' && Array.isArray(axis.data) ? axis.data.length : 0)));
+}
+
+function denseLineLabelIndexes(data: any[], count: number) {
+  const indexes = new Set<number>();
+  if (count <= 0) return indexes;
+
+  indexes.add(0);
+  indexes.add(count - 1);
+
+  const targetLabels = count >= 25 ? 8 : 10;
+  const step = Math.max(2, Math.ceil(count / targetLabels));
+  for (let index = 0; index < count; index += step) {
+    indexes.add(index);
+  }
+
+  let minIndex = -1;
+  let maxIndex = -1;
+  let minValue = Number.POSITIVE_INFINITY;
+  let maxValue = Number.NEGATIVE_INFINITY;
+  data.slice(0, count).forEach((item, index) => {
+    const value = Number(dataValue(item));
+    if (!Number.isFinite(value)) return;
+    if (value < minValue) {
+      minValue = value;
+      minIndex = index;
+    }
+    if (value > maxValue) {
+      maxValue = value;
+      maxIndex = index;
+    }
+  });
+  if (minIndex >= 0) indexes.add(minIndex);
+  if (maxIndex >= 0) indexes.add(maxIndex);
+
+  return indexes;
+}
+
 function horizontalBarMeta(option: EChartsOption) {
   const next: any = option || {};
   const xAxes = asArray<any>(next.xAxis);
@@ -122,6 +161,7 @@ export function withReadableLabels(option: EChartsOption): EChartsOption {
   const xHasCategory = xAxes.some((axis) => axis?.type === 'category');
   const rawSeries = asArray<any>(next.series);
   const palette = Array.isArray(next.color) ? next.color : [];
+  const xCategoryCount = categoryCount(next);
   const mixedBarLine = isMixedBarLine(rawSeries);
   const isHorizontalBarSeries = (item: any) => {
     if (!item || item.type !== 'bar') return false;
@@ -132,6 +172,7 @@ export function withReadableLabels(option: EChartsOption): EChartsOption {
   const isVerticalBarSeries = (item: any) => item?.type === 'bar' && !isHorizontalBarSeries(item);
   const hasHorizontalBar = rawSeries.some(isHorizontalBarSeries);
   const mixedVerticalBarLine = mixedBarLine && xHasCategory && rawSeries.some(isVerticalBarSeries);
+  const denseMixedVerticalBarLine = mixedVerticalBarLine && xCategoryCount > 12;
   const meta = horizontalBarMeta(option);
 
   const normalizeAxis = (axis: any, isX: boolean) => {
@@ -180,7 +221,7 @@ export function withReadableLabels(option: EChartsOption): EChartsOption {
       outerBoundsMode: 'same' as const,
       outerBoundsContain: 'axisLabel' as const,
       top: mixedBarLine
-        ? Math.max(Number.parseFloat(existingGrid?.top) || 0, mixedVerticalBarLine ? 104 : 88)
+        ? Math.max(Number.parseFloat(existingGrid?.top) || 0, mixedVerticalBarLine ? (denseMixedVerticalBarLine ? 112 : 104) : 88)
         : existingGrid?.top,
       bottom: xHasCategory ? (Number.isFinite(existingBottom) ? Math.max(existingBottom, 68) : 68) : (existingGrid?.bottom ?? 32),
       left: hasHorizontalBar ? 8 : (mixedBarLine ? 56 : (existingGrid?.left ?? 48)),
@@ -240,6 +281,9 @@ export function withReadableLabels(option: EChartsOption): EChartsOption {
     const isHorizontalBar = isHorizontalBarSeries(item);
     const lineSeriesIndex = layoutSeries.slice(0, seriesIndex).filter((entry) => entry.item?.type === 'line').length;
     const itemWithPalette = mixedVerticalBarLine ? preservePaletteColor(item, palette, originalIndex) : item;
+    const lineLabelIndexes = denseMixedVerticalBarLine && item.type === 'line'
+      ? denseLineLabelIndexes(Array.isArray(item.data) ? item.data : [], xCategoryCount)
+      : undefined;
     if (item.type === 'bar') {
       return {
         ...itemWithPalette,
@@ -250,11 +294,12 @@ export function withReadableLabels(option: EChartsOption): EChartsOption {
           distance: isHorizontalBar ? undefined : 0,
           verticalAlign: isHorizontalBar ? undefined : 'middle',
           formatter: seriesValue,
-          fontSize: 10,
+          fontSize: denseMixedVerticalBarLine && !isHorizontalBar ? 9 : 10,
           color: isHorizontalBar ? '#111827' : '#fff',
           textBorderColor: isHorizontalBar ? undefined : 'rgba(15, 23, 42, 0.32)',
           textBorderWidth: isHorizontalBar ? 0 : 2,
           textShadowBlur: 0,
+          rotate: denseMixedVerticalBarLine && !isHorizontalBar ? 90 : undefined,
         },
         labelLayout: isHorizontalBar
           ? (params: any) => {
@@ -290,7 +335,10 @@ export function withReadableLabels(option: EChartsOption): EChartsOption {
           show: true,
           position: 'top',
           distance: mixedBarLine ? 14 : 6,
-          formatter: seriesValue,
+          formatter: (params: any) => {
+            if (lineLabelIndexes && !lineLabelIndexes.has(params?.dataIndex)) return '';
+            return seriesValue(params);
+          },
           fontSize: 10,
           color: '#111827',
           textBorderColor: '#fff',
@@ -310,13 +358,13 @@ export function withReadableLabels(option: EChartsOption): EChartsOption {
                 return {
                   y: Math.max(2, bounds.top - 8 - labelRect.height - lineSeriesIndex * stackStep),
                   verticalAlign: 'top',
-                  hideOverlap: false,
+                  hideOverlap: denseMixedVerticalBarLine,
                 };
               }
               return {
                 y: Math.max(2, labelRect.y - 8 - lineSeriesIndex * 6),
-                hideOverlap: false,
-                moveOverlap: 'shiftY',
+                hideOverlap: denseMixedVerticalBarLine,
+                moveOverlap: denseMixedVerticalBarLine ? undefined : 'shiftY',
               };
             }
           : undefined,
