@@ -112,6 +112,7 @@ def _compact_assistant_plan(plan: Any) -> dict[str, Any]:
         "comparison": plan.get("comparison") if isinstance(plan.get("comparison"), dict) else None,
         "executionHints": plan.get("executionHints") if isinstance(plan.get("executionHints"), list) else [],
         "assumptions": plan.get("assumptions") if isinstance(plan.get("assumptions"), list) else [],
+        "selfCheck": plan.get("selfCheck") if isinstance(plan.get("selfCheck"), dict) else {},
         "contextUsed": plan.get("contextUsed") if isinstance(plan.get("contextUsed"), list) else [],
         "needsClarification": bool(plan.get("needsClarification")),
         "clarification": plan.get("clarification") if isinstance(plan.get("clarification"), dict) else None,

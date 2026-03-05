@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.0';
+export const VERSION = '3.9.1';
 export const BUILD_DATE = '2026-07-22';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.1',
+    date: '2026-07-22',
+    type: 'patch',
+    changes: [
+      '优化：AI 助手新增 assistantPlan.selfCheck 自检层，回答前检查时间、同环比、排行维度、趋势工具和只读工具约束',
+      '优化：问题包含明确时间但未能可靠解析时，AI 助手先澄清，不再静默回退最近 7 天',
+      '优化：无明确时间的问题会把“默认最近 7 天”作为假设展示，降低误解风险',
+      '优化：桌面端和 Web AI 助手展示自检通过、自检有假设或自检未通过状态',
+      '测试：扩充 AI 意图评测集，覆盖自检失败、默认时间假设、同环比基准、页面上下文和复合问题子计划',
+    ],
+  },
   {
     version: '3.9.0',
     date: '2026-07-22',

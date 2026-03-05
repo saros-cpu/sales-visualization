@@ -44,6 +44,7 @@ function compactAssistantPlan(plan?: AssistantPlan): AssistantPlan | undefined {
     comparison: plan.comparison,
     executionHints: plan.executionHints,
     assumptions: plan.assumptions,
+    selfCheck: plan.selfCheck,
     subPlans: plan.subPlans?.slice(0, 5).map(compactAssistantPlan).filter(Boolean) as AssistantPlan[] | undefined,
     needsClarification: plan.needsClarification,
     clarification: plan.clarification,
@@ -156,6 +157,9 @@ function PlanMeta({ plan }: { plan?: AssistantPlan }) {
   const period = plan.period;
   const tool = plan.tool;
   const comparison = plan.comparison?.period;
+  const selfCheck = plan.selfCheck;
+  const selfCheckColor = selfCheck?.status === 'fail' ? 'red' : selfCheck?.status === 'warn' ? 'orange' : 'cyan';
+  const selfCheckLabel = selfCheck?.status === 'fail' ? '自检未通过' : selfCheck?.status === 'warn' ? '自检有假设' : '自检通过';
   return (
     <div className="global-ai-plan-meta">
       {period?.label && <Tag>{period.label}</Tag>}
@@ -164,6 +168,11 @@ function PlanMeta({ plan }: { plan?: AssistantPlan }) {
       {tool?.description && <Tag color="green">{tool.description}</Tag>}
       {comparison?.label && <Tag color="purple">对比：{comparison.label}</Tag>}
       {plan.subPlans?.length ? <Tag color="gold">拆解 {plan.subPlans.length} 个子问题</Tag> : null}
+      {selfCheck?.status && (
+        <Tooltip title={(selfCheck.risks || []).join('；') || `score ${selfCheck.score ?? '-'}`}>
+          <Tag color={selfCheckColor}>{selfCheckLabel}</Tag>
+        </Tooltip>
+      )}
     </div>
   );
 }

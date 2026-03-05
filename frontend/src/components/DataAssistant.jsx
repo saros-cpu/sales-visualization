@@ -49,6 +49,7 @@ function compactAssistantPlan(plan) {
     comparison: plan.comparison,
     executionHints: plan.executionHints,
     assumptions: plan.assumptions,
+    selfCheck: plan.selfCheck,
     subPlans: Array.isArray(plan.subPlans) ? plan.subPlans.slice(0, 5).map(compactAssistantPlan).filter(Boolean) : undefined,
     needsClarification: plan.needsClarification,
     clarification: plan.clarification,
@@ -125,6 +126,7 @@ function PlanMeta({ plan }) {
       {plan.tool?.description && <span>{plan.tool.description}</span>}
       {plan.comparison?.period?.label && <span>对比：{plan.comparison.period.label}</span>}
       {Array.isArray(plan.subPlans) && plan.subPlans.length > 0 && <span>拆解 {plan.subPlans.length} 个子问题</span>}
+      {plan.selfCheck?.status && <span>{plan.selfCheck.status === 'fail' ? '自检未通过' : plan.selfCheck.status === 'warn' ? '自检有假设' : '自检通过'}</span>}
     </div>
   );
 }

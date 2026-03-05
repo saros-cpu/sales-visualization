@@ -242,6 +242,23 @@ _ASSISTANT_BUSINESS_LEXICON = {
 _ASSISTANT_DOMAIN_OPTIONS = ("零售", "批发", "合并", "吉方日报")
 _ASSISTANT_METRIC_OPTIONS = ("销量", "销售额", "吨数")
 _ASSISTANT_RANKING_DIMENSION_OPTIONS = ("站点", "油品", "区域", "客户")
+_ASSISTANT_COMPARISON_SIGNAL_WORDS = (
+    "同比", "环比", "对比", "较去年", "比去年", "较上月", "比上月", "比上个月",
+    "上个月同期", "上月同期", "去年同期", "上年同期", "增长率", "变化",
+)
+_ASSISTANT_RANKING_SIGNAL_WORDS = (
+    "排行", "排名", "top", "TOP", "哪个", "哪家", "最高", "最多", "最好", "卖得最好", "前几", "第一",
+)
+_ASSISTANT_TREND_SIGNAL_WORDS = (
+    "趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常",
+)
+_ASSISTANT_EXPLICIT_TIME_PATTERN = re.compile(
+    rf"(?:20\d{{2}}|\d{{2}})\s*年|"
+    rf"(?:今年|本年|当前年|当年|这个年|去年|上年|上一年|全年|年度|年初|月初|本月|这个月|上月|上个月|"
+    rf"本周|这周|上周|昨天|今天|今日|上半年|下半年|前半年度|后半年度|季度|春节|五一|劳动节)|"
+    rf"(?:{_ASSISTANT_MONTH_NAME_PATTERN})\s*月(?:份)?|"
+    rf"(?:最近|近|过去|前)\s*(?:半|{_ASSISTANT_COUNT_NAME_PATTERN})\s*(?:个\s*)?(?:天|日|周|星期|月|年)"
+)
 
 
 def _assistant_question_score(value):
@@ -742,6 +759,134 @@ def _assistant_clarification_payload(
     return None
 
 
+def _assistant_has_explicit_time_signal(text):
+    return bool(_ASSISTANT_EXPLICIT_TIME_PATTERN.search(str(text or "")))
+
+
+def _assistant_self_check(text, plan):
+    checks = []
+
+    def add(code, label, status, detail="", severity=None):
+        item = {
+            "code": code,
+            "label": label,
+            "status": status,
+            "severity": severity or ("error" if status == "fail" else "warning" if status == "warn" else "info"),
+        }
+        if detail:
+            item["detail"] = detail
+        checks.append(item)
+
+    period = plan.get("period") if isinstance(plan.get("period"), dict) else {}
+    comparison = plan.get("comparison") if isinstance(plan.get("comparison"), dict) else None
+    tool = plan.get("tool") if isinstance(plan.get("tool"), dict) else {}
+    explicit = plan.get("explicit") if isinstance(plan.get("explicit"), dict) else {}
+    dimensions = plan.get("dimensions") if isinstance(plan.get("dimensions"), list) else []
+    route = str(plan.get("route") or "")
+    needs_clarification = bool(plan.get("needsClarification"))
+    period_label = str(period.get("label") or "")
+
+    if _assistant_has_explicit_time_signal(text):
+        if period and period_label != "最近7天":
+            add("period_explicit", "时间条件识别", "pass", f"已解析为 {period_label}")
+        else:
+            add("period_explicit", "时间条件识别", "fail", "问题里有明确时间词，但计划仍落到最近7天")
+    elif period_label == "最近7天":
+        add("period_default", "默认时间假设", "warn", "问题未明确时间，默认使用最近7天")
+    else:
+        add("period_inferred", "时间条件识别", "pass", f"已解析为 {period_label}")
+
+    if _assistant_contains_any(text, _ASSISTANT_COMPARISON_SIGNAL_WORDS):
+        if comparison and isinstance(comparison.get("period"), dict):
+            add("comparison_baseline", "对比基准区间", "pass", comparison.get("description") or "已生成对比基准")
+        else:
+            add("comparison_baseline", "对比基准区间", "fail", "问题要求同环比/对比，但没有生成基准区间")
+
+    if _assistant_contains_any(text, _ASSISTANT_RANKING_SIGNAL_WORDS):
+        if route in {"retail_ranking", "wholesale_summary"} and dimensions:
+            add("ranking_dimension", "排行维度", "pass", "、".join(dimensions))
+        elif needs_clarification:
+            add("ranking_dimension", "排行维度", "warn", "排行问题需要用户补充维度或指标")
+        elif route in {"station_trend_anomaly", "compound_query"}:
+            add("ranking_dimension", "排行/下钻意图", "pass", route)
+        else:
+            add("ranking_dimension", "排行维度", "fail", "问题像排行，但未选中排行工具或维度")
+
+    if _assistant_contains_any(text, _ASSISTANT_TREND_SIGNAL_WORDS):
+        if route in {"retail_trend", "station_trend_anomaly", "compound_query"}:
+            add("trend_route", "趋势/异常工具", "pass", route)
+        elif needs_clarification:
+            add("trend_route", "趋势/异常工具", "warn", "趋势问题需要先澄清")
+        else:
+            add("trend_route", "趋势/异常工具", "warn", "问题包含趋势/下滑词，但当前工具不是趋势工具")
+
+    if tool.get("readOnly") is True:
+        add("readonly_tool", "只读工具约束", "pass", str(tool.get("name") or route))
+    else:
+        add("readonly_tool", "只读工具约束", "fail", "计划未声明只读工具")
+
+    if route == "compound_query":
+        subplans = plan.get("subPlans") if isinstance(plan.get("subPlans"), list) else []
+        if len(subplans) >= 2:
+            add("compound_decomposition", "复合问题拆解", "pass", f"已拆解 {len(subplans)} 个子问题")
+        else:
+            add("compound_decomposition", "复合问题拆解", "fail", "复合问题没有形成足够子计划")
+
+    if explicit.get("period") is False and period_label == "最近7天":
+        assumptions = plan.get("assumptions") if isinstance(plan.get("assumptions"), list) else []
+        if "未明确时间时默认查询最近7天" not in assumptions:
+            assumptions.append("未明确时间时默认查询最近7天")
+            plan["assumptions"] = assumptions
+
+    failures = [item for item in checks if item["status"] == "fail"]
+    warnings = [item for item in checks if item["status"] == "warn"]
+    status = "fail" if failures else "warn" if warnings or needs_clarification else "pass"
+    next_action = "clarify" if failures or needs_clarification else "execute_with_assumptions" if warnings else "execute"
+    score = max(0.1, round(1 - len(failures) * 0.35 - len(warnings) * 0.12, 2))
+    return {
+        "status": status,
+        "score": score,
+        "nextAction": next_action,
+        "checks": checks,
+        "risks": [item["detail"] for item in [*failures, *warnings] if item.get("detail")],
+    }
+
+
+def _assistant_self_check_clarification(self_check):
+    checks = self_check.get("checks") if isinstance(self_check, dict) else []
+    failed = [item for item in checks if isinstance(item, dict) and item.get("status") == "fail"]
+    if not failed:
+        return None
+    missing = []
+    if any(item.get("code") == "period_explicit" for item in failed):
+        missing.append("period")
+    if any(item.get("code") == "comparison_baseline" for item in failed):
+        missing.append("comparison")
+    if any(item.get("code") == "ranking_dimension" for item in failed):
+        missing.append("dimension")
+    if not missing:
+        missing.append("condition")
+    return {
+        "question": "我识别到你的问题里有明确条件，但计划自检没有通过。请补充或改写查询条件后我再查，避免答错口径。",
+        "missing": list(dict.fromkeys(missing)),
+        "options": ["今天", "昨天", "本月", "今年", "26年上半年", "最近30天"],
+    }
+
+
+def _assistant_finalize_plan(plan, text):
+    self_check = _assistant_self_check(text, plan)
+    plan["selfCheck"] = self_check
+    if self_check.get("status") == "fail" and not plan.get("needsClarification"):
+        clarification = _assistant_self_check_clarification(self_check)
+        if clarification:
+            plan["needsClarification"] = True
+            plan["clarification"] = clarification
+            plan["confidence"] = min(float(plan.get("confidence") or 0.5), 0.42)
+    elif self_check.get("status") == "warn":
+        plan["confidence"] = min(float(plan.get("confidence") or 0.5), 0.82)
+    return plan
+
+
 def _assistant_station_from_text(text):
     catalog = retail_station_catalog_cached()
     folded = str(text or "").casefold()
@@ -1058,7 +1203,7 @@ def _assistant_resolve_clarification_plan(text, previous_plan, today):
         clarification = _assistant_metric_clarification()
 
     confidence = 0.86 if not clarification else 0.48
-    return {
+    plan = {
         "normalizedQuestion": f"{previous_plan.get('normalizedQuestion') or ''} / 澄清：{text}".strip(" /"),
         "domain": domain,
         "intent": intent,
@@ -1085,6 +1230,7 @@ def _assistant_resolve_clarification_plan(text, previous_plan, today):
         },
         "confidence": confidence,
     }
+    return _assistant_finalize_plan(plan, text)
 
 
 def build_assistant_query_plan(question, today=None, context=None, allow_compound=True):
@@ -1294,7 +1440,7 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
                 plan["subPlans"] = subplans
                 plan["executionHints"] = list(dict.fromkeys([*execution_hints, "按子问题顺序调用只读业务工具并合并结论"]))
                 plan["confidence"] = max(plan["confidence"], 0.86)
-    return plan
+    return _assistant_finalize_plan(plan, text)
 
 
 def register_assistant_routes(app):

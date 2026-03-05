@@ -170,6 +170,8 @@ class AssistantIntentEvalTests(unittest.TestCase):
                 self.assertEqual(plan["needsClarification"], case["needsClarification"])
                 if "missing" in case:
                     self.assertIn(case["missing"], plan["clarification"]["missing"])
+                self.assertIn("selfCheck", plan)
+                self.assertIn(plan["selfCheck"]["status"], {"pass", "warn", "fail"})
 
     def test_domain_clarification_answer_reuses_previous_period(self):
         previous = build_assistant_query_plan("上半年数据怎么样", today=TODAY)
@@ -213,6 +215,53 @@ class AssistantIntentEvalTests(unittest.TestCase):
         self.assertEqual(metric_plan["metric"], "volume")
         self.assertEqual(metric_plan["period"]["start"], "2026-07-01")
         self.assertIn("metric", metric_plan["clarificationResolved"]["resolved"])
+
+    def test_self_check_blocks_unparsed_explicit_period(self):
+        plan = build_assistant_query_plan("春节前零售数据怎么样", today=TODAY)
+
+        self.assertTrue(plan["needsClarification"])
+        self.assertEqual(plan["selfCheck"]["status"], "fail")
+        self.assertEqual(plan["selfCheck"]["nextAction"], "clarify")
+        self.assertIn("period", plan["clarification"]["missing"])
+
+    def test_self_check_marks_default_period_assumption(self):
+        plan = build_assistant_query_plan("零售数据怎么样", today=TODAY)
+
+        self.assertFalse(plan["needsClarification"])
+        self.assertEqual(plan["period"]["label"], "最近7天")
+        self.assertEqual(plan["selfCheck"]["status"], "warn")
+        self.assertIn("未明确时间时默认查询最近7天", plan["assumptions"])
+
+    def test_self_check_passes_comparison_baseline(self):
+        plan = build_assistant_query_plan("本月零售同比怎么样", today=TODAY)
+
+        self.assertFalse(plan["needsClarification"])
+        self.assertEqual(plan["selfCheck"]["status"], "pass")
+        codes = {item["code"]: item["status"] for item in plan["selfCheck"]["checks"]}
+        self.assertEqual(codes["comparison_baseline"], "pass")
+
+    def test_self_check_records_page_context_dimension(self):
+        plan = build_assistant_query_plan(
+            "这个页面销量最高的是哪个",
+            today=TODAY,
+            context={"pageContext": {"path": "/retail/resource", "module": "retail", "page": "resource"}},
+        )
+
+        self.assertEqual(plan["route"], "retail_ranking")
+        self.assertIn("resource", plan["dimensions"])
+        self.assertIn("page", plan["contextUsed"])
+        codes = {item["code"]: item["status"] for item in plan["selfCheck"]["checks"]}
+        self.assertEqual(codes["ranking_dimension"], "pass")
+
+    def test_compound_plan_self_check_covers_subplans(self):
+        plan = build_assistant_query_plan("26年上半年零售总额、哪个站销售额最高、哪个油品销量下滑", today=TODAY)
+
+        self.assertEqual(plan["route"], "compound_query")
+        self.assertGreaterEqual(len(plan["subPlans"]), 2)
+        self.assertIn("selfCheck", plan)
+        self.assertTrue(all("selfCheck" in item for item in plan["subPlans"]))
+        codes = {item["code"]: item["status"] for item in plan["selfCheck"]["checks"]}
+        self.assertEqual(codes["compound_decomposition"], "pass")
 
 
 if __name__ == "__main__":

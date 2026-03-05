@@ -42,6 +42,19 @@ export interface AssistantPlan {
   } | null;
   executionHints?: string[];
   assumptions?: string[];
+  selfCheck?: {
+    status?: 'pass' | 'warn' | 'fail' | string;
+    score?: number;
+    nextAction?: string;
+    checks?: Array<{
+      code?: string;
+      label?: string;
+      status?: 'pass' | 'warn' | 'fail' | string;
+      severity?: string;
+      detail?: string;
+    }>;
+    risks?: string[];
+  };
   subPlans?: AssistantPlan[];
   needsClarification?: boolean;
   clarification?: {
