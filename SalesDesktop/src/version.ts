@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.1';
+export const VERSION = '3.9.2';
 export const BUILD_DATE = '2026-07-22';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.2',
+    date: '2026-07-22',
+    type: 'patch',
+    changes: [
+      '修复：AI 助手识别“第一季度”时不再误判为排行问题，季度零售回答保持汇总口径并显示合计',
+      '修复：AI 助手新增“前年”“大前年”动态相对年份解析，2027 年询问“前年”会自动落到 2025 年',
+      '修复：AI 助手将“自用油”识别为独立业务域，按原系统报表24自用油口径返回销量、重量、金额、油品和站点汇总',
+      '优化：收紧 KPI 触发条件，普通“今年零售/自用油/库存/价格”等问题不会被年度 KPI 分支抢走',
+      '优化：项目级业务数据域路由覆盖零售、批发、合并、吉方日报、汇率、合同、市场、密度、库存、价格、KPI 和自用油',
+      '测试：补充 AI 助手时间解析、项目级业务域路由和自用油误路由回归测试',
+    ],
+  },
   {
     version: '3.9.1',
     date: '2026-07-22',

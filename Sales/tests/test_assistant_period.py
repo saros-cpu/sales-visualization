@@ -116,6 +116,34 @@ class AssistantPeriodTests(unittest.TestCase):
         self.assertEqual(start, date(2025, 1, 1))
         self.assertEqual(end, date(2026, 1, 1))
 
+    def test_year_before_last_period(self):
+        label, start, end = parse_assistant_period("前年零售数据", today=date(2026, 7, 22))
+
+        self.assertEqual(label, "2024年")
+        self.assertEqual(start, date(2024, 1, 1))
+        self.assertEqual(end, date(2025, 1, 1))
+
+    def test_year_before_last_period_is_dynamic(self):
+        label, start, end = parse_assistant_period("前年零售数据", today=date(2027, 3, 5))
+
+        self.assertEqual(label, "2025年")
+        self.assertEqual(start, date(2025, 1, 1))
+        self.assertEqual(end, date(2026, 1, 1))
+
+    def test_three_years_ago_period(self):
+        label, start, end = parse_assistant_period("大前年零售数据", today=date(2026, 7, 22))
+
+        self.assertEqual(label, "2023年")
+        self.assertEqual(start, date(2023, 1, 1))
+        self.assertEqual(end, date(2024, 1, 1))
+
+    def test_year_before_last_month_period(self):
+        label, start, end = parse_assistant_period("前年6月零售数据", today=date(2026, 7, 22))
+
+        self.assertEqual(label, "2024年6月")
+        self.assertEqual(start, date(2024, 6, 1))
+        self.assertEqual(end, date(2024, 7, 1))
+
     def test_last_year_month_period(self):
         label, start, end = parse_assistant_period("去年6月零售数据", today=date(2026, 7, 22))
 
@@ -129,6 +157,13 @@ class AssistantPeriodTests(unittest.TestCase):
         self.assertEqual(label, "2026年第2季度")
         self.assertEqual(start, date(2026, 4, 1))
         self.assertEqual(end, date(2026, 7, 1))
+
+    def test_year_before_last_quarter_period(self):
+        label, start, end = parse_assistant_period("前年一季度零售数据", today=date(2026, 7, 22))
+
+        self.assertEqual(label, "2024年第1季度")
+        self.assertEqual(start, date(2024, 1, 1))
+        self.assertEqual(end, date(2024, 4, 1))
 
     def test_last_quarter_period(self):
         label, start, end = parse_assistant_period("上季度零售数据", today=date(2026, 7, 22))
@@ -160,6 +195,31 @@ class AssistantQueryPlanTests(unittest.TestCase):
         self.assertEqual(plan["domain"], "retail")
         self.assertEqual(plan["period"]["start"], "2026-01-01")
         self.assertEqual(plan["period"]["endExclusive"], "2026-07-01")
+
+    def test_first_quarter_retail_summary_not_ranking(self):
+        plan = build_assistant_query_plan("今年第一季度零售数据", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "retail_summary")
+        self.assertEqual(plan["domain"], "retail")
+        self.assertFalse(plan["needsClarification"])
+        self.assertEqual(plan["period"]["label"], "2026年第1季度")
+        self.assertEqual(plan["period"]["start"], "2026-01-01")
+        self.assertEqual(plan["period"]["endExclusive"], "2026-04-01")
+
+    def test_first_quarter_total_question_stays_summary(self):
+        plan = build_assistant_query_plan("今年第一季度零售数据为什么没有合计", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "retail_summary")
+        self.assertFalse(plan["needsClarification"])
+        self.assertEqual(plan["period"]["label"], "2026年第1季度")
+
+    def test_year_before_last_retail_summary_plan(self):
+        plan = build_assistant_query_plan("前年零售数据", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "retail_summary")
+        self.assertEqual(plan["period"]["label"], "2024年")
+        self.assertEqual(plan["period"]["start"], "2024-01-01")
+        self.assertEqual(plan["period"]["endExclusive"], "2025-01-01")
 
     def test_station_drop_question_routes_to_station_trend_anomaly(self):
         plan = build_assistant_query_plan("最近哪个站掉得厉害", today=date(2026, 7, 22))
@@ -345,6 +405,40 @@ class AssistantQueryPlanTests(unittest.TestCase):
         self.assertEqual(plan["route"], "retail_summary")
         self.assertEqual(plan["period"]["start"], "2026-01-01")
         self.assertEqual(plan["period"]["endExclusive"], "2026-07-23")
+
+    def test_self_use_questions_route_to_self_use_domain(self):
+        plan = build_assistant_query_plan("去年自用油数据", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["domain"], "self_use")
+        self.assertEqual(plan["route"], "self_use_summary")
+        self.assertFalse(plan["needsClarification"])
+        self.assertEqual(plan["period"]["start"], "2025-01-01")
+
+    def test_current_year_self_use_is_not_kpi(self):
+        plan = build_assistant_query_plan("今年自用油数据", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["domain"], "self_use")
+        self.assertEqual(plan["route"], "self_use_summary")
+        self.assertFalse(plan["needsClarification"])
+        self.assertEqual(plan["period"]["start"], "2026-01-01")
+
+    def test_project_data_routes_do_not_need_vague_domain_clarification(self):
+        cases = [
+            ("今年库存数据", "retail_inventory"),
+            ("今年价格数据", "retail_price"),
+            ("今年KPI数据", "retail_kpi"),
+            ("今年油品结构数据", "retail_resource_share"),
+            ("本月汇率数据", "exchange_summary"),
+            ("合同数据", "contract_summary"),
+            ("市场观察数据", "market_summary"),
+            ("当前密度数据", "density_summary"),
+        ]
+        for question, route in cases:
+            with self.subTest(question):
+                plan = build_assistant_query_plan(question, today=date(2026, 7, 22))
+
+                self.assertEqual(plan["route"], route)
+                self.assertFalse(plan["needsClarification"])
 
 
 if __name__ == "__main__":

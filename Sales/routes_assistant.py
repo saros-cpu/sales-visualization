@@ -164,6 +164,12 @@ _ASSISTANT_TOOL_CATALOG = {
         "readOnly": True,
         "dataSource": "retail_kpi_snapshots",
     },
+    "self_use_summary": {
+        "name": "self_use_summary",
+        "description": "自用油 report24-only 汇总",
+        "readOnly": True,
+        "dataSource": "self_use_report24_snapshots",
+    },
     "compound_query": {
         "name": "compound_query",
         "description": "复合自然语言问题拆解与只读工具编排",
@@ -207,6 +213,7 @@ _ASSISTANT_METRIC_WORDS = (
 )
 _ASSISTANT_BUSINESS_LEXICON = {
     "domains": {
+        "self_use": ("自用油", "自用油数据", "自用油量", "自用", "内部用油", "公司用油", "公司自用油"),
         "retail": ("零售", "加油站", "站点", "油站", "站里", "销售站"),
         "wholesale": ("批发", "外运", "出口", "本地", "客户"),
         "accounting": ("吉方", "交接日报", "会计日报", "财务交接", "日报缺", "缺站"),
@@ -239,7 +246,7 @@ _ASSISTANT_BUSINESS_LEXICON = {
         "data_availability": ("数据", "传回来", "补回来", "补传", "上传", "更新", "到了", "有没有"),
     },
 }
-_ASSISTANT_DOMAIN_OPTIONS = ("零售", "批发", "合并", "吉方日报")
+_ASSISTANT_DOMAIN_OPTIONS = ("零售", "自用油", "批发", "合并", "吉方日报")
 _ASSISTANT_METRIC_OPTIONS = ("销量", "销售额", "吨数")
 _ASSISTANT_RANKING_DIMENSION_OPTIONS = ("站点", "油品", "区域", "客户")
 _ASSISTANT_COMPARISON_SIGNAL_WORDS = (
@@ -247,14 +254,14 @@ _ASSISTANT_COMPARISON_SIGNAL_WORDS = (
     "上个月同期", "上月同期", "去年同期", "上年同期", "增长率", "变化",
 )
 _ASSISTANT_RANKING_SIGNAL_WORDS = (
-    "排行", "排名", "top", "TOP", "哪个", "哪家", "最高", "最多", "最好", "卖得最好", "前几", "第一",
+    "排行", "排名", "top", "TOP", "哪个", "哪家", "最高", "最多", "最好", "卖得最好", "前几", "第一名",
 )
 _ASSISTANT_TREND_SIGNAL_WORDS = (
     "趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常",
 )
 _ASSISTANT_EXPLICIT_TIME_PATTERN = re.compile(
     rf"(?:20\d{{2}}|\d{{2}})\s*年|"
-    rf"(?:今年|本年|当前年|当年|这个年|去年|上年|上一年|全年|年度|年初|月初|本月|这个月|上月|上个月|"
+    rf"(?:今年|本年|当前年|当年|这个年|去年|上年|上一年|前年|大前年|全年|年度|年初|月初|本月|这个月|上月|上个月|"
     rf"本周|这周|上周|昨天|今天|今日|上半年|下半年|前半年度|后半年度|季度|春节|五一|劳动节)|"
     rf"(?:{_ASSISTANT_MONTH_NAME_PATTERN})\s*月(?:份)?|"
     rf"(?:最近|近|过去|前)\s*(?:半|{_ASSISTANT_COUNT_NAME_PATTERN})\s*(?:个\s*)?(?:天|日|周|星期|月|年)"
@@ -362,6 +369,10 @@ def _assistant_context_year_number(value, today):
         return today.year
     if text in {"去年", "上年", "上一年"}:
         return today.year - 1
+    if text == "前年":
+        return today.year - 2
+    if text == "大前年":
+        return today.year - 3
     return _assistant_year_number(text)
 
 
@@ -502,7 +513,7 @@ def _assistant_explicit_date_range(text):
 
 
 def _assistant_half_year_period(text, today):
-    year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年"
+    year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年|前年|大前年"
     match = re.search(rf"(?<!\d)(?:({year_prefix})\s*年?\s*)?(上半年度?|前半年度?)", text)
     if match:
         year = _assistant_context_year_number(match.group(1), today)
@@ -535,7 +546,7 @@ def _assistant_quarter_period(text, today):
         end = date(year + 1, 1, 1) if quarter == 4 else date(year, start_month + 3, 1)
         return f"{year}年第{quarter}季度", start, end
 
-    year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年"
+    year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年|前年|大前年"
     match = re.search(
         rf"(?<!\d)(?:({year_prefix})\s*年?\s*)?(?:第?\s*({_ASSISTANT_QUARTER_NAME_PATTERN})\s*季度|[Qq]\s*([1-4]))",
         text,
@@ -598,7 +609,7 @@ def parse_assistant_period(question, today=None):
             end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
             return f"{year}年{month}月", start, end
     relative_year_month = re.search(
-        rf"(去年|上年|上一年|今年|本年|当前年|当年|这个年)\s*({_ASSISTANT_MONTH_NAME_PATTERN})\s*月",
+        rf"(去年|上年|上一年|前年|大前年|今年|本年|当前年|当年|这个年)\s*({_ASSISTANT_MONTH_NAME_PATTERN})\s*月",
         text,
     )
     if relative_year_month:
@@ -627,6 +638,12 @@ def parse_assistant_period(question, today=None):
         year = _assistant_year_number(year_match.group(1))
         if year is not None:
             return f"{year}年", date(year, 1, 1), date(year + 1, 1, 1)
+    if "大前年" in text:
+        year = today.year - 3
+        return f"{year}年", date(year, 1, 1), date(year + 1, 1, 1)
+    if "前年" in text:
+        year = today.year - 2
+        return f"{year}年", date(year, 1, 1), date(year + 1, 1, 1)
     if _assistant_contains_any(text, ("去年", "上年", "上一年")):
         year = today.year - 1
         return f"{year}年", date(year, 1, 1), date(today.year, 1, 1)
@@ -690,6 +707,8 @@ def _assistant_domain_from_terms(business_terms, default="retail"):
         return "contract"
     if domain_terms.get("accounting"):
         return "accounting"
+    if domain_terms.get("self_use"):
+        return "self_use"
     if domain_terms.get("combined") and not domain_terms.get("retail"):
         return "combined"
     if domain_terms.get("wholesale"):
@@ -724,6 +743,7 @@ def _assistant_clarification_payload(
 
     needs_domain = (
         domain == "retail"
+        and route == "retail_summary"
         and not _assistant_has_explicit_domain(business_terms)
         and not context_domain
         and not explicit_dimensions
@@ -1116,6 +1136,8 @@ def _assistant_route_for_domain(domain, previous_route="retail_summary", previou
         return "combined_summary", "summary"
     if domain == "wholesale":
         return "wholesale_summary", "summary"
+    if domain == "self_use":
+        return "self_use_summary", "summary"
     if str(previous_route or "").startswith("retail_") or previous_route in {"station_data_check", "station_trend_anomaly", "station_status"}:
         return previous_route, previous_intent or "summary"
     return "retail_summary", "summary"
@@ -1286,7 +1308,7 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     data_recovery_words = ("数据", "传回来", "补回来", "回来", "补传", "上传", "更新", "到了", "有没有")
     trend_words = ("趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常")
     comparison_words = ("同比", "环比", "对比", "较去年", "比去年", "较上月", "比上月", "比上个月", "上个月同期", "上月同期", "增长率", "变化")
-    ranking_words = ("排行", "排名", "top", "TOP", "哪个", "哪家", "最高", "最多", "最好", "卖得最好", "前几", "第一")
+    ranking_words = _ASSISTANT_RANKING_SIGNAL_WORDS
 
     if domain in {"market", "exchange", "density", "contract"}:
         route = f"{domain}_summary"
@@ -1304,6 +1326,9 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         else:
             route = "wholesale_summary"
             intent = "ranking" if _assistant_contains_any(text, ranking_words) else "summary"
+    elif domain == "self_use":
+        route = "self_use_summary"
+        intent = "summary"
     elif station and _assistant_contains_any(text, status_words) and _assistant_contains_any(text, data_recovery_words):
         route = "station_data_check"
         intent = "data_availability"
@@ -1336,7 +1361,7 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
             period_label = "本月以来"
             start = today.replace(day=1)
             end = today + timedelta(days=1)
-    elif _assistant_contains_any(text, ("KPI", "kpi", "关键指标", "累计", "年度指标")):
+    elif _assistant_contains_any(text, ("KPI", "kpi", "关键指标", "年度指标", "年度目标", "目标完成")):
         route = "retail_kpi"
         intent = "kpi"
     elif _assistant_contains_any(text, ranking_words):
@@ -2038,6 +2063,266 @@ def register_assistant_routes(app):
                     [item.get("region") or "--", _fmt_volume(item.get("volume")), _fmt_tons(item.get("tons")), _fmt_amount(item.get("amount"), "索姆")]
                     for item in payload.get("regions", [])[:10]
                 ],
+            ))
+        return tables
+
+
+    def _assistant_self_use_product_name(resource_key, fallback=""):
+        if fallback:
+            return str(fallback)
+        names = {
+            102: "АИ 80",
+            103: "АИ 92",
+            104: "АИ 95",
+            106: "Д/Т",
+            108: "СПБТ",
+            109: "Д/Т",
+            110: "ДТ -35",
+        }
+        try:
+            key = int(resource_key or 0)
+        except (TypeError, ValueError):
+            key = 0
+        return names.get(key, f"Other-{key}" if key else "--")
+
+
+    def _assistant_float(value):
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+
+    def _assistant_int(value):
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+
+    def _assistant_empty_self_use_data(start, end, source_error=""):
+        return {
+            "source": "OilStationSelfUse",
+            "sourceVersion": "report24-only-v1",
+            "date_from": start.isoformat(),
+            "date_to": (end - timedelta(days=1)).isoformat() if end > start else start.isoformat(),
+            "records": [],
+            "summary": {
+                "totalVolume": 0.0,
+                "totalWeightKg": 0.0,
+                "totalAmount": 0.0,
+                "totalRecords": 0,
+                "activeStations": 0,
+            },
+            "byStation": [],
+            "byResource": [],
+            "byRegion": [],
+            "daily": [],
+            "sourceError": source_error,
+        }
+
+
+    def _assistant_self_use_data_for_period(start, end):
+        if end <= start:
+            return _assistant_empty_self_use_data(start, end)
+
+        query_end = end - timedelta(days=1)
+        try:
+            response = open_oilstation(
+                "/api/retail/self-use",
+                query_string={"date_from": start.isoformat(), "date_to": query_end.isoformat()},
+            )
+            raw_data = response.get_json() if response.status_code < 400 else {}
+        except Exception as exc:
+            return _assistant_empty_self_use_data(start, end, str(exc))
+
+        records = list((raw_data or {}).get("records") or [])
+        catalog = retail_station_catalog_cached()
+        stations = {}
+        resources = {}
+        regions = {}
+        daily = {}
+        total_volume = 0.0
+        total_mass = 0.0
+        total_amount = 0.0
+
+        for record in records:
+            volume = _assistant_float(record.get("volume"))
+            mass = _assistant_float(record.get("mass"))
+            amount = _assistant_float(record.get("amount"))
+            total_volume += volume
+            total_mass += mass
+            total_amount += amount
+
+            shop_key = _assistant_int(record.get("shopKey"))
+            station_info = catalog.get(shop_key, {}) if shop_key else {}
+            station_name = record.get("stationName") or station_info.get("name") or (f"{shop_key}号站" if shop_key else "--")
+            region_name = station_info.get("region") or record.get("region") or "--"
+            station_bucket = stations.setdefault(shop_key or station_name, {
+                "shopKey": shop_key,
+                "name": station_name,
+                "region": region_name,
+                "volume": 0.0,
+                "mass": 0.0,
+                "amount": 0.0,
+                "records": 0,
+            })
+            station_bucket["volume"] += volume
+            station_bucket["mass"] += mass
+            station_bucket["amount"] += amount
+            station_bucket["records"] += 1
+
+            resource_key = _assistant_int(record.get("resourceKey"))
+            product_name = _assistant_self_use_product_name(resource_key, record.get("productName") or "")
+            resource_bucket = resources.setdefault(resource_key or product_name, {
+                "resourceKey": resource_key,
+                "name": product_name,
+                "volume": 0.0,
+                "mass": 0.0,
+                "amount": 0.0,
+                "records": 0,
+            })
+            resource_bucket["volume"] += volume
+            resource_bucket["mass"] += mass
+            resource_bucket["amount"] += amount
+            resource_bucket["records"] += 1
+
+            region_bucket = regions.setdefault(region_name, {
+                "region": region_name,
+                "volume": 0.0,
+                "mass": 0.0,
+                "amount": 0.0,
+                "records": 0,
+            })
+            region_bucket["volume"] += volume
+            region_bucket["mass"] += mass
+            region_bucket["amount"] += amount
+            region_bucket["records"] += 1
+
+            date_key = str(record.get("date") or "")
+            if date_key:
+                day_bucket = daily.setdefault(date_key, {
+                    "date": date_key,
+                    "volume": 0.0,
+                    "mass": 0.0,
+                    "amount": 0.0,
+                    "records": 0,
+                })
+                day_bucket["volume"] += volume
+                day_bucket["mass"] += mass
+                day_bucket["amount"] += amount
+                day_bucket["records"] += 1
+
+        def rounded_items(values, *, name_key):
+            result = []
+            for item in values:
+                copied = dict(item)
+                copied["volume"] = round(float(copied.get("volume") or 0), 2)
+                copied["mass"] = round(float(copied.get("mass") or 0), 2)
+                copied["amount"] = round(float(copied.get("amount") or 0), 2)
+                copied["records"] = int(copied.get("records") or 0)
+                result.append(copied)
+            result.sort(key=lambda item: (float(item.get("volume") or 0), float(item.get("amount") or 0), str(item.get(name_key) or "")), reverse=True)
+            return result
+
+        return {
+            "source": "OilStationSelfUse",
+            "sourceVersion": (raw_data or {}).get("sourceVersion") or "report24-only-v1",
+            "date_from": start.isoformat(),
+            "date_to": query_end.isoformat(),
+            "records": records,
+            "summary": {
+                "totalVolume": round(total_volume, 2),
+                "totalWeightKg": round(total_mass, 2),
+                "totalAmount": round(total_amount, 2),
+                "totalRecords": len(records),
+                "activeStations": len([item for item in stations.values() if item.get("volume") or item.get("mass") or item.get("amount")]),
+            },
+            "byStation": rounded_items(stations.values(), name_key="name"),
+            "byResource": rounded_items(resources.values(), name_key="name"),
+            "byRegion": rounded_items(regions.values(), name_key="region"),
+            "daily": sorted(rounded_items(daily.values(), name_key="date"), key=lambda item: item.get("date") or ""),
+            "sourceError": "",
+        }
+
+
+    def _assistant_self_use_answer(label, data):
+        summary = data.get("summary") or {}
+        total_weight_tons = _assistant_float(summary.get("totalWeightKg")) / 1000
+        lines = [
+            f"{label}自用油数据如下：",
+            (
+                f"合计自用油 {_fmt_volume(summary.get('totalVolume'))}，"
+                f"折算 {_fmt_tons(total_weight_tons)}，"
+                f"金额 {_fmt_amount(summary.get('totalAmount'), '索姆')}，"
+                f"记录 {int(summary.get('totalRecords') or 0)} 笔，"
+                f"覆盖 {int(summary.get('activeStations') or 0)} 个站点。"
+            ),
+            "口径：原系统报表24自用油，条件为 BasePaymentTypeKey=2 AND DerivedPaymentTypeKey=2；销量、金额、重量分别使用 selling.Volume、selling.ShopCost、selling.Mass。",
+        ]
+        if not data.get("records"):
+            lines.append("该区间暂未查询到自用油记录。")
+        elif data.get("byResource"):
+            lines.append("油品明细：")
+            for item in data.get("byResource", [])[:8]:
+                lines.append(
+                    f"{item.get('name') or '--'}：{_fmt_volume(item.get('volume'))}，"
+                    f"{_fmt_tons(_assistant_float(item.get('mass')) / 1000)}，"
+                    f"{_fmt_amount(item.get('amount'), '索姆')}"
+                )
+        if data.get("sourceError"):
+            lines.append(f"数据读取提示：{data.get('sourceError')}")
+        return "\n".join(lines)
+
+
+    def _assistant_self_use_tables(label, data):
+        summary = data.get("summary") or {}
+        resource_rows = [
+            [
+                item.get("name") or "--",
+                _fmt_volume(item.get("volume")),
+                _fmt_tons(_assistant_float(item.get("mass")) / 1000),
+                _fmt_amount(item.get("amount"), "索姆"),
+                item.get("records") or 0,
+            ]
+            for item in data.get("byResource", [])
+        ]
+        resource_rows.append([
+            "合计",
+            _fmt_volume(summary.get("totalVolume")),
+            _fmt_tons(_assistant_float(summary.get("totalWeightKg")) / 1000),
+            _fmt_amount(summary.get("totalAmount"), "索姆"),
+            summary.get("totalRecords") or 0,
+        ])
+        tables = [_assistant_table(
+            f"{label}自用油油品汇总",
+            ["油品", "自用油量", "重量", "金额", "记录数"],
+            resource_rows,
+        )]
+        station_rows = [
+            [
+                item.get("name") or "--",
+                item.get("region") or "--",
+                _fmt_volume(item.get("volume")),
+                _fmt_tons(_assistant_float(item.get("mass")) / 1000),
+                _fmt_amount(item.get("amount"), "索姆"),
+                item.get("records") or 0,
+            ]
+            for item in data.get("byStation", [])[:12]
+        ]
+        if station_rows:
+            station_rows.append([
+                "合计",
+                "全部区域",
+                _fmt_volume(summary.get("totalVolume")),
+                _fmt_tons(_assistant_float(summary.get("totalWeightKg")) / 1000),
+                _fmt_amount(summary.get("totalAmount"), "索姆"),
+                summary.get("totalRecords") or 0,
+            ])
+            tables.append(_assistant_table(
+                f"{label}自用油站点汇总",
+                ["站点", "区域", "自用油量", "重量", "金额", "记录数"],
+                station_rows,
             ))
         return tables
 
@@ -2787,6 +3072,16 @@ def register_assistant_routes(app):
         label = _assistant_period_display(period.get("label") or "", start, end)
         match_question = plan.get("normalizedQuestion") or original_question
         route = plan.get("route")
+        if route == "self_use_summary":
+            data = _assistant_self_use_data_for_period(start, end)
+            return {
+                "periodLabel": label,
+                "queryStart": start.isoformat(),
+                "queryEndExclusive": end.isoformat(),
+                "answer": _assistant_self_use_answer(label, data),
+                "tables": _assistant_self_use_tables(label, data),
+                "data": data,
+            }
         if route == "station_trend_anomaly":
             station = (plan.get("entities") or {}).get("station")
             trend_data = _assistant_daily_trend_for_period(start, end)
@@ -3257,6 +3552,19 @@ def register_assistant_routes(app):
                 **_assistant_compound_payload(question, plan),
             )
 
+        if route == "self_use_summary":
+            data = _assistant_self_use_data_for_period(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_self_use_answer(label, data),
+                tables=_assistant_self_use_tables(label, data),
+                data=data,
+            )
+
         if route == "station_data_check" and (plan.get("entities") or {}).get("station"):
             station = plan["entities"]["station"]
             data = _assistant_retail_data_for_period(start, end)
@@ -3367,7 +3675,7 @@ def register_assistant_routes(app):
                 tables=_assistant_retail_tables(label, data, match_question),
                 data=data,
             )
-        if route == "retail_kpi" or _assistant_has_any(match_question, ("KPI", "关键指标", "累计", "年度指标", "今年")):
+        if route == "retail_kpi" or _assistant_has_any(match_question, ("KPI", "kpi", "关键指标", "年度指标", "年度目标", "目标完成")):
             year = start.year
             kpi_data = _read_yearly_kpi_snapshot(year)
             if kpi_data:
