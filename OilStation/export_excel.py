@@ -70,14 +70,6 @@ SK29_RSK_MAP = {
     10: 108,  # СПБТ（液化气）
 }
 
-# SK=29 STN-57 已知真实价格（新站无销售记录时硬编码覆盖）
-SK29_PRICE_MAP = {
-    103: 79,    # АИ-92
-    102: 66,    # АИ-80
-    106: 93.3,  # Д/Т
-    108: 41.3,  # СПБТ
-}
-
 # 部分加油站的 ResourceKey 编号非标准：RK=104 实际是 АИ-80 而非 АИ-95
 # 经 fuelbalance.ResourceName 交叉验证确认
 STATION_RK_CORRECTIONS = {
@@ -1640,12 +1632,6 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
         total_vol = sd.get('total_vol', 0)
         total_amt = sd.get('total_amt', 0)
         avg_price = sd.get('avg_price', 0)
-        # 29号站始终使用已知真实价格
-        if shop_key == 29:
-            hard_price = SK29_PRICE_MAP.get(rk)
-            if hard_price is not None:
-                avg_price = hard_price
-
         contract_vol = ct.get('vol', 0)
         contract_amt = ct.get('amt', 0)
         contract_price = ct.get('price', 0)

@@ -440,6 +440,37 @@ class AssistantQueryPlanTests(unittest.TestCase):
                 self.assertEqual(plan["route"], route)
                 self.assertFalse(plan["needsClarification"])
 
+    def test_chart_request_is_recorded_in_plan(self):
+        plan = build_assistant_query_plan("今年零售趋势图", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "retail_trend")
+        self.assertTrue(plan["visual"]["requested"])
+        self.assertEqual(plan["visual"]["preferredType"], "line")
+        codes = {item["code"]: item["status"] for item in plan["selfCheck"]["checks"]}
+        self.assertEqual(codes["chart_request"], "pass")
+
+    def test_resource_filter_followup_reuses_previous_period(self):
+        previous = build_assistant_query_plan("今年零售数据", today=date(2026, 7, 22))
+
+        plan = build_assistant_query_plan(
+            "只看92号",
+            today=date(2026, 7, 22),
+            context={"lastAssistantPlan": previous},
+        )
+
+        self.assertEqual(plan["route"], "retail_summary")
+        self.assertEqual(plan["period"]["start"], "2026-01-01")
+        self.assertEqual(plan["entities"]["resource"]["resourceKey"], 103)
+        self.assertIn("resource", plan["dimensions"])
+
+    def test_current_year_vs_last_year_comparison_uses_current_year(self):
+        plan = build_assistant_query_plan("今年和去年零售对比图", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "retail_comparison")
+        self.assertEqual(plan["period"]["start"], "2026-01-01")
+        self.assertEqual(plan["comparison"]["period"]["start"], "2025-01-01")
+        self.assertTrue(plan["visual"]["requested"])
+
 
 if __name__ == "__main__":
     unittest.main()

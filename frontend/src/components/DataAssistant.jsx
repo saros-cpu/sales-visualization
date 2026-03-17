@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { post } from '../api/client';
 
 const SUGGESTIONS = [
@@ -55,6 +55,7 @@ function compactAssistantPlan(plan) {
     clarification: plan.clarification,
     clarificationResolved: plan.clarificationResolved,
     explicit: plan.explicit,
+    visual: plan.visual,
     contextUsed: plan.contextUsed,
   };
 }
@@ -128,6 +129,108 @@ function PlanMeta({ plan }) {
       {Array.isArray(plan.subPlans) && plan.subPlans.length > 0 && <span>拆解 {plan.subPlans.length} 个子问题</span>}
       {plan.selfCheck?.status && <span>{plan.selfCheck.status === 'fail' ? '自检未通过' : plan.selfCheck.status === 'warn' ? '自检有假设' : '自检通过'}</span>}
     </div>
+  );
+}
+
+function ResponseMeta({ answer }) {
+  const quality = answer?.quality || {};
+  const diagnostics = answer?.diagnostics || {};
+  const freshness = answer?.freshness || {};
+  const refs = Array.isArray(answer?.knowledgeReferences) ? answer.knowledgeReferences : [];
+  const warnings = Array.isArray(diagnostics.warnings) ? diagnostics.warnings.slice(0, 2) : [];
+  const insights = Array.isArray(diagnostics.insights) ? diagnostics.insights.slice(0, 2) : [];
+  const nextChecks = Array.isArray(diagnostics.nextChecks) ? diagnostics.nextChecks.slice(0, 3) : [];
+  const freshnessWarnings = Array.isArray(freshness.warnings) ? freshness.warnings.slice(0, 2) : [];
+  if (!quality.status && warnings.length === 0 && insights.length === 0 && nextChecks.length === 0 && !freshness.status && refs.length === 0) return null;
+  return (
+    <div className="data-assistant-plan-meta">
+      {quality.status && <span>质量 {quality.score ?? '-'} / {quality.status}</span>}
+      {freshness.status && <span>数据 {freshness.status}</span>}
+      {warnings.map(item => <span key={item}>{item}</span>)}
+      {insights.map(item => <span key={item}>{item}</span>)}
+      {nextChecks.map(item => <span key={item}>排查：{item}</span>)}
+      {freshnessWarnings.map(item => <span key={item}>{item}</span>)}
+      {refs.map(ref => <span key={ref.id || ref.title}>{ref.id} {ref.title}</span>)}
+    </div>
+  );
+}
+
+function chartToOption(chart) {
+  const palette = ['#1677ff', '#52c41a', '#ff7a45', '#722ed1', '#13c2c2', '#eb2f96', '#faad14'];
+  if (chart.type === 'pie') {
+    return {
+      color: palette,
+      tooltip: { trigger: 'item' },
+      legend: { bottom: 0, type: 'scroll' },
+      series: [{
+        name: chart.title || '图表',
+        type: 'pie',
+        radius: ['42%', '70%'],
+        center: ['50%', '43%'],
+        avoidLabelOverlap: true,
+        label: { formatter: '{b}: {d}%' },
+        data: chart.data || [],
+      }],
+    };
+  }
+  const series = chart.series || [];
+  const units = [...new Set(series.map(item => item.unit || '').filter(Boolean))].slice(0, 2);
+  const yAxis = units.length > 1
+    ? units.map((unit, index) => ({
+        type: 'value',
+        name: unit,
+        position: index === 0 ? 'left' : 'right',
+        axisLabel: { color: '#64748b' },
+      }))
+    : [{ type: 'value', name: units[0] || chart.unit || '', axisLabel: { color: '#64748b' } }];
+  return {
+    color: palette,
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, type: 'scroll' },
+    grid: { left: 48, right: units.length > 1 ? 54 : 20, top: 44, bottom: (chart.xAxis?.length || 0) > 12 ? 54 : 30 },
+    dataZoom: (chart.xAxis?.length || 0) > 12 ? [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 8 }] : undefined,
+    xAxis: {
+      type: 'category',
+      data: chart.xAxis || [],
+      axisLabel: { color: '#64748b', interval: 'auto' },
+    },
+    yAxis,
+    series: series.map(item => ({
+      name: item.name || '数值',
+      type: item.type === 'line' ? 'line' : 'bar',
+      yAxisIndex: units.length > 1 ? Math.max(0, units.indexOf(item.unit || '')) : 0,
+      data: item.data || [],
+      smooth: item.type === 'line',
+      symbolSize: item.type === 'line' ? 5 : undefined,
+      barMaxWidth: 26,
+      label: { show: false },
+      emphasis: { focus: 'series' },
+    })),
+  };
+}
+
+function ChartResult({ chart, index }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ref.current || !window.echarts || !chart) return undefined;
+    const instance = window.echarts.init(ref.current);
+    instance.setOption(chartToOption(chart), true);
+    const resize = () => instance.resize();
+    window.addEventListener('resize', resize);
+    return () => {
+      window.removeEventListener('resize', resize);
+      instance.dispose();
+    };
+  }, [chart]);
+  if (!chart || (chart.type === 'pie' ? !chart.data?.length : !chart.series?.length)) return null;
+  const xCount = chart.xAxis?.length || chart.data?.length || 0;
+  const height = Math.min(360, Math.max(240, 220 + Math.ceil(xCount / 12) * 28));
+  return (
+    <section className="data-assistant-chart">
+      <div className="data-assistant-chart-title">{chart.title || `图表 ${index + 1}`}</div>
+      {chart.summary && <div className="data-assistant-chart-summary">{chart.summary}</div>}
+      <div ref={ref} className="data-assistant-chart-canvas" style={{ height }} />
+    </section>
   );
 }
 
@@ -241,17 +344,20 @@ export default function DataAssistant() {
               '正在查询...'
             ) : error ? (
               <span style={{ color: '#ef5350' }}>{error}</span>
-            ) : answer?.tables?.length ? (
+            ) : answer?.tables?.length || answer?.charts?.length ? (
               <>
-	                {answer?.answer && answer?.agent?.llmUsed && (
-	                  <div className="data-assistant-summary">{answer.answer}</div>
-	                )}
-	                <PlanMeta plan={answer?.assistantPlan} />
-	                {answer.tables.map((table, i) => <TableResult key={i} table={table} />)}
+		                {answer?.answer && ((answer.charts || []).length > 0 || answer?.agent?.llmUsed) && (
+		                  <div className="data-assistant-summary">{answer.answer}</div>
+		                )}
+		                <PlanMeta plan={answer?.assistantPlan} />
+		                <ResponseMeta answer={answer} />
+		                {(answer.charts || []).map((chart, i) => <ChartResult key={i} chart={chart} index={i} />)}
+		                {(answer.tables || []).map((table, i) => <TableResult key={i} table={table} />)}
               </>
             ) : (
 	              <>
 	                <PlanMeta plan={answer?.assistantPlan} />
+	                <ResponseMeta answer={answer} />
 	                {answer?.answer || '选择快捷问题或直接输入经营问题，结果会优先以表格显示。'}
 	              </>
             )}

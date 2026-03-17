@@ -621,4 +621,16 @@ def list_resources(cur) -> dict[str, list[dict[str, Any]]]:
             ]
         except pymysql.err.ProgrammingError:
             result[resource_type] = []
+    try:
+        from shared_utils import retail_station_catalog_cached
+
+        result["station"] = [
+            {
+                "resourceId": str(item.get("shopKey") or key),
+                "resourceLabel": item.get("name") or item.get("short") or str(key),
+            }
+            for key, item in sorted(retail_station_catalog_cached().items())
+        ]
+    except Exception:
+        result["station"] = []
     return dict(result)

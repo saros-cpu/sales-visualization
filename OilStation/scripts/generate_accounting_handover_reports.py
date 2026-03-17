@@ -891,11 +891,12 @@ def load_sales(cur, shift_range: ShiftRange) -> dict[int, dict]:
     cur.execute(
         f"""
         SELECT ResourceKey, ResourceShopKey, BasePaymentTypeKey, DerivedPaymentTypeKey,
-               MAX(BasePrice) AS Price, SUM(Volume) AS Volume, SUM(ShopCost) AS Amount
+               COALESCE(BasePrice, 0) AS Price, SUM(Volume) AS Volume, SUM(ShopCost) AS Amount
         FROM selling
         WHERE ShopKey = %s
           AND ShiftKey IN ({placeholders})
-        GROUP BY ResourceKey, ResourceShopKey, BasePaymentTypeKey, DerivedPaymentTypeKey
+        GROUP BY ResourceKey, ResourceShopKey, BasePaymentTypeKey, DerivedPaymentTypeKey,
+                 COALESCE(BasePrice, 0)
         """,
         (shift_range.shop_key, *shift_range.shift_keys),
     )

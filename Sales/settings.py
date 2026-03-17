@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     OPENROUTER_TIMEOUT_SECONDS: int = 30
     OPENROUTER_MAX_TOKENS: int = 900
     OPENROUTER_TEMPERATURE: float = 0.2
+    ASSISTANT_LLM_PROVIDER: str = "openrouter"
+    LOCAL_LLM_BASE_URL: str = "http://127.0.0.1:11434/v1/chat/completions"
+    LOCAL_LLM_MODEL: str = "qwen2.5:7b"
+    LOCAL_LLM_API_KEY: str = ""
+    LOCAL_LLM_TIMEOUT_SECONDS: int = 60
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -97,6 +102,15 @@ class Settings(BaseSettings):
         if model == "openrouter/free" or model.endswith(":free"):
             return model
         return "openrouter/free"
+
+    @property
+    def resolved_assistant_provider(self) -> str:
+        provider = (self.ASSISTANT_LLM_PROVIDER or "openrouter").strip().lower()
+        return "local" if provider in {"local", "ollama", "lmstudio", "vllm"} else "openrouter"
+
+    @property
+    def resolved_assistant_model(self) -> str:
+        return self.LOCAL_LLM_MODEL if self.resolved_assistant_provider == "local" else self.resolved_openrouter_model
 
 
 @lru_cache(maxsize=1)

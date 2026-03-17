@@ -18,18 +18,30 @@ SENSITIVE_KEYS = (
 )
 
 ACTION_PATTERNS = (
-    r"(帮我|请|替我|给我|直接).{0,12}(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入)",
+    r"(帮我|请|替我|给我|直接|把).{0,12}(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入)",
+    r"(帮我|请|替我|给我|直接|把).{0,16}(改|调整|设置).{0,16}(数据|合同|文件|账号|权限|用户|记录|缓存)",
+    r"(帮我|请|替我|给我|直接|把).{0,16}(数据|合同|文件|账号|权限|用户|记录|缓存).{0,16}(改|调整|设置)",
+    r"(帮我|请|替我|给我|直接|把).{0,16}(审核|审批|通过|驳回|作废|启用|停用|授权)",
     r"^(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入)",
+    r"^(审核|审批|通过|驳回|作废|启用|停用|授权).{0,12}(单|合同|账号|权限|用户|记录|申请)",
     r"(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入).{0,12}(数据|合同|文件|代码|项目|缓存|记录|表)",
+    r"(审核通过|审批通过|驳回|作废|启用|停用|授权).{0,12}(单|合同|账号|权限|用户|记录|申请)",
+    r"(单|合同|账号|权限|用户|记录|申请).{0,16}(审核通过|审批通过|驳回|作废|启用|停用|授权)",
     r"\b(delete|update|insert|create|save|submit|import|export|refresh|restart|execute|run|write|commit)\b",
     r"\b(удали|измени|создай|сохрани|импорт|экспорт|обнови|перезапусти|выполни|запусти)\b",
 )
 
 
 STRICT_ACTION_PATTERNS = (
-    r"(帮我|请|替我|给我|直接|立刻|马上).{0,16}(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入|生成文件|下载)",
+    r"(帮我|请|替我|给我|直接|立刻|马上|把).{0,16}(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入|生成文件|下载)",
+    r"(帮我|请|替我|给我|直接|立刻|马上|把).{0,20}(改|调整|设置).{0,20}(数据|合同|文件|账号|权限|用户|记录|缓存)",
+    r"(帮我|请|替我|给我|直接|立刻|马上|把).{0,20}(数据|合同|文件|账号|权限|用户|记录|缓存).{0,20}(改|调整|设置)",
+    r"(帮我|请|替我|给我|直接|立刻|马上|把).{0,20}(审核|审批|通过|驳回|作废|启用|停用|授权)",
     r"^(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入|生成文件|下载)",
+    r"^(审核|审批|通过|驳回|作废|启用|停用|授权).{0,16}(单|合同|账号|权限|用户|记录|申请)",
     r"(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入|生成文件|下载).{0,16}(数据|合同|文件|代码|项目|缓存|记录|报表|账号|权限)",
+    r"(审核通过|审批通过|驳回|作废|启用|停用|授权).{0,16}(单|合同|账号|权限|用户|记录|申请)",
+    r"(单|合同|账号|权限|用户|记录|申请).{0,20}(审核通过|审批通过|驳回|作废|启用|停用|授权)",
     r"\b(delete|update|insert|create|save|submit|import|export|refresh|restart|execute|run|write|commit|download|generate)\b",
     r"\b(удали|измени|изменить|создай|сохрани|импорт|экспорт|обнови|перезапусти|выполни|запусти|запиши|скачай)\b",
 )
@@ -89,8 +101,8 @@ def _agent_meta(status: str, *, llm_used: bool, error: str | None = None, durati
     settings = get_settings()
     return {
         "mode": "read_only",
-        "provider": "openrouter",
-        "model": settings.resolved_openrouter_model,
+        "provider": settings.resolved_assistant_provider,
+        "model": settings.resolved_assistant_model,
         "llmUsed": llm_used,
         "status": status,
         "error": error,
@@ -155,6 +167,42 @@ def _compact_tables(tables: Any) -> list[dict[str, Any]]:
     return result
 
 
+def _compact_charts(charts: Any) -> list[dict[str, Any]]:
+    result = []
+    for chart in (charts or [])[:6]:
+        if not isinstance(chart, dict):
+            continue
+        compact = {
+            "title": chart.get("title"),
+            "type": chart.get("type"),
+            "unit": chart.get("unit"),
+            "summary": chart.get("summary"),
+        }
+        x_axis = chart.get("xAxis")
+        if isinstance(x_axis, list):
+            compact["xAxis"] = x_axis[:30]
+            compact["truncatedXAxis"] = max(len(x_axis) - 30, 0)
+        series = []
+        for item in (chart.get("series") or [])[:4]:
+            if isinstance(item, dict):
+                data = item.get("data") if isinstance(item.get("data"), list) else []
+                series.append({
+                    "name": item.get("name"),
+                    "type": item.get("type"),
+                    "unit": item.get("unit"),
+                    "data": data[:30],
+                    "truncatedData": max(len(data) - 30, 0),
+                })
+        if series:
+            compact["series"] = series
+        pie_data = chart.get("data")
+        if isinstance(pie_data, list):
+            compact["data"] = pie_data[:20]
+            compact["truncatedData"] = max(len(pie_data) - 20, 0)
+        result.append(compact)
+    return result
+
+
 def compact_assistant_payload(payload: dict[str, Any], user_context: dict[str, Any] | None = None) -> dict[str, Any]:
     assistant_plan = payload.get("assistantPlan") if isinstance(payload.get("assistantPlan"), dict) else {}
     return {
@@ -170,74 +218,122 @@ def compact_assistant_payload(payload: dict[str, Any], user_context: dict[str, A
         "contextUsed": _compact_value(assistant_plan.get("contextUsed") if isinstance(assistant_plan, dict) else []),
         "conversationContext": _compact_value(payload.get("conversationContext")),
         "knowledge": _compact_value(payload.get("knowledge")),
+        "knowledgeReferences": _compact_value(payload.get("knowledgeReferences")),
         "deterministicAnswer": payload.get("answer"),
         "tables": _compact_tables(payload.get("tables")),
+        "charts": _compact_charts(payload.get("charts")),
+        "querySpec": _compact_value(payload.get("querySpec")),
+        "permission": _compact_value(payload.get("permission")),
+        "chartGuidance": _compact_value(payload.get("chartGuidance")),
+        "diagnostics": _compact_value(payload.get("diagnostics")),
+        "freshness": _compact_value(payload.get("freshness")),
+        "conversationMemory": _compact_value(payload.get("conversationMemory")),
+        "reportGuidance": _compact_value(payload.get("reportGuidance")),
+        "quality": _compact_value(payload.get("quality")),
         "data": _compact_value(payload.get("data")),
         "userContext": _compact_value(user_context or {}),
     }
 
 
-def _openrouter_chat(question: str, context: dict[str, Any], language: str) -> tuple[str, dict[str, Any]]:
+def _assistant_messages(question: str, context: dict[str, Any], language: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a read-only business data assistant for an oil sales management system. "
+                "You can only answer from the supplied JSON context. Use assistantPlan to understand the "
+                "business domain, selected read-only tool, period, entities, metric, dimensions, and any "
+                "context inherited from earlier turns. If assistantPlan.subPlans exists, explain that the "
+                "question was decomposed and summarize each read-only tool result in order. If comparison exists, "
+                "state the baseline period explicitly. Treat deterministicAnswer, tables, and charts as authoritative. "
+                "Mention executionHints, assumptions, and selfCheck risks when they materially affect interpretation. "
+                "Use querySpec, permission, diagnostics, quality, chartGuidance, and knowledgeReferences when present. "
+                "When citing knowledge, use the supplied reference ids such as [K1] and do not invent sources. "
+                "If assistantPlan.needsClarification is true, ask the clarification question and do not assume "
+                "missing domain, metric, dimension, station, or period values. "
+                "If the user asks a follow-up, preserve the resolved period/entities from assistantPlan unless "
+                "the current question explicitly changes them. You cannot modify project code, files, "
+                "database rows, contracts, aliases, cache, or business records. You cannot run commands or "
+                "call write APIs. If a user asks for a modifying action, refuse briefly and offer a read-only check. "
+                "Answer in Chinese when language=zh, and in Russian when language=ru. Be concise and mention "
+                "the data period when it matters."
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps({
+                "language": language,
+                "question": question,
+                "readonlyPolicy": {
+                    "canModifyCode": False,
+                    "canModifyFiles": False,
+                    "canModifyBusinessData": False,
+                    "allowed": ["query", "answer", "explain", "summarize"],
+                },
+                "context": context,
+            }, ensure_ascii=False, default=_json_default),
+        },
+    ]
+
+
+def _chat_completion(
+    *,
+    url: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    provider: str,
+    api_key: str = "",
+    timeout: int = 30,
+) -> tuple[str, dict[str, Any]]:
     settings = get_settings()
     started_at = time.perf_counter()
     body = {
-        "model": settings.resolved_openrouter_model,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a read-only business data assistant for an oil sales management system. "
-                    "You can only answer from the supplied JSON context. Use assistantPlan to understand the "
-                    "business domain, selected read-only tool, period, entities, metric, dimensions, and any "
-                    "context inherited from earlier turns. If assistantPlan.subPlans exists, explain that the "
-                    "question was decomposed and summarize each read-only tool result in order. If comparison exists, "
-                    "state the baseline period explicitly. Treat deterministicAnswer and tables as authoritative. "
-                    "Mention executionHints, assumptions, and selfCheck risks when they materially affect interpretation. "
-                    "If assistantPlan.needsClarification is true, ask the clarification question and do not assume "
-                    "missing domain, metric, dimension, station, or period values. "
-                    "If the user asks a follow-up, preserve the resolved period/entities from assistantPlan unless "
-                    "the current question explicitly changes them. You cannot modify project code, files, "
-                    "database rows, contracts, aliases, cache, or business records. You cannot run commands or "
-                    "call write APIs. If a user asks for a modifying action, refuse briefly and offer a read-only check. "
-                    "Answer in Chinese when language=zh, and in Russian when language=ru. Be concise and mention "
-                    "the data period when it matters."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps({
-                    "language": language,
-                    "question": question,
-                    "readonlyPolicy": {
-                        "canModifyCode": False,
-                        "canModifyFiles": False,
-                        "canModifyBusinessData": False,
-                        "allowed": ["query", "answer", "explain", "summarize"],
-                    },
-                    "context": context,
-                }, ensure_ascii=False, default=_json_default),
-            },
-        ],
+        "model": model,
+        "messages": messages,
         "temperature": settings.OPENROUTER_TEMPERATURE,
         "max_tokens": settings.OPENROUTER_MAX_TOKENS,
     }
-    headers = {
-        "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "X-Title": settings.OPENROUTER_APP_TITLE,
-    }
-    if settings.OPENROUTER_HTTP_REFERER:
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if provider == "openrouter":
+        headers["X-Title"] = settings.OPENROUTER_APP_TITLE
+    if provider == "openrouter" and settings.OPENROUTER_HTTP_REFERER:
         headers["HTTP-Referer"] = settings.OPENROUTER_HTTP_REFERER
-    req = Request(settings.OPENROUTER_BASE_URL, data=json.dumps(body, ensure_ascii=False).encode("utf-8"), headers=headers, method="POST")
-    with urlopen(req, timeout=settings.OPENROUTER_TIMEOUT_SECONDS) as resp:
+    req = Request(url, data=json.dumps(body, ensure_ascii=False).encode("utf-8"), headers=headers, method="POST")
+    with urlopen(req, timeout=timeout) as resp:
         response_payload = json.loads(resp.read().decode("utf-8"))
     content = ((response_payload.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
     if not content:
         raise RuntimeError("empty_model_response")
     return content, {
         "durationMs": int((time.perf_counter() - started_at) * 1000),
-        "model": response_payload.get("model") or settings.resolved_openrouter_model,
+        "model": response_payload.get("model") or model,
     }
+
+
+def _openrouter_chat(question: str, context: dict[str, Any], language: str) -> tuple[str, dict[str, Any]]:
+    settings = get_settings()
+    return _chat_completion(
+        url=settings.OPENROUTER_BASE_URL,
+        model=settings.resolved_openrouter_model,
+        messages=_assistant_messages(question, context, language),
+        provider="openrouter",
+        api_key=settings.OPENROUTER_API_KEY,
+        timeout=settings.OPENROUTER_TIMEOUT_SECONDS,
+    )
+
+
+def _local_chat(question: str, context: dict[str, Any], language: str) -> tuple[str, dict[str, Any]]:
+    settings = get_settings()
+    return _chat_completion(
+        url=settings.LOCAL_LLM_BASE_URL,
+        model=settings.LOCAL_LLM_MODEL,
+        messages=_assistant_messages(question, context, language),
+        provider="local",
+        api_key=settings.LOCAL_LLM_API_KEY,
+        timeout=settings.LOCAL_LLM_TIMEOUT_SECONDS,
+    )
 
 
 def enhance_assistant_response(
@@ -255,10 +351,14 @@ def enhance_assistant_response(
     settings = get_settings()
     result["sourceAnswer"] = str(payload.get("answer") or "")
     result["agent"] = _agent_meta("disabled" if not use_llm else "not_configured", llm_used=False)
-    if not use_llm or not settings.OPENROUTER_API_KEY:
+    provider = settings.resolved_assistant_provider
+    if not use_llm:
+        return result
+    if provider == "openrouter" and not settings.OPENROUTER_API_KEY:
         return result
     try:
-        answer, meta = _openrouter_chat(question, compact_assistant_payload(payload, user_context), lang)
+        context = compact_assistant_payload(payload, user_context)
+        answer, meta = _local_chat(question, context, lang) if provider == "local" else _openrouter_chat(question, context, lang)
         result["answer"] = answer
         result["agent"].update({"llmUsed": True, "status": "ok", "model": meta.get("model"), "durationMs": meta.get("durationMs")})
     except HTTPError as exc:

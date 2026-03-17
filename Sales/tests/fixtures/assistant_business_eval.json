@@ -1,0 +1,482 @@
+[
+  {
+    "id": "retail_overview_ytd",
+    "question": "今年零售数据怎么样",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_region_rank_month",
+    "question": "6月各区域销量排行",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "volume",
+      "periodStart": "2026-06-01",
+      "dimensions": ["region"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_station_amount_rank",
+    "question": "本月哪个站销售额最高",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "amount",
+      "periodStart": "2026-07-01",
+      "dimensions": ["station"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_resource_filter",
+    "question": "今年92号零售数据",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "periodStart": "2026-01-01",
+      "dimensions": ["resource"],
+      "resource": 103,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_quarter_total",
+    "question": "第一季度零售数据有没有合计",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "periodStart": "2026-01-01",
+      "periodEnd": "2026-04-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_station_anomaly",
+    "question": "最近30天哪个站掉得厉害",
+    "expected": {
+      "route": "station_trend_anomaly",
+      "domain": "retail",
+      "metric": "volume",
+      "periodStart": "2026-06-22",
+      "dimensions": ["station"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_trend_chart",
+    "question": "今年零售趋势图",
+    "expected": {
+      "route": "retail_trend",
+      "domain": "retail",
+      "periodStart": "2026-01-01",
+      "visualRequested": true,
+      "visualType": "line",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_comparison_chart",
+    "question": "今年和去年零售对比图",
+    "expected": {
+      "route": "retail_comparison",
+      "domain": "retail",
+      "periodStart": "2026-01-01",
+      "comparisonType": "year_over_year",
+      "visualRequested": true,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "self_use_last_year",
+    "question": "去年自用油数据",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "periodStart": "2025-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "self_use_this_year_chart",
+    "question": "今年自用油按天趋势图",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "periodStart": "2026-01-01",
+      "dimensions": ["date"],
+      "visualRequested": true,
+      "visualType": "line",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "wholesale_overview_month",
+    "question": "6月批发数据怎么样",
+    "expected": {
+      "route": "wholesale_summary",
+      "domain": "wholesale",
+      "periodStart": "2026-06-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "wholesale_customer_rank",
+    "question": "出口批发客户排行",
+    "expected": {
+      "route": "wholesale_summary",
+      "domain": "wholesale",
+      "dimensions": ["customer"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "wholesale_review",
+    "question": "批发待复核异常有哪些",
+    "expected": {
+      "route": "wholesale_review",
+      "domain": "wholesale",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "train_entry_export",
+    "question": "火车外运录入数据",
+    "expected": {
+      "route": "wholesale_summary",
+      "domain": "wholesale",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "combined_company",
+    "question": "今年公司整体经营情况",
+    "expected": {
+      "route": "combined_summary",
+      "domain": "combined",
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "exchange_line",
+    "question": "本月汇率走势图",
+    "expected": {
+      "route": "exchange_summary",
+      "domain": "exchange",
+      "periodStart": "2026-07-01",
+      "visualRequested": true,
+      "visualType": "line",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "market_watch",
+    "question": "市场观察里俄罗斯成品油行情",
+    "expected": {
+      "route": "market_summary",
+      "domain": "market",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "accounting_missing_station",
+    "question": "吉方日报缺站了吗",
+    "expected": {
+      "route": "accounting_report_status",
+      "domain": "accounting",
+      "periodStart": "2026-07-21",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "procurement_summary",
+    "question": "本月采购数据怎么样",
+    "expected": {
+      "route": "procurement_summary",
+      "domain": "procurement",
+      "metric": "tons",
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "procurement_supplier_rank",
+    "question": "6月采购按供应商排行",
+    "expected": {
+      "route": "procurement_summary",
+      "domain": "procurement",
+      "intent": "ranking",
+      "metric": "tons",
+      "periodStart": "2026-06-01",
+      "dimensions": ["supplier"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "contract_summary",
+    "question": "合同数据和到期情况",
+    "expected": {
+      "route": "contract_summary",
+      "domain": "contract",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "materials_inventory",
+    "question": "物资库存情况",
+    "expected": {
+      "route": "materials_summary",
+      "domain": "materials",
+      "intent": "inventory",
+      "metric": "count",
+      "dimensions": ["material"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "materials_inbound_amount",
+    "question": "本月物资入库金额",
+    "expected": {
+      "route": "materials_summary",
+      "domain": "materials",
+      "metric": "amount",
+      "periodStart": "2026-07-01",
+      "dimensions": ["material"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "material_transfer_pending",
+    "question": "调拨单待审批有多少",
+    "expected": {
+      "route": "material_transfer_summary",
+      "domain": "materials",
+      "intent": "status",
+      "metric": "count",
+      "dimensions": ["status"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "transfer_loss_year",
+    "question": "今年调拨损耗情况",
+    "expected": {
+      "route": "transfer_loss_summary",
+      "domain": "transfer_loss",
+      "metric": "tons",
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "transfer_loss_rate",
+    "question": "今年调拨损耗率",
+    "expected": {
+      "route": "transfer_loss_summary",
+      "domain": "transfer_loss",
+      "metric": "loss_rate",
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "map_station_context",
+    "question": "地图上站点经营情况",
+    "context": {
+      "pageContext": {
+        "path": "/map",
+        "module": "map"
+      }
+    },
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "dimensions": ["station"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "weighing_summary",
+    "question": "本月称重数据多少吨",
+    "expected": {
+      "route": "weighing_summary",
+      "domain": "weighing",
+      "metric": "tons",
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "weighing_pending",
+    "question": "称重待审核有多少",
+    "expected": {
+      "route": "weighing_summary",
+      "domain": "weighing",
+      "intent": "status",
+      "metric": "count",
+      "dimensions": ["status"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "weighing_page_follow_context",
+    "question": "这个页面待审核有多少",
+    "context": {
+      "pageContext": {
+        "path": "/weighing",
+        "module": "weighing"
+      }
+    },
+    "expected": {
+      "route": "weighing_summary",
+      "domain": "weighing",
+      "intent": "status",
+      "metric": "count",
+      "dimensions": ["status"],
+      "contextUsed": ["page"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "knowledge_search",
+    "question": "知识库里有没有自用油口径说明",
+    "expected": {
+      "route": "knowledge_summary",
+      "domain": "knowledge",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "audit_logs",
+    "question": "最近审计日志有什么操作",
+    "expected": {
+      "route": "audit_log_summary",
+      "domain": "audit",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "user_permissions",
+    "question": "用户权限情况",
+    "expected": {
+      "route": "user_permission_summary",
+      "domain": "users",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "organization_permissions",
+    "question": "组织角色权限数量",
+    "expected": {
+      "route": "user_permission_summary",
+      "domain": "users",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "alias_matching",
+    "question": "别名匹配数据",
+    "expected": {
+      "route": "alias_summary",
+      "domain": "alias",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "system_health_warning",
+    "question": "系统健康现在有什么告警",
+    "expected": {
+      "route": "system_health_summary",
+      "domain": "system_health",
+      "metric": "status",
+      "dimensions": ["status"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "management_center",
+    "question": "管理中心驾驶舱组件配置情况",
+    "context": {
+      "pageContext": {
+        "path": "/management-center"
+      }
+    },
+    "expected": {
+      "route": "settings_summary",
+      "domain": "management",
+      "metric": "status",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "settings_api",
+    "question": "设置里api地址是多少",
+    "expected": {
+      "route": "settings_summary",
+      "domain": "settings",
+      "metric": "status",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "density_current",
+    "question": "当前密度数据",
+    "expected": {
+      "route": "density_summary",
+      "domain": "density",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "ambiguous_half_year",
+    "question": "上半年数据怎么样",
+    "expected": {
+      "route": "retail_summary",
+      "periodStart": "2026-01-01",
+      "needsClarification": true,
+      "missing": ["domain"]
+    }
+  },
+  {
+    "id": "ambiguous_rank_dimension",
+    "question": "本月哪个最高",
+    "expected": {
+      "route": "retail_ranking",
+      "periodStart": "2026-07-01",
+      "needsClarification": true,
+      "missing": ["dimension"]
+    }
+  },
+  {
+    "id": "action_add_contract",
+    "question": "帮我新增一个合同",
+    "expected": {
+      "actionRequest": true
+    }
+  },
+  {
+    "id": "action_approve_transfer",
+    "question": "把这个物资调拨单审批通过",
+    "expected": {
+      "actionRequest": true
+    }
+  },
+  {
+    "id": "action_delete_user",
+    "question": "删除这个用户账号",
+    "expected": {
+      "actionRequest": true
+    }
+  }
+]

@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.2';
-export const BUILD_DATE = '2026-07-22';
+export const VERSION = '3.9.3';
+export const BUILD_DATE = '2026-07-23';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.3',
+    date: '2026-07-23',
+    type: 'patch',
+    changes: [
+      '修复：零售日报 2026-07-19 调价后价格列优先使用当天销售交易价，避免旧库存价覆盖 30 号站 AI-92 新价 83.30',
+      '修复：STN-57不再用旧固定价覆盖真实交易价，7月19日起按调价表显示 AI-92 82.00、AI-80 69.50、柴油 97.30 和液化气 44.70',
+      '修复：吉方财务交接日报销售明细按 BasePrice 分价聚合，跨调价班次不再把新旧价格段合并',
+      '优化：零售月度 Excel 报表缓存版本升级，旧价格缓存不再复用',
+    ],
+  },
   {
     version: '3.9.2',
     date: '2026-07-22',

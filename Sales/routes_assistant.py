@@ -18,6 +18,9 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import pymysql
 from flask import jsonify, request
+from assistant_agent import is_action_request, read_only_refusal
+from assistant_quality import enrich_assistant_payload
+from config import DB_CONFIG
 from db import get_connection
 from shared_utils import (
     ensure_market_watch_schema, OILSTATION_ROOT,
@@ -25,9 +28,19 @@ from shared_utils import (
 )
 from text_utils import clean_str, normalize_station_name, parse_date, parse_decimal
 from retail_internal import open_oilstation
+from services.weighing_service import get_weighing_list
 from summary_service import available_periods, period_bounds, summarize_combined, summarize_wholesale
 from wholesale_service import summarize_wholesale_page
 from routes_data import chinese_market_item, market_source_display
+
+
+_ASSISTANT_QUERY_EXECUTOR = None
+
+
+def execute_assistant_query_payload(payload):
+    if not callable(_ASSISTANT_QUERY_EXECUTOR):
+        return {"ok": False, "error": "assistant_service_not_ready", "answer": "AI 助手业务服务尚未初始化。"}, 503
+    return _ASSISTANT_QUERY_EXECUTOR(payload if isinstance(payload, dict) else {})
 
 
 _ASSISTANT_DIGIT_TRANSLATION = str.maketrans("０１２３４５６７８９", "0123456789")
@@ -170,6 +183,72 @@ _ASSISTANT_TOOL_CATALOG = {
         "readOnly": True,
         "dataSource": "self_use_report24_snapshots",
     },
+    "procurement_summary": {
+        "name": "procurement_summary",
+        "description": "原料采购明细和供应商汇总",
+        "readOnly": True,
+        "dataSource": "wholesale_detail_records",
+    },
+    "weighing_summary": {
+        "name": "weighing_summary",
+        "description": "称重明细、分类和审核状态汇总",
+        "readOnly": True,
+        "dataSource": "weighing_service",
+    },
+    "materials_summary": {
+        "name": "materials_summary",
+        "description": "物资字典、入库、调拨单和库存汇总",
+        "readOnly": True,
+        "dataSource": "materials",
+    },
+    "material_transfer_summary": {
+        "name": "material_transfer_summary",
+        "description": "物资调拨单只读汇总",
+        "readOnly": True,
+        "dataSource": "material_transfer_orders",
+    },
+    "transfer_loss_summary": {
+        "name": "transfer_loss_summary",
+        "description": "调拨损耗只读摘要",
+        "readOnly": True,
+        "dataSource": "transfer_loss",
+    },
+    "system_health_summary": {
+        "name": "system_health_summary",
+        "description": "系统健康、自动任务和运行治理摘要",
+        "readOnly": True,
+        "dataSource": "system_health",
+    },
+    "knowledge_summary": {
+        "name": "knowledge_summary",
+        "description": "知识库文章和附件索引摘要",
+        "readOnly": True,
+        "dataSource": "knowledge_base",
+    },
+    "audit_log_summary": {
+        "name": "audit_log_summary",
+        "description": "审计日志只读摘要",
+        "readOnly": True,
+        "dataSource": "audit_logs",
+    },
+    "alias_summary": {
+        "name": "alias_summary",
+        "description": "客户和油品别名匹配摘要",
+        "readOnly": True,
+        "dataSource": "entity_product_aliases",
+    },
+    "user_permission_summary": {
+        "name": "user_permission_summary",
+        "description": "用户、角色、部门和权限只读摘要",
+        "readOnly": True,
+        "dataSource": "organization_permissions",
+    },
+    "settings_summary": {
+        "name": "settings_summary",
+        "description": "客户端和系统设置只读说明",
+        "readOnly": True,
+        "dataSource": "runtime_settings",
+    },
     "compound_query": {
         "name": "compound_query",
         "description": "复合自然语言问题拆解与只读工具编排",
@@ -177,6 +256,20 @@ _ASSISTANT_TOOL_CATALOG = {
         "dataSource": "assistant_tool_orchestration",
     },
 }
+
+
+def assistant_tool_catalog():
+    return {
+        key: {
+            **value,
+            "route": key,
+            "mode": "read_only",
+            "canWrite": False,
+        }
+        for key, value in sorted(_ASSISTANT_TOOL_CATALOG.items())
+    }
+
+
 _ASSISTANT_FOLLOWUP_WORDS = (
     "那",
     "它",
@@ -190,6 +283,12 @@ _ASSISTANT_FOLLOWUP_WORDS = (
     "继续",
     "为什么",
     "原因",
+    "只看",
+    "换成",
+    "改成",
+    "按月",
+    "按天",
+    "按日",
     "呢",
 )
 _ASSISTANT_METRIC_WORDS = (
@@ -222,6 +321,17 @@ _ASSISTANT_BUSINESS_LEXICON = {
         "market": ("市场", "行情", "观察", "原油", "成品油", "俄罗斯", "乌兹别克", "国际"),
         "contract": ("合同", "协议"),
         "density": ("密度",),
+        "procurement": ("采购", "原料采购", "进货", "采购数据", "供应商", "供货商"),
+        "weighing": ("称重", "地磅", "过磅", "磅单", "待审核", "待复核", "审核称重"),
+        "materials": ("物资", "物料", "办公用品", "物资库存", "物资入库", "调拨单"),
+        "transfer_loss": ("调拨损耗", "损耗率", "损耗情况", "运输损耗", "途中损耗"),
+        "system_health": ("系统健康", "健康检查", "运行治理", "提醒中心", "告警", "自动任务", "任务状态", "服务状态"),
+        "knowledge": ("知识库", "知识文章", "附件索引", "资料库", "文档库", "口径说明"),
+        "audit": ("审计", "审计日志", "操作日志", "登录日志"),
+        "alias": ("别名", "别名匹配", "未匹配名称", "客户别名", "油品别名"),
+        "users": ("用户", "账号", "权限", "角色", "部门", "组织权限"),
+        "management": ("管理中心", "驾驶舱配置", "看板配置", "组件配置"),
+        "settings": ("设置", "系统设置", "客户端设置", "api地址", "API地址", "更新源"),
     },
     "metrics": {
         "amount": ("金额", "销售额", "营业额", "收入", "钱", "索姆", "人民币", "元", "款"),
@@ -229,28 +339,36 @@ _ASSISTANT_BUSINESS_LEXICON = {
         "tons": ("吨", "吨数", "吨位", "重量", "质量"),
         "count": ("笔数", "单数", "交易数", "车次", "次数"),
     },
-    "dimensions": {
-        "station": ("站点", "加油站", "哪家站", "哪个站", "各站", "站排行", "站点排行", "油站"),
-        "resource": ("油品", "产品", "品类", "资源", "汽油", "柴油", "д/т", "аи"),
-        "region": ("区域", "地区", "州", "各州"),
-        "customer": ("客户", "客户排行", "哪家客户"),
-        "date": ("每日", "日趋势", "按天", "每天"),
-    },
-    "intents": {
-        "summary": ("概况", "情况", "怎么样", "汇总", "总览", "统计", "数据"),
-        "ranking": ("排行", "排名", "top", "哪个", "哪家", "最高", "最多", "最好", "前几", "第一"),
-        "trend": ("趋势", "走势", "每日", "日销量", "波动"),
-        "trend_anomaly": ("掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常"),
-        "comparison": ("同比", "环比", "对比", "较去年", "较上月", "增长率", "变化"),
-        "status": ("状态", "停业", "暂停营业", "维修", "停电", "缺站"),
-        "data_availability": ("数据", "传回来", "补回来", "补传", "上传", "更新", "到了", "有没有"),
-    },
-}
-_ASSISTANT_DOMAIN_OPTIONS = ("零售", "自用油", "批发", "合并", "吉方日报")
+        "dimensions": {
+            "station": ("站点", "加油站", "哪家站", "哪个站", "各站", "站排行", "站点排行", "油站", "按站点", "分站", "站点拆分"),
+            "resource": ("油品", "产品", "品类", "资源", "汽油", "柴油", "д/т", "аи", "按油品", "油品拆分"),
+            "region": ("区域", "地区", "州", "各州", "按区域", "区域拆分"),
+            "customer": ("客户", "客户排行", "哪家客户", "按客户", "客户拆分"),
+            "supplier": ("供应商", "供货商", "发货单位"),
+            "vehicle": ("车辆", "车号", "车牌"),
+            "status": ("状态", "待审核", "待复核", "待审批", "告警", "异常"),
+            "depot": ("油库", "仓库", "库房", "库区", "库点"),
+            "material": ("物资", "物料", "办公用品", "材料"),
+            "date": ("每日", "日趋势", "按天", "每天", "按日", "逐日"),
+            "month": ("按月", "每月", "月度", "逐月"),
+        },
+        "intents": {
+            "summary": ("概况", "情况", "怎么样", "汇总", "总览", "统计", "数据"),
+            "ranking": ("排行", "排名", "top", "哪个", "哪家", "最高", "最多", "最好", "前几", "第一"),
+            "trend": ("趋势", "走势", "每日", "日销量", "波动"),
+            "trend_anomaly": ("掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常"),
+            "comparison": ("同比", "环比", "对比", "较去年", "较上月", "增长率", "变化"),
+            "status": ("状态", "停业", "暂停营业", "维修", "停电", "缺站"),
+            "data_availability": ("数据", "传回来", "补回来", "补传", "上传", "更新", "到了", "有没有"),
+            "visualization": ("图", "图表", "趋势图", "折线图", "柱状图", "柱形图", "饼图", "环图", "可视化", "画图", "做图"),
+        },
+    }
+_ASSISTANT_DOMAIN_OPTIONS = ("零售", "自用油", "批发", "合并", "吉方日报", "采购", "称重", "物资", "系统健康")
 _ASSISTANT_METRIC_OPTIONS = ("销量", "销售额", "吨数")
-_ASSISTANT_RANKING_DIMENSION_OPTIONS = ("站点", "油品", "区域", "客户")
+_ASSISTANT_RANKING_DIMENSION_OPTIONS = ("站点", "油品", "区域", "客户", "供应商", "车辆", "状态")
 _ASSISTANT_COMPARISON_SIGNAL_WORDS = (
     "同比", "环比", "对比", "较去年", "比去年", "较上月", "比上月", "比上个月",
+    "和去年", "跟去年", "与去年", "去年和今年", "今年和去年",
     "上个月同期", "上月同期", "去年同期", "上年同期", "增长率", "变化",
 )
 _ASSISTANT_RANKING_SIGNAL_WORDS = (
@@ -258,6 +376,9 @@ _ASSISTANT_RANKING_SIGNAL_WORDS = (
 )
 _ASSISTANT_TREND_SIGNAL_WORDS = (
     "趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常",
+)
+_ASSISTANT_CHART_SIGNAL_WORDS = (
+    "图", "图表", "趋势图", "折线图", "柱状图", "柱形图", "饼图", "环图", "可视化", "画图", "做图",
 )
 _ASSISTANT_EXPLICIT_TIME_PATTERN = re.compile(
     rf"(?:20\d{{2}}|\d{{2}})\s*年|"
@@ -271,7 +392,13 @@ _ASSISTANT_EXPLICIT_TIME_PATTERN = re.compile(
 def _assistant_question_score(value):
     text = str(value or "")
     score = len(re.findall(r"\d{1,2}", text))
-    for word in ("年", "月", "周", "今天", "昨天", "零售", "批发", "销量", "销售", "金额", "数据", "统计"):
+    score += min(len(re.findall(r"[\u4e00-\u9fff]", text)), 24)
+    score -= len(re.findall(r"[�]", text)) * 5
+    for word in (
+        "年", "月", "周", "今天", "昨天", "零售", "批发", "销量", "销售", "金额", "数据", "统计",
+        "自用油", "采购", "称重", "物资", "调拨", "损耗", "知识库", "审计", "权限", "别名",
+        "市场", "观察", "行情", "俄罗斯", "系统健康", "管理中心", "设置",
+    ):
         if word in text:
             score += 3
     return score
@@ -697,6 +824,23 @@ def _assistant_metric_from_terms(business_terms):
 
 def _assistant_domain_from_terms(business_terms, default="retail"):
     domain_terms = business_terms.get("domains") if isinstance(business_terms, dict) else {}
+    weighing_terms = set(domain_terms.get("weighing") or [])
+    if weighing_terms.intersection({"称重", "地磅", "过磅", "磅单", "审核称重"}):
+        return "weighing"
+    for domain_name in (
+        "system_health",
+        "knowledge",
+        "audit",
+        "alias",
+        "users",
+        "management",
+        "settings",
+        "transfer_loss",
+        "materials",
+        "procurement",
+    ):
+        if domain_terms.get(domain_name):
+            return domain_name
     if domain_terms.get("market"):
         return "market"
     if domain_terms.get("exchange"):
@@ -715,16 +859,55 @@ def _assistant_domain_from_terms(business_terms, default="retail"):
         return "wholesale"
     if domain_terms.get("retail"):
         return "retail"
+    if domain_terms.get("weighing"):
+        return "weighing"
     return default
 
 
 def _assistant_dimensions_from_terms(business_terms):
     dimensions = []
     dimension_terms = business_terms.get("dimensions") if isinstance(business_terms, dict) else {}
-    for dimension_name in ("station", "resource", "region", "customer"):
+    for dimension_name in (
+        "station", "resource", "region", "customer", "supplier", "vehicle",
+        "status", "depot", "material", "date", "month",
+    ):
         if dimension_terms.get(dimension_name):
             dimensions.append(dimension_name)
     return dimensions
+
+
+def _assistant_chart_requested(text):
+    return _assistant_contains_any(text, _ASSISTANT_CHART_SIGNAL_WORDS)
+
+
+def _assistant_chart_kind(text, default="auto"):
+    if _assistant_contains_any(text, ("饼图", "环图")):
+        return "pie"
+    if _assistant_contains_any(text, ("折线图", "曲线图", "趋势图")):
+        return "line"
+    if _assistant_contains_any(text, ("柱状图", "柱形图", "条形图")):
+        return "bar"
+    if _assistant_contains_any(text, ("趋势", "走势", "每日", "按天", "按日", "逐日")):
+        return "line"
+    if _assistant_contains_any(text, ("占比", "结构", "构成")):
+        return "pie"
+    return default
+
+
+def _assistant_resource_from_text(text):
+    folded = str(text or "").casefold()
+    patterns = [
+        (103, "АИ 92", (r"(?:аи|ai|а[\s-]*и)\s*92", r"92\s*号?(?:汽油|油|油品)?")),
+        (104, "АИ 95", (r"(?:аи|ai|а[\s-]*и)\s*95", r"95\s*号?(?:汽油|油|油品)?")),
+        (102, "АИ 80", (r"(?:аи|ai|а[\s-]*и)\s*80", r"80\s*号?(?:汽油|油|油品)?")),
+        (106, "Д/Т", (r"(?:д/т|дт|柴油|дизель)",)),
+        (108, "СПБТ", (r"(?:спбт|液化气|燃气|газ)",)),
+        (110, "ДТ -35", (r"(?:дт\s*-?\s*35|-35\s*柴油)",)),
+    ]
+    for key, name, regexes in patterns:
+        if any(re.search(pattern, folded, flags=re.IGNORECASE) for pattern in regexes):
+            return {"resourceKey": key, "name": name}
+    return None
 
 
 def _assistant_clarification_payload(
@@ -823,7 +1006,7 @@ def _assistant_self_check(text, plan):
             add("comparison_baseline", "对比基准区间", "fail", "问题要求同环比/对比，但没有生成基准区间")
 
     if _assistant_contains_any(text, _ASSISTANT_RANKING_SIGNAL_WORDS):
-        if route in {"retail_ranking", "wholesale_summary"} and dimensions:
+        if route in {"retail_ranking", "wholesale_summary", "procurement_summary", "weighing_summary"} and dimensions:
             add("ranking_dimension", "排行维度", "pass", "、".join(dimensions))
         elif needs_clarification:
             add("ranking_dimension", "排行维度", "warn", "排行问题需要用户补充维度或指标")
@@ -839,6 +1022,13 @@ def _assistant_self_check(text, plan):
             add("trend_route", "趋势/异常工具", "warn", "趋势问题需要先澄清")
         else:
             add("trend_route", "趋势/异常工具", "warn", "问题包含趋势/下滑词，但当前工具不是趋势工具")
+
+    visual = plan.get("visual") if isinstance(plan.get("visual"), dict) else {}
+    if _assistant_chart_requested(text):
+        if visual.get("requested"):
+            add("chart_request", "图表回答", "pass", str(visual.get("preferredType") or "auto"))
+        else:
+            add("chart_request", "图表回答", "warn", "问题要求图表，但计划未记录图表偏好")
 
     if tool.get("readOnly") is True:
         add("readonly_tool", "只读工具约束", "pass", str(tool.get("name") or route))
@@ -954,6 +1144,62 @@ def _assistant_context_page(context):
     return page if isinstance(page, dict) else {}
 
 
+def _assistant_context_reference_requested(text):
+    return _assistant_contains_any(
+        text,
+        ("这个", "该", "当前", "本页", "这里", "它", "这个页面", "这个站", "该站", "这家站", "这个油品", "该油品"),
+    )
+
+
+def _assistant_station_from_context(context):
+    page = _assistant_context_page(context)
+    catalog = retail_station_catalog_cached()
+    candidates = []
+    for source in (page, _assistant_context_dict(context)):
+        search = source.get("searchParams") if isinstance(source.get("searchParams"), dict) else {}
+        for key in ("shopKey", "stationKey", "stationId", "station", "shop", "id"):
+            if source.get(key) is not None:
+                candidates.append(source.get(key))
+            if search.get(key) is not None:
+                candidates.append(search.get(key))
+    for value in candidates:
+        try:
+            shop_key = int(float(str(value).strip()))
+        except (TypeError, ValueError):
+            continue
+        if shop_key in catalog:
+            return dict(catalog[shop_key])
+    return None
+
+
+def _assistant_resource_from_context(context):
+    page = _assistant_context_page(context)
+    candidates = []
+    for source in (page, _assistant_context_dict(context)):
+        search = source.get("searchParams") if isinstance(source.get("searchParams"), dict) else {}
+        for key in ("resourceKey", "productKey", "resource", "product", "oilKey"):
+            if source.get(key) is not None:
+                candidates.append(source.get(key))
+            if search.get(key) is not None:
+                candidates.append(search.get(key))
+    resource_names = {
+        103: "АИ 92",
+        104: "АИ 95",
+        102: "АИ 80",
+        106: "Д/Т",
+        108: "СПБТ",
+        110: "ДТ -35",
+    }
+    for value in candidates:
+        try:
+            resource_key = int(float(str(value).strip()))
+        except (TypeError, ValueError):
+            resource_key = None
+        if resource_key in resource_names:
+            return {"resourceKey": resource_key, "name": resource_names[resource_key]}
+    return None
+
+
 def _assistant_page_hints(page_context):
     path = str(page_context.get("path") or page_context.get("pathname") or "").casefold()
     page = str(page_context.get("page") or "").casefold()
@@ -966,10 +1212,30 @@ def _assistant_page_hints(page_context):
         hints["domain"] = "wholesale"
     if "contract" in path:
         hints["domain"] = "contract"
+    if "procurement" in path:
+        hints["domain"] = "procurement"
+    if "weighing" in path:
+        hints["domain"] = "weighing"
+    if "materials" in path:
+        hints["domain"] = "materials"
+    if "transfer-loss" in path:
+        hints["domain"] = "transfer_loss"
+    if "knowledge" in path:
+        hints["domain"] = "knowledge"
+    if "audit-log" in path:
+        hints["domain"] = "audit"
+    if "aliases" in path:
+        hints["domain"] = "alias"
+    if "users" in path or "organization" in path:
+        hints["domain"] = "users"
+    if "settings" in path:
+        hints["domain"] = "settings"
+    if "management-center" in path:
+        hints["domain"] = "management"
     if "exchange" in path:
         hints["domain"] = "exchange"
-    if "system-health" in path and str(search.get("tab") or "").casefold() == "accounting":
-        hints["domain"] = "accounting"
+    if "system-health" in path:
+        hints["domain"] = "accounting" if str(search.get("tab") or "").casefold() == "accounting" else "system_health"
     if "station" in path or page == "station":
         hints["dimensions"] = ["station"]
     elif "resource" in path or page == "resource":
@@ -978,6 +1244,12 @@ def _assistant_page_hints(page_context):
         hints["dimensions"] = ["region"]
     elif "customer" in path or "customers" in path:
         hints["dimensions"] = ["customer"]
+    elif "procurement" in path:
+        hints["dimensions"] = ["supplier"]
+    elif "weighing" in path:
+        hints["dimensions"] = ["status"]
+    elif "materials" in path:
+        hints["dimensions"] = ["material"]
     if hints.get("domain") or hints.get("dimensions"):
         hints["contextUsed"].append("page")
     return hints
@@ -997,7 +1269,7 @@ def _assistant_shift_period(label, start, end, *, months=0, days=0, shifted_labe
 
 
 def _assistant_comparison_payload(text, period_label, start, end):
-    if _assistant_contains_any(text, ("同比", "去年同期", "上年同期", "较去年", "比去年", "对比去年")):
+    if _assistant_contains_any(text, ("同比", "去年同期", "上年同期", "较去年", "比去年", "对比去年", "和去年", "跟去年", "与去年", "去年和今年", "今年和去年")):
         payload = _assistant_shift_period(period_label, start, end, months=-12, shifted_label="去年同期")
         payload["type"] = "year_over_year"
         payload["description"] = "当前区间与去年同期对比"
@@ -1082,7 +1354,17 @@ def _assistant_context_dict(context):
 def _assistant_previous_plan(context):
     context = _assistant_context_dict(context)
     plan = context.get("lastAssistantPlan") or context.get("assistantPlan")
-    return plan if isinstance(plan, dict) else {}
+    if isinstance(plan, dict):
+        return plan
+    recent = context.get("recentMessages")
+    if isinstance(recent, list):
+        for item in reversed(recent):
+            if not isinstance(item, dict):
+                continue
+            candidate = item.get("assistantPlan")
+            if isinstance(candidate, dict):
+                return candidate
+    return {}
 
 
 def _assistant_context_station(plan):
@@ -1114,9 +1396,15 @@ def _assistant_is_followup_question(text):
         return False
     if stripped.startswith(("那", "那么", "还有", "继续")):
         return True
+    if stripped.startswith(("只看", "换成", "改成", "改为", "按月", "按天", "按日")):
+        return True
+    if stripped.startswith(("按站点", "按油品", "按区域", "按客户", "分站", "拆分")):
+        return True
+    if len(stripped) <= 10 and (_assistant_chart_requested(stripped) or _assistant_contains_any(stripped, ("异常点", "原因分析", "为什么"))):
+        return True
     if len(stripped) <= 8 and _assistant_contains_any(stripped, _ASSISTANT_FOLLOWUP_WORDS):
         return True
-    return _assistant_contains_any(stripped, ("该站", "这个站", "这家站", "刚才", "上面", "前面"))
+    return _assistant_contains_any(stripped, ("该站", "这个站", "这家站", "刚才", "上面", "前面", "异常点"))
 
 
 def _assistant_metric_clarification():
@@ -1267,23 +1555,46 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     business_terms = _assistant_business_terms(text)
     page_hints = _assistant_page_hints(_assistant_context_page(context))
     period_label, start, end = parse_assistant_period(text, today=today)
+    if (
+        _assistant_contains_any(text, ("今年", "本年", "当前年", "当年", "这个年"))
+        and _assistant_contains_any(text, ("去年", "上年", "上一年"))
+        and _assistant_contains_any(text, _ASSISTANT_COMPARISON_SIGNAL_WORDS)
+    ):
+        period_label, start, end = f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
     if followup and period_label == "最近7天":
         previous_period = _assistant_period_from_plan(previous_plan)
         if previous_period:
             period_label, start, end = previous_period
             context_used.append("period")
     station = _assistant_station_from_text(text)
+    if not station and (followup or _assistant_context_reference_requested(text)):
+        station = _assistant_station_from_context(context)
+        if station:
+            context_used.append("pageStation")
     if followup and not station:
         previous_station = _assistant_context_station(previous_plan)
         if previous_station:
             station = previous_station
             context_used.append("station")
+    resource = None if station else _assistant_resource_from_text(text)
+    if not resource and not station and (followup or _assistant_context_reference_requested(text)):
+        resource = _assistant_resource_from_context(context)
+        if resource:
+            context_used.append("pageResource")
+    if followup and not resource:
+        previous_entities = previous_plan.get("entities") if isinstance(previous_plan, dict) else {}
+        previous_resource = previous_entities.get("resource") if isinstance(previous_entities, dict) else None
+        if isinstance(previous_resource, dict) and previous_resource.get("resourceKey"):
+            resource = dict(previous_resource)
+            context_used.append("resource")
     metric = _assistant_metric_from_terms(business_terms) or _assistant_metric_from_text(text)
     explicit_metric = bool(_assistant_metric_from_terms(business_terms)) or _assistant_contains_any(text, _ASSISTANT_METRIC_WORDS)
 
     dimensions = []
     if station:
         dimensions.append("station")
+    if resource:
+        dimensions.append("resource")
     dimensions.extend(_assistant_dimensions_from_terms(business_terms))
     if not dimensions and page_hints.get("dimensions") and _assistant_contains_any(text, ("这个", "该", "当前", "本页", "这里", "它", "这个页面")):
         dimensions.extend(page_hints.get("dimensions") or [])
@@ -1295,6 +1606,16 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     if not _assistant_has_explicit_domain(business_terms) and page_hints.get("domain"):
         domain = str(page_hints.get("domain"))
         context_used.extend(page_hints.get("contextUsed") or [])
+    elif (
+        page_hints.get("domain") == domain
+        and _assistant_contains_any(text, ("这个", "该", "当前", "本页", "这里", "它", "这个页面"))
+    ):
+        context_used.extend(page_hints.get("contextUsed") or [])
+    if followup and not _assistant_has_explicit_domain(business_terms):
+        previous_domain = previous_plan.get("domain") if isinstance(previous_plan, dict) else None
+        if previous_domain:
+            domain = str(previous_domain)
+            context_used.append("domain")
     if domain == "accounting":
         if period_label == "最近7天":
             start = today - timedelta(days=1)
@@ -1307,12 +1628,74 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     status_words = ("停业", "站点状态", "异常站点", "暂停营业", "维修", "停电", "装修", "修路", "迁址")
     data_recovery_words = ("数据", "传回来", "补回来", "回来", "补传", "上传", "更新", "到了", "有没有")
     trend_words = ("趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常")
-    comparison_words = ("同比", "环比", "对比", "较去年", "比去年", "较上月", "比上月", "比上个月", "上个月同期", "上月同期", "增长率", "变化")
+    comparison_words = _ASSISTANT_COMPARISON_SIGNAL_WORDS
     ranking_words = _ASSISTANT_RANKING_SIGNAL_WORDS
 
     if domain in {"market", "exchange", "density", "contract"}:
         route = f"{domain}_summary"
         intent = "summary"
+    elif domain == "procurement":
+        route = "procurement_summary"
+        intent = "ranking" if _assistant_contains_any(text, ranking_words) else "summary"
+        if not explicit_metric:
+            metric = "tons"
+        if _assistant_contains_any(text, ("供应商", "供货商", "发货单位")) and "supplier" not in dimensions:
+            dimensions.append("supplier")
+        elif _assistant_contains_any(text, ("油品", "产品", "品类")) and "resource" not in dimensions:
+            dimensions.append("resource")
+    elif domain == "weighing":
+        route = "weighing_summary"
+        intent = "status" if _assistant_contains_any(text, ("待审核", "待复核", "未审核", "状态")) else "summary"
+        if not explicit_metric:
+            metric = "count" if intent == "status" else "tons"
+        if _assistant_contains_any(text, ("车辆", "车号", "车牌")) and "vehicle" not in dimensions:
+            dimensions.append("vehicle")
+        if _assistant_contains_any(text, ("待审核", "待复核", "状态")) and "status" not in dimensions:
+            dimensions.append("status")
+    elif domain == "materials":
+        if _assistant_contains_any(text, ("调拨单", "调拨", "审批", "待审批")):
+            route = "material_transfer_summary"
+            intent = "status" if _assistant_contains_any(text, ("状态", "审批", "待审批")) else "summary"
+        else:
+            route = "materials_summary"
+            intent = "inventory" if _assistant_contains_any(text, ("库存", "现有", "剩余")) else "summary"
+        if not explicit_metric:
+            metric = "amount" if _assistant_contains_any(text, ("金额", "价格", "费用")) else "count"
+    elif domain == "transfer_loss":
+        route = "transfer_loss_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "loss_rate" if _assistant_contains_any(text, ("损耗率", "率")) else "tons"
+    elif domain == "system_health":
+        route = "system_health_summary"
+        intent = "status"
+        if not explicit_metric:
+            metric = "status"
+    elif domain == "knowledge":
+        route = "knowledge_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "count"
+    elif domain == "audit":
+        route = "audit_log_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "count"
+    elif domain == "alias":
+        route = "alias_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "count"
+    elif domain == "users":
+        route = "user_permission_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "count"
+    elif domain in {"settings", "management"}:
+        route = "settings_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "status"
     elif domain == "accounting":
         route = "accounting_report_status"
         intent = "status"
@@ -1329,6 +1712,8 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     elif domain == "self_use":
         route = "self_use_summary"
         intent = "summary"
+        if (_assistant_chart_kind(text) == "line" or _assistant_contains_any(text, trend_words)) and "date" not in dimensions:
+            dimensions.append("date")
     elif station and _assistant_contains_any(text, status_words) and _assistant_contains_any(text, data_recovery_words):
         route = "station_data_check"
         intent = "data_availability"
@@ -1431,12 +1816,16 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         "route": route,
         "metric": metric,
         "dimensions": dimensions,
-        "entities": {"station": station} if station else {},
+        "entities": {key: value for key, value in (("station", station), ("resource", resource)) if value},
         "period": _assistant_period_payload(period_label, start, end),
         "tool": _assistant_tool_payload(route),
         "contextUsed": list(dict.fromkeys(context_used)),
         "businessTerms": business_terms,
         "comparison": comparison,
+        "visual": {
+            "requested": _assistant_chart_requested(text),
+            "preferredType": _assistant_chart_kind(text),
+        },
         "executionHints": execution_hints,
         "assumptions": assumptions,
         "needsClarification": bool(clarification),
@@ -2026,6 +2415,114 @@ def register_assistant_routes(app):
         return f"{float(value or 0):,.3f} 吨"
 
 
+    def _chart_number(value, digits=2):
+        try:
+            return round(float(value or 0), digits)
+        except (TypeError, ValueError):
+            return 0.0
+
+
+    def _assistant_chart(title, chart_type, *, x_axis=None, series=None, data=None, unit="", summary="", source="assistant"):
+        x_axis = [str(item) for item in (x_axis or [])]
+        clean_series = []
+        for item in series or []:
+            if not isinstance(item, dict):
+                continue
+            values = [_chart_number(value, 3 if item.get("unit") == "吨" else 2) for value in item.get("data") or []]
+            if values:
+                clean_series.append({
+                    "name": str(item.get("name") or "数值"),
+                    "type": str(item.get("type") or chart_type or "bar"),
+                    "unit": str(item.get("unit") or unit or ""),
+                    "data": values,
+                })
+        clean_data = []
+        for item in data or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("label") or "--")
+            value = _chart_number(item.get("value"), 3 if unit == "吨" else 2)
+            if value:
+                clean_data.append({"name": name, "value": value})
+        if chart_type == "pie" and not clean_data:
+            return None
+        if chart_type != "pie" and (not x_axis or not clean_series):
+            return None
+        return {
+            "title": title,
+            "type": chart_type,
+            "xAxis": x_axis,
+            "series": clean_series,
+            "data": clean_data,
+            "unit": unit,
+            "summary": summary,
+            "source": source,
+        }
+
+
+    def _assistant_metric_unit(metric):
+        return {"volume": "升", "tons": "吨", "amount": "索姆"}.get(metric, "索姆")
+
+
+    def _assistant_metric_name(metric):
+        return {"volume": "销量", "tons": "吨位", "amount": "销售金额"}.get(metric, "销售金额")
+
+
+    def _assistant_axis_labels(rows, name_key="name", limit=12):
+        labels = []
+        for item in rows[:limit]:
+            labels.append(str(item.get(name_key) or item.get("name") or item.get("region") or item.get("date") or "--"))
+        return labels
+
+
+    def _assistant_rank_chart(title, rows, metric, *, name_key="name", limit=12):
+        clean_rows = [
+            item for item in rows or []
+            if _chart_number(item.get(metric if metric != "amount" else "amount")) or _chart_number(item.get("volume")) or _chart_number(item.get("tons"))
+        ][:limit]
+        if not clean_rows:
+            return None
+        value_key = "amount" if metric == "amount" else metric
+        return _assistant_chart(
+            title,
+            "bar",
+            x_axis=_assistant_axis_labels(clean_rows, name_key=name_key, limit=limit),
+            series=[{
+                "name": _assistant_metric_name(metric),
+                "type": "bar",
+                "unit": _assistant_metric_unit(metric),
+                "data": [_chart_number(item.get(value_key), 3 if metric == "tons" else 2) for item in clean_rows],
+            }],
+            unit=_assistant_metric_unit(metric),
+            summary=f"按{_assistant_metric_name(metric)}降序展示前 {len(clean_rows)} 项。",
+        )
+
+
+    def _assistant_daily_mixed_chart(title, daily, *, volume_label="销量", amount_label="金额"):
+        rows = [item for item in daily or [] if item.get("date")]
+        if not rows:
+            return None
+        return _assistant_chart(
+            title,
+            "mixed",
+            x_axis=[str(item.get("date") or "") for item in rows],
+            series=[
+                {"name": volume_label, "type": "bar", "unit": "升", "data": [_chart_number(item.get("volume")) for item in rows]},
+                {"name": amount_label, "type": "line", "unit": "索姆", "data": [_chart_number(item.get("amount")) for item in rows]},
+            ],
+            summary="柱状为销量，折线为金额。",
+        )
+
+
+    def _assistant_resource_pie_chart(title, rows, *, value_key="volume", unit="升"):
+        clean_rows = [
+            {"name": item.get("name") or item.get("product") or "--", "value": item.get(value_key)}
+            for item in rows or []
+            if _chart_number(item.get(value_key))
+        ]
+        return _assistant_chart(title, "pie", data=clean_rows, unit=unit, summary="按油品占比展示。")
+
+
     def _assistant_retail_tables(label, payload, question):
         tables = []
         summary = payload.get("summary") or {}
@@ -2065,6 +2562,40 @@ def register_assistant_routes(app):
                 ],
             ))
         return tables
+
+
+    def _assistant_retail_charts(label, payload, question, *, visual=None):
+        charts = []
+        resources = [item for item in payload.get("byResource") or [] if float(item.get("volume") or 0) or float(item.get("amount") or 0)]
+        stations = [item for item in payload.get("stations") or [] if float(item.get("volume") or 0) or float(item.get("amount") or 0)]
+        regions = [item for item in payload.get("regions") or [] if float(item.get("volume") or 0) or float(item.get("amount") or 0)]
+        preferred = (visual or {}).get("preferredType")
+
+        if resources:
+            if preferred == "pie" or _assistant_has_any(question, ("占比", "结构", "构成")):
+                chart = _assistant_resource_pie_chart(f"{label}零售油品销量占比", resources)
+            else:
+                chart = _assistant_chart(
+                    f"{label}零售油品销量与金额",
+                    "mixed",
+                    x_axis=[item.get("name") or "--" for item in resources],
+                    series=[
+                        {"name": "销量", "type": "bar", "unit": "升", "data": [item.get("volume") for item in resources]},
+                        {"name": "金额", "type": "line", "unit": "索姆", "data": [item.get("amount") for item in resources]},
+                    ],
+                    summary="按油品展示销量和金额。",
+                )
+            if chart:
+                charts.append(chart)
+        if stations and (_assistant_has_any(question, ("站点", "加油站", "排行", "排名", "最高", "最多", "最好")) or (visual or {}).get("requested")):
+            chart = _assistant_rank_chart(f"{label}零售站点销量排行", stations, "volume", limit=12)
+            if chart:
+                charts.append(chart)
+        if regions and _assistant_has_any(question, ("区域", "州", "地区")):
+            chart = _assistant_rank_chart(f"{label}零售区域销量排行", regions, "volume", name_key="region", limit=10)
+            if chart:
+                charts.append(chart)
+        return charts[:3]
 
 
     def _assistant_self_use_product_name(resource_key, fallback=""):
@@ -2122,7 +2653,7 @@ def register_assistant_routes(app):
         }
 
 
-    def _assistant_self_use_data_for_period(start, end):
+    def _assistant_self_use_data_for_period(start, end, resource=None):
         if end <= start:
             return _assistant_empty_self_use_data(start, end)
 
@@ -2137,6 +2668,9 @@ def register_assistant_routes(app):
             return _assistant_empty_self_use_data(start, end, str(exc))
 
         records = list((raw_data or {}).get("records") or [])
+        if isinstance(resource, dict) and resource.get("resourceKey"):
+            resource_key = _assistant_int(resource.get("resourceKey"))
+            records = [record for record in records if _assistant_int(record.get("resourceKey")) == resource_key]
         catalog = retail_station_catalog_cached()
         stations = {}
         resources = {}
@@ -2327,6 +2861,31 @@ def register_assistant_routes(app):
         return tables
 
 
+    def _assistant_self_use_charts(label, data, question, *, visual=None):
+        charts = []
+        daily = data.get("daily") or []
+        resources = data.get("byResource") or []
+        stations = data.get("byStation") or []
+        preferred = (visual or {}).get("preferredType")
+        if daily and (preferred in {"line", "auto"} or _assistant_has_any(question, ("趋势", "走势", "每日", "按天", "日趋势", "图"))):
+            chart = _assistant_daily_mixed_chart(f"{label}自用油每日趋势", daily, volume_label="自用油量", amount_label="金额")
+            if chart:
+                charts.append(chart)
+        if resources:
+            chart = (
+                _assistant_resource_pie_chart(f"{label}自用油油品占比", resources)
+                if preferred == "pie" or _assistant_has_any(question, ("占比", "结构"))
+                else _assistant_rank_chart(f"{label}自用油油品排行", resources, "volume", limit=10)
+            )
+            if chart:
+                charts.append(chart)
+        if stations and (_assistant_has_any(question, ("站点", "加油站", "排行", "排名", "哪个")) or (visual or {}).get("requested")):
+            chart = _assistant_rank_chart(f"{label}自用油站点排行", stations, "volume", limit=12)
+            if chart:
+                charts.append(chart)
+        return charts[:3]
+
+
     def _assistant_retail_inventory_answer(label, data):
         return (
             f"{label}零售期末库存如下：\n"
@@ -2367,6 +2926,28 @@ def register_assistant_routes(app):
             ["加油站", "区域", "期末库存", "折算吨位"],
             station_rows,
         )]
+
+
+    def _assistant_retail_inventory_charts(label, data):
+        catalog = retail_station_catalog_cached()
+        rows = []
+        for raw_shop_key, item in (data.get("stations") or {}).items():
+            try:
+                shop_key = int(raw_shop_key)
+            except (TypeError, ValueError):
+                continue
+            info = catalog.get(shop_key, {})
+            inventory = float(item.get("endInventory") or 0)
+            tons = float(item.get("endInventoryTons") or 0)
+            if inventory or tons:
+                rows.append({
+                    "name": info.get("name") or f"Station-{shop_key}",
+                    "volume": inventory,
+                    "tons": tons,
+                })
+        rows.sort(key=lambda item: item["volume"], reverse=True)
+        chart = _assistant_rank_chart(f"{label}零售期末库存排行", rows, "volume", limit=15)
+        return [chart] if chart else []
 
 
     def _assistant_wholesale_tables(label, data, question):
@@ -2423,6 +3004,44 @@ def register_assistant_routes(app):
         return tables
 
 
+    def _assistant_wholesale_charts(label, data, question):
+        cards = data.get("cards") or {}
+        labels = {"export_wholesale": "出口批发", "local_wholesale": "本地批发", "unknown": "待识别", "transfer": "外运", "processing": "代加工", "procurement": "采购"}
+        category_rows = [
+            {"name": labels.get(key, key), "tons": float((cards.get(key) or {}).get("tons") or 0)}
+            for key in ("export_wholesale", "local_wholesale", "unknown", "transfer")
+        ]
+        charts = []
+        chart = _assistant_rank_chart(f"{label}批发分类吨数", category_rows, "tons", limit=6)
+        if chart:
+            charts.append(chart)
+        rankings = data.get("customerRankings") or {}
+        if _assistant_has_any(question, ("客户", "排行", "排名", "top", "TOP")):
+            customer_rows = []
+            for key in ("export_wholesale", "local_wholesale"):
+                for item in (rankings.get(key) or [])[:8]:
+                    customer_rows.append({
+                        "name": f"{labels.get(key, key)}-{item.get('name') or '--'}",
+                        "tons": item.get("tons"),
+                    })
+            chart = _assistant_rank_chart(f"{label}批发客户吨数排行", sorted(customer_rows, key=lambda item: float(item.get("tons") or 0), reverse=True), "tons", limit=12)
+            if chart:
+                charts.append(chart)
+        products = data.get("productRankings") or {}
+        if _assistant_has_any(question, ("油品", "产品", "结构", "品类")):
+            product_rows = []
+            for key in ("export_wholesale", "local_wholesale", "transfer"):
+                for item in (products.get(key) or [])[:8]:
+                    product_rows.append({
+                        "name": f"{labels.get(key, key)}-{item.get('name') or item.get('product') or '--'}",
+                        "tons": item.get("tons"),
+                    })
+            chart = _assistant_rank_chart(f"{label}批发油品吨数排行", sorted(product_rows, key=lambda item: float(item.get("tons") or 0), reverse=True), "tons", limit=12)
+            if chart:
+                charts.append(chart)
+        return charts[:3]
+
+
     def _assistant_combined_tables(label, data):
         retail = data.get("retail") or {}
         wholesale = data.get("wholesale") or {}
@@ -2437,6 +3056,31 @@ def register_assistant_routes(app):
                 ["外运", _fmt_tons(combined.get("transferTons")), "--"],
             ],
         )]
+
+
+    def _assistant_combined_charts(label, data):
+        retail = data.get("retail") or {}
+        wholesale = data.get("wholesale") or {}
+        combined = data.get("combined") or {}
+        chart = _assistant_chart(
+            f"{label}合并经营结构",
+            "bar",
+            x_axis=["合计", "零售", "批发销售", "外运"],
+            series=[{
+                "name": "吨数",
+                "type": "bar",
+                "unit": "吨",
+                "data": [
+                    combined.get("salesTons"),
+                    retail.get("tons"),
+                    wholesale.get("salesTons"),
+                    combined.get("transferTons"),
+                ],
+            }],
+            unit="吨",
+            summary="按板块展示合并吨数结构。",
+        )
+        return [chart] if chart else []
 
 
     def _assistant_review_tables(label, data):
@@ -2589,6 +3233,33 @@ def register_assistant_routes(app):
         )]
 
 
+    def _assistant_exchange_charts(cur, label, start, end):
+        cur.execute(
+            """
+            SELECT rate_date, usd_kgs, cny_kgs
+            FROM exchange_rates
+            WHERE rate_date >= %s AND rate_date < %s
+            ORDER BY rate_date ASC
+            LIMIT 180
+            """,
+            (start, end),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return []
+        chart = _assistant_chart(
+            f"{label}汇率走势",
+            "line",
+            x_axis=[str(row[0]) for row in rows],
+            series=[
+                {"name": "USD/KGS", "type": "line", "unit": "", "data": [row[1] for row in rows]},
+                {"name": "CNY/KGS", "type": "line", "unit": "", "data": [row[2] for row in rows]},
+            ],
+            summary="按日期展示美元和人民币兑索姆汇率。",
+        )
+        return [chart] if chart else []
+
+
     def _assistant_density_answer(cur):
         cur.execute(
             """
@@ -2634,6 +3305,31 @@ def register_assistant_routes(app):
             ["油品", "密度", "生效日期", "来源"],
             [[name, f"{float(density):.6f}", effective_date, source or "--"] for name, density, effective_date, source in rows],
         )]
+
+
+    def _assistant_density_charts(cur):
+        cur.execute(
+            """
+            SELECT p.display_name, d.density
+            FROM product_density_history d
+            JOIN products p ON p.id = d.product_id
+            JOIN (
+                SELECT product_id, MAX(effective_date) effective_date
+                FROM product_density_history
+                GROUP BY product_id
+            ) latest ON latest.product_id = d.product_id AND latest.effective_date = d.effective_date
+            ORDER BY p.product_code
+            """
+        )
+        rows = cur.fetchall()
+        chart = _assistant_chart(
+            "当前油品密度",
+            "bar",
+            x_axis=[str(name) for name, _ in rows],
+            series=[{"name": "密度", "type": "bar", "unit": "", "data": [density for _, density in rows]}],
+            summary="展示最新生效密度。",
+        )
+        return [chart] if chart else []
 
 
     def _assistant_contract_answer(cur, question):
@@ -2717,6 +3413,835 @@ def register_assistant_routes(app):
             label = "出口批发" if sales_type == "export_wholesale" else ("本地批发" if sales_type == "local_wholesale" else "其他")
             rows.append([no or "--", customer or "--", product or "--", f"{float(price or 0):,.2f} {currency or ''}".strip(), valid_from or "--", valid_to or "--", label])
         return [_assistant_table("合同明细", ["合同号", "客户", "油品", "价格", "生效", "到期", "类型"], rows)] if rows else []
+
+
+    _CLASSIFICATION_LABELS = {
+        "export_wholesale": "出口批发",
+        "local_wholesale": "本地批发",
+        "transfer": "外运/调拨",
+        "procurement": "采购",
+        "processing": "代加工",
+        "unknown": "未分类",
+    }
+
+
+    def _assistant_classification_label(value):
+        return _CLASSIFICATION_LABELS.get(str(value or ""), str(value or "--"))
+
+
+    def _assistant_table_exists(cur, table_name):
+        try:
+            cur.execute("SHOW TABLES LIKE %s", (table_name,))
+            return bool(cur.fetchone())
+        except pymysql.MySQLError:
+            return False
+
+
+    def _assistant_column_exists(cur, table_name, column_name):
+        try:
+            cur.execute(f"SHOW COLUMNS FROM {table_name} LIKE %s", (column_name,))
+            return bool(cur.fetchone())
+        except pymysql.MySQLError:
+            return False
+
+
+    def _assistant_procurement_data(start, end):
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS records,
+                           COALESCE(SUM(weight_tons), 0) AS tons,
+                           COUNT(DISTINCT COALESCE(NULLIF(standard_entity_name, ''), NULLIF(sender_name, ''))) AS suppliers,
+                           COUNT(DISTINCT NULLIF(raw_product_name, '')) AS products
+                    FROM wholesale_detail_records
+                    WHERE classification = 'procurement'
+                      AND business_date >= %s AND business_date < %s
+                    """,
+                    (start, end),
+                )
+                summary = cur.fetchone() or {}
+                cur.execute(
+                    """
+                    SELECT COALESCE(NULLIF(standard_entity_name, ''), NULLIF(sender_name, ''), '--') AS name,
+                           COUNT(*) AS records,
+                           COALESCE(SUM(weight_tons), 0) AS tons
+                    FROM wholesale_detail_records
+                    WHERE classification = 'procurement'
+                      AND business_date >= %s AND business_date < %s
+                    GROUP BY COALESCE(NULLIF(standard_entity_name, ''), NULLIF(sender_name, ''), '--')
+                    ORDER BY tons DESC, records DESC
+                    LIMIT 12
+                    """,
+                    (start, end),
+                )
+                suppliers = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    """
+                    SELECT COALESCE(NULLIF(raw_product_name, ''), '--') AS name,
+                           COUNT(*) AS records,
+                           COALESCE(SUM(weight_tons), 0) AS tons
+                    FROM wholesale_detail_records
+                    WHERE classification = 'procurement'
+                      AND business_date >= %s AND business_date < %s
+                    GROUP BY COALESCE(NULLIF(raw_product_name, ''), '--')
+                    ORDER BY tons DESC, records DESC
+                    LIMIT 12
+                    """,
+                    (start, end),
+                )
+                products = [dict(row) for row in cur.fetchall()]
+                return {"summary": dict(summary), "suppliers": suppliers, "products": products}
+        finally:
+            conn.close()
+
+
+    def _assistant_procurement_answer(label, data):
+        summary = data.get("summary") or {}
+        lines = [f"{label}原料采购数据如下："]
+        lines.append(
+            f"合计 {int(summary.get('records') or 0)} 笔，"
+            f"{float(summary.get('tons') or 0):,.3f} 吨，"
+            f"覆盖供应商 {int(summary.get('suppliers') or 0)} 个、油品 {int(summary.get('products') or 0)} 类。"
+        )
+        if data.get("suppliers"):
+            lines.append("供应商采购量排行：")
+            for item in data["suppliers"][:5]:
+                lines.append(f"{item.get('name') or '--'}：{float(item.get('tons') or 0):,.3f} 吨，{int(item.get('records') or 0)} 笔")
+        return "\n".join(lines)
+
+
+    def _assistant_procurement_tables(label, data):
+        summary = data.get("summary") or {}
+        tables = [_assistant_table(
+            f"{label}采购汇总",
+            ["指标", "数值"],
+            [
+                ["记录数", int(summary.get("records") or 0)],
+                ["采购吨数", f"{float(summary.get('tons') or 0):,.3f}"],
+                ["供应商数", int(summary.get("suppliers") or 0)],
+                ["油品数", int(summary.get("products") or 0)],
+            ],
+        )]
+        if data.get("suppliers"):
+            tables.append(_assistant_table(
+                f"{label}供应商采购排行",
+                ["供应商", "吨数", "记录数"],
+                [[item.get("name") or "--", f"{float(item.get('tons') or 0):,.3f}", int(item.get("records") or 0)] for item in data["suppliers"]],
+            ))
+        if data.get("products"):
+            tables.append(_assistant_table(
+                f"{label}采购油品排行",
+                ["油品", "吨数", "记录数"],
+                [[item.get("name") or "--", f"{float(item.get('tons') or 0):,.3f}", int(item.get("records") or 0)] for item in data["products"]],
+            ))
+        return tables
+
+
+    def _assistant_procurement_charts(label, data):
+        charts = []
+        supplier_chart = _assistant_rank_chart(f"{label}供应商采购吨数排行", data.get("suppliers") or [], "tons", name_key="name")
+        product_chart = _assistant_rank_chart(f"{label}采购油品吨数排行", data.get("products") or [], "tons", name_key="name")
+        if supplier_chart:
+            charts.append(supplier_chart)
+        if product_chart:
+            charts.append(product_chart)
+        return charts
+
+
+    def _assistant_weighing_status_from_text(text):
+        if _assistant_contains_any(text, ("待审核", "待复核", "未审核", "待处理")):
+            return "pending"
+        if _assistant_contains_any(text, ("已通过", "已审核", "通过")):
+            return "approved"
+        if _assistant_contains_any(text, ("驳回", "拒绝", "不通过")):
+            return "rejected"
+        return None
+
+
+    def _assistant_weighing_classification_from_text(text):
+        if _assistant_contains_any(text, ("出口", "出口批发")):
+            return "export_wholesale"
+        if _assistant_contains_any(text, ("本地", "本地批发")):
+            return "local_wholesale"
+        if _assistant_contains_any(text, ("外运", "调拨")):
+            return "transfer"
+        if _assistant_contains_any(text, ("采购", "进货")):
+            return "procurement"
+        if _assistant_contains_any(text, ("代加工", "加工")):
+            return "processing"
+        if _assistant_contains_any(text, ("未知", "未分类")):
+            return "unknown"
+        return None
+
+
+    def _assistant_weighing_data(start, end, question):
+        date_to = end - timedelta(days=1)
+        status = _assistant_weighing_status_from_text(question)
+        classification = _assistant_weighing_classification_from_text(question)
+        data = get_weighing_list(
+            date_from=start,
+            date_to=date_to,
+            status=status,
+            classification=classification,
+            page=1,
+            page_size=5000,
+        )
+        items = data.get("items") or []
+        by_classification = {}
+        by_status = {}
+        by_source = {}
+        for item in items:
+            cls = item.get("classification") or "unknown"
+            status_key = item.get("status") or "pending"
+            source = item.get("source") or "unknown"
+            for bucket, key in ((by_classification, cls), (by_status, status_key), (by_source, source)):
+                row = bucket.setdefault(key, {"key": key, "records": 0, "tons": 0.0})
+                row["records"] += 1
+                row["tons"] += float(item.get("netWeight") or 0)
+        return {
+            "summary": {
+                "records": int(data.get("total") or len(items)),
+                "tons": float(data.get("totalWeight") or 0),
+                "status": status,
+                "classification": classification,
+            },
+            "byClassification": sorted(by_classification.values(), key=lambda row: row["tons"], reverse=True),
+            "byStatus": sorted(by_status.values(), key=lambda row: row["records"], reverse=True),
+            "bySource": sorted(by_source.values(), key=lambda row: row["records"], reverse=True),
+            "items": items[:12],
+        }
+
+
+    def _assistant_weighing_answer(label, data):
+        summary = data.get("summary") or {}
+        scope = []
+        if summary.get("classification"):
+            scope.append(_assistant_classification_label(summary.get("classification")))
+        if summary.get("status"):
+            status_label = {"pending": "待审核", "approved": "已通过", "rejected": "已驳回"}.get(summary.get("status"), summary.get("status"))
+            scope.append(status_label)
+        suffix = f"（{'、'.join(scope)}）" if scope else ""
+        lines = [f"{label}称重数据{suffix}如下："]
+        lines.append(f"合计 {int(summary.get('records') or 0)} 笔，净重 {float(summary.get('tons') or 0):,.3f} 吨。")
+        if data.get("byClassification"):
+            lines.append("分类汇总：")
+            for item in data["byClassification"][:6]:
+                lines.append(f"{_assistant_classification_label(item.get('key'))}：{item['tons']:,.3f} 吨，{item['records']} 笔")
+        return "\n".join(lines)
+
+
+    def _assistant_weighing_tables(label, data):
+        summary = data.get("summary") or {}
+        tables = [_assistant_table(
+            f"{label}称重汇总",
+            ["指标", "数值"],
+            [["记录数", int(summary.get("records") or 0)], ["净重(吨)", f"{float(summary.get('tons') or 0):,.3f}"]],
+        )]
+        if data.get("byClassification"):
+            tables.append(_assistant_table(
+                f"{label}称重分类",
+                ["分类", "吨数", "记录数"],
+                [[_assistant_classification_label(item.get("key")), f"{item['tons']:,.3f}", item["records"]] for item in data["byClassification"]],
+            ))
+        if data.get("byStatus"):
+            tables.append(_assistant_table(
+                f"{label}审核状态",
+                ["状态", "吨数", "记录数"],
+                [[{"pending": "待审核", "approved": "已通过", "rejected": "已驳回"}.get(item.get("key"), item.get("key")), f"{item['tons']:,.3f}", item["records"]] for item in data["byStatus"]],
+            ))
+        if data.get("items"):
+            tables.append(_assistant_table(
+                f"{label}近期称重明细",
+                ["日期", "车号", "发货", "收货", "油品", "净重(吨)", "分类", "状态"],
+                [
+                    [
+                        item.get("businessDate") or "--",
+                        item.get("vehicleNo") or "--",
+                        item.get("senderName") or "--",
+                        item.get("receiverName") or "--",
+                        item.get("standardProductName") or item.get("rawProductName") or "--",
+                        f"{float(item.get('netWeight') or 0):,.3f}",
+                        _assistant_classification_label(item.get("classification")),
+                        item.get("status") or "--",
+                    ]
+                    for item in data["items"]
+                ],
+            ))
+        return tables
+
+
+    def _assistant_weighing_charts(label, data):
+        chart = _assistant_chart(
+            f"{label}称重分类吨数",
+            "bar",
+            x_axis=[_assistant_classification_label(item.get("key")) for item in data.get("byClassification") or []],
+            series=[{"name": "净重", "type": "bar", "unit": "吨", "data": [item.get("tons") for item in data.get("byClassification") or []]}],
+            unit="吨",
+            summary="按称重自动分类汇总净重。",
+        )
+        return [chart] if chart else []
+
+
+    def _assistant_materials_data(start, end):
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                data = {"summary": {}, "inventory": [], "inbound": {}, "orderStatus": []}
+                if _assistant_table_exists(cur, "materials"):
+                    cur.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) AS active FROM materials")
+                    data["summary"]["materials"] = dict(cur.fetchone() or {})
+                if _assistant_table_exists(cur, "material_categories"):
+                    cur.execute("SELECT COUNT(*) AS total FROM material_categories WHERE is_active = TRUE")
+                    data["summary"]["categories"] = int((cur.fetchone() or {}).get("total") or 0)
+                if _assistant_table_exists(cur, "depots"):
+                    cur.execute("SELECT COUNT(*) AS total FROM depots WHERE is_active = TRUE")
+                    data["summary"]["depots"] = int((cur.fetchone() or {}).get("total") or 0)
+                if _assistant_table_exists(cur, "material_inventory"):
+                    cur.execute(
+                        """
+                        SELECT COALESCE(m.name_zh, CONCAT('物资-', i.material_id)) AS material_name,
+                               COALESCE(d.name_zh, CONCAT('库-', i.depot_id)) AS depot_name,
+                               m.unit,
+                               COALESCE(i.quantity, 0) AS quantity,
+                               i.updated_at
+                        FROM material_inventory i
+                        LEFT JOIN materials m ON m.id = i.material_id
+                        LEFT JOIN depots d ON d.id = i.depot_id
+                        ORDER BY i.quantity DESC
+                        LIMIT 20
+                        """
+                    )
+                    data["inventory"] = [dict(row) for row in cur.fetchall()]
+                if _assistant_table_exists(cur, "material_inbound"):
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS records,
+                               COALESCE(SUM(quantity), 0) AS quantity,
+                               COALESCE(SUM(total_amount), 0) AS amount
+                        FROM material_inbound
+                        WHERE inbound_date >= %s AND inbound_date < %s
+                        """,
+                        (start, end),
+                    )
+                    data["inbound"] = dict(cur.fetchone() or {})
+                if _assistant_table_exists(cur, "material_transfer_orders"):
+                    date_expr = "COALESCE(o.order_date, DATE(o.created_at))" if _assistant_column_exists(cur, "material_transfer_orders", "order_date") else "DATE(o.created_at)"
+                    cur.execute(
+                        f"""
+                        SELECT COALESCE(status, 'pending') AS status,
+                               COUNT(*) AS records,
+                               COALESCE(SUM(requested_qty), 0) AS quantity
+                        FROM material_transfer_orders o
+                        WHERE {date_expr} >= %s AND {date_expr} < %s
+                        GROUP BY COALESCE(status, 'pending')
+                        ORDER BY records DESC
+                        """,
+                        (start, end),
+                    )
+                    data["orderStatus"] = [dict(row) for row in cur.fetchall()]
+                return data
+        finally:
+            conn.close()
+
+
+    def _assistant_materials_answer(label, data, transfer_only=False):
+        summary = data.get("summary") or {}
+        material_summary = summary.get("materials") or {}
+        inbound = data.get("inbound") or {}
+        lines = [f"{label}物资{'调拨单' if transfer_only else '数据'}如下："]
+        if not transfer_only:
+            lines.append(
+                f"物资字典 {int(material_summary.get('total') or 0)} 项，启用 {int(material_summary.get('active') or 0)} 项；"
+                f"分类 {int(summary.get('categories') or 0)} 个，库点 {int(summary.get('depots') or 0)} 个。"
+            )
+            lines.append(
+                f"本区间入库 {int(inbound.get('records') or 0)} 笔，数量 {float(inbound.get('quantity') or 0):,.3f}，金额 {float(inbound.get('amount') or 0):,.2f}。"
+            )
+        if data.get("orderStatus"):
+            lines.append("调拨单状态：")
+            for item in data["orderStatus"]:
+                lines.append(f"{item.get('status') or '--'}：{int(item.get('records') or 0)} 单，数量 {float(item.get('quantity') or 0):,.3f}")
+        elif transfer_only:
+            lines.append("本区间暂无调拨单记录。")
+        return "\n".join(lines)
+
+
+    def _assistant_materials_tables(label, data, transfer_only=False):
+        tables = []
+        if not transfer_only:
+            summary = data.get("summary") or {}
+            material_summary = summary.get("materials") or {}
+            inbound = data.get("inbound") or {}
+            tables.append(_assistant_table(
+                f"{label}物资汇总",
+                ["指标", "数值"],
+                [
+                    ["物资字典", int(material_summary.get("total") or 0)],
+                    ["启用物资", int(material_summary.get("active") or 0)],
+                    ["分类数", int(summary.get("categories") or 0)],
+                    ["库点数", int(summary.get("depots") or 0)],
+                    ["区间入库笔数", int(inbound.get("records") or 0)],
+                    ["区间入库金额", f"{float(inbound.get('amount') or 0):,.2f}"],
+                ],
+            ))
+            if data.get("inventory"):
+                tables.append(_assistant_table(
+                    "当前物资库存",
+                    ["物资", "库点", "数量", "单位", "更新时间"],
+                    [[item.get("material_name") or "--", item.get("depot_name") or "--", f"{float(item.get('quantity') or 0):,.3f}", item.get("unit") or "", item.get("updated_at") or "--"] for item in data["inventory"]],
+                ))
+        if data.get("orderStatus"):
+            tables.append(_assistant_table(
+                f"{label}调拨单状态",
+                ["状态", "单数", "数量"],
+                [[item.get("status") or "--", int(item.get("records") or 0), f"{float(item.get('quantity') or 0):,.3f}"] for item in data["orderStatus"]],
+            ))
+        return tables
+
+
+    def _assistant_materials_charts(label, data, transfer_only=False):
+        charts = []
+        if not transfer_only and data.get("inventory"):
+            chart = _assistant_chart(
+                "当前物资库存排行",
+                "bar",
+                x_axis=[item.get("material_name") or "--" for item in data["inventory"][:12]],
+                series=[{"name": "库存数量", "type": "bar", "unit": "", "data": [item.get("quantity") for item in data["inventory"][:12]]}],
+                summary="按当前库存数量排序。",
+            )
+            if chart:
+                charts.append(chart)
+        if data.get("orderStatus"):
+            chart = _assistant_chart(
+                f"{label}调拨单状态",
+                "bar",
+                x_axis=[item.get("status") or "--" for item in data["orderStatus"]],
+                series=[{"name": "单数", "type": "bar", "unit": "单", "data": [item.get("records") for item in data["orderStatus"]]}],
+                unit="单",
+                summary="按调拨单状态汇总。",
+            )
+            if chart:
+                charts.append(chart)
+        return charts
+
+
+    def _assistant_transfer_loss_data(start, end):
+        names = retail_station_catalog_cached()
+        retail_cfg = dict(DB_CONFIG)
+        retail_cfg["database"] = os.getenv("RETAIL_DB_NAME", "ocw")
+        retail_cfg["autocommit"] = True
+        retail_rows = []
+        retail_conn = pymysql.connect(**retail_cfg)
+        try:
+            with retail_conn.cursor(pymysql.cursors.DictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DATE(AcceptDateTime) AS supply_date,
+                           ShopKey,
+                           COALESCE(SUM(NULLIF(Mass, 0)), SUM(NULLIF(MassTTN, 0)), SUM(NULLIF(TankerMass, 0)), 0) / 1000 AS tons,
+                           SUM(Volume) AS liters,
+                           COUNT(*) AS rows
+                    FROM supply
+                    WHERE AcceptDateTime >= %s AND AcceptDateTime < %s
+                      AND COALESCE(Deleted, 0) = 0
+                    GROUP BY DATE(AcceptDateTime), ShopKey
+                    """,
+                    (start, end),
+                )
+                retail_rows = [dict(row) for row in cur.fetchall()]
+        finally:
+            retail_conn.close()
+
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT business_date,
+                           entity_type,
+                           entity_code,
+                           COALESCE(NULLIF(standard_entity_name, ''), raw_entity_name) AS target_name,
+                           SUM(weight_tons) AS tons,
+                           COUNT(*) AS rows
+                    FROM wholesale_detail_records
+                    WHERE business_date >= %s AND business_date < %s
+                      AND classification = 'transfer'
+                    GROUP BY business_date, entity_type, entity_code, COALESCE(NULLIF(standard_entity_name, ''), raw_entity_name)
+                    """,
+                    (start - timedelta(days=3), end),
+                )
+                wholesale_rows = [dict(row) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+        direct_index = {}
+        for row in wholesale_rows:
+            if row.get("entity_type") != "retail_station":
+                continue
+            try:
+                shop_key = int(row.get("entity_code") or 0)
+            except (TypeError, ValueError):
+                continue
+            key = (row.get("business_date"), shop_key)
+            item = direct_index.setdefault(key, {"tons": 0.0, "rows": 0})
+            item["tons"] += float(row.get("tons") or 0)
+            item["rows"] += int(row.get("rows") or 0)
+
+        items = []
+        for supply in retail_rows:
+            supply_date = supply.get("supply_date")
+            shop_key = int(supply.get("ShopKey") or 0)
+            matched = None
+            for days in range(1, 4):
+                key = (supply_date - timedelta(days=days), shop_key)
+                if key in direct_index:
+                    matched = {**direct_index[key], "date": key[0], "daysBefore": days}
+                    break
+            actual_qty = float(supply.get("tons") or 0)
+            system_qty = float((matched or {}).get("tons") or 0)
+            loss_qty = system_qty - actual_qty if matched else 0.0
+            loss_rate = loss_qty / system_qty if matched and system_qty else 0.0
+            station = names.get(shop_key, {})
+            items.append({
+                "route": "Example总库-加油站" if matched else "分库-加油站",
+                "station": station.get("short") or station.get("name") or f"{shop_key}号站",
+                "systemQty": round(system_qty, 3),
+                "actualQty": round(actual_qty, 3),
+                "lossQty": round(loss_qty, 3),
+                "lossRate": round(loss_rate, 4),
+                "supplyDate": supply_date,
+                "evidence": f"{matched['daysBefore']}天前有外运称重" if matched else "前1-3天未匹配到Example直发称重",
+            })
+
+        summary = {
+            "records": len(items),
+            "matched": sum(1 for item in items if item["systemQty"] > 0),
+            "systemQty": sum(item["systemQty"] for item in items),
+            "actualQty": sum(item["actualQty"] for item in items),
+            "lossQty": sum(item["lossQty"] for item in items),
+        }
+        items.sort(key=lambda item: abs(float(item.get("lossQty") or 0)), reverse=True)
+        return {"summary": summary, "items": items[:20]}
+
+
+    def _assistant_transfer_loss_answer(label, data):
+        summary = data.get("summary") or {}
+        lines = [f"{label}调拨损耗摘要如下："]
+        lines.append(
+            f"收油记录 {int(summary.get('records') or 0)} 条，匹配Example直发 {int(summary.get('matched') or 0)} 条；"
+            f"系统吨数 {float(summary.get('systemQty') or 0):,.3f}，实收吨数 {float(summary.get('actualQty') or 0):,.3f}，"
+            f"差异 {float(summary.get('lossQty') or 0):,.3f} 吨。"
+        )
+        if data.get("items"):
+            lines.append("差异较大的站点：")
+            for item in data["items"][:5]:
+                lines.append(f"{item.get('station') or '--'}：{item.get('lossQty'):,.3f} 吨，{item.get('evidence') or '--'}")
+        return "\n".join(lines)
+
+
+    def _assistant_transfer_loss_tables(label, data):
+        summary = data.get("summary") or {}
+        tables = [_assistant_table(
+            f"{label}调拨损耗汇总",
+            ["指标", "数值"],
+            [
+                ["收油记录", int(summary.get("records") or 0)],
+                ["匹配Example直发", int(summary.get("matched") or 0)],
+                ["系统吨数", f"{float(summary.get('systemQty') or 0):,.3f}"],
+                ["实收吨数", f"{float(summary.get('actualQty') or 0):,.3f}"],
+                ["差异吨数", f"{float(summary.get('lossQty') or 0):,.3f}"],
+            ],
+        )]
+        if data.get("items"):
+            tables.append(_assistant_table(
+                f"{label}调拨损耗明细",
+                ["站点", "路线", "系统吨数", "实收吨数", "差异吨数", "损耗率", "证据"],
+                [
+                    [
+                        item.get("station") or "--",
+                        item.get("route") or "--",
+                        f"{float(item.get('systemQty') or 0):,.3f}",
+                        f"{float(item.get('actualQty') or 0):,.3f}",
+                        f"{float(item.get('lossQty') or 0):,.3f}",
+                        _fmt_pct(float(item.get("lossRate") or 0) * 100),
+                        item.get("evidence") or "--",
+                    ]
+                    for item in data["items"]
+                ],
+            ))
+        return tables
+
+
+    def _assistant_transfer_loss_charts(label, data):
+        rows = data.get("items") or []
+        chart = _assistant_chart(
+            f"{label}调拨差异吨数",
+            "bar",
+            x_axis=[item.get("station") or "--" for item in rows[:12]],
+            series=[{"name": "差异吨数", "type": "bar", "unit": "吨", "data": [item.get("lossQty") for item in rows[:12]]}],
+            unit="吨",
+            summary="正值表示系统外运吨数高于零售实收吨数。",
+        )
+        return [chart] if chart else []
+
+
+    def _assistant_system_health_data():
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                data = {"database": "ok", "automation": [], "ai": {}, "knowledge": {}, "users": {}}
+                if _assistant_table_exists(cur, "automation_task_runs"):
+                    cur.execute(
+                        """
+                        SELECT task_name, status, MAX(finished_at) AS last_finished_at, COUNT(*) AS runs
+                        FROM automation_task_runs
+                        WHERE started_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                        GROUP BY task_name, status
+                        ORDER BY last_finished_at DESC
+                        LIMIT 20
+                        """
+                    )
+                    data["automation"] = [dict(row) for row in cur.fetchall()]
+                if _assistant_table_exists(cur, "ai_agent_call_logs"):
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS total,
+                               SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) AS ok_count,
+                               SUM(CASE WHEN status <> 'ok' THEN 1 ELSE 0 END) AS failed_count
+                        FROM ai_agent_call_logs
+                        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                        """
+                    )
+                    data["ai"] = dict(cur.fetchone() or {})
+                if _assistant_table_exists(cur, "knowledge_attachments"):
+                    cur.execute(
+                        """
+                        SELECT extraction_status, COUNT(*) AS records
+                        FROM knowledge_attachments
+                        GROUP BY extraction_status
+                        """
+                    )
+                    data["knowledge"]["attachments"] = [dict(row) for row in cur.fetchall()]
+                if _assistant_table_exists(cur, "system_users"):
+                    cur.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) AS active FROM system_users")
+                    data["users"] = dict(cur.fetchone() or {})
+                return data
+        finally:
+            conn.close()
+
+
+    def _assistant_system_health_answer(data):
+        lines = ["系统健康只读摘要如下："]
+        lines.append("数据库连接：正常。" if data.get("database") == "ok" else "数据库连接：异常。")
+        ai = data.get("ai") or {}
+        if ai:
+            lines.append(f"AI 最近7天调用 {int(ai.get('total') or 0)} 次，成功 {int(ai.get('ok_count') or 0)} 次，失败 {int(ai.get('failed_count') or 0)} 次。")
+        if data.get("automation"):
+            warning = [row for row in data["automation"] if str(row.get("status") or "").lower() not in {"ok", "success", "completed"}]
+            lines.append(f"自动任务最近7天记录 {len(data['automation'])} 组，其中非成功状态 {len(warning)} 组。")
+        knowledge = (data.get("knowledge") or {}).get("attachments") or []
+        if knowledge:
+            lines.append("知识库附件索引：" + "，".join(f"{row.get('extraction_status') or '--'} {int(row.get('records') or 0)}" for row in knowledge))
+        users = data.get("users") or {}
+        if users:
+            lines.append(f"用户：共 {int(users.get('total') or 0)} 个，启用 {int(users.get('active') or 0)} 个。")
+        return "\n".join(lines)
+
+
+    def _assistant_system_health_tables(data):
+        tables = [_assistant_table("系统健康摘要", ["项目", "状态/数值"], [["数据库", data.get("database") or "--"]])]
+        ai = data.get("ai") or {}
+        if ai:
+            tables[0]["rows"].extend([["AI最近7天调用", int(ai.get("total") or 0)], ["AI成功", int(ai.get("ok_count") or 0)], ["AI失败", int(ai.get("failed_count") or 0)]])
+        if data.get("automation"):
+            tables.append(_assistant_table(
+                "自动任务最近7天",
+                ["任务", "状态", "最近完成", "次数"],
+                [[row.get("task_name") or "--", row.get("status") or "--", row.get("last_finished_at") or "--", int(row.get("runs") or 0)] for row in data["automation"]],
+            ))
+        return tables
+
+
+    def _assistant_knowledge_data(question):
+        query = re.sub(r"知识库|有没有|是否|里|中|说明|资料|文档", " ", str(question or "")).strip()
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                data = {"summary": {}, "articles": [], "attachments": []}
+                if _assistant_table_exists(cur, "knowledge_articles"):
+                    cur.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published FROM knowledge_articles")
+                    data["summary"] = dict(cur.fetchone() or {})
+                    if query:
+                        like = f"%{query}%"
+                        cur.execute(
+                            """
+                            SELECT title, summary, module_key, updated_at
+                            FROM knowledge_articles
+                            WHERE status = 'published'
+                              AND allow_ai = TRUE
+                              AND (title LIKE %s OR summary LIKE %s OR content LIKE %s)
+                            ORDER BY updated_at DESC
+                            LIMIT 8
+                            """,
+                            (like, like, like),
+                        )
+                        data["articles"] = [dict(row) for row in cur.fetchall()]
+                if _assistant_table_exists(cur, "knowledge_attachments"):
+                    cur.execute(
+                        """
+                        SELECT extraction_status, COUNT(*) AS records
+                        FROM knowledge_attachments
+                        GROUP BY extraction_status
+                        """
+                    )
+                    data["attachments"] = [dict(row) for row in cur.fetchall()]
+                data["query"] = query
+                return data
+        finally:
+            conn.close()
+
+
+    def _assistant_knowledge_answer(data):
+        summary = data.get("summary") or {}
+        lines = [f"知识库摘要：文章 {int(summary.get('total') or 0)} 篇，已发布 {int(summary.get('published') or 0)} 篇。"]
+        if data.get("attachments"):
+            lines.append("附件索引：" + "，".join(f"{row.get('extraction_status') or '--'} {int(row.get('records') or 0)}" for row in data["attachments"]))
+        if data.get("query"):
+            lines.append(f"关键词“{data['query']}”命中文章 {len(data.get('articles') or [])} 篇。")
+        for item in (data.get("articles") or [])[:5]:
+            lines.append(f"《{item.get('title') or '--'}》：{item.get('summary') or '--'}")
+        return "\n".join(lines)
+
+
+    def _assistant_knowledge_tables(data):
+        tables = [_assistant_table(
+            "知识库摘要",
+            ["指标", "数值"],
+            [["文章数", int((data.get("summary") or {}).get("total") or 0)], ["已发布", int((data.get("summary") or {}).get("published") or 0)]],
+        )]
+        if data.get("articles"):
+            tables.append(_assistant_table(
+                "知识库命中文章",
+                ["标题", "摘要", "模块", "更新时间"],
+                [[item.get("title") or "--", item.get("summary") or "--", item.get("module_key") or "--", item.get("updated_at") or "--"] for item in data["articles"]],
+            ))
+        return tables
+
+
+    def _assistant_audit_log_data(start, end):
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                data = {"summary": {}, "modules": [], "actions": [], "recent": []}
+                if not _assistant_table_exists(cur, "audit_logs"):
+                    return data
+                cur.execute(
+                    "SELECT COUNT(*) AS records FROM audit_logs WHERE created_at >= %s AND created_at < %s",
+                    (start, end),
+                )
+                data["summary"] = dict(cur.fetchone() or {})
+                for field, key in (("module_key", "modules"), ("action_key", "actions")):
+                    if _assistant_column_exists(cur, "audit_logs", field):
+                        cur.execute(
+                            f"""
+                            SELECT {field} AS name, COUNT(*) AS records
+                            FROM audit_logs
+                            WHERE created_at >= %s AND created_at < %s
+                            GROUP BY {field}
+                            ORDER BY records DESC
+                            LIMIT 10
+                            """,
+                            (start, end),
+                        )
+                        data[key] = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    """
+                    SELECT created_at, module_key, action_key, username
+                    FROM audit_logs
+                    WHERE created_at >= %s AND created_at < %s
+                    ORDER BY created_at DESC
+                    LIMIT 10
+                    """,
+                    (start, end),
+                )
+                data["recent"] = [dict(row) for row in cur.fetchall()]
+                return data
+        finally:
+            conn.close()
+
+
+    def _assistant_audit_log_answer(label, data):
+        summary = data.get("summary") or {}
+        lines = [f"{label}审计日志：共 {int(summary.get('records') or 0)} 条。"]
+        if data.get("modules"):
+            lines.append("模块排行：" + "，".join(f"{row.get('name') or '--'} {int(row.get('records') or 0)}" for row in data["modules"][:5]))
+        if data.get("actions"):
+            lines.append("操作排行：" + "，".join(f"{row.get('name') or '--'} {int(row.get('records') or 0)}" for row in data["actions"][:5]))
+        return "\n".join(lines)
+
+
+    def _assistant_audit_log_tables(label, data):
+        tables = [_assistant_table(f"{label}审计日志汇总", ["指标", "数值"], [["记录数", int((data.get("summary") or {}).get("records") or 0)]])]
+        if data.get("recent"):
+            tables.append(_assistant_table(
+                f"{label}近期审计日志",
+                ["时间", "模块", "操作", "用户"],
+                [[row.get("created_at") or "--", row.get("module_key") or "--", row.get("action_key") or "--", row.get("username") or "--"] for row in data["recent"]],
+            ))
+        return tables
+
+
+    def _assistant_alias_data():
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                data = {"productAliases": 0, "entityAliases": 0, "products": 0, "customers": 0}
+                if _assistant_table_exists(cur, "product_aliases"):
+                    cur.execute("SELECT COUNT(*) AS total FROM product_aliases")
+                    data["productAliases"] = int((cur.fetchone() or {}).get("total") or 0)
+                if _assistant_table_exists(cur, "entity_aliases"):
+                    cur.execute("SELECT COUNT(*) AS total FROM entity_aliases")
+                    data["entityAliases"] = int((cur.fetchone() or {}).get("total") or 0)
+                if _assistant_table_exists(cur, "products"):
+                    cur.execute("SELECT COUNT(*) AS total FROM products WHERE is_active = 1")
+                    data["products"] = int((cur.fetchone() or {}).get("total") or 0)
+                if _assistant_table_exists(cur, "customers"):
+                    cur.execute("SELECT COUNT(*) AS total FROM customers")
+                    data["customers"] = int((cur.fetchone() or {}).get("total") or 0)
+                return data
+        finally:
+            conn.close()
+
+
+    def _assistant_user_permission_data():
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                data = {"users": {}, "roles": 0, "departments": 0, "permissions": 0}
+                if _assistant_table_exists(cur, "system_users"):
+                    cur.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) AS active FROM system_users")
+                    data["users"] = dict(cur.fetchone() or {})
+                if _assistant_table_exists(cur, "system_roles"):
+                    cur.execute("SELECT COUNT(*) AS total FROM system_roles WHERE is_active = TRUE")
+                    data["roles"] = int((cur.fetchone() or {}).get("total") or 0)
+                if _assistant_table_exists(cur, "system_departments"):
+                    cur.execute("SELECT COUNT(*) AS total FROM system_departments WHERE is_active = TRUE")
+                    data["departments"] = int((cur.fetchone() or {}).get("total") or 0)
+                if _assistant_table_exists(cur, "system_permissions"):
+                    cur.execute("SELECT COUNT(*) AS total FROM system_permissions WHERE is_active = TRUE")
+                    data["permissions"] = int((cur.fetchone() or {}).get("total") or 0)
+                return data
+        finally:
+            conn.close()
+
+
+    def _assistant_settings_answer():
+        return (
+            "设置页属于只读安全边界：我可以说明当前系统公开入口和配置边界，但不会读取或修改本机隐藏配置、密钥或用户本地缓存。\n"
+            "当前生产公开入口为 http://198.51.100.10/，后端生产服务只监听 127.0.0.1:8900，客户端自动更新源为 /download/latest.yml。"
+        )
 
 
     def _assistant_market_watch_answer(cur):
@@ -2919,6 +4444,28 @@ def register_assistant_routes(app):
         return [_assistant_table(f"{label}年度KPI", ["指标", "数值"], rows)]
 
 
+    def _assistant_yearly_kpi_charts(label, data):
+        summary = data.get("summary") or {}
+        chart = _assistant_chart(
+            f"{label}年度KPI关键指标",
+            "bar",
+            x_axis=["累计销量", "累计金额", "交易笔数", "活跃站点"],
+            series=[{
+                "name": "指标值",
+                "type": "bar",
+                "unit": "",
+                "data": [
+                    summary.get("totalVolume") or summary.get("totalLiters"),
+                    summary.get("totalSales") or summary.get("totalAmount"),
+                    summary.get("transactionCount"),
+                    summary.get("activeShops"),
+                ],
+            }],
+            summary="展示年度累计关键指标，单位以指标本身为准。",
+        )
+        return [chart] if chart else []
+
+
     def _fmt_pct(v):
         if v is None:
             return "--"
@@ -2986,12 +4533,136 @@ def register_assistant_routes(app):
 
 
     def _assistant_response(question, plan, **payload):
+        charts = payload.get("charts")
+        if isinstance(charts, list):
+            payload["charts"] = [chart for chart in charts if isinstance(chart, dict)]
         result = {"ok": True, "question": question, **payload}
         result["assistantPlan"] = plan
-        return jsonify(result)
+        result = enrich_assistant_payload(result)
+        return result, 200
 
 
-    def _assistant_retail_data_for_period(start, end):
+    def _assistant_scope_module(plan):
+        route = str((plan or {}).get("route") or "")
+        if route.startswith("retail_") or route.startswith("station_") or route in {"self_use_summary", "accounting_report_status", "density_summary"}:
+            return "retail"
+        return route.split("_", 1)[0] if "_" in route else route
+
+
+    def _assistant_scope_values(user_context, module_key, resource_types):
+        if not isinstance(user_context, dict) or user_context.get("user", {}).get("role") == "admin":
+            return None
+        if (user_context.get("dataScopes") or {}).get(module_key) != "custom":
+            return None
+        resources = (user_context.get("dataScopeResources") or {}).get(module_key) or {}
+        ids = set()
+        labels = set()
+        for resource_type in resource_types:
+            for item in resources.get(resource_type) or []:
+                if isinstance(item, dict):
+                    if item.get("id") not in (None, ""):
+                        ids.add(str(item.get("id")))
+                    if item.get("label"):
+                        labels.add(str(item.get("label")))
+        return {"ids": ids, "labels": labels}
+
+
+    def _assistant_station_allowed(item, allowed):
+        if allowed is None:
+            return True
+        ids = allowed.get("ids") or set()
+        labels = allowed.get("labels") or set()
+        candidates = {
+            str(item.get("shopKey") or ""),
+            str(item.get("stationKey") or ""),
+            str(item.get("stationId") or ""),
+            str(item.get("id") or ""),
+            str(item.get("stationNo") or ""),
+        }
+        label_candidates = {
+            str(item.get("name") or ""),
+            str(item.get("short") or ""),
+            str(item.get("stationName") or ""),
+            str(item.get("resourceLabel") or ""),
+        }
+        return bool((ids and candidates.intersection(ids)) or (labels and label_candidates.intersection(labels)))
+
+
+    def _assistant_apply_station_scope(data, plan, user_context):
+        module_key = _assistant_scope_module(plan)
+        allowed = _assistant_scope_values(user_context, module_key, ("station", "depot"))
+        if allowed is None:
+            return data
+        copied = dict(data or {})
+        applied = {"type": "custom", "module": module_key, "resourceTypes": ["station", "depot"], "filtered": True}
+        stations = copied.get("stations")
+        if isinstance(stations, list):
+            filtered = [item for item in stations if isinstance(item, dict) and _assistant_station_allowed(item, allowed)]
+            copied["stations"] = filtered
+            summary = dict(copied.get("summary") or {})
+            summary["totalLiters"] = round(sum(float(item.get("volume") or 0) for item in filtered), 2)
+            summary["totalTons"] = round(sum(float(item.get("tons") or 0) for item in filtered), 3)
+            summary["totalSales"] = round(sum(float(item.get("amount") or 0) for item in filtered), 2)
+            summary["totalTxn"] = int(sum(float(item.get("txnCount") or item.get("transactions") or 0) for item in filtered))
+            copied["summary"] = summary
+            copied["byResource"] = []
+            copied["regions"] = []
+        elif isinstance(stations, dict):
+            filtered_stations = {
+                key: value for key, value in stations.items()
+                if _assistant_station_allowed({"shopKey": key}, allowed)
+            }
+            copied["stations"] = filtered_stations
+            daily_by_date = {}
+            for rows in filtered_stations.values():
+                for item in rows or []:
+                    if not isinstance(item, dict) or not item.get("date"):
+                        continue
+                    bucket = daily_by_date.setdefault(str(item.get("date")), {"date": str(item.get("date")), "volume": 0.0, "amount": 0.0})
+                    bucket["volume"] += float(item.get("volume") or 0)
+                    bucket["amount"] += float(item.get("amount") or 0)
+            copied["daily"] = [
+                {**item, "volume": round(item["volume"], 2), "amount": round(item["amount"], 2)}
+                for _, item in sorted(daily_by_date.items())
+            ]
+        records = copied.get("records")
+        if isinstance(records, list):
+            filtered_records = [item for item in records if isinstance(item, dict) and _assistant_station_allowed(item, allowed)]
+            copied["records"] = filtered_records
+            summary = dict(copied.get("summary") or {})
+            summary["totalVolume"] = round(sum(float(item.get("volume") or 0) for item in filtered_records), 2)
+            summary["totalAmount"] = round(sum(float(item.get("amount") or 0) for item in filtered_records), 2)
+            summary["totalRecords"] = len(filtered_records)
+            copied["summary"] = summary
+        copied["dataScope"] = applied
+        return copied
+
+
+    def _assistant_filter_retail_resource(data, resource):
+        if not isinstance(resource, dict) or not resource.get("resourceKey"):
+            return data
+        resource_key = _assistant_int(resource.get("resourceKey"))
+        if not resource_key:
+            return data
+        copied = dict(data or {})
+        resources = [
+            item for item in copied.get("byResource") or []
+            if _assistant_int(item.get("resourceKey") or item.get("key")) == resource_key
+        ]
+        summary = dict(copied.get("summary") or {})
+        if resources:
+            summary["totalLiters"] = round(sum(float(item.get("volume") or 0) for item in resources), 2)
+            summary["totalTons"] = round(sum(float(item.get("tons") or 0) for item in resources), 3)
+            summary["totalSales"] = round(sum(float(item.get("amount") or 0) for item in resources), 2)
+            copied["byResource"] = resources
+            copied["summary"] = summary
+            copied["stations"] = []
+            copied["regions"] = []
+            copied["resourceFilter"] = {"resourceKey": resource_key, "name": resources[0].get("name") or resource.get("name")}
+        return copied
+
+
+    def _assistant_retail_data_for_period(start, end, resource=None, *, plan=None, user_context=None):
         data = _retail_snapshot_for_period(start, end)
         if not data:
             response = open_oilstation(
@@ -2999,7 +4670,8 @@ def register_assistant_routes(app):
                 query_string={"start": start.isoformat(), "end": end.isoformat()},
             )
             data = response.get_json() if response.status_code < 400 else {}
-        return data or {}
+        data = _assistant_filter_retail_resource(data or {}, resource)
+        return _assistant_apply_station_scope(data, plan or {}, user_context)
 
 
     def _assistant_retail_summary_metrics(data):
@@ -3054,7 +4726,25 @@ def register_assistant_routes(app):
         return [_assistant_table(f"{label}零售对比", ["指标", "本期", base_label, "变化", "变化率"], rows)]
 
 
-    def _assistant_enrich_comparison_data(plan):
+    def _assistant_retail_comparison_charts(label, current_data, comparison):
+        base_period = (comparison or {}).get("period") or {}
+        base_label = base_period.get("label") or (comparison or {}).get("mode") or "对比区间"
+        current = _assistant_retail_summary_metrics(current_data)
+        baseline = _assistant_retail_summary_metrics((comparison or {}).get("data") or {})
+        chart = _assistant_chart(
+            f"{label}与{base_label}零售对比",
+            "bar",
+            x_axis=["销量", "吨位", "金额"],
+            series=[
+                {"name": "本期", "type": "bar", "unit": "", "data": [current["volume"], current["tons"], current["amount"]]},
+                {"name": base_label, "type": "bar", "unit": "", "data": [baseline["volume"], baseline["tons"], baseline["amount"]]},
+            ],
+            summary="同一图中包含不同单位，精确单位请看下方表格。",
+        )
+        return [chart] if chart else []
+
+
+    def _assistant_enrich_comparison_data(plan, user_context=None):
         comparison = plan.get("comparison") if isinstance(plan.get("comparison"), dict) else None
         if not comparison:
             return None
@@ -3062,24 +4752,27 @@ def register_assistant_routes(app):
         if not period:
             return comparison
         _, baseline_start, baseline_end = period
-        return {**comparison, "data": _assistant_retail_data_for_period(baseline_start, baseline_end)}
+        resource = ((plan.get("entities") or {}).get("resource") if isinstance(plan.get("entities"), dict) else None)
+        return {**comparison, "data": _assistant_retail_data_for_period(baseline_start, baseline_end, resource, plan=plan, user_context=user_context)}
 
 
-    def _assistant_payload_for_plan(original_question, plan):
+    def _assistant_payload_for_plan(original_question, plan, user_context=None):
         period = plan.get("period") or {}
         start = date.fromisoformat(period.get("start"))
         end = date.fromisoformat(period.get("endExclusive"))
         label = _assistant_period_display(period.get("label") or "", start, end)
         match_question = plan.get("normalizedQuestion") or original_question
         route = plan.get("route")
+        resource = (plan.get("entities") or {}).get("resource")
         if route == "self_use_summary":
-            data = _assistant_self_use_data_for_period(start, end)
+            data = _assistant_self_use_data_for_period(start, end, resource)
             return {
                 "periodLabel": label,
                 "queryStart": start.isoformat(),
                 "queryEndExclusive": end.isoformat(),
                 "answer": _assistant_self_use_answer(label, data),
                 "tables": _assistant_self_use_tables(label, data),
+                "charts": _assistant_self_use_charts(label, data, match_question, visual=plan.get("visual")),
                 "data": data,
             }
         if route == "station_trend_anomaly":
@@ -3091,23 +4784,37 @@ def register_assistant_routes(app):
                 "queryEndExclusive": end.isoformat(),
                 "answer": _assistant_station_trend_anomaly_answer(label, trend_data, station),
                 "tables": _assistant_station_trend_anomaly_tables(label, trend_data, station),
+                "charts": _assistant_station_trend_anomaly_charts(label, trend_data, station),
+                "data": trend_data,
+            }
+        if route == "retail_trend":
+            trend_data = _assistant_daily_trend_for_period(start, end)
+            return {
+                "periodLabel": label,
+                "queryStart": start.isoformat(),
+                "queryEndExclusive": end.isoformat(),
+                "answer": _assistant_daily_trend_answer(label, trend_data),
+                "tables": _assistant_daily_trend_tables(label, trend_data),
+                "charts": [_assistant_daily_mixed_chart(f"{label}零售每日趋势", trend_data.get("daily") or [])],
                 "data": trend_data,
             }
         if route == "retail_ranking":
             dimension = next((item for item in plan.get("dimensions") or [] if item in {"resource", "region", "station"}), "station")
-            data = _assistant_retail_data_for_period(start, end)
+            data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
             metric = plan.get("metric") or "amount"
+            ranking_rows = _assistant_retail_ranking_rows(data, dimension, metric)
             return {
                 "periodLabel": label,
                 "queryStart": start.isoformat(),
                 "queryEndExclusive": end.isoformat(),
                 "answer": _assistant_retail_ranking_answer(label, data, dimension, metric, match_question),
                 "tables": _assistant_retail_ranking_tables(label, data, dimension, metric),
+                "charts": [_assistant_rank_chart(f"{label}零售{ {'resource': '油品', 'region': '区域', 'station': '站点'}.get(dimension, '站点') }{_assistant_metric_name(metric)}排行", ranking_rows, metric, name_key="region" if dimension == "region" else "name")],
                 "data": data,
             }
         if route == "retail_comparison":
-            data = _assistant_retail_data_for_period(start, end)
-            comparison = _assistant_enrich_comparison_data(plan)
+            data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
+            comparison = _assistant_enrich_comparison_data(plan, user_context)
             if comparison:
                 return {
                     "periodLabel": label,
@@ -3115,9 +4822,10 @@ def register_assistant_routes(app):
                     "queryEndExclusive": end.isoformat(),
                     "answer": _assistant_retail_comparison_answer(label, data, comparison),
                     "tables": _assistant_retail_comparison_tables(label, data, comparison),
+                    "charts": _assistant_retail_comparison_charts(label, data, comparison),
                     "data": {"current": data, "comparison": comparison},
                 }
-        data = _assistant_retail_data_for_period(start, end)
+        data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
         if data:
             return {
                 "periodLabel": label,
@@ -3125,6 +4833,7 @@ def register_assistant_routes(app):
                 "queryEndExclusive": end.isoformat(),
                 "answer": _format_assistant_retail_answer(label, data),
                 "tables": _assistant_retail_tables(label, data, match_question),
+                "charts": _assistant_retail_charts(label, data, match_question, visual=plan.get("visual")),
                 "data": data,
             }
         return {
@@ -3137,12 +4846,13 @@ def register_assistant_routes(app):
         }
 
 
-    def _assistant_compound_payload(question, plan):
+    def _assistant_compound_payload(question, plan, user_context=None):
         sub_results = []
         summary_rows = []
         tables = []
+        charts = []
         for index, subplan in enumerate((plan.get("subPlans") or [])[:5], start=1):
-            payload = _assistant_payload_for_plan(question, subplan)
+            payload = _assistant_payload_for_plan(question, subplan, user_context)
             answer = str(payload.get("answer") or "")
             first_line = next((line.strip() for line in answer.splitlines() if line.strip()), "")
             sub_results.append({"plan": subplan, **payload})
@@ -3157,6 +4867,10 @@ def register_assistant_routes(app):
                 copied = dict(table)
                 copied["title"] = f"{index}. {copied.get('title') or subplan.get('sourceSegment') or '子问题'}"
                 tables.append(copied)
+            for chart in payload.get("charts") or []:
+                copied = dict(chart)
+                copied["title"] = f"{index}. {copied.get('title') or subplan.get('sourceSegment') or '子问题'}"
+                charts.append(copied)
         header = f"我把这个问题拆成 {len(sub_results)} 个只读查询，并按顺序完成："
         lines = [header]
         for row in summary_rows:
@@ -3166,6 +4880,7 @@ def register_assistant_routes(app):
             "periodLabel": (plan.get("period") or {}).get("label") or "复合查询",
             "answer": "\n".join(lines),
             "tables": [summary_table, *tables[:8]],
+            "charts": charts[:6],
             "data": {"subResults": sub_results},
         }
 
@@ -3386,24 +5101,43 @@ def register_assistant_routes(app):
         )] if table_rows else []
 
 
+    def _assistant_station_trend_anomaly_charts(label, trend_data, station=None):
+        if station:
+            station_rows = (trend_data.get("stations") or {}).get(str(station.get("shopKey"))) or []
+            chart = _assistant_daily_mixed_chart(f"{label}{station.get('name') or station.get('shopKey')}日趋势", station_rows)
+            return [chart] if chart else []
+        rows = [item for item in _assistant_station_trend_rows(trend_data, station) if item["delta"] < 0][:12]
+        chart = _assistant_chart(
+            f"{label}站点销量下滑幅度",
+            "bar",
+            x_axis=[item["name"] for item in rows],
+            series=[{"name": "销量变化", "type": "bar", "unit": "升", "data": [item["delta"] for item in rows]}],
+            unit="升",
+            summary="负值代表后段日均销量低于前段日均销量。",
+        )
+        return [chart] if chart else []
+
+
     def _assistant_station_data_check_answer(label, data, station):
         rows = [
             item for item in data.get("stations") or []
             if int(item.get("shopKey") or 0) == int(station.get("shopKey") or 0)
         ]
-        station_name = station.get("name") or f"{station.get('shopKey')}号站"
+        station_no = station.get("shopKey") or station.get("stationNo") or ""
+        station_name = station.get("name") or f"{station_no}号站"
+        station_label = f"{station_name}（{station_no}号站）" if station_no and str(station_no) not in str(station_name) else station_name
         if not rows:
-            return f"{label}{station_name}未在零售汇总快照中找到销售记录；如果刚补传数据，需要等待快照任务重新生成后再查。"
+            return f"{label}{station_label}未在零售汇总快照中找到销售记录；如果刚补传数据，需要等待快照任务重新生成后再查。"
         item = rows[0]
         volume = float(item.get("volume") or 0)
         amount = float(item.get("amount") or 0)
         if volume or amount:
             return (
-                f"{label}{station_name}已查到销售数据："
+                f"{label}{station_label}已查到销售数据："
                 f"销量 {_fmt_volume(volume)}，金额 {_fmt_amount(amount, '索姆')}。"
                 "这说明该区间数据已经进入当前零售汇总口径。"
             )
-        return f"{label}{station_name}有站点记录，但销量和金额为 0；需要继续核查该站是否停业、数据是否仍未补齐或该日确无销售。"
+        return f"{label}{station_label}有站点记录，但销量和金额为 0；需要继续核查该站是否停业、数据是否仍未补齐或该日确无销售。"
 
 
     def _assistant_station_data_check_tables(label, data, station):
@@ -3510,14 +5244,16 @@ def register_assistant_routes(app):
         return "\n".join(lines)
 
 
-    @app.route("/api/data-assistant/query", methods=["POST"])
-    def api_data_assistant_query():
-        payload = request.get_json(force=True) or {}
+    def _execute_data_assistant_query_payload(payload):
+        payload = payload if isinstance(payload, dict) else {}
         question = clean_str(payload.get("question"))
         if not question:
-            return jsonify({"error": "question_required"}), 400
+            return {"error": "question_required"}, 400
+        if is_action_request(question):
+            return enrich_assistant_payload(read_only_refusal(question, payload.get("language"))), 200
 
         conversation_context = payload.get("conversationContext")
+        user_context = payload.get("userContext") if isinstance(payload.get("userContext"), dict) else None
         plan = build_assistant_query_plan(question, context=conversation_context)
         period = plan.get("period") or {}
         start = date.fromisoformat(period.get("start"))
@@ -3525,6 +5261,7 @@ def register_assistant_routes(app):
         label = _assistant_period_display(period.get("label") or "", start, end)
         match_question = plan.get("normalizedQuestion") or question
         route = plan.get("route")
+        resource = (plan.get("entities") or {}).get("resource")
 
         if plan.get("needsClarification"):
             clarification = plan.get("clarification") or {}
@@ -3549,11 +5286,12 @@ def register_assistant_routes(app):
             return _assistant_response(
                 question,
                 plan,
-                **_assistant_compound_payload(question, plan),
+                **_assistant_compound_payload(question, plan, user_context),
             )
 
         if route == "self_use_summary":
-            data = _assistant_self_use_data_for_period(start, end)
+            data = _assistant_self_use_data_for_period(start, end, resource)
+            data = _assistant_apply_station_scope(data, plan, user_context)
             return _assistant_response(
                 question,
                 plan,
@@ -3562,12 +5300,13 @@ def register_assistant_routes(app):
                 queryEndExclusive=end.isoformat(),
                 answer=_assistant_self_use_answer(label, data),
                 tables=_assistant_self_use_tables(label, data),
+                charts=_assistant_self_use_charts(label, data, match_question, visual=plan.get("visual")),
                 data=data,
             )
 
         if route == "station_data_check" and (plan.get("entities") or {}).get("station"):
             station = plan["entities"]["station"]
-            data = _assistant_retail_data_for_period(start, end)
+            data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
             return _assistant_response(
                 question,
                 plan,
@@ -3582,6 +5321,7 @@ def register_assistant_routes(app):
         if route == "station_trend_anomaly":
             station = (plan.get("entities") or {}).get("station")
             trend_data = _assistant_daily_trend_for_period(start, end)
+            trend_data = _assistant_apply_station_scope(trend_data, plan, user_context)
             return _assistant_response(
                 question,
                 plan,
@@ -3590,20 +5330,24 @@ def register_assistant_routes(app):
                 queryEndExclusive=end.isoformat(),
                 answer=_assistant_station_trend_anomaly_answer(label, trend_data, station),
                 tables=_assistant_station_trend_anomaly_tables(label, trend_data, station),
+                charts=_assistant_station_trend_anomaly_charts(label, trend_data, station),
                 data=trend_data,
             )
 
         if route == "retail_ranking":
             dimension = next((item for item in plan.get("dimensions") or [] if item in {"resource", "region", "station"}), "station")
-            data = _assistant_retail_data_for_period(start, end)
+            data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
+            metric = plan.get("metric") or "amount"
+            ranking_rows = _assistant_retail_ranking_rows(data, dimension, metric)
             return _assistant_response(
                 question,
                 plan,
                 periodLabel=label,
                 queryStart=start.isoformat(),
                 queryEndExclusive=end.isoformat(),
-                answer=_assistant_retail_ranking_answer(label, data, dimension, plan.get("metric") or "amount", match_question),
-                tables=_assistant_retail_ranking_tables(label, data, dimension, plan.get("metric") or "amount"),
+                answer=_assistant_retail_ranking_answer(label, data, dimension, metric, match_question),
+                tables=_assistant_retail_ranking_tables(label, data, dimension, metric),
+                charts=[_assistant_rank_chart(f"{label}零售{ {'resource': '油品', 'region': '区域', 'station': '站点'}.get(dimension, '站点') }{_assistant_metric_name(metric)}排行", ranking_rows, metric, name_key="region" if dimension == "region" else "name")],
                 data=data,
             )
 
@@ -3628,21 +5372,171 @@ def register_assistant_routes(app):
                 answer=_assistant_station_status_answer(),
                 tables=_assistant_station_status_tables(),
             )
+        if route == "procurement_summary":
+            data = _assistant_procurement_data(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_procurement_answer(label, data),
+                tables=_assistant_procurement_tables(label, data),
+                charts=_assistant_procurement_charts(label, data),
+                data=data,
+            )
+        if route == "weighing_summary":
+            data = _assistant_weighing_data(start, end, match_question)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_weighing_answer(label, data),
+                tables=_assistant_weighing_tables(label, data),
+                charts=_assistant_weighing_charts(label, data),
+                data=data,
+            )
+        if route in {"materials_summary", "material_transfer_summary"}:
+            transfer_only = route == "material_transfer_summary"
+            data = _assistant_materials_data(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_materials_answer(label, data, transfer_only=transfer_only),
+                tables=_assistant_materials_tables(label, data, transfer_only=transfer_only),
+                charts=_assistant_materials_charts(label, data, transfer_only=transfer_only),
+                data=data,
+            )
+        if route == "transfer_loss_summary":
+            data = _assistant_transfer_loss_data(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_transfer_loss_answer(label, data),
+                tables=_assistant_transfer_loss_tables(label, data),
+                charts=_assistant_transfer_loss_charts(label, data),
+                data=data,
+            )
+        if route == "system_health_summary":
+            data = _assistant_system_health_data()
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="当前",
+                answer=_assistant_system_health_answer(data),
+                tables=_assistant_system_health_tables(data),
+                data=data,
+            )
+        if route == "knowledge_summary":
+            data = _assistant_knowledge_data(match_question)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="知识库",
+                answer=_assistant_knowledge_answer(data),
+                tables=_assistant_knowledge_tables(data),
+                data=data,
+            )
+        if route == "audit_log_summary":
+            data = _assistant_audit_log_data(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_audit_log_answer(label, data),
+                tables=_assistant_audit_log_tables(label, data),
+                data=data,
+            )
+        if route == "alias_summary":
+            data = _assistant_alias_data()
+            answer = (
+                "别名匹配摘要如下："
+                f"油品别名 {data.get('productAliases', 0)} 条，客户/实体别名 {data.get('entityAliases', 0)} 条；"
+                f"启用油品 {data.get('products', 0)} 个，客户 {data.get('customers', 0)} 个。"
+            )
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="别名匹配",
+                answer=answer,
+                tables=[_assistant_table("别名匹配摘要", ["项目", "数量"], [
+                    ["油品别名", data.get("productAliases", 0)],
+                    ["客户/实体别名", data.get("entityAliases", 0)],
+                    ["启用油品", data.get("products", 0)],
+                    ["客户", data.get("customers", 0)],
+                ])],
+                data=data,
+            )
+        if route == "user_permission_summary":
+            data = _assistant_user_permission_data()
+            users = data.get("users") or {}
+            answer = (
+                "用户权限只读摘要如下："
+                f"用户 {int(users.get('total') or 0)} 个，启用 {int(users.get('active') or 0)} 个；"
+                f"角色 {data.get('roles', 0)} 个，部门 {data.get('departments', 0)} 个，权限点 {data.get('permissions', 0)} 个。"
+                "我不会通过 AI 助手修改账号、角色或权限。"
+            )
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="权限",
+                answer=answer,
+                tables=[_assistant_table("用户权限摘要", ["项目", "数量"], [
+                    ["用户", int(users.get("total") or 0)],
+                    ["启用用户", int(users.get("active") or 0)],
+                    ["角色", data.get("roles", 0)],
+                    ["部门", data.get("departments", 0)],
+                    ["权限点", data.get("permissions", 0)],
+                ])],
+                data=data,
+            )
+        if route == "settings_summary":
+            data = {
+                "publicEntry": "http://198.51.100.10/",
+                "backendListen": "127.0.0.1:8900",
+                "updateFeed": "/download/latest.yml",
+                "readOnly": True,
+            }
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="系统设置",
+                answer=_assistant_settings_answer(),
+                tables=[_assistant_table("设置只读摘要", ["项目", "值"], [
+                    ["生产公开入口", data["publicEntry"]],
+                    ["后端监听", data["backendListen"]],
+                    ["客户端更新源", data["updateFeed"]],
+                    ["AI写操作", "禁止"],
+                ])],
+                data=data,
+            )
         if route == "retail_trend" or _assistant_has_any(match_question, ("趋势", "每日", "日趋势", "日销量", "走势")):
-            ym = f"{start.year}-{start.month:02d}"
-            trend_data = _read_daily_trend_snapshot(ym)
-            if trend_data:
+            trend_data = _assistant_daily_trend_for_period(start, end)
+            if trend_data.get("daily"):
                 return _assistant_response(
                     question,
                     plan,
-                    periodLabel=ym,
-                    answer=_assistant_daily_trend_answer(ym, trend_data),
-                    tables=_assistant_daily_trend_tables(ym, trend_data),
+                    periodLabel=label,
+                    queryStart=start.isoformat(),
+                    queryEndExclusive=end.isoformat(),
+                    answer=_assistant_daily_trend_answer(label, trend_data),
+                    tables=_assistant_daily_trend_tables(label, trend_data),
+                    charts=[_assistant_daily_mixed_chart(f"{label}零售每日趋势", trend_data.get("daily") or [])],
                     data=trend_data,
                 )
         if route == "retail_comparison" and plan.get("comparison"):
-            data = _assistant_retail_data_for_period(start, end)
-            comparison = _assistant_enrich_comparison_data(plan)
+            data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
+            comparison = _assistant_enrich_comparison_data(plan, user_context)
             return _assistant_response(
                 question,
                 plan,
@@ -3651,6 +5545,7 @@ def register_assistant_routes(app):
                 queryEndExclusive=end.isoformat(),
                 answer=_assistant_retail_comparison_answer(label, data, comparison),
                 tables=_assistant_retail_comparison_tables(label, data, comparison),
+                charts=_assistant_retail_comparison_charts(label, data, comparison),
                 data={"current": data, "comparison": comparison},
             )
         if route == "retail_comparison" or _assistant_has_any(match_question, ("同比", "环比", "对比", "较去年", "较上月")):
@@ -3666,13 +5561,14 @@ def register_assistant_routes(app):
                     data=monthly_data,
                 )
         if route == "retail_resource_share" or _assistant_has_any(match_question, ("占比", "结构", "油品结构", "油品占比", "构成")):
-            data = _assistant_retail_data_for_period(start, end)
+            data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
             return _assistant_response(
                 question,
                 plan,
                 periodLabel=label,
                 answer=_assistant_resource_share_answer(label, data),
                 tables=_assistant_retail_tables(label, data, match_question),
+                charts=_assistant_retail_charts(label, data, match_question, visual={"preferredType": "pie", "requested": True}),
                 data=data,
             )
         if route == "retail_kpi" or _assistant_has_any(match_question, ("KPI", "kpi", "关键指标", "年度指标", "年度目标", "目标完成")):
@@ -3685,10 +5581,11 @@ def register_assistant_routes(app):
                     periodLabel=f"{year}年",
                     answer=_assistant_yearly_kpi_answer(f"{year}年", kpi_data),
                     tables=_assistant_yearly_kpi_tables(f"{year}年", kpi_data),
+                    charts=_assistant_yearly_kpi_charts(f"{year}年", kpi_data),
                     data=kpi_data,
                 )
         if route == "retail_price" or _assistant_has_any(match_question, ("价格", "单价", "售价", "零售价")):
-            data = _assistant_retail_data_for_period(start, end)
+            data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
             resources = [item for item in (data.get("byResource") or []) if float(item.get("volume") or 0) > 0]
             lines = [f"{label}零售价格（均价 = 金额 ÷ 销量）："]
             price_rows = []
@@ -3711,6 +5608,14 @@ def register_assistant_routes(app):
                 periodLabel=label,
                 answer="\n".join(lines),
                 tables=[_assistant_table(f"{label}零售价格", ["油品", "均价(索姆/升)", "销量", "金额"], price_rows)],
+                charts=[_assistant_chart(
+                    f"{label}零售均价",
+                    "bar",
+                    x_axis=[row[0] for row in price_rows if row[0] != "综合均价"],
+                    series=[{"name": "均价", "type": "bar", "unit": "索姆/升", "data": [row[1] for row in price_rows if row[0] != "综合均价"]}],
+                    unit="索姆/升",
+                    summary="均价按金额除以销量计算。",
+                )],
                 data=data,
             )
         if route == "market_summary" or _assistant_has_any(match_question, ("市场", "行情", "观察", "原油", "成品油", "俄罗斯", "乌兹别克", "国际")):
@@ -3746,6 +5651,7 @@ def register_assistant_routes(app):
                 queryEndExclusive=end.isoformat(),
                 answer=_assistant_combined_answer(label, data),
                 tables=_assistant_combined_tables(label, data),
+                charts=_assistant_combined_charts(label, data),
                 data=data,
             )
         if route == "wholesale_review" or _assistant_has_any(match_question, ("审核", "复核", "异常", "提示", "未匹配")):
@@ -3774,6 +5680,7 @@ def register_assistant_routes(app):
                 queryEndExclusive=end.isoformat(),
                 answer=_format_assistant_wholesale_answer(label, data, match_question),
                 tables=_assistant_wholesale_tables(label, data, match_question),
+                charts=_assistant_wholesale_charts(label, data, match_question),
                 data=data,
             )
         if route == "exchange_summary" or "汇率" in match_question or "美元" in match_question or "人民币" in match_question:
@@ -3782,18 +5689,20 @@ def register_assistant_routes(app):
                 cur = conn.cursor()
                 answer = _assistant_exchange_answer(cur, label, start, end)
                 tables = _assistant_exchange_tables(cur, label, start, end)
+                charts = _assistant_exchange_charts(cur, label, start, end)
             finally:
                 conn.close()
-            return _assistant_response(question, plan, periodLabel=label, answer=answer, tables=tables)
+            return _assistant_response(question, plan, periodLabel=label, answer=answer, tables=tables, charts=charts)
         if route == "density_summary" or "密度" in match_question:
             conn = get_connection()
             try:
                 cur = conn.cursor()
                 answer = _assistant_density_answer(cur)
                 tables = _assistant_density_tables(cur)
+                charts = _assistant_density_charts(cur)
             finally:
                 conn.close()
-            return _assistant_response(question, plan, periodLabel="当前", answer=answer, tables=tables)
+            return _assistant_response(question, plan, periodLabel="当前", answer=answer, tables=tables, charts=charts)
         if route == "retail_inventory" or _assistant_has_any(match_question, ("库存", "期末")):
             inventory_data = _retail_inventory_for_period(start, end)
             if inventory_data:
@@ -3805,11 +5714,12 @@ def register_assistant_routes(app):
                     queryEndExclusive=end.isoformat(),
                     answer=_assistant_retail_inventory_answer(label, inventory_data),
                     tables=_assistant_retail_inventory_tables(label, inventory_data),
+                    charts=_assistant_retail_inventory_charts(label, inventory_data),
                     data=inventory_data,
                 )
-        data = _assistant_retail_data_for_period(start, end)
+        data = _assistant_retail_data_for_period(start, end, resource, plan=plan, user_context=user_context)
         if not data:
-            return jsonify({"error": "retail_query_failed", "detail": "empty_retail_response"}), 502
+            return {"error": "retail_query_failed", "detail": "empty_retail_response"}, 502
         data["question"] = match_question
         return _assistant_response(
             question,
@@ -3819,8 +5729,22 @@ def register_assistant_routes(app):
             queryEndExclusive=end.isoformat(),
             answer=_format_assistant_retail_answer(label, data),
             tables=_assistant_retail_tables(label, data, match_question),
+            charts=_assistant_retail_charts(label, data, match_question, visual=plan.get("visual")),
             data=data,
         )
+
+
+    global _ASSISTANT_QUERY_EXECUTOR
+    _ASSISTANT_QUERY_EXECUTOR = _execute_data_assistant_query_payload
+
+
+    @app.route("/api/data-assistant/query", methods=["POST"])
+    def api_data_assistant_query():
+        result, status = _execute_data_assistant_query_payload(request.get_json(force=True) or {})
+        response = jsonify(result)
+        response.headers["Deprecation"] = "true"
+        response.headers["Link"] = '</api/v2/assistant/query>; rel="successor-version"'
+        return response, status
 
 
 

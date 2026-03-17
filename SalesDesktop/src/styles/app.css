@@ -1161,6 +1161,14 @@ body {
   flex: 0 0 auto;
 }
 
+.global-ai-ops-bar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .global-ai-messages {
   flex: 1 1 auto;
   min-height: 0;
@@ -1215,6 +1223,27 @@ body {
   border-radius: 6px;
   overflow: auto;
   background: #fff;
+}
+
+.global-ai-chart {
+  margin-top: 8px;
+  border: 1px solid #d9e8f2;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.global-ai-chart-title {
+  padding: 8px 10px 4px;
+  color: #1a3a5c;
+  font-weight: 700;
+}
+
+.global-ai-chart-summary {
+  padding: 0 10px 6px;
+  color: #60758a;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .global-ai-table-title {

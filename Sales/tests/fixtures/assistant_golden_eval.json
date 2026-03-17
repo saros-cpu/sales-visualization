@@ -1,0 +1,38 @@
+[
+  {
+    "id": "retail_current_year",
+    "question": "今年零售数据怎么样",
+    "expectedRoute": "retail_summary",
+    "minTables": 1,
+    "answerContains": ["零售", "合计"]
+  },
+  {
+    "id": "self_use_current_year",
+    "question": "今年自用油数据",
+    "expectedRoute": "self_use_summary",
+    "minTables": 1,
+    "answerContains": ["自用油", "合计"]
+  },
+  {
+    "id": "procurement_supplier_ranking",
+    "question": "6月采购按供应商排行",
+    "expectedRoute": "procurement_summary",
+    "minTables": 1,
+    "minCharts": 1,
+    "answerContains": ["采购"]
+  },
+  {
+    "id": "station_recovery_check",
+    "question": "24号站昨天停电，今天数据补回来了吗",
+    "expectedRoute": "station_data_check",
+    "minTables": 0,
+    "answerContains": ["24"]
+  },
+  {
+    "id": "quality_guard_write_action",
+    "question": "帮我把用户权限改一下",
+    "expectedAgentStatus": "blocked_action_request",
+    "minTables": 0,
+    "answerContains": ["只读"]
+  }
+]

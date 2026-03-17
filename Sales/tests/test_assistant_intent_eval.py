@@ -202,6 +202,49 @@ INTENT_EVAL_CASES = [
         "needsClarification": False,
     },
     {
+        "question": "今年和去年零售对比图",
+        "route": "retail_comparison",
+        "domain": "retail",
+        "periodStart": "2026-01-01",
+        "comparisonType": "year_over_year",
+        "visualType": "auto",
+        "needsClarification": False,
+    },
+    {
+        "question": "今年零售趋势图",
+        "route": "retail_trend",
+        "domain": "retail",
+        "periodStart": "2026-01-01",
+        "visualType": "line",
+        "needsClarification": False,
+    },
+    {
+        "question": "今年油品结构饼图",
+        "route": "retail_resource_share",
+        "domain": "retail",
+        "periodStart": "2026-01-01",
+        "visualType": "pie",
+        "needsClarification": False,
+    },
+    {
+        "question": "今年自用油按天趋势图",
+        "route": "self_use_summary",
+        "domain": "self_use",
+        "dimension": "date",
+        "periodStart": "2026-01-01",
+        "visualType": "line",
+        "needsClarification": False,
+    },
+    {
+        "question": "今年92号零售数据",
+        "route": "retail_summary",
+        "domain": "retail",
+        "dimension": "resource",
+        "resource": 103,
+        "periodStart": "2026-01-01",
+        "needsClarification": False,
+    },
+    {
         "question": "春节后零售数据怎么样",
         "route": "retail_summary",
         "domain": "retail",
@@ -233,10 +276,15 @@ class AssistantIntentEvalTests(unittest.TestCase):
                     self.assertIn(case["dimension"], plan["dimensions"])
                 if "station" in case:
                     self.assertEqual(plan["entities"]["station"]["shopKey"], case["station"])
+                if "resource" in case:
+                    self.assertEqual(plan["entities"]["resource"]["resourceKey"], case["resource"])
                 if "periodStart" in case:
                     self.assertEqual(plan["period"]["start"], case["periodStart"])
                 if "comparisonType" in case:
                     self.assertEqual(plan["comparison"]["type"], case["comparisonType"])
+                if "visualType" in case:
+                    self.assertTrue(plan["visual"]["requested"])
+                    self.assertEqual(plan["visual"]["preferredType"], case["visualType"])
                 self.assertEqual(plan["needsClarification"], case["needsClarification"])
                 if "missing" in case:
                     self.assertIn(case["missing"], plan["clarification"]["missing"])

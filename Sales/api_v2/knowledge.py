@@ -1278,6 +1278,29 @@ def _snippet(text: str, query: str, max_len: int = 180) -> str:
     return prefix + compact[start:end].rstrip() + suffix
 
 
+def _knowledge_relevance_score(row: dict[str, Any], terms: list[str], attachment_text: str = "") -> float:
+    if not terms:
+        return 0.0
+    fields = [
+        (str(row.get("title") or ""), 6.0),
+        (str(row.get("tags_json") or ""), 4.0),
+        (str(row.get("summary") or ""), 3.0),
+        (str(row.get("content") or ""), 1.0),
+        (str(attachment_text or ""), 2.5),
+    ]
+    score = 0.0
+    for term in terms:
+        needle = term.lower()
+        if not needle:
+            continue
+        for text, weight in fields:
+            lower = text.lower()
+            if needle in lower:
+                score += weight
+                score += min(lower.count(needle), 4) * weight * 0.25
+    return round(score, 3)
+
+
 def _attachment_search_text(cur, article_id: int, query: str) -> str:
     terms = _search_terms(query)
     if not terms:
@@ -1413,10 +1436,10 @@ def search_knowledge_snippets(user_id: int, question: str, limit: int = 3) -> li
             """, tuple(params))
             rows = [row for row in cur.fetchall() if _article_visible(row, user)]
             conn.commit()
-            result = []
-            for row in rows[:limit]:
+            candidates = []
+            for row in rows:
                 attachment_text = _attachment_search_text(cur, int(row["id"]), query)
-                result.append({
+                candidates.append({
                     "id": row["id"],
                     "title": row["title"],
                     "spaceName": row.get("space_name"),
@@ -1425,7 +1448,10 @@ def search_knowledge_snippets(user_id: int, question: str, limit: int = 3) -> li
                     "tags": _json_list(row.get("tags_json")),
                     "snippet": _snippet(" ".join([row.get("summary") or "", row.get("content") or "", attachment_text]), query),
                     "updatedAt": _time_text(row.get("updated_at") or row.get("created_at")),
+                    "score": _knowledge_relevance_score(row, terms, attachment_text),
                 })
+            candidates.sort(key=lambda item: (float(item.get("score") or 0), str(item.get("updatedAt") or "")), reverse=True)
+            result = candidates[:limit]
             return result
     finally:
         conn.close()

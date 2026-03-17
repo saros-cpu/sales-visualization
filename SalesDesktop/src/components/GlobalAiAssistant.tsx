@@ -3,7 +3,18 @@ import { Button, Drawer, Input, Space, Typography, Tag, Spin, Empty, Tooltip, me
 import { CopyOutlined, DownloadOutlined, RobotOutlined, SendOutlined } from '@ant-design/icons';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { askAssistant, AssistantConversationContext, AssistantPlan, AssistantTable } from '@/api/assistant';
+import ReactECharts from 'echarts-for-react';
+import {
+  askAssistant,
+  getAssistantQualityDashboard,
+  getAssistantStatus,
+  getAssistantTools,
+  sendAssistantFeedback,
+  AssistantChart,
+  AssistantConversationContext,
+  AssistantPlan,
+  AssistantTable,
+} from '@/api/assistant';
 
 const { Text, Paragraph } = Typography;
 
@@ -11,11 +22,49 @@ interface MessageItem {
   role: 'user' | 'assistant';
   content: string;
   tables?: AssistantTable[];
+  charts?: AssistantChart[];
   llmUsed?: boolean;
   periodLabel?: string;
   assistantPlan?: AssistantPlan;
   needsClarification?: boolean;
   clarification?: AssistantPlan['clarification'];
+  quality?: {
+    status?: string;
+    score?: number;
+  };
+  diagnostics?: {
+    status?: string;
+    warnings?: string[];
+    insights?: string[];
+    nextChecks?: string[];
+  };
+  freshness?: {
+    status?: string;
+    warnings?: string[];
+  };
+  conversationMemory?: Record<string, any>;
+  agent?: {
+    callId?: number;
+    status?: string;
+  };
+  knowledgeReferences?: Array<{
+    id?: string;
+    title?: string;
+    source?: string;
+  }>;
+}
+
+interface AssistantOpsState {
+  loading?: boolean;
+  provider?: string;
+  model?: string;
+  configured?: boolean;
+  total7d?: number;
+  ok7d?: number;
+  avgQualityScore?: number;
+  toolsCount?: number;
+  issueCount?: number;
+  feedbackBad30d?: number;
 }
 
 function isTotalRow(row: any[]) {
@@ -50,6 +99,7 @@ function compactAssistantPlan(plan?: AssistantPlan): AssistantPlan | undefined {
     clarification: plan.clarification,
     clarificationResolved: plan.clarificationResolved,
     explicit: plan.explicit,
+    visual: plan.visual,
     contextUsed: plan.contextUsed,
   };
 }
@@ -83,6 +133,16 @@ function buildConversationContext(
       content: item.content.slice(0, 500),
       periodLabel: item.periodLabel,
       assistantPlan: compactAssistantPlan(item.assistantPlan),
+      chartHints: (item.charts || []).slice(0, 3).map(chart => ({
+        title: chart.title,
+        type: chart.type,
+        xAxis: (chart.xAxis || []).slice(0, 12),
+      })),
+      tableHints: (item.tables || []).slice(0, 2).map(table => ({
+        title: table.title,
+        columns: (table.columns || []).slice(0, 8),
+        firstRows: (table.rows || []).slice(0, 3),
+      })),
     })),
   };
 }
@@ -152,6 +212,78 @@ function TableResult({ table }: { table: AssistantTable }) {
   );
 }
 
+function chartToOption(chart: AssistantChart) {
+  const palette = ['#1677ff', '#52c41a', '#ff7a45', '#722ed1', '#13c2c2', '#eb2f96', '#faad14'];
+  if (chart.type === 'pie') {
+    return {
+      color: palette,
+      tooltip: { trigger: 'item' },
+      legend: { bottom: 0, type: 'scroll' },
+      series: [{
+        name: chart.title || '图表',
+        type: 'pie',
+        radius: ['42%', '70%'],
+        center: ['50%', '43%'],
+        avoidLabelOverlap: true,
+        label: { formatter: '{b}: {d}%' },
+        data: chart.data || [],
+      }],
+    };
+  }
+
+  const series = chart.series || [];
+  const units = Array.from(new Set(series.map(item => item.unit || '').filter(Boolean))).slice(0, 2);
+  const yAxis = units.length > 1
+    ? units.map((unit, index) => ({
+        type: 'value',
+        name: unit,
+        position: index === 0 ? 'left' : 'right',
+        axisLabel: { color: '#64748b' },
+      }))
+    : [{ type: 'value', name: units[0] || chart.unit || '', axisLabel: { color: '#64748b' } }];
+
+  return {
+    color: palette,
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, type: 'scroll' },
+    grid: { left: 48, right: units.length > 1 ? 54 : 20, top: 44, bottom: (chart.xAxis?.length || 0) > 12 ? 54 : 30 },
+    dataZoom: (chart.xAxis?.length || 0) > 12 ? [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 8 }] : undefined,
+    xAxis: {
+      type: 'category',
+      data: chart.xAxis || [],
+      axisLabel: { color: '#64748b', interval: 'auto' },
+    },
+    yAxis,
+    series: series.map(item => {
+      const unitIndex = Math.max(0, units.indexOf(item.unit || ''));
+      return {
+        name: item.name || '数值',
+        type: item.type === 'line' ? 'line' : 'bar',
+        yAxisIndex: units.length > 1 ? unitIndex : 0,
+        data: item.data || [],
+        smooth: item.type === 'line',
+        symbolSize: item.type === 'line' ? 5 : undefined,
+        barMaxWidth: 26,
+        label: { show: false },
+        emphasis: { focus: 'series' },
+      };
+    }),
+  };
+}
+
+function ChartResult({ chart }: { chart: AssistantChart }) {
+  if (!chart || (chart.type === 'pie' ? !chart.data?.length : !chart.series?.length)) return null;
+  const xCount = chart.xAxis?.length || chart.data?.length || 0;
+  const height = Math.min(360, Math.max(240, 220 + Math.ceil(xCount / 12) * 28));
+  return (
+    <section className="global-ai-chart">
+      {chart.title && <div className="global-ai-chart-title">{chart.title}</div>}
+      {chart.summary && <div className="global-ai-chart-summary">{chart.summary}</div>}
+      <ReactECharts option={chartToOption(chart)} style={{ height, width: '100%' }} notMerge lazyUpdate />
+    </section>
+  );
+}
+
 function PlanMeta({ plan }: { plan?: AssistantPlan }) {
   if (!plan) return null;
   const period = plan.period;
@@ -177,6 +309,76 @@ function PlanMeta({ plan }: { plan?: AssistantPlan }) {
   );
 }
 
+function ResponseMeta({ item }: { item: MessageItem }) {
+  const quality = item.quality;
+  const diagnostics = item.diagnostics;
+  const freshness = item.freshness;
+  const refs = item.knowledgeReferences || [];
+  if (!quality?.status && !diagnostics?.warnings?.length && !diagnostics?.nextChecks?.length && !freshness?.status && refs.length === 0) return null;
+  const qualityColor = quality?.status === 'fail' ? 'red' : quality?.status === 'warn' ? 'orange' : quality?.status === 'blocked' ? 'volcano' : 'cyan';
+  const freshnessColor = freshness?.status === 'partial' ? 'orange' : freshness?.status === 'complete' ? 'green' : 'default';
+  return (
+    <div className="global-ai-plan-meta">
+      {quality?.status && <Tag color={qualityColor}>质量 {quality.score ?? '-'} / {quality.status}</Tag>}
+      {freshness?.status && <Tag color={freshnessColor}>数据 {freshness.status}</Tag>}
+      {(diagnostics?.warnings || []).slice(0, 2).map(item => <Tag color="orange" key={item}>{item}</Tag>)}
+      {(diagnostics?.insights || []).slice(0, 2).map(item => <Tag color="cyan" key={item}>{item}</Tag>)}
+      {(diagnostics?.nextChecks || []).slice(0, 3).map(item => <Tag color="geekblue" key={item}>排查：{item}</Tag>)}
+      {(freshness?.warnings || []).slice(0, 2).map(item => <Tag color="gold" key={item}>{item}</Tag>)}
+      {refs.map(ref => (
+        <Tooltip key={ref.id || ref.title} title={ref.source || ref.title}>
+          <Tag color="purple">{ref.id} {ref.title}</Tag>
+        </Tooltip>
+      ))}
+    </div>
+  );
+}
+
+function FeedbackBar({ item, question }: { item: MessageItem; question?: string }) {
+  if (item.role !== 'assistant') return null;
+  const submitFeedback = async (rating: 'correct' | 'wrong' | 'scope_error') => {
+    try {
+      await sendAssistantFeedback({
+        callId: item.agent?.callId,
+        rating,
+        question,
+        answer: item.content,
+        assistantPlan: item.assistantPlan,
+        quality: item.quality,
+        agent: item.agent as any,
+      });
+      message.success('已记录反馈');
+    } catch (err: any) {
+      message.error(err?.message || '反馈提交失败');
+    }
+  };
+  return (
+    <Space size={6} className="global-ai-plan-meta">
+      <Button size="small" type="text" onClick={() => submitFeedback('correct')}>正确</Button>
+      <Button size="small" type="text" onClick={() => submitFeedback('wrong')}>不准</Button>
+      <Button size="small" type="text" onClick={() => submitFeedback('scope_error')}>口径问题</Button>
+    </Space>
+  );
+}
+
+function AssistantOpsBar({ state }: { state: AssistantOpsState }) {
+  if (!state.provider && state.toolsCount === undefined && state.avgQualityScore === undefined && !state.loading) return null;
+  const qualityColor = (state.avgQualityScore ?? 1) < 0.75 ? 'orange' : 'green';
+  return (
+    <div className="global-ai-ops-bar">
+      <Tag color={state.configured === false ? 'red' : 'blue'}>
+        {state.provider || 'assistant'}{state.model ? ` / ${state.model}` : ''}
+      </Tag>
+      {state.toolsCount !== undefined && <Tag color="cyan">工具 {state.toolsCount}</Tag>}
+      {state.total7d !== undefined && <Tag>7天 {state.ok7d ?? 0}/{state.total7d}</Tag>}
+      {state.avgQualityScore !== undefined && <Tag color={qualityColor}>质量 {state.avgQualityScore.toFixed(2)}</Tag>}
+      {state.issueCount !== undefined && state.issueCount > 0 && <Tag color="orange">待复盘 {state.issueCount}</Tag>}
+      {state.feedbackBad30d !== undefined && state.feedbackBad30d > 0 && <Tag color="volcano">负反馈 {state.feedbackBad30d}</Tag>}
+      {state.loading && <Tag>同步中</Tag>}
+    </div>
+  );
+}
+
 export default function GlobalAiAssistant() {
   const { t, i18n } = useTranslation();
   const location = useLocation();
@@ -184,6 +386,7 @@ export default function GlobalAiAssistant() {
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [opsState, setOpsState] = useState<AssistantOpsState>({});
   const [sessionId] = useState(createAssistantSessionId);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -191,6 +394,44 @@ export default function GlobalAiAssistant() {
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [messages, loading, open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    setOpsState(prev => ({ ...prev, loading: true }));
+    Promise.allSettled([
+      getAssistantStatus(),
+      getAssistantTools(),
+      getAssistantQualityDashboard(),
+    ]).then(([statusResult, toolsResult, dashboardResult]) => {
+      if (cancelled) return;
+      const status = (statusResult.status === 'fulfilled' ? statusResult.value : {}) as Record<string, any>;
+      const tools = (toolsResult.status === 'fulfilled' ? toolsResult.value : {}) as Record<string, any>;
+      const dashboard = (dashboardResult.status === 'fulfilled' ? dashboardResult.value : {}) as Record<string, any>;
+      const feedbackBad30d = Array.isArray(dashboard.feedback)
+        ? dashboard.feedback
+            .filter((item: any) => ['wrong', 'unclear', 'scope_error', 'format_error'].includes(String(item.rating)))
+            .reduce((sum: number, item: any) => sum + Number(item.total || 0), 0)
+        : undefined;
+      setOpsState({
+        loading: false,
+        provider: status.provider,
+        model: status.model,
+        configured: status.configured,
+        total7d: status.total7d,
+        ok7d: status.ok7d,
+        avgQualityScore: typeof status.avgQualityScore === 'number' ? status.avgQualityScore : undefined,
+        toolsCount: typeof tools.count === 'number' ? tools.count : Array.isArray(tools.items) ? tools.items.length : undefined,
+        issueCount: Array.isArray(dashboard.recentIssues) ? dashboard.recentIssues.length : undefined,
+        feedbackBad30d,
+      });
+    }).catch(() => {
+      if (!cancelled) setOpsState(prev => ({ ...prev, loading: false }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const submit = async (manualQuestion?: string) => {
     const text = (typeof manualQuestion === 'string' ? manualQuestion : question).trim();
@@ -208,11 +449,18 @@ export default function GlobalAiAssistant() {
         role: 'assistant',
         content: data.answer,
         tables: data.tables || [],
+        charts: data.charts || [],
         llmUsed: Boolean(data.agent?.llmUsed),
         periodLabel: data.periodLabel,
         assistantPlan: data.assistantPlan,
         needsClarification: Boolean(data.needsClarification || data.assistantPlan?.needsClarification),
         clarification: data.clarification || data.assistantPlan?.clarification,
+        quality: data.quality,
+        diagnostics: data.diagnostics,
+        freshness: data.freshness,
+        conversationMemory: data.conversationMemory,
+        knowledgeReferences: data.knowledgeReferences,
+        agent: data.agent,
       }]);
     } catch (err: any) {
       setMessages(prev => [...prev, { role: 'assistant', content: err?.message || t('ai.queryFailed') }]);
@@ -250,6 +498,7 @@ export default function GlobalAiAssistant() {
       >
         <div className="global-ai-panel">
           <Text type="secondary" className="global-ai-hint">{t('ai.readOnlyHint')}</Text>
+          <AssistantOpsBar state={opsState} />
           <div className="global-ai-messages">
             {messages.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('ai.empty')} />
@@ -258,11 +507,16 @@ export default function GlobalAiAssistant() {
               const showClarificationOptions = index === latestClarificationIndex && !loading && clarificationOptions.length > 0;
               return (
                 <div key={index} className={`global-ai-message ${item.role}`}>
-	                  {item.content && (!item.tables?.length || item.llmUsed) && (
+		                  {item.content && (!item.tables?.length || item.llmUsed || item.charts?.length) && (
 	                    <Paragraph className="global-ai-summary">{item.content}</Paragraph>
 	                  )}
-                  {item.role === 'assistant' && <PlanMeta plan={item.assistantPlan} />}
-                  {item.tables?.map((table, tableIndex) => (
+	                  {item.role === 'assistant' && <PlanMeta plan={item.assistantPlan} />}
+	                  {item.role === 'assistant' && <ResponseMeta item={item} />}
+	                  {item.role === 'assistant' && <FeedbackBar item={item} question={messages[index - 1]?.role === 'user' ? messages[index - 1]?.content : undefined} />}
+	                  {item.charts?.map((chart, chartIndex) => (
+	                    <ChartResult key={chartIndex} chart={chart} />
+	                  ))}
+	                  {item.tables?.map((table, tableIndex) => (
                     <TableResult key={tableIndex} table={table} />
                   ))}
                   {showClarificationOptions && (
