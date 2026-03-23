@@ -94,20 +94,6 @@ def _trend_anomalies(monthly: dict[str, Any]) -> list[dict[str, Any]]:
                 "baselineVolume": round(avg_volume, 2),
                 "changePct": round((curr - avg_volume) / avg_volume * 100, 1),
             })
-    stations = [item for item in (monthly.get("stations") or []) if _num(item.get("volume")) > 0]
-    station_volumes = sorted((_num(item.get("volume")) for item in stations), reverse=True)
-    if len(station_volumes) >= 5:
-        median = station_volumes[len(station_volumes) // 2]
-        for item in stations:
-            volume = _num(item.get("volume"))
-            if median > 0 and volume < median * 0.25:
-                result.append({
-                    "type": "station_low_volume",
-                    "station": item.get("name") or item.get("short") or item.get("shopKey"),
-                    "currentVolume": round(volume, 2),
-                    "baselineVolume": round(median, 2),
-                    "changePct": round((volume - median) / median * 100, 1),
-                })
     return result[:30]
 
 

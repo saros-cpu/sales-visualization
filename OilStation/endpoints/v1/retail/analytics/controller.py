@@ -41,7 +41,22 @@ from loguru import logger
 
 
 SELF_USE_GENERATOR_GROUP = 9002
-SELF_USE_REPORT24_SOURCE_VERSION = 'report24-only-v1'
+SELF_USE_REPORT24_SOURCE_VERSION = 'report24-only-v2'
+
+
+def _build_utf8_as_cp1251_cyrillic_regex():
+    fragments = set()
+    for codepoint in range(0x0400, 0x0500):
+        try:
+            fragment = chr(codepoint).encode('utf-8').decode('cp1251')
+        except UnicodeError:
+            continue
+        if len(fragment) > 1:
+            fragments.add(re.escape(fragment))
+    return re.compile('|'.join(sorted(fragments, key=len, reverse=True)))
+
+
+_UTF8_AS_CP1251_CYRILLIC_RE = _build_utf8_as_cp1251_cyrillic_regex()
 
 
 def _strip_retail_text(value):
@@ -63,6 +78,7 @@ def _retail_text_score(value):
     text = str(value or '')
     cyrillic = len(re.findall(r'[\u0400-\u04FF]', text))
     latin_noise = len(re.findall(r'[\u00C0-\u00FF]', text))
+    utf8_cyrillic_mojibake = len(_UTF8_AS_CP1251_CYRILLIC_RE.findall(text))
     direct_noise = len(re.findall(
         r'(?:Ã|Â|Ð|Ñ|Гѓ|ГВ|Гў|вЂ|Р[ Ў“’Ћ†ІТВРђќ]|С[“‹]|Т[ђ‘]|Г[ѓВўЌі°§ ¤Ђ«ЁҐЊ±•ў©І®ЎЄђ‘])',
         text,
@@ -72,6 +88,7 @@ def _retail_text_score(value):
     return (
         cyrillic * 5
         - latin_noise * 6
+        - utf8_cyrillic_mojibake * 40
         - direct_noise * 35
         - pair_noise * 25
         - replacement_noise * 100

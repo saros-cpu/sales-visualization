@@ -154,7 +154,39 @@ def _copy_summary_template(ws, template_path, title):
             template_workbook.close()
 
 
-def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, contract_data, start_bal, end_bal, loss_data, total_label, allow_fixed_density_fallback=True):
+def _has_cyrillic_text(value):
+    return any('\u0400' <= char <= '\u052f' for char in str(value or ''))
+
+
+def _apply_report_russian_fonts(ws, max_row=None, max_col=None):
+    for row in ws.iter_rows(max_row=max_row or ws.max_row, max_col=max_col or ws.max_column):
+        for cell in row:
+            if not _has_cyrillic_text(cell.value):
+                continue
+            font = copy(cell.font)
+            font.name = 'Times New Roman'
+            cell.font = font
+
+
+def _prepare_weekly_summary_template(ws, title):
+    for merged_range in list(ws.merged_cells.ranges):
+        if merged_range.min_row == 1 and merged_range.max_row == 1:
+            ws.unmerge_cells(str(merged_range))
+    ws.insert_cols(18)
+    ws.column_dimensions['R'].width = 13
+    _apply_style(ws, 3, 18, 'Объем Договора\nГСМ (T)', bold=True, size=8, wrap=True)
+    _apply_style(ws, 4, 18, '合同销售吨', bold=True, size=9, wrap=True)
+    ws.merge_cells('A1:AA1')
+    ws.cell(row=1, column=1, value=title)
+    _apply_report_russian_fonts(ws, max_row=4, max_col=27)
+
+
+def _number_format_for_ton_digits(digits):
+    digits = int(digits or 0)
+    return '#,##0' if digits <= 0 else '#,##0.' + ('0' * digits)
+
+
+def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, contract_data, start_bal, end_bal, loss_data, total_label, allow_fixed_density_fallback=True, include_contract_ton=False, ton_decimals=3):
     current_row = 5
     subtotal_rows = []
     for sk in station_keys:
@@ -164,14 +196,18 @@ def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, c
             ws, current_row, sk, info, sales_data, ved_data, supply_data,
             start_bal, end_bal, contract_data=contract_data, loss_data=loss_data,
             is_monthly=True, fuel_keys=fuel_keys, allow_fixed_density_fallback=allow_fixed_density_fallback,
+            include_contract_ton=include_contract_ton, ton_decimals=ton_decimals,
         )
         ws.cell(row=current_row - 1, column=1, value="所选日期小计")
         subtotal_rows.append(current_row - 1)
 
     _apply_style(ws, current_row, 1, total_label, bold=True, size=9, fill=_FILL_TOTAL)
     ws.merge_cells(f"A{current_row}:E{current_row}")
-    total_skip_cols = {18, 23}
-    for col in range(2, 27):
+    col_end = 27 if include_contract_ton else 26
+    total_skip_cols = {19, 24} if include_contract_ton else {18, 23}
+    total_ton_cols = {7, 9, 18, 22, 26} if include_contract_ton else {7, 9, 21, 25}
+    ton_num_fmt = _number_format_for_ton_digits(ton_decimals)
+    for col in range(2, col_end + 1):
         col_letter = get_column_letter(col)
         if col >= 6:
             if col in total_skip_cols:
@@ -179,12 +215,13 @@ def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, c
             else:
                 parts = [f"{col_letter}{row}" for row in subtotal_rows]
                 formula = "=" + "+".join(parts)
-                _apply_style(ws, current_row, col, formula, bold=True, size=9, fill=_FILL_TOTAL)
+                num_fmt = ton_num_fmt if col in total_ton_cols else '#,##0.000'
+                _apply_style(ws, current_row, col, formula, bold=True, size=9, num_fmt=num_fmt, fill=_FILL_TOTAL)
         else:
             _apply_style(ws, current_row, col, None, bold=True, size=9, fill=_FILL_TOTAL)
 
-    no_fill_cols = {1, 2, 3, 4, 6, 7, 25, 26}
-    for row in ws.iter_rows(min_row=5, max_row=current_row, max_col=26):
+    no_fill_cols = {1, 2, 3, 4, 6, 7, 26, 27} if include_contract_ton else {1, 2, 3, 4, 6, 7, 25, 26}
+    for row in ws.iter_rows(min_row=5, max_row=current_row, max_col=col_end):
         for cell in row:
             if cell.column in no_fill_cols and not (cell.row in subtotal_rows or cell.row == current_row):
                 cell.fill = PatternFill(fill_type=None)
@@ -226,9 +263,11 @@ def generate_range_summary_excel(conn, date_from, date_to, force_refresh=False):
     ws = wb.active
     title = f"Финансовый недельный отчет по АЗС / 加油站零售周报表 {date_from} - {date_to}"
     _copy_summary_template(ws, template_path, title)
+    _prepare_weekly_summary_template(ws, title)
     _write_summary_blocks(
         ws, station_keys, sales_data, ved_data, supply_data, contract_data,
         start_bal, end_bal, loss_data, "所选日期总合计", allow_fixed_density_fallback=allow_fixed_density_fallback,
+        include_contract_ton=True, ton_decimals=4,
     )
 
     WEEKLY_REPORT_DIR.mkdir(parents=True, exist_ok=True)

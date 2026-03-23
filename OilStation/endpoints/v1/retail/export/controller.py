@@ -80,7 +80,12 @@ def _self_use_vehicle_remark(record):
 def _group_self_use_totals_by_station(records):
     totals = {}
     for rec in records:
+        try:
+            station_order = int(rec.get('shopKey') or 999999)
+        except (TypeError, ValueError):
+            station_order = 999999
         key = (
+            station_order,
             str(rec.get('stationName') or '-'),
             str(rec.get('stationShort') or ''),
             str(rec.get('plateNumber') or '-'),
@@ -96,8 +101,8 @@ def _group_self_use_totals_by_station(records):
 
 def _group_self_use_station_blocks(records):
     blocks = {}
-    for (station_name, station_short, plate, product, remark), values in _group_self_use_totals_by_station(records):
-        station_key = (station_name, station_short)
+    for (station_order, station_name, station_short, plate, product, remark), values in _group_self_use_totals_by_station(records):
+        station_key = (station_order, station_name, station_short)
         blocks.setdefault(station_key, []).append({
             'plate': plate,
             'product': product,
@@ -106,7 +111,10 @@ def _group_self_use_station_blocks(records):
             'weightKg': values['weightKg'],
             'amount': values['amount'],
         })
-    return [(station, items) for station, items in sorted(blocks.items(), key=lambda item: item[0])]
+    return [
+        ((station_name, station_short), items)
+        for (station_order, station_name, station_short), items in sorted(blocks.items(), key=lambda item: item[0])
+    ]
 
 
 def _has_cyrillic(value):
@@ -345,11 +353,11 @@ def api_export_self_use(year_month):
 
     headers = ['日期', '站点', '加油站俄语名称', '油品', '车牌号', '数量(L)', '公斤(kg)', '金额(сом)']
     header_fill = PatternFill(start_color='CC0000', end_color='CC0000', fill_type='solid')
-    header_font_white = Font(bold=True, size=11, color='FFFFFF')
+    header_font_white = Font(name='Times New Roman', bold=True, size=11, color='FFFFFF')
     subtotal_fill = PatternFill(start_color='FFF2CC', end_color='FFF2CC', fill_type='solid')
     total_fill = PatternFill(start_color='D9EAF7', end_color='D9EAF7', fill_type='solid')
     center_align = Alignment(horizontal='center', vertical='center')
-    bold_font = Font(bold=True, size=11)
+    bold_font = Font(name='Times New Roman', bold=True, size=11)
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
@@ -440,7 +448,7 @@ def api_export_self_use_range():
                 records.append(rec)
 
     header_fill = PatternFill(start_color='CC0000', end_color='CC0000', fill_type='solid')
-    header_font = Font(bold=True, size=11, color='FFFFFF')
+    header_font = Font(name='Times New Roman', bold=True, size=11, color='FFFFFF')
     subtotal_fill = PatternFill(start_color='FFF2CC', end_color='FFF2CC', fill_type='solid')
     total_fill = PatternFill(start_color='D9EAF7', end_color='D9EAF7', fill_type='solid')
     center_align = Alignment(horizontal='center', vertical='center')
@@ -557,7 +565,7 @@ def api_export_self_use_range():
         cell.alignment = center_align
         cell.border = thin_border
 
-    bold_font = Font(bold=True, size=11)
+    bold_font = Font(name='Times New Roman', bold=True, size=11)
     row = 2
     for product in products:
         company_items = company_groups.get(product, [])
@@ -609,5 +617,5 @@ def api_export_self_use_range():
     bio.seek(0)
 
     return send_file(bio, as_attachment=True,
-                     download_name=f'自用油_{date_from}_to_{date_to}.xlsx',
+                     download_name=f'自用油_{date_from}_至_{date_to}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

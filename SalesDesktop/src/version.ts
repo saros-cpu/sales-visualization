@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.3';
+export const VERSION = '3.9.4';
 export const BUILD_DATE = '2026-07-23';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.4',
+    date: '2026-07-23',
+    type: 'patch',
+    changes: [
+      '新增：零售周报在“合同销售量”后增加“合同销售吨”列，并按合同销售质量换算吨位',
+      '优化：零售周报起初吨、转运吨、合同销售吨、销售总吨和期末吨统一保留小数点后四位',
+      '修复：自用油报表“按加油站统计”分表按加油站编号顺序排列，避免按站名排序打乱业务顺序',
+      '修复：自用油车牌/司机中的俄文旧编码乱码，例如 01KG000AA-Водитель 可正常输出',
+      '优化：零售报表和自用油报表含俄语内容统一使用 Times New Roman 字体，自用油导出文件名改为中文',
+      '修复：系统健康不再把 401/403 审计记录计为 API 故障，提醒中心去除小站低销量误报',
+    ],
+  },
   {
     version: '3.9.3',
     date: '2026-07-23',

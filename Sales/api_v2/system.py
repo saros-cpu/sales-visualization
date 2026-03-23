@@ -43,6 +43,7 @@ AUTOMATION_TASK_KEYS = {
     "retail_snapshots",
     "retail_accounting_reports",
 }
+API_HEALTH_FAILURE_CONDITION = "success = 0 AND status_code NOT IN (401, 403)"
 
 
 def _file_info(path: Path, required_keys: set[str] | None = None) -> dict[str, Any]:
@@ -770,21 +771,22 @@ def _api_summary(cur) -> dict[str, Any]:
     ensure_audit_schema(cur)
     cur.execute("""
         SELECT COUNT(*) AS total,
-               SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed,
+               SUM(CASE WHEN {failure_condition} THEN 1 ELSE 0 END) AS failed,
                AVG(duration_ms) AS avg_duration_ms
         FROM system_operation_logs
         WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)
-    """)
+    """.format(failure_condition=API_HEALTH_FAILURE_CONDITION))
     row = cur.fetchone() or {}
     cur.execute("""
-        SELECT path, COUNT(*) AS calls, SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed,
+        SELECT path, COUNT(*) AS calls,
+               SUM(CASE WHEN {failure_condition} THEN 1 ELSE 0 END) AS failed,
                AVG(duration_ms) AS avg_duration_ms, MAX(created_at) AS last_called_at
         FROM system_operation_logs
         WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)
         GROUP BY path
         ORDER BY calls DESC
         LIMIT 20
-    """)
+    """.format(failure_condition=API_HEALTH_FAILURE_CONDITION))
     top = [dict(item) for item in cur.fetchall()]
     cur.execute("""
         SELECT id, username, module_key, action_key, method, path, status_code, success, duration_ms, created_at

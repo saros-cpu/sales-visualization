@@ -168,8 +168,13 @@ def _balance_end_density_expr(prefix='b'):
     return f"COALESCE(NULLIF({p}EndDensity, 0), NULLIF({p}EndDensityReal, 0), NULLIF({p}EndDensityCalculation, 0), 0)"
 
 
-def _mass_kg_to_tons(value):
-    return round(float(value or 0) / 1000, 3)
+def _mass_kg_to_tons(value, digits=3):
+    return round(float(value or 0) / 1000, int(digits or 0))
+
+
+def _ton_number_format(digits=3):
+    digits = int(digits or 0)
+    return '#,##0' if digits <= 0 else '#,##0.' + ('0' * digits)
 
 
 def _allow_fixed_density_fallback(period_start=None):
@@ -226,7 +231,7 @@ def _metric_density(metric_map, shop_key, resource_key, default=0):
 
 def _make_cell_style(bold=False, size=10, h_align='center', v_align='center', wrap=False):
     return {
-        'font': Font(name='Arial', bold=bold, size=size),
+        'font': Font(name='Times New Roman', bold=bold, size=size),
         'alignment': Alignment(horizontal=h_align, vertical=v_align, wrap_text=wrap),
         'border': Border(
             left=Side(style='thin', color='000000'),
@@ -1552,16 +1557,19 @@ def _get_station_fuel_keys(shop_key, start_bal, end_bal, sales_data, ved_data, s
 
 def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_data,
                          start_bal, end_bal, contract_data=None, loss_data=None,
-                         is_monthly=True, fuel_keys=None, allow_fixed_density_fallback=True):
+                         is_monthly=True, fuel_keys=None, allow_fixed_density_fallback=True,
+                         include_contract_ton=False, ton_decimals=3):
     """写入一个站点的 n_fuel 行油品数据 + 小计行，返回下一行号
     列布局（新增辅助列）：
-      1=编号 (合并 n_fuel 行), 2=辅助列 (中俄文站名), 3=加油站名称 (合并 n_fuel 行), 4=油品名，5=密度，6~26=数值
+      1=编号 (合并 n_fuel 行), 2=辅助列 (中俄文站名), 3=加油站名称 (合并 n_fuel 行), 4=油品名，5=密度，6~26/27=数值
     fuel_keys: 该站应该显示的油品列表（动态决定，标准站≤5，STN-55=6）
     """
     name_cn = info['name']
     name_ru = info['short']
     cd = contract_data or {}
     ld = loss_data or {}
+    ton_num_fmt = _ton_number_format(ton_decimals)
+    normal_num_fmt = '#,##0.000'
     
     # 动态获取油品列表（如果调用方未传入）
     if fuel_keys is None:
@@ -1684,10 +1692,11 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
             or fixed_density
         )
 
-        sb_ton = _mass_kg_to_tons(sb_mass)
-        sp_ton = _mass_kg_to_tons(supply_mass)
-        eb_ton = _mass_kg_to_tons(eb_mass)
-        total_ton = _mass_kg_to_tons(total_mass)
+        sb_ton = _mass_kg_to_tons(sb_mass, ton_decimals)
+        sp_ton = _mass_kg_to_tons(supply_mass, ton_decimals)
+        eb_ton = _mass_kg_to_tons(eb_mass, ton_decimals)
+        total_ton = _mass_kg_to_tons(total_mass, ton_decimals)
+        contract_ton = _mass_kg_to_tons(contract_mass, ton_decimals)
 
         # 活动判断：有无销售/转运/库存数据
         has_activity = (has_start_balance or has_end_balance or sp > 0 or total_vol > 0)
@@ -1703,7 +1712,7 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
                 # 无实际数据，清零所有值（显示为空）
                 sb = eb = sp = total_vol = cash_vol = card_vol = vd = 0
                 sb_mass = eb_mass = supply_mass = total_mass = cash_mass = card_mass = contract_mass = 0
-                sb_ton = eb_ton = sp_ton = total_ton = 0
+                sb_ton = eb_ton = sp_ton = total_ton = contract_ton = 0
 
         r = row + i
         # 列4=油品名，列5=密度
@@ -1711,73 +1720,85 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
         _apply_style(ws, r, 5, density, num_fmt='0.000', size=9, fill=_FILL_DATA)
 
         if is_monthly:
-            # 月总表26列：列6~26（起初量...损耗）
+            # 月/周总表：月报26列，周报可插入合同销售吨位后变为27列。
             sales_total_vol = cash_vol + card_vol + contract_vol
             sales_total_amt = cash_amt + card_amt + contract_amt
-            sales_total_ton = _mass_kg_to_tons(cash_mass + card_mass + contract_mass)
+            sales_total_ton = _mass_kg_to_tons(cash_mass + card_mass + contract_mass, ton_decimals)
             loss = ld.get((shop_key, rk), 0)
+            monthly_col_end = 27 if include_contract_ton else 26
+            monthly_ton_cols = {7, 9, 21, 25}
+            monthly_values = [
+                (6, sb),
+                (7, sb_ton),
+                (8, sp),
+                (9, sp_ton),
+                (10, vd),
+                (11, cash_vol),
+                (12, bonus_vol),
+                (13, bonus_amt),
+                (14, cash_amt),
+                (15, card_vol),
+                (16, card_amt),
+                (17, contract_vol),
+            ]
+            if include_contract_ton:
+                monthly_ton_cols = {7, 9, 18, 22, 26}
+                monthly_values.extend([
+                    (18, contract_ton),
+                    (19, contract_price),
+                    (20, contract_amt),
+                    (21, sales_total_vol),
+                    (22, sales_total_ton),
+                    (23, sales_total_amt),
+                    (24, avg_price),
+                    (25, eb),
+                    (26, eb_ton),
+                    (27, loss),
+                ])
+            else:
+                monthly_values.extend([
+                    (18, contract_price),
+                    (19, contract_amt),
+                    (20, sales_total_vol),
+                    (21, sales_total_ton),
+                    (22, sales_total_amt),
+                    (23, avg_price),
+                    (24, eb),
+                    (25, eb_ton),
+                    (26, loss),
+                ])
 
             if has_activity:
                 # 有活动数据：显示所有值
-                _apply_style(ws, r, 6, _v(sb), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 7, _v(sb_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 8, _v(sp), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 9, _v(sp_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 10, _v(vd), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 11, _v(cash_vol), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 12, _v(bonus_vol), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 13, _v(bonus_amt), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 14, _v(cash_amt), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 15, _v(card_vol), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 16, _v(card_amt), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 17, _v(contract_vol), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 18, _v(contract_price), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 19, _v(contract_amt), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 20, _v(sales_total_vol), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 21, _v(sales_total_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 22, _v(sales_total_amt), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 23, _v(avg_price), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 24, _v(eb), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 25, _v(eb_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 26, _v(loss), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
+                for col, value in monthly_values:
+                    num_fmt = ton_num_fmt if col in monthly_ton_cols else normal_num_fmt
+                    _apply_style(ws, r, col, _v(value), num_fmt=num_fmt, size=9, fill=_FILL_DATA)
             elif has_balance:
                 # 仅库存数据（装修停业等）：起初量/期末量/损耗以数据库实际数据为准，其余留空
-                _apply_style(ws, r, 6, _v(sb), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 7, _v(sb_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 8, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 9, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 10, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 11, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 12, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 13, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 14, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 15, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 16, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 17, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 18, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 19, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 20, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 21, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 22, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 23, None, size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 24, _v(eb), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 25, _v(eb_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 26, _v(loss), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
+                for col in range(6, monthly_col_end + 1):
+                    _apply_style(ws, r, col, None, size=9, fill=_FILL_DATA)
+                end_vol_col = 25 if include_contract_ton else 24
+                end_ton_col = 26 if include_contract_ton else 25
+                loss_col = 27 if include_contract_ton else 26
+                balance_values = [(6, sb), (7, sb_ton), (end_vol_col, eb), (end_ton_col, eb_ton), (loss_col, loss)]
+                for col, value in balance_values:
+                    num_fmt = ton_num_fmt if col in monthly_ton_cols else normal_num_fmt
+                    _apply_style(ws, r, col, _v(value), num_fmt=num_fmt, size=9, fill=_FILL_DATA)
             else:
-                for col in range(6, 27):
+                for col in range(6, monthly_col_end + 1):
                     _apply_style(ws, r, col, None, size=9, fill=_FILL_DATA)
         else:
             # 日分表24列：列6~23（起初量...损耗）
             sales_total_vol = cash_vol + card_vol + contract_vol
             sales_total_amt = cash_amt + card_amt + contract_amt
-            sales_total_ton = _mass_kg_to_tons(cash_mass + card_mass + contract_mass)
+            sales_total_ton = _mass_kg_to_tons(cash_mass + card_mass + contract_mass, ton_decimals)
             loss = ld.get((shop_key, rk), 0)
 
             if has_activity:
                 _apply_style(ws, r, 6, _v(sb), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 7, _v(sb_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
+                _apply_style(ws, r, 7, _v(sb_ton), num_fmt=ton_num_fmt, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 8, _v(sp), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 9, _v(sp_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
+                _apply_style(ws, r, 9, _v(sp_ton), num_fmt=ton_num_fmt, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 10, _v(vd), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 11, _v(cash_vol), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 12, _v(avg_price), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
@@ -1788,15 +1809,15 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
                 _apply_style(ws, r, 17, _v(card_amt), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 18, _v(contract_vol), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 19, _v(sales_total_vol), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 20, _v(sales_total_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
+                _apply_style(ws, r, 20, _v(sales_total_ton), num_fmt=ton_num_fmt, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 21, _v(sales_total_amt), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 22, _v(eb), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 23, _v(eb_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
+                _apply_style(ws, r, 23, _v(eb_ton), num_fmt=ton_num_fmt, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 24, _v(loss), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
             elif has_balance:
                 # 仅库存数据（装修停业等）：起初量/期末量/损耗以数据库实际数据为准
                 _apply_style(ws, r, 6, _v(sb), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 7, _v(sb_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
+                _apply_style(ws, r, 7, _v(sb_ton), num_fmt=ton_num_fmt, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 8, None, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 9, None, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 10, None, size=9, fill=_FILL_DATA)
@@ -1812,7 +1833,7 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
                 _apply_style(ws, r, 20, None, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 21, None, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 22, _v(eb), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
-                _apply_style(ws, r, 23, _v(eb_ton), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
+                _apply_style(ws, r, 23, _v(eb_ton), num_fmt=ton_num_fmt, size=9, fill=_FILL_DATA)
                 _apply_style(ws, r, 24, _v(loss), num_fmt='#,##0.000', size=9, fill=_FILL_DATA)
             else:
                 for col in range(6, 25):
@@ -1821,7 +1842,7 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
     # 小计行
     sub_row = row + n_fuel
     sub_label = '当月小计' if is_monthly else 'Итого на текущий день'
-    col_end = 26 if is_monthly else 24
+    col_end = 27 if is_monthly and include_contract_ton else (26 if is_monthly else 24)
     _apply_style(ws, sub_row, 1, sub_label, bold=True, size=9, fill=_FILL_SUBTOTAL)
     ws.merge_cells(f'A{sub_row}:E{sub_row}')  # 编号+辅助列+加油站名称(5列合并)
     for col in range(2, col_end + 1):
@@ -1829,9 +1850,11 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
 
     # 用 SUM 公式汇总（单价列不参与求和，留空）
     if is_monthly:
-        skip_cols = {18, 23}  # 合同单价、当月均价不参与求和
+        skip_cols = {19, 24} if include_contract_ton else {18, 23}  # 合同单价、当月均价不参与求和
+        subtotal_ton_cols = {7, 9, 18, 22, 26} if include_contract_ton else {7, 9, 21, 25}
     else:
         skip_cols = {12}  # 现金单价不参与求和
+        subtotal_ton_cols = {7, 9, 20, 23}
 
     for col in range(6, col_end + 1):
         col_letter = get_column_letter(col)
@@ -1839,7 +1862,8 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
             _apply_style(ws, sub_row, col, '', bold=True, size=9, fill=_FILL_SUBTOTAL)
         else:
             formula = f'=SUM({col_letter}{row}:{col_letter}{row + n_fuel - 1})'
-            _apply_style(ws, sub_row, col, formula, bold=True, size=9, num_fmt='#,##0.000', fill=_FILL_SUBTOTAL)
+            num_fmt = ton_num_fmt if col in subtotal_ton_cols else normal_num_fmt
+            _apply_style(ws, sub_row, col, formula, bold=True, size=9, num_fmt=num_fmt, fill=_FILL_SUBTOTAL)
 
     return sub_row + 1
 

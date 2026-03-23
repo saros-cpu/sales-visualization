@@ -131,6 +131,6 @@ export async function downloadSelfUseReport(dateFrom: string, dateTo: string) {
   const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
   await downloadBlob(
     `${API_BASE}/export/self-use?${params}`,
-    `self_use_${dateFrom}_to_${dateTo}.xlsx`,
+    `自用油_${dateFrom}_至_${dateTo}.xlsx`,
   );
 }
