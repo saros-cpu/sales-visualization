@@ -25,9 +25,11 @@ from export_excel import (
     _balance_end_mass_expr,
     _build_sheet_data,
     _density_from_mass_volume,
+    _excel_round_formula,
     _get_station_fuel_keys,
     _infer_resource_code_daily,
     _mass_from_db_mass_or_density,
+    _round_half_up,
     _selling_mass_expr,
     _supply_mass_expr,
     _write_station_block,
@@ -214,7 +216,8 @@ def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, c
                 _apply_style(ws, current_row, col, "", bold=True, size=9, fill=_FILL_TOTAL)
             else:
                 parts = [f"{col_letter}{row}" for row in subtotal_rows]
-                formula = "=" + "+".join(parts)
+                formula_digits = ton_decimals if col in total_ton_cols else 3
+                formula = _excel_round_formula("+".join(parts) or "0", formula_digits)
                 num_fmt = ton_num_fmt if col in total_ton_cols else '#,##0.000'
                 _apply_style(ws, current_row, col, formula, bold=True, size=9, num_fmt=num_fmt, fill=_FILL_TOTAL)
         else:
@@ -371,6 +374,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     _apply_style(ws, current_row, 1, '当月总合计', bold=True, size=9, fill=_FILL_TOTAL)
     ws.merge_cells(f'A{current_row}:E{current_row}')
     total_skip_cols = {18, 23}
+    monthly_total_ton_cols = {7, 9, 21, 25}
     for col in range(2, 27):
         col_letter = get_column_letter(col)
         if col >= 6:
@@ -378,8 +382,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 _apply_style(ws, current_row, col, '', bold=True, size=9, fill=_FILL_TOTAL)
             else:
                 parts = [f'{col_letter}{r}' for r in subtotal_rows]
-                formula = '=' + '+'.join(parts)
-                _apply_style(ws, current_row, col, formula, bold=True, size=9, fill=_FILL_TOTAL)
+                formula = _excel_round_formula('+'.join(parts) or '0', 3)
+                num_fmt = _number_format_for_ton_digits(3) if col in monthly_total_ton_cols else '#,##0.000'
+                _apply_style(ws, current_row, col, formula, bold=True, size=9, num_fmt=num_fmt, fill=_FILL_TOTAL)
         else:
             _apply_style(ws, current_row, col, None, bold=True, size=9, fill=_FILL_TOTAL)
 
@@ -493,14 +498,14 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         bonus_vol = float(r[10] or 0)
         total_mass = float(r[14] or 0)
         row_data = {
-            'cash_vol': round(float(r[2] or 0), 3), 'cash_amt': round(float(r[3] or 0), 2),
-            'card_vol': round(float(r[4] or 0), 3), 'card_amt': round(float(r[5] or 0), 2),
-            'total_vol': round(total_vol, 3), 'total_amt': round(float(r[7] or 0), 2),
-            'bonus_amt': round(bonus_amt, 2), 'bonus_vol': round(bonus_vol, 3),
-            'avg_price': round(avg_price, 2),
-            'cash_mass': round(float(r[12] or 0), 3),
-            'card_mass': round(float(r[13] or 0), 3),
-            'total_mass': round(total_mass, 3),
+            'cash_vol': _round_half_up(float(r[2] or 0), 3), 'cash_amt': _round_half_up(float(r[3] or 0), 2),
+            'card_vol': _round_half_up(float(r[4] or 0), 3), 'card_amt': _round_half_up(float(r[5] or 0), 2),
+            'total_vol': _round_half_up(total_vol, 3), 'total_amt': _round_half_up(float(r[7] or 0), 2),
+            'bonus_amt': _round_half_up(bonus_amt, 2), 'bonus_vol': _round_half_up(bonus_vol, 3),
+            'avg_price': _round_half_up(avg_price, 2),
+            'cash_mass': _round_half_up(float(r[12] or 0), 3),
+            'card_mass': _round_half_up(float(r[13] or 0), 3),
+            'total_mass': _round_half_up(total_mass, 3),
             'density': _density_from_mass_volume(total_mass, total_vol, r[15] or 0),
         }
         if day_str not in daily_sales_cache:
@@ -511,19 +516,19 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             daily_sales_cache[day_str][sk][rk] = row_data
         else:
             ex = daily_sales_cache[day_str][sk][rk]
-            ex['cash_vol']  = round(ex['cash_vol']  + row_data['cash_vol'],  3)
-            ex['cash_amt']  = round(ex['cash_amt']  + row_data['cash_amt'],  2)
-            ex['card_vol']  = round(ex['card_vol']  + row_data['card_vol'],  3)
-            ex['card_amt']  = round(ex['card_amt']  + row_data['card_amt'],  2)
-            ex['total_vol'] = round(ex['total_vol'] + row_data['total_vol'], 3)
-            ex['total_amt'] = round(ex['total_amt'] + row_data['total_amt'], 2)
-            ex['bonus_amt'] = round(ex['bonus_amt'] + row_data['bonus_amt'], 2)
-            ex['bonus_vol'] = round(ex['bonus_vol'] + row_data['bonus_vol'], 3)
-            ex['cash_mass'] = round(ex.get('cash_mass', 0) + row_data.get('cash_mass', 0), 3)
-            ex['card_mass'] = round(ex.get('card_mass', 0) + row_data.get('card_mass', 0), 3)
-            ex['total_mass'] = round(ex.get('total_mass', 0) + row_data.get('total_mass', 0), 3)
+            ex['cash_vol']  = _round_half_up(ex['cash_vol']  + row_data['cash_vol'],  3)
+            ex['cash_amt']  = _round_half_up(ex['cash_amt']  + row_data['cash_amt'],  2)
+            ex['card_vol']  = _round_half_up(ex['card_vol']  + row_data['card_vol'],  3)
+            ex['card_amt']  = _round_half_up(ex['card_amt']  + row_data['card_amt'],  2)
+            ex['total_vol'] = _round_half_up(ex['total_vol'] + row_data['total_vol'], 3)
+            ex['total_amt'] = _round_half_up(ex['total_amt'] + row_data['total_amt'], 2)
+            ex['bonus_amt'] = _round_half_up(ex['bonus_amt'] + row_data['bonus_amt'], 2)
+            ex['bonus_vol'] = _round_half_up(ex['bonus_vol'] + row_data['bonus_vol'], 3)
+            ex['cash_mass'] = _round_half_up(ex.get('cash_mass', 0) + row_data.get('cash_mass', 0), 3)
+            ex['card_mass'] = _round_half_up(ex.get('card_mass', 0) + row_data.get('card_mass', 0), 3)
+            ex['total_mass'] = _round_half_up(ex.get('total_mass', 0) + row_data.get('total_mass', 0), 3)
             if ex['total_vol'] > 0:
-                ex['avg_price'] = round(ex['total_amt'] / ex['total_vol'], 2)
+                ex['avg_price'] = _round_half_up(ex['total_amt'] / ex['total_vol'], 2)
                 ex['density'] = _density_from_mass_volume(ex.get('total_mass', 0), ex['total_vol'], ex.get('density', 0))
 
     cur.execute(f"""
@@ -599,13 +604,13 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         rk = int(r[1])
         if rk < 100:
             continue
-        vol = round(float(r[2] or 0), 3)
+        vol = _round_half_up(float(r[2] or 0), 3)
         ds = str(r[3])
         d_day = _daily_metric_map(daily_ved_cache, ds)
         d_sk = d_day.setdefault(sk, {})
-        d_sk[rk] = round(d_sk.get(rk, 0) + vol, 3)
+        d_sk[rk] = _round_half_up(d_sk.get(rk, 0) + vol, 3)
         key = (sk, rk)
-        d_day.mass[key] = round(d_day.mass.get(key, 0) + float(r[4] or 0), 3)
+        d_day.mass[key] = _round_half_up(d_day.mass.get(key, 0) + float(r[4] or 0), 3)
         d_day.density[key] = _density_from_mass_volume(d_day.mass[key], d_sk[rk], r[5] or 0)
 
     cur.execute(f"""
@@ -639,11 +644,11 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     for r in cur.fetchall():
         sk = int(r[0])
         orig_rk = int(r[1])
-        vol = round(float(r[2] or 0), 3)
+        vol = _round_half_up(float(r[2] or 0), 3)
         avg_density = float(r[3] or 0)
         ds = str(r[4])
         rsk = r[5]
-        mass = round(float(r[6] or 0), 3)
+        mass = _round_half_up(float(r[6] or 0), 3)
 
         if orig_rk >= 100:
             rk = orig_rk
@@ -676,9 +681,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             continue
         d_day = _daily_metric_map(daily_supply_cache, ds)
         d_sk = d_day.setdefault(sk, {})
-        d_sk[rk] = round(d_sk.get(rk, 0) + vol, 3)
+        d_sk[rk] = _round_half_up(d_sk.get(rk, 0) + vol, 3)
         key = (sk, rk)
-        d_day.mass[key] = round(d_day.mass.get(key, 0) + mass, 3)
+        d_day.mass[key] = _round_half_up(d_day.mass.get(key, 0) + mass, 3)
         d_day.density[key] = _density_from_mass_volume(d_day.mass[key], d_sk[rk], avg_density)
 
     cur.execute(f"""
@@ -756,22 +761,22 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         rk = int(r[1])
         if rk < 100:
             continue
-        vol = round(float(r[2] or 0), 3)
-        amt = round(float(r[3] or 0), 2)
-        contract_price_val = round(float(r[4] or 0), 2)
+        vol = _round_half_up(float(r[2] or 0), 3)
+        amt = _round_half_up(float(r[3] or 0), 2)
+        contract_price_val = _round_half_up(float(r[4] or 0), 2)
         ds = str(r[5])
-        mass = round(float(r[6] or 0), 3)
+        mass = _round_half_up(float(r[6] or 0), 3)
         density = _density_from_mass_volume(mass, vol, r[7] or 0)
         d_sk = daily_contract_cache.setdefault(ds, {}).setdefault(sk, {})
         if rk not in d_sk:
             d_sk[rk] = {'vol': vol, 'amt': amt, 'price': contract_price_val, 'mass': mass, 'density': density}
         else:
             ex = d_sk[rk]
-            new_vol = round(ex['vol'] + vol, 3)
-            new_amt = round(ex['amt'] + amt, 2)
-            new_mass = round(ex.get('mass', 0) + mass, 3)
+            new_vol = _round_half_up(ex['vol'] + vol, 3)
+            new_amt = _round_half_up(ex['amt'] + amt, 2)
+            new_mass = _round_half_up(ex.get('mass', 0) + mass, 3)
             d_sk[rk] = {'vol': new_vol, 'amt': new_amt,
-                        'price': round(new_amt / new_vol, 2) if new_vol > 0 else 0,
+                        'price': _round_half_up(new_amt / new_vol, 2) if new_vol > 0 else 0,
                         'mass': new_mass,
                         'density': _density_from_mass_volume(new_mass, new_vol, ex.get('density', density))}
 
@@ -817,9 +822,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         if rk < 100:
             continue
         ds = str(r[10])
-        beg = round(float(r[2] or 0), 3)
+        beg = _round_half_up(float(r[2] or 0), 3)
         beg_density = float(r[4] or 0)
-        end = round(float(r[5] or 0), 3)
+        end = _round_half_up(float(r[5] or 0), 3)
         end_density = float(r[7] or 0)
         beg_mass = _mass_from_db_mass_or_density(r[3], beg, beg_density)
         end_mass = _mass_from_db_mass_or_density(r[6], end, end_density)
@@ -835,8 +840,8 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             ds_start.mass[key] = beg_mass
             ds_start.density[key] = _density_from_mass_volume(beg_mass, beg, beg_density)
         elif shift_dt == ds_start_dt[key]:
-            ds_start[key] = round(ds_start.get(key, 0) + beg, 3)
-            ds_start.mass[key] = round(ds_start.mass.get(key, 0) + beg_mass, 3)
+            ds_start[key] = _round_half_up(ds_start.get(key, 0) + beg, 3)
+            ds_start.mass[key] = _round_half_up(ds_start.mass.get(key, 0) + beg_mass, 3)
             ds_start.density[key] = _density_from_mass_volume(ds_start.mass[key], ds_start[key], beg_density)
 
         ds_end_dt = daily_end_dt.setdefault(ds, {})
@@ -848,12 +853,12 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             ds_end.mass[key] = end_mass
             ds_end.density[key] = _density_from_mass_volume(end_mass, end, end_density)
             if sk not in (29, 30):
-                ds_loss[key] = round(end_calc - end, 3)
+                ds_loss[key] = _round_half_up(end_calc - end, 3)
         elif shift_dt == ds_end_dt[key]:
-            ds_end[key] = round(ds_end.get(key, 0) + end, 3)
-            ds_end.mass[key] = round(ds_end.mass.get(key, 0) + end_mass, 3)
+            ds_end[key] = _round_half_up(ds_end.get(key, 0) + end, 3)
+            ds_end.mass[key] = _round_half_up(ds_end.mass.get(key, 0) + end_mass, 3)
             ds_end.density[key] = _density_from_mass_volume(ds_end.mass[key], ds_end[key], end_density)
-            ds_loss[key] = round(ds_loss.get(key, 0) + (end_calc - end), 3)
+            ds_loss[key] = _round_half_up(ds_loss.get(key, 0) + (end_calc - end), 3)
 
     cur.execute("""
         SELECT ShopKey, ResourceCode, CurrentPrice,
@@ -873,7 +878,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         rk = _infer_resource_code_daily(rc, r[2], sk=sk)
         ds = str(r[3])
         if (sk, rk) not in daily_price_cache.get(ds, {}):
-            daily_price_cache.setdefault(ds, {})[(sk, rk)] = round(float(r[2] or 0), 2)
+            daily_price_cache.setdefault(ds, {})[(sk, rk)] = _round_half_up(float(r[2] or 0), 2)
 
     cur.execute(f"""
         SELECT b.ShopKey, b.ResourceKey, b.EndPrice,
@@ -893,7 +898,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         rk = _infer_resource_code_daily(int(r[1]), r[2], rsk=rsk, sk=sk)
         ds = str(r[3])
         if (sk, rk) not in daily_price_cache.get(ds, {}) and float(r[2] or 0) > 0:
-            daily_price_cache.setdefault(ds, {})[(sk, rk)] = round(float(r[2] or 0), 2)
+            daily_price_cache.setdefault(ds, {})[(sk, rk)] = _round_half_up(float(r[2] or 0), 2)
 
     pre_month_bal = _new_balance_map()
     pre_month_bal_dt = {}
@@ -923,7 +928,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         key = (sk, rk)
         density = float(r[4] or 0)
         shift_dt = r[7]
-        value = round(float(r[2] or 0), 3)
+        value = _round_half_up(float(r[2] or 0), 3)
         mass = _mass_from_db_mass_or_density(r[3], value, density)
         if sk not in RENOVATION_CARRY_FORWARD_STATIONS and month_start_dt - shift_dt > carry_forward_max_age:
             continue
@@ -933,8 +938,8 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             pre_month_bal.mass[key] = mass
             pre_month_bal.density[key] = _density_from_mass_volume(mass, pre_month_bal[key], density)
         elif shift_dt == pre_month_bal_dt[key]:
-            pre_month_bal[key] = round(pre_month_bal[key] + value, 3)
-            pre_month_bal.mass[key] = round(pre_month_bal.mass.get(key, 0) + mass, 3)
+            pre_month_bal[key] = _round_half_up(pre_month_bal[key] + value, 3)
+            pre_month_bal.mass[key] = _round_half_up(pre_month_bal.mass.get(key, 0) + mass, 3)
             pre_month_bal.density[key] = _density_from_mass_volume(pre_month_bal.mass[key], pre_month_bal[key], density)
 
     prev_day_bal = pre_month_bal
@@ -1036,8 +1041,8 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 _apply_style(ws_d, current_row_d, col, '', bold=True, size=9, fill=_FILL_TOTAL)
             else:
                 parts = [f'{col_letter}{r}' for r in daily_subtotal_rows]
-                formula = '=' + '+'.join(parts)
-                _apply_style(ws_d, current_row_d, col, formula, bold=True, size=9, fill=_FILL_TOTAL)
+                formula = _excel_round_formula('+'.join(parts) or '0', 3)
+                _apply_style(ws_d, current_row_d, col, formula, bold=True, size=9, num_fmt='#,##0.000', fill=_FILL_TOTAL)
 
         merged = _new_balance_map()
         for source in (prev_day_bal, d_end_bal):

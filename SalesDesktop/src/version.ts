@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.4';
-export const BUILD_DATE = '2026-07-23';
+export const VERSION = '3.9.5';
+export const BUILD_DATE = '2026-07-24';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.5',
+    date: '2026-07-24',
+    type: 'patch',
+    changes: [
+      '修复：所有报表固定小数位统一按四舍五入处理，不再依赖 Python 内置 round 的银行家舍入',
+      '修复：零售月报、周报、日报小计和总合计公式使用 Excel ROUND 固化结果，避免只靠单元格显示格式',
+      '优化：报表缓存版本升级，避免复用旧舍入公式生成的 Excel 文件',
+      '测试：新增报表舍入回归测试，覆盖 2.675、2.5 和 Excel 汇总公式',
+    ],
+  },
   {
     version: '3.9.4',
     date: '2026-07-23',

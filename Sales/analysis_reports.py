@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from urllib.parse import quote
 import html
@@ -29,9 +30,18 @@ CLASS_LABELS = {
 
 def _fmt(value, digits=2):
     try:
-        return f"{float(value or 0):,.{digits}f}"
+        return f"{_round_half_up(value, digits):,.{int(digits or 0)}f}"
     except (TypeError, ValueError):
         return "--"
+
+
+def _round_half_up(value, digits=0):
+    digits = int(digits or 0)
+    try:
+        quant = Decimal("1").scaleb(-digits)
+        return float(Decimal(str(value or 0)).quantize(quant, rounding=ROUND_HALF_UP))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0.0
 
 
 def _period_label(year, month=None):
@@ -359,9 +369,9 @@ def _exchange_export(year, month=None):
             cny_value = float(cny) if cny is not None else None
             rows.append({
                 "日期": rate_date.isoformat() if rate_date else "",
-                "美元/索姆(USD/KGS)": float(usd) if usd is not None else None,
-                "人民币/索姆(CNY/KGS)": cny_value,
-                "索姆/人民币(KGS/CNY)": (1 / cny_value) if cny_value else None,
+                "美元/索姆(USD/KGS)": _round_half_up(usd, 4) if usd is not None else None,
+                "人民币/索姆(CNY/KGS)": _round_half_up(cny_value, 4) if cny_value is not None else None,
+                "索姆/人民币(KGS/CNY)": _round_half_up(1 / cny_value, 6) if cny_value else None,
                 "数据来源": "人工录入" if is_manual else (source or "NBKR"),
                 "获取时间": fetched_at.isoformat(sep=" ") if fetched_at else "",
             })
@@ -384,6 +394,10 @@ def _exchange_export(year, month=None):
                 cell.border = black_border
                 if cell.row == 1:
                     cell.font = header_font
+                elif cell.column in (2, 3):
+                    cell.number_format = "#,##0.0000"
+                elif cell.column == 4:
+                    cell.number_format = "#,##0.000000"
         for col in worksheet.columns:
             width = max(_display_width(cell.value) for cell in col) + 3
             worksheet.column_dimensions[col[0].column_letter].width = min(max(width, 10), 60)

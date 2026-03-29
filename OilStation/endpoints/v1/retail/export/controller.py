@@ -7,6 +7,7 @@ from loguru import logger
 from db import get_connection
 from export_excel import (
     RESOURCE_NAMES,
+    _round_half_up,
 )
 from endpoints.v1.retail.export.service.workbook import (
     _can_reuse_report_workbook,
@@ -183,14 +184,14 @@ def _write_self_use_station_sheet(wb, records, styles):
         grand_amount += station_amount
 
         for item in items:
-            employee_amount = round(item['amount'], 2) if item['remark'] == '员工车辆' else ''
+            employee_amount = _round_half_up(item['amount'], 2) if item['remark'] == '员工车辆' else ''
             row_values = [
                 station_name,
                 station_short,
                 item['plate'],
                 item['product'],
-                round(item['weightKg'], 2),
-                round(item['volume'], 2),
+                _round_half_up(item['weightKg'], 2),
+                _round_half_up(item['volume'], 2),
                 employee_amount,
                 item['remark'],
             ]
@@ -208,9 +209,9 @@ def _write_self_use_station_sheet(wb, records, styles):
             station_short,
             '小计',
             '',
-            round(station_weight, 2),
-            round(station_volume, 2),
-            round(station_amount, 2) if station_amount else '',
+            _round_half_up(station_weight, 2),
+            _round_half_up(station_volume, 2),
+            _round_half_up(station_amount, 2) if station_amount else '',
             '',
         ]
         for col_idx, value in enumerate(subtotal_values, 1):
@@ -232,9 +233,9 @@ def _write_self_use_station_sheet(wb, records, styles):
     total_row = row_idx
     total_values = {
         1: '总合计',
-        5: round(grand_weight, 2),
-        6: round(grand_volume, 2),
-        7: round(grand_amount, 2) if grand_amount else '',
+        5: _round_half_up(grand_weight, 2),
+        6: _round_half_up(grand_volume, 2),
+        7: _round_half_up(grand_amount, 2) if grand_amount else '',
     }
     for col_idx in range(1, 9):
         cell = ws.cell(row=total_row, column=col_idx, value=total_values.get(col_idx, ''))
@@ -377,9 +378,9 @@ def api_export_self_use(year_month):
             rec.get('stationShort', ''),
             rec.get('productName', ''),
             rec.get('plateNumber', ''),
-            float(rec.get('volume') or 0),
-            round(_self_use_weight_kg(rec), 2),
-            float(rec.get('amount') or 0),
+            _round_half_up(rec.get('volume'), 2),
+            _round_half_up(_self_use_weight_kg(rec), 2),
+            _round_half_up(rec.get('amount'), 2),
         ]
         for col_idx, v in enumerate(values, 1):
             cell = ws.cell(row=i, column=col_idx, value=v)
@@ -479,8 +480,8 @@ def api_export_self_use_range():
             rec.get('stationShort', ''),
             rec['productName'],
             rec['plateNumber'],
-            rec['volume'],
-            round(_self_use_weight_kg(rec), 2),
+            _round_half_up(rec['volume'], 2),
+            _round_half_up(_self_use_weight_kg(rec), 2),
         ]
         for col_idx, v in enumerate(values, 1):
             cell = ws.cell(row=i, column=col_idx, value=v)
@@ -524,8 +525,8 @@ def api_export_self_use_range():
         values = [
             (start_col, product),
             (start_col + 1, plate),
-            (start_col + 2, round(volume, 2)),
-            (start_col + 3, round(weight_kg, 2)),
+            (start_col + 2, _round_half_up(volume, 2)),
+            (start_col + 3, _round_half_up(weight_kg, 2)),
         ]
         for col, value in values:
             write_total_cell(row, col, value, font=font, fill=fill, num_fmt=col in (start_col + 2, start_col + 3))

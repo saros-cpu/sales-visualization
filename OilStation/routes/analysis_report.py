@@ -21,7 +21,7 @@ from business_time import (
 from cache_store import get_cached, set_cached
 from constants import SHOP_KEY_MAP
 from db import get_connection
-from export_excel import EXPORT_DIR, RESOURCE_DENSITY, _build_sheet_data
+from export_excel import EXPORT_DIR, RESOURCE_DENSITY, _build_sheet_data, _round_half_up
 from routes.analytics import (
     format_resource_rows,
     report_amount_expr,
@@ -80,18 +80,19 @@ def _calc_prev_month(year, month):
 def _pct(current, previous):
     if not previous:
         return None
-    return round((float(current or 0) - float(previous or 0)) / float(previous) * 100, 1)
+    return _round_half_up((float(current or 0) - float(previous or 0)) / float(previous) * 100, 1)
 
 
 def _fmt(value, digits=2):
-    return f"{float(value or 0):,.{digits}f}"
+    digits = int(digits or 0)
+    return f"{_round_half_up(value, digits):,.{digits}f}"
 
 
 def _fmt_pct(value):
     if value is None:
         return "--"
     sign = "+" if value > 0 else ""
-    return f"{sign}{value:.1f}%"
+    return f"{sign}{_round_half_up(value, 1):.1f}%"
 
 
 def _date_label(value):
@@ -210,8 +211,8 @@ def _exchange_rates_for_period(start, end):
         "count": len(rows),
         "totalDays": total_days,
         "missingCount": missing_count,
-        "avgUsd": round(sum(usd_values) / len(usd_values), 4) if usd_values else None,
-        "avgCny": round(sum(cny_values) / len(cny_values), 4) if cny_values else None,
+        "avgUsd": _round_half_up(sum(usd_values) / len(usd_values), 4) if usd_values else None,
+        "avgCny": _round_half_up(sum(cny_values) / len(cny_values), 4) if cny_values else None,
         "first": rows[0] if rows else None,
         "last": rows[-1] if rows else None,
         "error": "",
@@ -223,7 +224,7 @@ def _resource_tons(resources):
     for item in resources:
         density = RESOURCE_DENSITY.get(int(item.get("resourceKey") or item.get("key") or 0), 0)
         total += float(item.get("volume") or 0) * density / 1000
-    return round(total, 3)
+    return _round_half_up(total, 3)
 
 
 def _month_after(year, month):
@@ -426,14 +427,14 @@ def _merge_report_extras(target, source):
 
 def _finalize_report_extras(result):
     for item in result["stations"].values():
-        item["endInventory"] = round(item["endInventory"], 2)
-        item["endInventoryTons"] = round(item["endInventoryTons"], 3)
-        item["contractVolume"] = round(item["contractVolume"], 2)
-        item["contractAmount"] = round(item["contractAmount"], 2)
-    result["totalEndInventory"] = round(result["totalEndInventory"], 2)
-    result["totalEndInventoryTons"] = round(result["totalEndInventoryTons"], 3)
-    result["totalContractVolume"] = round(result["totalContractVolume"], 2)
-    result["totalContractAmount"] = round(result["totalContractAmount"], 2)
+        item["endInventory"] = _round_half_up(item["endInventory"], 2)
+        item["endInventoryTons"] = _round_half_up(item["endInventoryTons"], 3)
+        item["contractVolume"] = _round_half_up(item["contractVolume"], 2)
+        item["contractAmount"] = _round_half_up(item["contractAmount"], 2)
+    result["totalEndInventory"] = _round_half_up(result["totalEndInventory"], 2)
+    result["totalEndInventoryTons"] = _round_half_up(result["totalEndInventoryTons"], 3)
+    result["totalContractVolume"] = _round_half_up(result["totalContractVolume"], 2)
+    result["totalContractAmount"] = _round_half_up(result["totalContractAmount"], 2)
     return result
 
 
@@ -579,7 +580,7 @@ def _finalize_period_dataset(aggregate, start, end):
     stations = []
     for station in aggregate["stations"].values():
         for key in ("volume", "amount", "cashSales", "cardSales", "bonus"):
-            station[key] = round(station[key], 2)
+            station[key] = _round_half_up(station[key], 2)
         stations.append(station)
     stations.sort(key=lambda item: item.get("amount") or 0, reverse=True)
 
@@ -604,18 +605,18 @@ def _finalize_period_dataset(aggregate, start, end):
 
     resources = []
     for resource in aggregate["resources"].values():
-        resource["volume"] = round(resource["volume"], 2)
-        resource["amount"] = round(resource["amount"], 2)
+        resource["volume"] = _round_half_up(resource["volume"], 2)
+        resource["amount"] = _round_half_up(resource["amount"], 2)
         resources.append(resource)
     resources.sort(key=lambda item: item.get("volume") or 0, reverse=True)
 
     summary = aggregate["summary"]
     summary["activeShops"] = len([item for item in stations if (item.get("amount") or 0) > 0])
-    summary["totalLiters"] = round(summary["totalLiters"], 2)
-    summary["totalSales"] = round(summary["totalSales"], 2)
-    summary["cashSales"] = round(summary["cashSales"], 2)
-    summary["cardSales"] = round(summary["cardSales"], 2)
-    summary["totalTons"] = round(summary["totalTons"], 3)
+    summary["totalLiters"] = _round_half_up(summary["totalLiters"], 2)
+    summary["totalSales"] = _round_half_up(summary["totalSales"], 2)
+    summary["cashSales"] = _round_half_up(summary["cashSales"], 2)
+    summary["cardSales"] = _round_half_up(summary["cardSales"], 2)
+    summary["totalTons"] = _round_half_up(summary["totalTons"], 3)
 
     return {
         "queryStart": start,
@@ -663,9 +664,9 @@ def _period_dataset_from_month_slices(start, end, include_monthly=False):
             summary = part.get("summary") or {}
             monthly.append({
                 "month": int(slice_start[5:7]),
-                "volume": round(float(summary.get("totalLiters") or 0), 2),
-                "amount": round(float(summary.get("totalSales") or 0), 2),
-                "tons": round(float(summary.get("totalTons") or 0), 3),
+                "volume": _round_half_up(float(summary.get("totalLiters") or 0), 2),
+                "amount": _round_half_up(float(summary.get("totalSales") or 0), 2),
+                "tons": _round_half_up(float(summary.get("totalTons") or 0), 3),
             })
     result = _finalize_period_dataset(aggregate, start, end)
     if include_monthly:
@@ -735,10 +736,10 @@ def _query_period_dataset(cur, start, end):
     summary = {
         "txnCount": int(row[0] or 0),
         "activeShops": int(row[1] or 0),
-        "totalLiters": round(float(row[2] or 0), 2),
-        "totalSales": round(float(row[3] or 0), 2),
-        "cashSales": round(float(row[4] or 0), 2),
-        "cardSales": round(float(row[5] or 0), 2),
+        "totalLiters": _round_half_up(float(row[2] or 0), 2),
+        "totalSales": _round_half_up(float(row[3] or 0), 2),
+        "cashSales": _round_half_up(float(row[4] or 0), 2),
+        "cardSales": _round_half_up(float(row[5] or 0), 2),
     }
 
     cur.execute(f"""
@@ -776,13 +777,13 @@ def _query_period_dataset(cur, start, end):
             "name": info.get("name") or info.get("short") or f"Station-{shop_key}",
             "short": info.get("short") or "",
             "region": info.get("region") or "unknown",
-            "volume": round(float(volume or 0), 2),
-            "amount": round(float(amount or 0), 2),
-            "cashSales": round(float(cash or 0), 2),
-            "cardSales": round(float(card or 0), 2),
-            "bonus": round(float(bonus or 0), 2),
-            "contractVolume": round(float(contract_volume or 0), 2),
-            "contractAmount": round(float(contract_amount or 0), 2),
+            "volume": _round_half_up(float(volume or 0), 2),
+            "amount": _round_half_up(float(amount or 0), 2),
+            "cashSales": _round_half_up(float(cash or 0), 2),
+            "cardSales": _round_half_up(float(card or 0), 2),
+            "bonus": _round_half_up(float(bonus or 0), 2),
+            "contractVolume": _round_half_up(float(contract_volume or 0), 2),
+            "contractAmount": _round_half_up(float(contract_amount or 0), 2),
         })
 
     regions = {}
@@ -815,7 +816,7 @@ def _query_period_dataset(cur, start, end):
         ORDER BY day
     """, business_period_params(start, end))
     daily = [
-        {"date": str(day), "volume": round(float(volume or 0), 2), "amount": round(float(amount or 0), 2)}
+        {"date": str(day), "volume": _round_half_up(float(volume or 0), 2), "amount": _round_half_up(float(amount or 0), 2)}
         for day, volume, amount in cur.fetchall()
     ]
 
@@ -1073,16 +1074,16 @@ def _top_name(items, value_key="amount"):
 def _money_short(value):
     value = float(value or 0)
     if value >= 100000000:
-        return f"{value / 100000000:.2f}亿"
+        return f"{_round_half_up(value / 100000000, 2):.2f}亿"
     if value >= 10000:
-        return f"{value / 10000:.2f}万"
+        return f"{_round_half_up(value / 10000, 2):.2f}万"
     return _fmt(value, 2)
 
 
 def _volume_short(value):
     value = float(value or 0)
     if value >= 10000:
-        return f"{value / 10000:.2f}万"
+        return f"{_round_half_up(value / 10000, 2):.2f}万"
     return _fmt(value, 2)
 
 
@@ -1090,7 +1091,7 @@ def _percent(value, total):
     total = float(total or 0)
     if total <= 0:
         return "0.00%"
-    return f"{float(value or 0) / total * 100:.2f}%"
+    return f"{_round_half_up(float(value or 0) / total * 100, 2):.2f}%"
 
 
 def _rank_class(index):
@@ -1102,8 +1103,8 @@ def _resource_js_rows(resources):
     for item in resources:
         rows.append({
             "name": item.get("name") or "--",
-            "volume": round(float(item.get("volume") or 0), 2),
-            "amount": round(float(item.get("amount") or 0), 2),
+            "volume": _round_half_up(float(item.get("volume") or 0), 2),
+            "amount": _round_half_up(float(item.get("amount") or 0), 2),
             "color": item.get("color") or "#2e6da4",
         })
     return rows
@@ -1114,11 +1115,11 @@ def _region_js_rows(regions):
     for item in regions:
         rows.append({
             "region": item.get("region") or "--",
-            "volume": round(float(item.get("volume") or 0), 2),
-            "amount": round(float(item.get("amount") or 0), 2),
-            "cash": round(float(item.get("cashSales") or item.get("cash") or 0), 2),
-            "card": round(float(item.get("cardSales") or item.get("card") or 0), 2),
-            "bonus": round(float(item.get("bonus") or item.get("bonusCost") or 0), 2),
+            "volume": _round_half_up(float(item.get("volume") or 0), 2),
+            "amount": _round_half_up(float(item.get("amount") or 0), 2),
+            "cash": _round_half_up(float(item.get("cashSales") or item.get("cash") or 0), 2),
+            "card": _round_half_up(float(item.get("cardSales") or item.get("card") or 0), 2),
+            "bonus": _round_half_up(float(item.get("bonus") or item.get("bonusCost") or 0), 2),
             "stationCount": int(item.get("stationCount") or 0),
         })
     return rows
@@ -1131,15 +1132,15 @@ def _station_js_rows(stations):
             "name": item.get("name") or "--",
             "short": item.get("short") or "",
             "region": item.get("region") or "--",
-            "volume": round(float(item.get("volume") or 0), 2),
-            "amount": round(float(item.get("amount") or 0), 2),
-            "cash": round(float(item.get("cashSales") or item.get("cash") or 0), 2),
-            "card": round(float(item.get("cardSales") or item.get("card") or 0), 2),
-            "bonus": round(float(item.get("bonus") or item.get("bonusCost") or 0), 2),
-            "contractVolume": round(float(item.get("contractVolume") or item.get("contract") or 0), 2),
-            "contractAmount": round(float(item.get("contractAmount") or 0), 2),
-            "endInventory": round(float(item.get("endInventory") or item.get("end") or 0), 2),
-            "endInventoryTons": round(float(item.get("endInventoryTons") or 0), 3),
+            "volume": _round_half_up(float(item.get("volume") or 0), 2),
+            "amount": _round_half_up(float(item.get("amount") or 0), 2),
+            "cash": _round_half_up(float(item.get("cashSales") or item.get("cash") or 0), 2),
+            "card": _round_half_up(float(item.get("cardSales") or item.get("card") or 0), 2),
+            "bonus": _round_half_up(float(item.get("bonus") or item.get("bonusCost") or 0), 2),
+            "contractVolume": _round_half_up(float(item.get("contractVolume") or item.get("contract") or 0), 2),
+            "contractAmount": _round_half_up(float(item.get("contractAmount") or 0), 2),
+            "endInventory": _round_half_up(float(item.get("endInventory") or item.get("end") or 0), 2),
+            "endInventoryTons": _round_half_up(float(item.get("endInventoryTons") or 0), 3),
             "momVolume": item.get("momVolume"),
             "momSales": item.get("momSales"),
             "yoyVolume": item.get("yoyVolume"),

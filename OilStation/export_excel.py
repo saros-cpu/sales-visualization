@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from business_time import selling_business_day_subquery, shift_business_date_expr
 from constants import RENOVATION_CARRY_FORWARD_STATIONS
@@ -35,6 +36,19 @@ def _resource_name_for_report(shop_key, resource_key):
     if shop_key == 28 and resource_key == 109:
         return 'Д/Т'
     return RESOURCE_NAMES.get(resource_key, f'Other-{resource_key}')
+
+
+def _round_half_up(value, digits=0):
+    digits = int(digits or 0)
+    try:
+        quant = Decimal('1').scaleb(-digits)
+        return float(Decimal(str(value or 0)).quantize(quant, rounding=ROUND_HALF_UP))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0.0
+
+
+def _excel_round_formula(expression, digits=3):
+    return f'=ROUND({expression},{int(digits or 0)})'
 
 # SK=6 STN-11：通过 ResourceShopKey 精确映射（supply.Density 验证）
 # RSK=1→АИ-92(103), RSK=2→АИ-95(104), RSK=3→АИ-80(102), RSK=5→Д/Т(106)
@@ -169,7 +183,7 @@ def _balance_end_density_expr(prefix='b'):
 
 
 def _mass_kg_to_tons(value, digits=3):
-    return round(float(value or 0) / 1000, int(digits or 0))
+    return _round_half_up(float(value or 0) / 1000, int(digits or 0))
 
 
 def _ton_number_format(digits=3):
@@ -207,9 +221,9 @@ def _mass_from_db_mass_or_density(mass_kg, volume_liters, density=0):
     volume = float(volume_liters or 0)
     db_density = float(density or 0)
     if mass > 0:
-        return round(mass, 3)
+        return _round_half_up(mass, 3)
     if volume > 0 and db_density > 0:
-        return round(volume * db_density, 3)
+        return _round_half_up(volume * db_density, 3)
     return 0
 
 
@@ -217,8 +231,8 @@ def _density_from_mass_volume(mass_kg, volume_liters, fallback=0):
     volume = float(volume_liters or 0)
     mass = float(mass_kg or 0)
     if volume > 0 and mass > 0:
-        return round(mass / volume, 3)
-    return round(float(fallback or 0), 3)
+        return _round_half_up(mass / volume, 3)
+    return _round_half_up(float(fallback or 0), 3)
 
 
 def _metric_mass(metric_map, shop_key, resource_key, default=0):
@@ -305,19 +319,19 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             d[sk][rk] = row_data
         else:
             existing = d[sk][rk]
-            existing['cash_vol']  = round(existing['cash_vol']  + row_data['cash_vol'],  3)
-            existing['cash_amt']  = round(existing['cash_amt']  + row_data['cash_amt'],  2)
-            existing['card_vol']  = round(existing['card_vol']  + row_data['card_vol'],  3)
-            existing['card_amt']  = round(existing['card_amt']  + row_data['card_amt'],  2)
-            existing['total_vol'] = round(existing['total_vol'] + row_data['total_vol'], 3)
-            existing['total_amt'] = round(existing['total_amt'] + row_data['total_amt'], 2)
-            existing['bonus_amt'] = round(existing['bonus_amt'] + row_data['bonus_amt'], 2)
-            existing['cash_mass'] = round(existing.get('cash_mass', 0) + row_data.get('cash_mass', 0), 3)
-            existing['card_mass'] = round(existing.get('card_mass', 0) + row_data.get('card_mass', 0), 3)
-            existing['total_mass'] = round(existing.get('total_mass', 0) + row_data.get('total_mass', 0), 3)
+            existing['cash_vol']  = _round_half_up(existing['cash_vol']  + row_data['cash_vol'],  3)
+            existing['cash_amt']  = _round_half_up(existing['cash_amt']  + row_data['cash_amt'],  2)
+            existing['card_vol']  = _round_half_up(existing['card_vol']  + row_data['card_vol'],  3)
+            existing['card_amt']  = _round_half_up(existing['card_amt']  + row_data['card_amt'],  2)
+            existing['total_vol'] = _round_half_up(existing['total_vol'] + row_data['total_vol'], 3)
+            existing['total_amt'] = _round_half_up(existing['total_amt'] + row_data['total_amt'], 2)
+            existing['bonus_amt'] = _round_half_up(existing['bonus_amt'] + row_data['bonus_amt'], 2)
+            existing['cash_mass'] = _round_half_up(existing.get('cash_mass', 0) + row_data.get('cash_mass', 0), 3)
+            existing['card_mass'] = _round_half_up(existing.get('card_mass', 0) + row_data.get('card_mass', 0), 3)
+            existing['total_mass'] = _round_half_up(existing.get('total_mass', 0) + row_data.get('total_mass', 0), 3)
             new_total = existing['total_vol']
             if new_total > 0:
-                existing['avg_price'] = round(existing['total_amt'] / new_total, 2)
+                existing['avg_price'] = _round_half_up(existing['total_amt'] / new_total, 2)
                 existing['density'] = _density_from_mass_volume(existing.get('total_mass', 0), new_total, existing.get('density', 0))
 
     # 查询正常零售数据（排除自用油DPT=2、合同DPT=3、测试DPT=4）
@@ -417,18 +431,18 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             rk, allow_fixed_density_fallback=allow_fixed_density_fallback
         )
         _merge_sales(sales_data, sk, rk, {
-            'cash_vol': round(float(r[2] or 0), 3),
-            'cash_amt': round(float(r[3] or 0), 2),
-            'card_vol': round(float(r[4] or 0), 3),
-            'card_amt': round(float(r[5] or 0), 2),
-            'total_vol': round(float(r[6] or 0), 3),
-            'total_amt': round(float(r[7] or 0), 2),
-            'bonus_amt': round(bonus_amt, 2),
-            'bonus_vol': round(bonus_vol, 3),
-            'avg_price': round(avg_price, 2),
-            'cash_mass': round(float(r[11] or 0), 3),
-            'card_mass': round(float(r[12] or 0), 3),
-            'total_mass': round(total_mass, 3),
+            'cash_vol': _round_half_up(float(r[2] or 0), 3),
+            'cash_amt': _round_half_up(float(r[3] or 0), 2),
+            'card_vol': _round_half_up(float(r[4] or 0), 3),
+            'card_amt': _round_half_up(float(r[5] or 0), 2),
+            'total_vol': _round_half_up(float(r[6] or 0), 3),
+            'total_amt': _round_half_up(float(r[7] or 0), 2),
+            'bonus_amt': _round_half_up(bonus_amt, 2),
+            'bonus_vol': _round_half_up(bonus_vol, 3),
+            'avg_price': _round_half_up(avg_price, 2),
+            'cash_mass': _round_half_up(float(r[11] or 0), 3),
+            'card_mass': _round_half_up(float(r[12] or 0), 3),
+            'total_mass': _round_half_up(total_mass, 3),
             'density': _density_from_mass_volume(total_mass, float(r[6] or 0), r[14] or fallback_density),
         })
 
@@ -507,12 +521,12 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         rk = int(r[1])
         if rk < 100:
             continue
-        vol = round(float(r[2] or 0), 3)
+        vol = _round_half_up(float(r[2] or 0), 3)
         if sk not in ved_data:
             ved_data[sk] = {}
-        ved_data[sk][rk] = round(ved_data[sk].get(rk, 0) + vol, 3)
+        ved_data[sk][rk] = _round_half_up(ved_data[sk].get(rk, 0) + vol, 3)
         key = (sk, rk)
-        ved_data.mass[key] = round(ved_data.mass.get(key, 0) + float(r[3] or 0), 3)
+        ved_data.mass[key] = _round_half_up(ved_data.mass.get(key, 0) + float(r[3] or 0), 3)
         fallback_density = _missing_density_fallback_density(
             rk, allow_fixed_density_fallback=allow_fixed_density_fallback
         )
@@ -593,10 +607,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         rk = int(r[1])
         if rk < 100:
             continue
-        vol = round(float(r[2] or 0), 3)
-        amt = round(float(r[3] or 0), 2)
-        contract_price_val = round(float(r[4] or 0), 2)
-        mass = round(float(r[5] or 0), 3)
+        vol = _round_half_up(float(r[2] or 0), 3)
+        amt = _round_half_up(float(r[3] or 0), 2)
+        contract_price_val = _round_half_up(float(r[4] or 0), 2)
+        mass = _round_half_up(float(r[5] or 0), 3)
         fallback_density = _missing_density_fallback_density(
             rk, allow_fixed_density_fallback=allow_fixed_density_fallback
         )
@@ -607,12 +621,12 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             contract_data[sk][rk] = {'vol': vol, 'amt': amt, 'price': contract_price_val, 'mass': mass, 'density': density}
         else:
             existing = contract_data[sk][rk]
-            new_vol = round(existing['vol'] + vol, 3)
-            new_amt = round(existing['amt'] + amt, 2)
-            new_mass = round(existing.get('mass', 0) + mass, 3)
+            new_vol = _round_half_up(existing['vol'] + vol, 3)
+            new_amt = _round_half_up(existing['amt'] + amt, 2)
+            new_mass = _round_half_up(existing.get('mass', 0) + mass, 3)
             contract_data[sk][rk] = {
                 'vol': new_vol, 'amt': new_amt,
-                'price': round(new_amt / new_vol, 2) if new_vol > 0 else 0,
+                'price': _round_half_up(new_amt / new_vol, 2) if new_vol > 0 else 0,
                 'mass': new_mass,
                 'density': _density_from_mass_volume(new_mass, new_vol, existing.get('density', density)),
             }
@@ -729,10 +743,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
     for r in cur.fetchall():
         sk = int(r[0])
         orig_rk = int(r[1])
-        vol = round(float(r[2] or 0), 3)
+        vol = _round_half_up(float(r[2] or 0), 3)
         avg_density = float(r[3] or 0)
         rsk = r[4]
-        mass = round(float(r[5] or 0), 3)
+        mass = _round_half_up(float(r[5] or 0), 3)
 
         if orig_rk >= 100:
             rk = orig_rk  # 标准编码，直接使用
@@ -776,9 +790,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             continue
         if sk not in supply_data:
             supply_data[sk] = {}
-        supply_data[sk][rk] = round(supply_data[sk].get(rk, 0) + vol, 3)
+        supply_data[sk][rk] = _round_half_up(supply_data[sk].get(rk, 0) + vol, 3)
         key = (sk, rk)
-        supply_data.mass[key] = round(supply_data.mass.get(key, 0) + mass, 3)
+        supply_data.mass[key] = _round_half_up(supply_data.mass.get(key, 0) + mass, 3)
         fallback_density = _missing_density_fallback_density(
             rk, allow_fixed_density_fallback=allow_fixed_density_fallback
         )
@@ -800,10 +814,10 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         for r in cur.fetchall():
             sk = int(r[0])
             orig_rk = int(r[1])
-            vol = round(float(r[2] or 0), 3)
+            vol = _round_half_up(float(r[2] or 0), 3)
             avg_density = float(r[3] or 0)
             rsk = r[4]
-            mass = round(float(r[5] or 0), 3)
+            mass = _round_half_up(float(r[5] or 0), 3)
 
             if orig_rk >= 100:
                 rk = orig_rk
@@ -825,9 +839,9 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 continue
             if sk not in supply_data:
                 supply_data[sk] = {}
-            supply_data[sk][rk] = round(supply_data[sk].get(rk, 0) + vol, 3)
+            supply_data[sk][rk] = _round_half_up(supply_data[sk].get(rk, 0) + vol, 3)
             key = (sk, rk)
-            supply_data.mass[key] = round(supply_data.mass.get(key, 0) + mass, 3)
+            supply_data.mass[key] = _round_half_up(supply_data.mass.get(key, 0) + mass, 3)
             fallback_density = _missing_density_fallback_density(
                 rk, allow_fixed_density_fallback=allow_fixed_density_fallback
             )
@@ -928,7 +942,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         if rk < 100:
             continue
         key = (sk, rk)
-        val = round(float(r[2] or 0), 3)
+        val = _round_half_up(float(r[2] or 0), 3)
         density = float(r[4] or 0)
         mass = _mass_from_db_mass_or_density(r[3], val, density)
         fallback_density = _missing_density_fallback_density(
@@ -942,8 +956,8 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             start_balance.mass[key] = mass
             start_balance.density[key] = _density_from_mass_volume(mass, val, density or fallback_density)
         elif shift_dt == start_balance_dt[key]:
-            start_balance[key] = round(start_balance[key] + val, 3)
-            start_balance.mass[key] = round(start_balance.mass.get(key, 0) + mass, 3)
+            start_balance[key] = _round_half_up(start_balance[key] + val, 3)
+            start_balance.mass[key] = _round_half_up(start_balance.mass.get(key, 0) + mass, 3)
             start_balance.density[key] = _density_from_mass_volume(start_balance.mass[key], start_balance[key], density or fallback_density)
 
     # --- 期末量：当月最后一天班次的 EndBalance ---
@@ -974,7 +988,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         if rk < 100:
             continue
         key = (sk, rk)
-        val = round(float(r[2] or 0), 3)
+        val = _round_half_up(float(r[2] or 0), 3)
         density = float(r[4] or 0)
         mass = _mass_from_db_mass_or_density(r[3], val, density)
         fallback_density = _missing_density_fallback_density(
@@ -988,8 +1002,8 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             end_balance.mass[key] = mass
             end_balance.density[key] = _density_from_mass_volume(mass, val, density or fallback_density)
         elif shift_dt == end_balance_dt[key]:
-            end_balance[key] = round(end_balance[key] + val, 3)
-            end_balance.mass[key] = round(end_balance.mass.get(key, 0) + mass, 3)
+            end_balance[key] = _round_half_up(end_balance[key] + val, 3)
+            end_balance.mass[key] = _round_half_up(end_balance.mass.get(key, 0) + mass, 3)
             end_balance.density[key] = _density_from_mass_volume(end_balance.mass[key], end_balance[key], density or fallback_density)
 
     # 29/30 号站补充查询当天平衡数据（exclude_today 排除的部分）
@@ -1021,7 +1035,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
             if key in seen:
                 continue
             seen.add(key)
-            val = round(float(r[2] or 0), 3)
+            val = _round_half_up(float(r[2] or 0), 3)
             density = float(r[4] or 0)
             mass = _mass_from_db_mass_or_density(r[3], val, density)
             fallback_density = _missing_density_fallback_density(
@@ -1069,7 +1083,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 rk, allow_fixed_density_fallback=allow_fixed_density_fallback
             )
             shift_dt = r[7]
-            val = round(float(r[2] or 0), 3)
+            val = _round_half_up(float(r[2] or 0), 3)
             mass = _mass_from_db_mass_or_density(r[3], val, density)
             if key not in pre_month_latest_dt or shift_dt > pre_month_latest_dt[key]:
                 pre_month_latest_dt[key] = shift_dt
@@ -1077,8 +1091,8 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
                 pre_month_latest_bal.mass[key] = mass
                 pre_month_latest_bal.density[key] = _density_from_mass_volume(mass, pre_month_latest_bal[key], density or fallback_density)
             elif shift_dt == pre_month_latest_dt[key]:
-                pre_month_latest_bal[key] = round(pre_month_latest_bal[key] + val, 3)
-                pre_month_latest_bal.mass[key] = round(pre_month_latest_bal.mass.get(key, 0) + mass, 3)
+                pre_month_latest_bal[key] = _round_half_up(pre_month_latest_bal[key] + val, 3)
+                pre_month_latest_bal.mass[key] = _round_half_up(pre_month_latest_bal.mass.get(key, 0) + mass, 3)
                 pre_month_latest_bal.density[key] = _density_from_mass_volume(pre_month_latest_bal.mass[key], pre_month_latest_bal[key], density or fallback_density)
 
     # --- 油罐损耗：当月所有班次损耗之和 ---
@@ -1107,7 +1121,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         if rk < 100:
             continue
         key = (sk, rk)
-        loss_data[key] = round(loss_data.get(key, 0) + float(r[4] or 0), 3)
+        loss_data[key] = _round_half_up(loss_data.get(key, 0) + float(r[4] or 0), 3)
 
     active_balance_keys = set(start_balance) | set(end_balance) | set(loss_data)
     for data in (sales_data, ved_data, supply_data, contract_data):
@@ -1162,17 +1176,17 @@ def _build_daily_sheet_data(cur, day, station_keys):
             d[sk][rk] = row_data
         else:
             existing = d[sk][rk]
-            existing['cash_vol']  = round(existing['cash_vol']  + row_data['cash_vol'],  3)
-            existing['cash_amt']  = round(existing['cash_amt']  + row_data['cash_amt'],  2)
-            existing['card_vol']  = round(existing['card_vol']  + row_data['card_vol'],  3)
-            existing['card_amt']  = round(existing['card_amt']  + row_data['card_amt'],  2)
-            existing['total_vol'] = round(existing['total_vol'] + row_data['total_vol'], 3)
-            existing['total_amt'] = round(existing['total_amt'] + row_data['total_amt'], 2)
-            existing['bonus_amt'] = round(existing['bonus_amt'] + row_data['bonus_amt'], 2)
-            existing['bonus_vol'] = round(existing['bonus_vol'] + row_data['bonus_vol'], 3)
+            existing['cash_vol']  = _round_half_up(existing['cash_vol']  + row_data['cash_vol'],  3)
+            existing['cash_amt']  = _round_half_up(existing['cash_amt']  + row_data['cash_amt'],  2)
+            existing['card_vol']  = _round_half_up(existing['card_vol']  + row_data['card_vol'],  3)
+            existing['card_amt']  = _round_half_up(existing['card_amt']  + row_data['card_amt'],  2)
+            existing['total_vol'] = _round_half_up(existing['total_vol'] + row_data['total_vol'], 3)
+            existing['total_amt'] = _round_half_up(existing['total_amt'] + row_data['total_amt'], 2)
+            existing['bonus_amt'] = _round_half_up(existing['bonus_amt'] + row_data['bonus_amt'], 2)
+            existing['bonus_vol'] = _round_half_up(existing['bonus_vol'] + row_data['bonus_vol'], 3)
             new_total = existing['total_vol']
             if new_total > 0:
-                existing['avg_price'] = round(existing['total_amt'] / new_total, 2)
+                existing['avg_price'] = _round_half_up(existing['total_amt'] / new_total, 2)
 
     cur.execute(f"""
         SELECT ShopKey,
@@ -1243,15 +1257,15 @@ def _build_daily_sheet_data(cur, day, station_keys):
         bonus_amt = float(r[8] or 0)
         bonus_vol = float(r[10] or 0)
         _merge_sales_d(sales_data, sk, rk, {
-            'cash_vol': round(float(r[2] or 0), 3),
-            'cash_amt': round(float(r[3] or 0), 2),
-            'card_vol': round(float(r[4] or 0), 3),
-            'card_amt': round(float(r[5] or 0), 2),
-            'total_vol': round(total_vol, 3),
-            'total_amt': round(float(r[7] or 0), 2),
-            'bonus_amt': round(bonus_amt, 2),
-            'bonus_vol': round(bonus_vol, 3),
-            'avg_price': round(avg_price, 2),
+            'cash_vol': _round_half_up(float(r[2] or 0), 3),
+            'cash_amt': _round_half_up(float(r[3] or 0), 2),
+            'card_vol': _round_half_up(float(r[4] or 0), 3),
+            'card_amt': _round_half_up(float(r[5] or 0), 2),
+            'total_vol': _round_half_up(total_vol, 3),
+            'total_amt': _round_half_up(float(r[7] or 0), 2),
+            'bonus_amt': _round_half_up(bonus_amt, 2),
+            'bonus_vol': _round_half_up(bonus_vol, 3),
+            'avg_price': _round_half_up(avg_price, 2),
         })
 
     cur.execute(f"""
@@ -1310,10 +1324,10 @@ def _build_daily_sheet_data(cur, day, station_keys):
         rk = int(r[1])
         if rk < 100:
             continue
-        vol = round(float(r[2] or 0), 3)
+        vol = _round_half_up(float(r[2] or 0), 3)
         if sk not in ved_data:
             ved_data[sk] = {}
-        ved_data[sk][rk] = round(ved_data[sk].get(rk, 0) + vol, 3)
+        ved_data[sk][rk] = _round_half_up(ved_data[sk].get(rk, 0) + vol, 3)
 
     # 查询合同销售（DPT=3）
     cur.execute(f"""
@@ -1374,20 +1388,20 @@ def _build_daily_sheet_data(cur, day, station_keys):
         rk = int(r[1])
         if rk < 100:
             continue
-        vol = round(float(r[2] or 0), 3)
-        amt = round(float(r[3] or 0), 2)
-        contract_price_val = round(float(r[4] or 0), 2)
+        vol = _round_half_up(float(r[2] or 0), 3)
+        amt = _round_half_up(float(r[3] or 0), 2)
+        contract_price_val = _round_half_up(float(r[4] or 0), 2)
         if sk not in contract_data:
             contract_data[sk] = {}
         if rk not in contract_data[sk]:
             contract_data[sk][rk] = {'vol': vol, 'amt': amt, 'price': contract_price_val}
         else:
             existing = contract_data[sk][rk]
-            new_vol = round(existing['vol'] + vol, 3)
-            new_amt = round(existing['amt'] + amt, 2)
+            new_vol = _round_half_up(existing['vol'] + vol, 3)
+            new_amt = _round_half_up(existing['amt'] + amt, 2)
             contract_data[sk][rk] = {
                 'vol': new_vol, 'amt': new_amt,
-                'price': round(new_amt / new_vol, 2) if new_vol > 0 else 0,
+                'price': _round_half_up(new_amt / new_vol, 2) if new_vol > 0 else 0,
             }
 
     # 查询转运（supply 表）：优先用 balance 的 RSK→标准RK 映射，其次 selling 价格，最后密度推断
@@ -1497,7 +1511,7 @@ def _build_daily_sheet_data(cur, day, station_keys):
     for r in cur.fetchall():
         sk = int(r[0])
         orig_rk = int(r[1])
-        vol = round(float(r[2] or 0), 3)
+        vol = _round_half_up(float(r[2] or 0), 3)
         avg_density = float(r[3] or 0)
         rsk = r[4]
 
@@ -1528,7 +1542,7 @@ def _build_daily_sheet_data(cur, day, station_keys):
             continue
         if sk not in supply_data:
             supply_data[sk] = {}
-        supply_data[sk][rk] = round(supply_data[sk].get(rk, 0) + vol, 3)
+        supply_data[sk][rk] = _round_half_up(supply_data[sk].get(rk, 0) + vol, 3)
 
     return sales_data, ved_data, supply_data, contract_data
 
@@ -1717,12 +1731,12 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
         r = row + i
         # 列4=油品名，列5=密度
         _apply_style(ws, r, 4, fuel_name, bold=False, size=9, fill=None)
-        _apply_style(ws, r, 5, density, num_fmt='0.000', size=9, fill=_FILL_DATA)
+        _apply_style(ws, r, 5, _round_half_up(density, 3), num_fmt='0.000', size=9, fill=_FILL_DATA)
 
         if is_monthly:
             # 月/周总表：月报26列，周报可插入合同销售吨位后变为27列。
-            sales_total_vol = cash_vol + card_vol + contract_vol
-            sales_total_amt = cash_amt + card_amt + contract_amt
+            sales_total_vol = _round_half_up(cash_vol + card_vol + contract_vol, 3)
+            sales_total_amt = _round_half_up(cash_amt + card_amt + contract_amt, 2)
             sales_total_ton = _mass_kg_to_tons(cash_mass + card_mass + contract_mass, ton_decimals)
             loss = ld.get((shop_key, rk), 0)
             monthly_col_end = 27 if include_contract_ton else 26
@@ -1789,8 +1803,8 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
                     _apply_style(ws, r, col, None, size=9, fill=_FILL_DATA)
         else:
             # 日分表24列：列6~23（起初量...损耗）
-            sales_total_vol = cash_vol + card_vol + contract_vol
-            sales_total_amt = cash_amt + card_amt + contract_amt
+            sales_total_vol = _round_half_up(cash_vol + card_vol + contract_vol, 3)
+            sales_total_amt = _round_half_up(cash_amt + card_amt + contract_amt, 2)
             sales_total_ton = _mass_kg_to_tons(cash_mass + card_mass + contract_mass, ton_decimals)
             loss = ld.get((shop_key, rk), 0)
 
@@ -1861,7 +1875,8 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
         if col in skip_cols:
             _apply_style(ws, sub_row, col, '', bold=True, size=9, fill=_FILL_SUBTOTAL)
         else:
-            formula = f'=SUM({col_letter}{row}:{col_letter}{row + n_fuel - 1})'
+            formula_digits = ton_decimals if col in subtotal_ton_cols else 3
+            formula = _excel_round_formula(f'SUM({col_letter}{row}:{col_letter}{row + n_fuel - 1})', formula_digits)
             num_fmt = ton_num_fmt if col in subtotal_ton_cols else normal_num_fmt
             _apply_style(ws, sub_row, col, formula, bold=True, size=9, num_fmt=num_fmt, fill=_FILL_SUBTOTAL)
 

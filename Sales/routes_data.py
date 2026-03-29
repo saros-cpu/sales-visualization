@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from email.utils import parsedate_to_datetime
 from functools import wraps
 import html
@@ -51,6 +52,15 @@ from retail_internal import open_oilstation
 
 
 # ── Maintenance & helper functions (moved from register_data_routes inner scope) ──
+
+
+def _round_half_up(value, digits=0):
+    digits = int(digits or 0)
+    try:
+        quant = Decimal("1").scaleb(-digits)
+        return float(Decimal(str(value or 0)).quantize(quant, rounding=ROUND_HALF_UP))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0.0
 
 def default_market_details(region):
     label = market_region_label(region)
@@ -1713,9 +1723,10 @@ def register_data_routes(app):
                     r[0].isoformat() if r[0] else "",
                     r[1] or "", r[2] or "", r[3] or "",
                     r[4] or "", r[5] or "",
-                    float(r[6]) if r[6] else 0,
+                    _round_half_up(r[6], 3) if r[6] else 0,
                     r[7] or "",
                 ])
+                ws.cell(row=idx + 1, column=8).number_format = "#,##0.000"
             output = io.BytesIO()
             wb.save(output)
             output.seek(0)
@@ -1903,4 +1914,3 @@ def register_data_routes(app):
             serve(app, host=host, port=port)
         except ImportError:
             app.run(host=host, port=port, debug=False, use_reloader=False)
-
