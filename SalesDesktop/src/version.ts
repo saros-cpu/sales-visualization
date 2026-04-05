@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.5';
-export const BUILD_DATE = '2026-07-24';
+export const VERSION = '3.9.6';
+export const BUILD_DATE = '2026-07-26';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.6',
+    date: '2026-07-26',
+    type: 'patch',
+    changes: [
+      '修复：吉方财务交接日报自动任务返回结构化 failedItems/failedCount，不再只返回合并后的 error 文本',
+      '修复：计划任务、手动补跑和状态检查统一把缺站、跳过站点、模板/班次不匹配、生成警告和脚本异常列为失败项',
+      '优化：系统健康页新增吉方日报失败项数量和明细表，可查看站号、文件、失败类型和原因',
+      '测试：补充吉方日报自动任务、API 手动执行、状态汇总和异常失败项回归测试',
+    ],
+  },
   {
     version: '3.9.5',
     date: '2026-07-24',

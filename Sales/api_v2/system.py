@@ -404,6 +404,111 @@ def _station_payload(shop_key: int, catalog: dict[int, dict[str, Any]], status: 
     return payload
 
 
+def _accounting_failed_item_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        item.get("type"),
+        item.get("shopKey"),
+        item.get("file"),
+        tuple(item.get("shiftKeys") or []),
+        item.get("reason") or item.get("message"),
+    )
+
+
+def _dedupe_accounting_failed_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    result: list[dict[str, Any]] = []
+    for item in items:
+        key = _accounting_failed_item_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _accounting_failed_items_from_summary(
+    summary: dict[str, Any] | None,
+    catalog: dict[int, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if not isinstance(summary, dict):
+        return []
+    catalog = catalog or retail_station_catalog_cached()
+    items: list[dict[str, Any]] = []
+    for skipped in summary.get("skipped") or []:
+        if not isinstance(skipped, dict):
+            continue
+        shop_key = skipped.get("shopKey")
+        try:
+            shop_key = int(shop_key)
+        except (TypeError, ValueError):
+            shop_key = None
+        item: dict[str, Any] = {
+            "type": "skipped",
+            "reason": skipped.get("reason") or "skipped",
+        }
+        for key in ("file", "shiftKeys", "shiftBegin", "shiftEnd"):
+            if skipped.get(key) not in (None, "", []):
+                item[key] = skipped.get(key)
+        if shop_key is not None:
+            item.update({
+                "shopKey": shop_key,
+                "stationNo": _accounting_station_no(shop_key),
+                "station": _station_payload(shop_key, catalog),
+            })
+        items.append(item)
+
+    for warning in summary.get("warnings") or []:
+        text = str(warning or "").strip()
+        if not text:
+            continue
+        item = {"type": "warning", "reason": text, "message": text}
+        match = re.match(r"^(\d{1,3})\s*[:：]\s*(.+)$", text)
+        if match:
+            shop_key = int(match.group(1))
+            item.update({
+                "shopKey": shop_key,
+                "stationNo": _accounting_station_no(shop_key),
+                "station": _station_payload(shop_key, catalog),
+                "reason": match.group(2).strip() or text,
+            })
+        items.append(item)
+
+    for failed_item in summary.get("failedItems") or []:
+        if not isinstance(failed_item, dict):
+            continue
+        item = dict(failed_item)
+        item.setdefault("type", "failed")
+        if not item.get("reason") and item.get("message"):
+            item["reason"] = item["message"]
+        shop_key = item.get("shopKey")
+        try:
+            shop_key = int(shop_key)
+        except (TypeError, ValueError):
+            shop_key = None
+        if shop_key is not None:
+            item["shopKey"] = shop_key
+            item.setdefault("stationNo", _accounting_station_no(shop_key))
+            item.setdefault("station", _station_payload(shop_key, catalog))
+        items.append(item)
+    return _dedupe_accounting_failed_items(items)
+
+
+def _accounting_missing_failed_items(
+    missing_shop_keys: list[int],
+    catalog: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "missing",
+            "shopKey": shop_key,
+            "stationNo": _accounting_station_no(shop_key),
+            "station": _station_payload(shop_key, catalog),
+            "reason": "expected station report file missing",
+        }
+        for shop_key in missing_shop_keys
+    ]
+
+
 def _latest_automation_row(cur, task_name: str) -> dict[str, Any] | None:
     ensure_automation_task_schema(cur)
     cur.execute(
@@ -502,7 +607,13 @@ def _accounting_report_status(cur, target_day: date) -> dict[str, Any]:
         warnings = list(latest_summary.get("warnings") or [])
         skipped = list(latest_summary.get("skipped") or [])
 
+    failed_items = _dedupe_accounting_failed_items(
+        _accounting_failed_items_from_summary(latest_summary if isinstance(latest_summary, dict) else None, catalog)
+        + _accounting_missing_failed_items(missing_shop_keys, catalog)
+    )
     if missing_shop_keys:
+        status = "warning"
+    elif failed_items:
         status = "warning"
     elif not output_dir.exists():
         status = "pending"
@@ -521,6 +632,7 @@ def _accounting_report_status(cur, target_day: date) -> dict[str, Any]:
         "generatedStationCount": len(generated_shop_keys & set(expected_shop_keys)),
         "generatedFileCount": len(generated_files),
         "missingCount": len(missing_shop_keys),
+        "failedCount": len(failed_items),
         "closedCount": len(closed_stations),
         "unexpectedFileCount": len(unexpected_files),
         "expectedStations": [_station_payload(shop_key, catalog) for shop_key in expected_shop_keys],
@@ -531,6 +643,7 @@ def _accounting_report_status(cur, target_day: date) -> dict[str, Any]:
         "unrecognizedFiles": unrecognized_files,
         "warnings": warnings,
         "skipped": skipped,
+        "failedItems": failed_items,
         "latestRun": latest,
     }
 
@@ -909,13 +1022,25 @@ def _run_market_watch_task(cur) -> dict[str, Any]:
 def _run_retail_accounting_reports_task(cur, target_day: date | None = None, force: bool = True) -> dict[str, Any]:
     try:
         result = _run_retail_accounting_report_task(target_day=target_day, force=force)
-        status = "success" if not result.get("warnings") else "failed"
-        error = "; ".join(result.get("warnings") or []) or None
+        failed_items = _accounting_failed_items_from_summary(result)
+        result["failedItems"] = failed_items
+        result["failedCount"] = len(failed_items)
+        status = "success" if not failed_items else "failed"
+        error = "; ".join(str(item.get("reason") or item.get("message") or item.get("type")) for item in failed_items[:8]) or None
         record_automation_task(cur, "retail_accounting_reports", status, result, error)
-        return {"status": status, "summary": result, "error": error}
+        return {"status": status, "summary": result, "error": error, "failedItems": failed_items, "failedCount": len(failed_items)}
     except Exception as exc:
-        record_automation_task(cur, "retail_accounting_reports", "failed", {}, str(exc))
-        return _automation_error_payload(exc)
+        failed_items = [{"type": "exception", "reason": str(exc), "message": str(exc)}]
+        record_automation_task(
+            cur,
+            "retail_accounting_reports",
+            "failed",
+            {"failedItems": failed_items, "failedCount": len(failed_items)},
+            str(exc),
+        )
+        payload = _automation_error_payload(exc)
+        payload.update({"failedItems": failed_items, "failedCount": len(failed_items)})
+        return payload
 
 
 def _retail_snapshot_worker():

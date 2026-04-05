@@ -4,8 +4,10 @@ import argparse
 import json
 import logging
 from pathlib import Path
+import re
 import subprocess
 import sys
+from typing import Any
 
 from shared_utils import record_automation_task
 from shared_utils import OILSTATION_ROOT
@@ -27,6 +29,102 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
+
+
+def _accounting_station_no(shop_key: int) -> str:
+    return str(shop_key).zfill(3)
+
+
+def _accounting_failed_item_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        item.get("type"),
+        item.get("shopKey"),
+        item.get("file"),
+        tuple(item.get("shiftKeys") or []),
+        item.get("reason") or item.get("message"),
+    )
+
+
+def _dedupe_accounting_failed_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    result: list[dict[str, Any]] = []
+    for item in items:
+        key = _accounting_failed_item_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def accounting_failed_items_from_summary(summary: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(summary, dict):
+        return []
+
+    items: list[dict[str, Any]] = []
+    for skipped in summary.get("skipped") or []:
+        if not isinstance(skipped, dict):
+            continue
+        shop_key = skipped.get("shopKey")
+        try:
+            shop_key = int(shop_key)
+        except (TypeError, ValueError):
+            shop_key = None
+
+        item: dict[str, Any] = {
+            "type": "skipped",
+            "reason": skipped.get("reason") or "skipped",
+        }
+        for key in ("file", "shiftKeys", "shiftBegin", "shiftEnd"):
+            if skipped.get(key) not in (None, "", []):
+                item[key] = skipped.get(key)
+        if shop_key is not None:
+            item["shopKey"] = shop_key
+            item["stationNo"] = _accounting_station_no(shop_key)
+        items.append(item)
+
+    for warning in summary.get("warnings") or []:
+        text = str(warning or "").strip()
+        if not text:
+            continue
+        item: dict[str, Any] = {"type": "warning", "reason": text, "message": text}
+        match = re.match(r"^(\d{1,3})\s*[:：]\s*(.+)$", text)
+        if match:
+            shop_key = int(match.group(1))
+            item.update({
+                "shopKey": shop_key,
+                "stationNo": _accounting_station_no(shop_key),
+                "reason": match.group(2).strip() or text,
+            })
+        items.append(item)
+
+    for failed_item in summary.get("failedItems") or []:
+        if not isinstance(failed_item, dict):
+            continue
+        item = dict(failed_item)
+        item.setdefault("type", "failed")
+        if not item.get("reason") and item.get("message"):
+            item["reason"] = item["message"]
+        shop_key = item.get("shopKey")
+        try:
+            shop_key = int(shop_key)
+        except (TypeError, ValueError):
+            shop_key = None
+        if shop_key is not None:
+            item["shopKey"] = shop_key
+            item.setdefault("stationNo", _accounting_station_no(shop_key))
+        items.append(item)
+
+    return _dedupe_accounting_failed_items(items)
+
+
+def _accounting_failure_error(failed_items: list[dict[str, Any]]) -> str | None:
+    messages = [
+        str(item.get("reason") or item.get("message") or item.get("type"))
+        for item in failed_items[:8]
+        if item.get("reason") or item.get("message") or item.get("type")
+    ]
+    return "; ".join(messages) or None
 
 
 def run_task(task_name: str):
@@ -54,8 +152,11 @@ def run_task(task_name: str):
             error = None
         elif task_name == "retail_accounting_reports":
             result = run_retail_accounting_report_maintenance()
-            status = "success" if not result.get("warnings") else "failed"
-            error = "; ".join(result.get("warnings") or []) or None
+            failed_items = accounting_failed_items_from_summary(result)
+            result["failedItems"] = failed_items
+            result["failedCount"] = len(failed_items)
+            status = "success" if not failed_items else "failed"
+            error = _accounting_failure_error(failed_items)
         else:
             raise ValueError(f"Unknown task: {task_name}")
         record_automation_task(cur, task_name, status, result, error)

@@ -39,6 +39,12 @@ function formatBytes(value?: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function accountingFailedItemText(item: any) {
+  const stationNo = item?.stationNo || item?.station?.stationNo || (item?.shopKey ? String(item.shopKey).padStart(3, '0') : '');
+  const station = stationNo ? `${stationNo}号站` : '';
+  return [station, item?.file, item?.reason || item?.message || item?.type].filter(Boolean).join(' ');
+}
+
 export default function SystemHealth() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -67,6 +73,7 @@ export default function SystemHealth() {
   const closedStations = asArray<any>(accounting.closedStations);
   const accountingWarnings = asArray<any>(accounting.warnings);
   const accountingSkipped = asArray<any>(accounting.skipped);
+  const accountingFailedItems = asArray<any>(accounting.failedItems);
   const cacheItems = asArray<any>(cache.items);
   const apiRecent = asArray<any>(api.recent);
   const apiTop = asArray<any>(api.topPaths24h);
@@ -106,8 +113,11 @@ export default function SystemHealth() {
     try {
       const result = await runAutomationTask(task);
       const retailStatus = result?.results?.retailSnapshots?.status;
+      const failedItems = Object.values(result?.results || {}).flatMap((item: any) => asArray<any>(item?.failedItems));
       const hasFailed = Object.values(result?.results || {}).some((item: any) => item?.status === 'failed');
-      if (hasFailed) {
+      if (failedItems.length > 0) {
+        message.warning(`${t('systemHealth.runWarning')}：${failedItems.slice(0, 3).map(accountingFailedItemText).join('；')}`);
+      } else if (hasFailed) {
         message.warning(t('systemHealth.runWarning'));
       } else {
         message.success(retailStatus === 'queued' || retailStatus === 'running' ? t('systemHealth.runQueued') : t('systemHealth.runSuccess'));
@@ -124,9 +134,11 @@ export default function SystemHealth() {
     setGeneratingAccounting(true);
     try {
       const result = await generateAccountingReports(accountingDateText);
-      const hasWarnings = result?.run?.status === 'failed' || (result?.status?.warnings || []).length > 0;
+      const failedItems = asArray<any>(result?.run?.failedItems).concat(asArray<any>(result?.status?.failedItems));
+      const hasWarnings = result?.run?.status === 'failed' || failedItems.length > 0 || (result?.status?.warnings || []).length > 0;
       if (hasWarnings || (result?.status?.missingCount || 0) > 0) {
-        message.warning(t('systemHealth.accountingGenerateWarning'));
+        const detail = failedItems.slice(0, 3).map(accountingFailedItemText).join('；');
+        message.warning(detail ? `${t('systemHealth.accountingGenerateWarning')}：${detail}` : t('systemHealth.accountingGenerateWarning'));
       } else {
         message.success(t('systemHealth.accountingGenerateSuccess'));
       }
@@ -397,6 +409,7 @@ export default function SystemHealth() {
                   { key: 'expected', title: t('systemHealth.accountingExpected'), value: accounting.expectedCount ?? 0, span: 6 },
                   { key: 'generated', title: t('systemHealth.accountingGenerated'), value: accounting.generatedStationCount ?? 0, span: 6 },
                   { key: 'missing', title: t('systemHealth.accountingMissing'), value: accounting.missingCount ?? 0, tone: (accounting.missingCount ?? 0) > 0 ? 'danger' : 'success', span: 6 },
+                  { key: 'failed', title: t('systemHealth.accountingFailed'), value: accounting.failedCount ?? 0, tone: (accounting.failedCount ?? 0) > 0 ? 'danger' : 'success', span: 6 },
                   { key: 'closed', title: t('systemHealth.accountingClosed'), value: accounting.closedCount ?? 0, span: 6 },
                 ]} />
 
@@ -406,6 +419,23 @@ export default function SystemHealth() {
                     type="warning"
                     message={t('systemHealth.accountingWarnings')}
                     description={[...textList(accountingWarnings), ...accountingSkipped.map((item: any) => `${String(item?.shopKey || '').padStart(3, '0')}: ${item?.reason || '-'}`)].slice(0, 12).join('；')}
+                  />
+                )}
+
+                {accountingFailedItems.length > 0 && (
+                  <Table
+                    size="small"
+                    rowKey={(row: any, index) => `${row?.type || 'failed'}-${row?.shopKey || row?.stationNo || 'unknown'}-${row?.file || row?.shiftBegin || index}`}
+                    dataSource={accountingFailedItems}
+                    pagination={{ pageSize: 8 }}
+                    title={() => t('systemHealth.accountingFailedItems')}
+                    columns={[
+                      { title: t('systemHealth.stationNo'), dataIndex: 'stationNo', width: 90, render: (v: any, row: any) => v || (row?.shopKey ? String(row.shopKey).padStart(3, '0') : '-') },
+                      { title: t('retail.station'), dataIndex: ['station', 'name'], width: 180, render: (v: any) => v || '-' },
+                      { title: t('systemHealth.failureType'), dataIndex: 'type', width: 120 },
+                      { title: t('systemHealth.fileName'), dataIndex: 'file', width: 220, render: (v: any) => v || '-' },
+                      { title: t('systemHealth.failureReason'), dataIndex: 'reason', render: (v: any, row: any) => v || row?.message || '-' },
+                    ]}
                   />
                 )}
 

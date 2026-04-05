@@ -15,12 +15,12 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `3.9.4`.
-- Current release commit: `11258ba fix: refine report exports and health checks`.
+- Current released client version: `3.9.5`.
+- Current release commit: `5a2f264 fix: enforce half-up report rounding`.
 - Production public entry: `http://198.51.100.10/`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `http://198.51.100.10/download/latest.yml`.
-- Current installer: `SalesDesktop Setup 3.9.4.exe`.
+- Current installer: `SalesDesktop Setup 3.9.5.exe`.
 
 ## Report Boundaries
 
@@ -116,18 +116,18 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.4.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.4.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.4.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.5.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.5.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.5.exe"
 ```
 
 ## CodeGraph Memory
 
 Current CodeGraph baseline:
 
-- Files: `316`
-- Nodes: `7,849`
-- Edges: `29,026`
+- Files: `317`
+- Nodes: `7,872`
+- Edges: `28,917`
 - DB size: `34.50 MB`
 - Status: `Index is up to date`
 
