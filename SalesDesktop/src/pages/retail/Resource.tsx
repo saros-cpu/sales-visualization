@@ -6,6 +6,7 @@ import { getResourcesYearly } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import { formatRetailTons, numericMetric as numeric, retailTonsOf } from '@/utils/retailMetrics';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 // 与 Web 端 ResourcePage 保持一致的口径
@@ -23,12 +24,19 @@ function normalizeResources(rows: any[]): any[] {
     const cur = buckets.get(key) || {
       resourceKey: key, key, name: RESOURCE_NAMES[key], volume: 0, amount: 0, color: RESOURCE_COLORS[key],
       yoyVolumeParts: [] as number[], yoySalesParts: [] as number[], momVolumeParts: [] as number[], momSalesParts: [] as number[],
-      latestMonthVolume: 0, latestMonthAmount: 0,
+      latestMonthVolume: 0, latestMonthAmount: 0, mass: 0, tons: 0, latestMonthMass: 0, latestMonthTons: 0,
     };
+    const rowTons = retailTonsOf(row);
+    const rowMass = numeric(row.mass ?? row.latestMonthMass) || rowTons * 1000;
+    const latestTons = numeric(row.latestMonthTons) || (numeric(row.latestMonthMass) > 0 ? numeric(row.latestMonthMass) / 1000 : 0);
     cur.volume += Number(row.volume || 0);
     cur.amount += Number(row.amount || 0);
+    cur.mass += rowMass;
+    cur.tons += rowTons || rowMass / 1000;
     cur.latestMonthVolume += Number(row.latestMonthVolume || 0);
     cur.latestMonthAmount += Number(row.latestMonthAmount || 0);
+    cur.latestMonthMass += numeric(row.latestMonthMass);
+    cur.latestMonthTons += latestTons;
     (['yoyVolume', 'yoySales', 'momVolume', 'momSales'] as const).forEach((f) => {
       if (row[f] != null) cur[f + 'Parts'].push(Number(row[f]));
     });
@@ -43,6 +51,10 @@ function normalizeResources(rows: any[]): any[] {
     });
     item.volume = Number(item.volume.toFixed(2));
     item.amount = Number(item.amount.toFixed(2));
+    item.mass = Number(item.mass.toFixed(3));
+    item.tons = Number(item.tons.toFixed(3));
+    item.latestMonthMass = Number(item.latestMonthMass.toFixed(3));
+    item.latestMonthTons = Number(item.latestMonthTons.toFixed(3));
     return item;
   });
 }
@@ -60,12 +72,14 @@ export default function Resource() {
   const resources = useMemo(() => normalizeResources((data as any)?.resources ?? []), [data]);
   const totalAmount = useMemo(() => resources.reduce((s, r) => s + (r.amount || 0), 0), [resources]);
   const totalVolume = useMemo(() => resources.reduce((s, r) => s + (r.volume || 0), 0), [resources]);
+  const totalTons = numeric((data as any)?.summary?.totalTons) || resources.reduce((s, r) => s + retailTonsOf(r), 0);
 
   const columns = [
     { title: t('retail.product'), dataIndex: 'name', key: 'name', render: (v: string, r: any) => (
       <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: r.color, marginRight: 6 }} />{v}</span>
     ) },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', render: (v: number) => `${Math.round(v).toLocaleString()} L` },
+    { title: t('retail.totalTons'), dataIndex: 'tons', key: 'tons', align: 'right' as const, render: (_: number, r: any) => `${formatRetailTons(retailTonsOf(r))} t` },
     { title: t('retail.amount'), dataIndex: 'amount', key: 'amount', render: (v: number) => `${Math.round(v / 10000)}${t('common.wan')}` },
     { title: t('common.yoy'), dataIndex: 'yoySales', key: 'yoySales', render: (v: number) => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '--' },
     { title: t('common.mom'), dataIndex: 'momSales', key: 'momSales', render: (v: number) => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '--' },
@@ -78,7 +92,12 @@ export default function Resource() {
       </Space>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(totalAmount / 10000)} suffix={t('common.wan')} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(totalVolume).toLocaleString()} suffix="L" /></Card></Col>
+        <Col xs={24} sm={8}>
+          <Card size="small">
+            <Statistic title={t('retail.totalLiters')} value={Math.round(totalVolume).toLocaleString()} suffix="L" />
+            <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</div>
+          </Card>
+        </Col>
         <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.resource')} value={resources.length} suffix={t('common.type')} /></Card></Col>
       </Row>
       <Row gutter={[16, 16]}>

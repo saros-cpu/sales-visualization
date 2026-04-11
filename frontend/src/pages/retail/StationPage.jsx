@@ -19,6 +19,22 @@ function rankBadge(rank, total, label) {
 
 function fixed2(n) { return Number(n || 0).toFixed(2); }
 
+function numeric(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function tonsOf(item) {
+  const tons = numeric(item?.totalTons ?? item?.tons);
+  if (tons > 0) return tons;
+  const mass = numeric(item?.mass ?? item?.totalWeightKg);
+  return mass > 0 ? mass / 1000 : 0;
+}
+
+function formatTons(value) {
+  return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+}
+
 export default function StationPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -291,7 +307,7 @@ export default function StationPage() {
             <div className="panel-header"><div className="dot" /><span>当月经营指标</span></div>
             <div className="station-kpi">
               <div className="retail-kpi-card c1"><div className="kpi-label">💰 销售金额</div><div className="kpi-value">{fixed2(s.amount / 1e4)}</div><div className="kpi-unit">万索姆</div></div>
-              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{fixed2(s.volume / 1e4)}</div><div className="kpi-unit">万升</div></div>
+              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{fixed2(s.volume / 1e4)}</div><div className="kpi-unit">万升</div><div className="kpi-change">吨位 {formatTons(tonsOf(s))} 吨</div></div>
               <div className="retail-kpi-card c3"><div className="kpi-label">💵 现金占比</div><div className="kpi-value">{s.amount > 0 ? (s.cashSales / s.amount * 100).toFixed(2) : '0'}</div><div className="kpi-unit">%</div></div>
               <div className="retail-kpi-card c4"><div className="kpi-label">🎯 积分消费</div><div className="kpi-value">{numberFormat(s.bonusCost || 0)}</div><div className="kpi-unit">索姆</div></div>
             </div>

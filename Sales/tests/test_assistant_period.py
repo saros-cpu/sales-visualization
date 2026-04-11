@@ -2,12 +2,17 @@ import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 SALES_ROOT = Path(__file__).resolve().parents[1]
 if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
-from routes_assistant import build_assistant_query_plan, parse_assistant_period
+from routes_assistant import (
+    _assistant_cap_period_to_operational_cutoff,
+    build_assistant_query_plan,
+    parse_assistant_period,
+)
 
 
 class AssistantPeriodTests(unittest.TestCase):
@@ -24,6 +29,20 @@ class AssistantPeriodTests(unittest.TestCase):
         self.assertEqual(label, "2026年6月")
         self.assertEqual(start, date(2026, 6, 1))
         self.assertEqual(end, date(2026, 7, 1))
+
+    def test_full_date_period(self):
+        label, start, end = parse_assistant_period("2026年7月26日零售吨数", today=date(2026, 7, 27))
+
+        self.assertEqual(label, "2026年7月26日")
+        self.assertEqual(start, date(2026, 7, 26))
+        self.assertEqual(end, date(2026, 7, 27))
+
+    def test_relative_year_date_period(self):
+        label, start, end = parse_assistant_period("前年6月15日零售数据", today=date(2026, 7, 27))
+
+        self.assertEqual(label, "2024年6月15日")
+        self.assertEqual(start, date(2024, 6, 15))
+        self.assertEqual(end, date(2024, 6, 16))
 
     def test_short_year_full_year_period(self):
         label, start, end = parse_assistant_period("26年零售数据", today=date(2026, 7, 22))
@@ -186,6 +205,31 @@ class AssistantPeriodTests(unittest.TestCase):
         self.assertEqual(start, date(2025, 1, 1))
         self.assertEqual(end, date(2025, 7, 1))
 
+    def test_current_calendar_period_caps_to_operation_day(self):
+        label, start, end = _assistant_cap_period_to_operational_cutoff(
+            "2026年",
+            date(2026, 1, 1),
+            date(2027, 1, 1),
+            date(2026, 7, 27),
+            operational_end=date(2026, 7, 27),
+        )
+
+        self.assertEqual(label, "2026年")
+        self.assertEqual(start, date(2026, 1, 1))
+        self.assertEqual(end, date(2026, 7, 27))
+
+    def test_historical_complete_year_does_not_use_stale_operation_day(self):
+        _, start, end = _assistant_cap_period_to_operational_cutoff(
+            "2026年",
+            date(2026, 1, 1),
+            date(2027, 1, 1),
+            date(2027, 3, 5),
+            operational_end=date(2026, 7, 27),
+        )
+
+        self.assertEqual(start, date(2026, 1, 1))
+        self.assertEqual(end, date(2027, 1, 1))
+
 
 class AssistantQueryPlanTests(unittest.TestCase):
     def test_retail_half_year_summary_plan(self):
@@ -195,6 +239,16 @@ class AssistantQueryPlanTests(unittest.TestCase):
         self.assertEqual(plan["domain"], "retail")
         self.assertEqual(plan["period"]["start"], "2026-01-01")
         self.assertEqual(plan["period"]["endExclusive"], "2026-07-01")
+
+    def test_current_year_explicit_retail_plan_uses_operation_cutoff(self):
+        with patch("routes_assistant._assistant_latest_retail_operation_end", return_value=date(2026, 7, 27)):
+            plan = build_assistant_query_plan("2026年零售销量", today=date(2026, 7, 27))
+
+        self.assertEqual(plan["route"], "retail_summary")
+        self.assertEqual(plan["period"]["label"], "2026年")
+        self.assertEqual(plan["period"]["start"], "2026-01-01")
+        self.assertEqual(plan["period"]["endExclusive"], "2026-07-27")
+        self.assertEqual(plan["period"]["endInclusive"], "2026-07-26")
 
     def test_first_quarter_retail_summary_not_ranking(self):
         plan = build_assistant_query_plan("今年第一季度零售数据", today=date(2026, 7, 22))

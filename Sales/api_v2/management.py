@@ -291,6 +291,13 @@ def _summary_value(summary: dict[str, Any], *keys: str) -> float:
     return 0.0
 
 
+def _summary_optional_value(summary: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        if key in summary and summary.get(key) is not None:
+            return _num(summary.get(key))
+    return None
+
+
 def _latest_exchange(cur) -> dict[str, Any]:
     try:
         cur.execute("""
@@ -718,6 +725,10 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
         """),
         "cache_missing": sum(1 for item in cache_items if not item.get("exists") or not item.get("valid")),
     }
+    secondary_values = {
+        "retail_volume_liters": _summary_optional_value(retail_year_summary, "totalTons"),
+        "retail_month_volume_liters": _summary_optional_value(retail_month_summary, "totalTons"),
+    }
 
     max_month = 12 if year < today.year else today.month
     regions = retail_dashboard_year.get("regions") or {}
@@ -820,13 +831,23 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
     updated_at = datetime.now().isoformat(sep=" ", timespec="seconds")
     result: dict[str, dict[str, Any]] = {}
     for metric in KPI_CATALOG:
-        result[metric["key"]] = {
-            "value": values.get(metric["key"], 0),
+        metric_key = metric["key"]
+        payload = {
+            "value": values.get(metric_key, 0),
             "updatedAt": updated_at,
             "status": "ok",
             "source": metric["group"],
             "periodScope": metric.get("periodScope", "latest"),
         }
+        if metric_key in secondary_values and secondary_values[metric_key] is not None:
+            payload.update({
+                "secondaryValue": secondary_values[metric_key],
+                "secondaryUnit": "t",
+                "secondaryPrecision": 3,
+                "secondaryLabelZh": "实际吨位",
+                "secondaryLabelRu": "Фактическая масса",
+            })
+        result[metric_key] = payload
     return result, component_data
 
 

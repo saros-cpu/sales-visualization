@@ -29,6 +29,11 @@ export interface ComponentDefinition {
 
 export interface KpiMetricValue {
   value: number | string;
+  secondaryValue?: number | string | null;
+  secondaryUnit?: string;
+  secondaryPrecision?: number;
+  secondaryLabelZh?: string;
+  secondaryLabelRu?: string;
   updatedAt?: string;
   status?: string;
   source?: string;

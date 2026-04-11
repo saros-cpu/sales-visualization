@@ -1,5 +1,5 @@
 // src/pages/retail/MonthlyPage.jsx — 月度分析
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getMonths, getMonthlyData, generateMonthlyReport } from '../../api/retail';
 import { download } from '../../api/client';
 import { useChart } from '../../hooks/useChart';
@@ -10,8 +10,10 @@ export default function MonthlyPage() {
   const [months, setMonths] = useState([]);
   const [ym, setYm] = useState(null);
   const [data, setData] = useState(null);
-  const [renderSeq, setRenderSeq] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [reporting, setReporting] = useState(false);
+  const requestSeqRef = useRef(0);
 
   const { registerControls, clearControls } = useRetailHeader();
 
@@ -63,15 +65,26 @@ export default function MonthlyPage() {
   // Load monthly data
   useEffect(() => {
     if (!ym) return;
-    const seq = renderSeq + 1;
-    setRenderSeq(seq);
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    setLoading(true);
+    setLoadError('');
+    setData(null);
 
-    const yesterday = new Date(Date.now() - 86400000);
-    const currentYm = yesterday.toISOString().slice(0, 7);
-    const isCurrentMonth = ym === currentYm;
-    getMonthlyData(ym, { refresh: isCurrentMonth })
-      .then(d => { setData(d); initCharts(d); })
-      .catch(err => console.error('加载月度数据失败:', err));
+    getMonthlyData(ym)
+      .then(d => {
+        if (requestSeqRef.current !== requestSeq) return;
+        setData(d);
+        initCharts(d);
+      })
+      .catch(err => {
+        if (requestSeqRef.current !== requestSeq) return;
+        console.error('加载月度数据失败:', err);
+        setLoadError(err.message || '加载月度数据失败');
+      })
+      .finally(() => {
+        if (requestSeqRef.current === requestSeq) setLoading(false);
+      });
   }, [ym]);
 
   // Init charts
@@ -216,6 +229,26 @@ export default function MonthlyPage() {
   };
 
   const yearLabel = ym ? `${ym.split('-')[0]}年${parseInt(ym.split('-')[1])}月` : '';
+
+  if (!data && loading) {
+    return (
+      <main className="retail-monthly-content">
+        <div className="retail-panel" style={{ padding: 24, color: 'rgba(220,240,255,0.8)' }}>
+          正在加载 {ym || ''} 月度数据...
+        </div>
+      </main>
+    );
+  }
+
+  if (!data && loadError) {
+    return (
+      <main className="retail-monthly-content">
+        <div className="retail-panel" style={{ padding: 24, color: '#ef5350' }}>
+          {loadError}
+        </div>
+      </main>
+    );
+  }
 
   // Build insights (JSX with color highlights matching original)
   const B = ({ color, children }) => <b style={{ color }}>{children}</b>;

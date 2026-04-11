@@ -8,18 +8,24 @@ import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
+import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
 
 const { Text } = Typography;
+
+function defaultRetailMonth() {
+  const day = new Date();
+  day.setDate(day.getDate() - 1);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}`;
+}
 
 export default function Monthly() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const canExport = can('retail:export');
   const { region, station, product, isRu } = useNameI18n();
-  const now = new Date();
-  const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  const [ym, setYm] = useState(defaultRetailMonth);
 
   const monthQ = useApiQuery(['retail', 'monthly', ym], () => getMonthly(ym));
   const data = monthQ.data;
@@ -35,6 +41,7 @@ export default function Monthly() {
 
   const s = data?.summary;
   const inventoryLiters = Math.round(Number(s?.inventory ?? 0));
+  const totalTons = retailTonsOf(s);
 
   const mom = data?.comparison?.mom as any;
   const yoy = data?.comparison?.yoy as any;
@@ -55,6 +62,7 @@ export default function Monthly() {
     { title: t('retail.region'), dataIndex: 'region', key: 'region', width: 120, render: (v: string) => region(v) },
     { title: t('retail.amount'), dataIndex: 'amount', key: 'amount', width: 110, align: 'right' as const, render: (v: number) => `${Math.round(v / 10000)}${t('common.wan')}` },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', width: 130, align: 'right' as const, render: (v: number) => `${Math.round(v).toLocaleString()}L` },
+    { title: t('retail.totalTons'), dataIndex: 'tons', key: 'tons', width: 110, align: 'right' as const, render: (_: number, r: any) => `${formatRetailTons(retailTonsOf(r))} t` },
   ];
 
   return (
@@ -67,7 +75,12 @@ export default function Monthly() {
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.monthlySales')} value={Math.round(s.totalSales / 10000)} suffix={t('common.wan')} /></Card></Col>
-            <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(s.totalLiters)} suffix="L" /></Card></Col>
+            <Col xs={24} sm={12} md={8} xl={4}>
+              <Card size="small">
+                <Statistic title={t('retail.totalLiters')} value={Math.round(s.totalLiters)} suffix="L" />
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</Text>
+              </Card>
+            </Col>
             <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.activeShops')} value={`${s.activeShops}/${s.totalShops}`} /></Card></Col>
             <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.cardRatio')} value={s.totalSales > 0 ? `${Math.round((s.cardSales / s.totalSales) * 100)}%` : '-'} /></Card></Col>
             <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.avgDaily')} value={data?.daily?.length ? Math.round(s.totalLiters / data.daily.length) : 0} suffix="L" /></Card></Col>

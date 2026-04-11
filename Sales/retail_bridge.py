@@ -154,11 +154,16 @@ def summarize_from_oilstation(cur, year, month=None):
         business_day = parse_iso_date(item.get("date"))
         resource_key = normalize_resource_key(item.get("resourceKey"))
         liters = float(item.get("volume") or 0)
-        density = density_for(densities, resource_key, business_day)
-        tons = liters * float(density or 0) / 1000
+        if item.get("tons") is not None:
+            tons = float(item.get("tons") or 0)
+        elif item.get("mass") is not None:
+            tons = float(item.get("mass") or 0) / 1000
+        else:
+            density = density_for(densities, resource_key, business_day)
+            tons = liters * float(density or 0) / 1000
+            if density is None and liters:
+                missing.append(f"density:{resource_key}:{business_day.isoformat()}")
         total_tons += tons
-        if density is None and liters:
-            missing.append(f"density:{resource_key}:{business_day.isoformat()}")
 
         bucket = by_product.setdefault(
             str(resource_key),
@@ -171,6 +176,9 @@ def summarize_from_oilstation(cur, year, month=None):
         )
         bucket["liters"] += liters
         bucket["tons"] += tons
+
+    if not total_tons and summary.get("totalTons") is not None:
+        total_tons = float(summary.get("totalTons") or 0)
 
     return {
         "liters": round(total_liters, 2),

@@ -10,6 +10,22 @@ import {
   buildResourceRank,
 } from '../../utils/retail-helpers';
 
+function numeric(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function tonsOf(item) {
+  const tons = numeric(item?.totalTons ?? item?.tons);
+  if (tons > 0) return tons;
+  const mass = numeric(item?.mass ?? item?.totalWeightKg);
+  return mass > 0 ? mass / 1000 : 0;
+}
+
+function formatTons(value) {
+  return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+}
+
 export default function RetailDashboard() {
   const navigate = useNavigate();
   const [years, setYears] = useState([]);
@@ -52,13 +68,14 @@ export default function RetailDashboard() {
   const computeRegionMap = useCallback((stationList) => {
     const rm = {};
     REGION_ORDER.forEach(name => {
-      rm[name] = { stations: [], vol: 0, amt: 0, cash: 0, card: 0, pts: 0 };
+      rm[name] = { stations: [], vol: 0, tons: 0, amt: 0, cash: 0, card: 0, pts: 0 };
     });
     stationList.filter(s => s.type === 'station').forEach(s => {
       const r = rm[s.region];
       if (r) {
         r.stations.push(s);
         r.vol += s.volume || 0;
+        r.tons += tonsOf(s);
         r.amt += s.amount || 0;
         r.cash += s.cash || 0;
         r.card += s.card || 0;
@@ -545,6 +562,9 @@ export default function RetailDashboard() {
 
   const summary = kpi?.summary || {};
   const cmp = kpi?.comparison || {};
+  const totalTons = tonsOf(summary)
+    || (dashData?.byResource || []).reduce((sum, row) => sum + tonsOf(row), 0)
+    || stations.reduce((sum, row) => sum + tonsOf(row), 0);
 
   // 计算所有站点日快照库存合计
   const totalStationInventory = stations.reduce((sum, s) => sum + (s.currentInventory || 0), 0);
@@ -578,6 +598,7 @@ export default function RetailDashboard() {
                 <div className="kpi-label">累计销售总量</div>
                 <div className="kpi-value">{((summary.totalLiters || 0) / 1e4).toFixed(2)}</div>
                 <div className="kpi-unit">万升（Л）</div>
+                <div className="kpi-change">吨位 {formatTons(totalTons)} 吨</div>
                 <div className="kpi-change" style={{ color: pctColor(cmp.yoyVolume) }}>
                   {cmp.yoyVolume != null ? `同比 ${fmtPct(cmp.yoyVolume)}` : ''}
                 </div>

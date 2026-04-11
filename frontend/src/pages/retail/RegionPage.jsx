@@ -7,6 +7,22 @@ import { REGION_COLORS, REGION_ORDER } from '../../utils/retail-helpers';
 
 const darkTooltip = { backgroundColor: 'rgba(10,20,50,0.9)', borderColor: 'rgba(0,180,255,0.3)', textStyle: { color: '#e0e8f5', fontSize: 11 } };
 
+function numeric(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function tonsOf(item) {
+  const tons = numeric(item?.totalTons ?? item?.tons);
+  if (tons > 0) return tons;
+  const mass = numeric(item?.mass ?? item?.totalWeightKg);
+  return mass > 0 ? mass / 1000 : 0;
+}
+
+function formatTons(value) {
+  return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+}
+
 export default function RegionPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -168,6 +184,7 @@ export default function RegionPage() {
   const rd = regionsData[currentRegion] || { amount: 0, volume: 0 };
   const sts = allStations.filter(s => s.region === currentRegion);
   const activeSts = sts.filter(s => s.amount > 0);
+  const regionTons = tonsOf(rd) || sts.reduce((sum, row) => sum + tonsOf(row), 0);
   const cardPct = rd.amount > 0 ? ((rd.card / rd.amount) * 100).toFixed(2) : '0.0';
 
   return (
@@ -190,7 +207,7 @@ export default function RegionPage() {
             <div className="retail-panel-header"><div className="dot" /><span>{currentRegion} 核心指标</span></div>
             <div className="retail-kpi-grid">
               <div className="retail-kpi-card c1"><div className="kpi-label">💰 销售总金额</div><div className="kpi-value">{(rd.amount / 1e4).toFixed(2)}</div><div className="kpi-unit">万索姆</div></div>
-              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{(rd.volume / 1e4).toFixed(2)}</div><div className="kpi-unit">万升</div></div>
+              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{(rd.volume / 1e4).toFixed(2)}</div><div className="kpi-unit">万升</div><div className="kpi-change">吨位 {formatTons(regionTons)} 吨</div></div>
               <div className="retail-kpi-card c3"><div className="kpi-label">🏪 活跃站点</div><div className="kpi-value">{activeSts.length}/{sts.length}</div><div className="kpi-unit">站</div></div>
               <div className="retail-kpi-card c4"><div className="kpi-label">💳 刷卡占比</div><div className="kpi-value">{cardPct}</div><div className="kpi-unit">%</div></div>
             </div>

@@ -639,6 +639,32 @@ def _assistant_explicit_date_range(text):
     return None
 
 
+def _assistant_explicit_day_period(text, today):
+    full_day = re.search(_ASSISTANT_DATE_PATTERN, text)
+    if full_day:
+        target = _assistant_safe_date(*full_day.group(1, 2, 3))
+        if target:
+            return f"{target.year}年{target.month}月{target.day}日", target, target + timedelta(days=1)
+
+    year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年|前年|大前年"
+    relative_day = re.search(
+        rf"(?<!\d)(?:({year_prefix})\s*年?\s*)?({_ASSISTANT_MONTH_NAME_PATTERN})\s*月\s*"
+        rf"({_ASSISTANT_COUNT_NAME_PATTERN})\s*(?:日|号)",
+        text,
+    )
+    if not relative_day:
+        return None
+    year = _assistant_context_year_number(relative_day.group(1), today)
+    month = _assistant_month_number(relative_day.group(2))
+    day = _assistant_count_number(relative_day.group(3))
+    if year is None or not month or not day:
+        return None
+    target = _assistant_safe_date(year, month, day)
+    if not target:
+        return None
+    return f"{target.year}年{target.month}月{target.day}日", target, target + timedelta(days=1)
+
+
 def _assistant_half_year_period(text, today):
     year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年|前年|大前年"
     match = re.search(rf"(?<!\d)(?:({year_prefix})\s*年?\s*)?(上半年度?|前半年度?)", text)
@@ -696,6 +722,9 @@ def parse_assistant_period(question, today=None):
     explicit_range = _assistant_explicit_date_range(text)
     if explicit_range:
         return explicit_range
+    explicit_day = _assistant_explicit_day_period(text, today)
+    if explicit_day:
+        return explicit_day
     calendar_period = _assistant_calendar_period(text, today)
     if calendar_period:
         return calendar_period
@@ -780,6 +809,103 @@ def parse_assistant_period(question, today=None):
         return f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
     start = today - timedelta(days=7)
     return "最近7天", start, today + timedelta(days=1)
+
+
+def _assistant_parse_iso_date(value):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _assistant_read_snapshot_json(path):
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _assistant_snapshot_query_end(payload):
+    if not isinstance(payload, dict):
+        return None
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    for source in (summary, payload):
+        for key in ("queryEnd", "queryEndExclusive"):
+            parsed = _assistant_parse_iso_date(source.get(key))
+            if parsed:
+                return parsed
+    daily_dates = [
+        _assistant_parse_iso_date(item.get("date"))
+        for item in (payload.get("daily") or [])
+        if isinstance(item, dict)
+    ]
+    daily_dates = [item for item in daily_dates if item]
+    return max(daily_dates) + timedelta(days=1) if daily_dates else None
+
+
+def _assistant_latest_retail_operation_end(today):
+    """Return the exclusive end date of the latest completed retail operation day."""
+    limit = today + timedelta(days=1)
+    year_start = date(today.year, 1, 1)
+    candidates = []
+
+    monthly_root = OILSTATION_ROOT / "cache_snapshots" / "monthly" / str(today.year)
+    for month in range(min(today.month, 12), 0, -1):
+        payload = _assistant_read_snapshot_json(monthly_root / f"monthly_{month:02d}.json")
+        query_end = _assistant_snapshot_query_end(payload)
+        if query_end and year_start < query_end <= limit:
+            candidates.append(query_end)
+            break
+
+    daily_root = OILSTATION_ROOT / "cache_snapshots" / "daily" / str(today.year)
+    if daily_root.exists():
+        for path in sorted(daily_root.glob("*/day_*.json"), reverse=True):
+            try:
+                month = int(path.parent.name)
+                day = int(path.stem.split("_")[-1])
+                snapshot_day = date(today.year, month, day)
+            except (TypeError, ValueError):
+                continue
+            query_end = snapshot_day + timedelta(days=1)
+            if year_start < query_end <= limit:
+                candidates.append(query_end)
+                break
+
+    return max(candidates) if candidates else None
+
+
+def _assistant_cap_period_to_operational_cutoff(label, start, end, today, operational_end=None):
+    if not start or not end or end <= start:
+        return label, start, end
+    cutoff = operational_end or _assistant_latest_retail_operation_end(today) or (today + timedelta(days=1))
+    cutoff = min(cutoff, today + timedelta(days=1))
+    if start <= today < end and start < cutoff < end:
+        return label, start, cutoff
+    return label, start, end
+
+
+def _assistant_route_uses_retail_operation_cutoff(domain, route):
+    if domain in {"retail", "self_use", "combined"}:
+        return True
+    return route in {
+        "retail_summary",
+        "retail_ranking",
+        "retail_trend",
+        "retail_comparison",
+        "retail_kpi",
+        "retail_inventory",
+        "retail_price",
+        "retail_resource_share",
+        "station_trend_anomaly",
+        "station_data_check",
+        "self_use_summary",
+        "combined_summary",
+    }
 
 
 def _assistant_contains_any(text, words):
@@ -1511,6 +1637,8 @@ def _assistant_resolve_clarification_plan(text, previous_plan, today):
     clarification = None
     if route == "retail_ranking" and dimensions_explicit and not metric_explicit:
         clarification = _assistant_metric_clarification()
+    if _assistant_route_uses_retail_operation_cutoff(domain, route):
+        period_label, start, end = _assistant_cap_period_to_operational_cutoff(period_label, start, end, today)
 
     confidence = 0.86 if not clarification else 0.48
     plan = {
@@ -1775,6 +1903,8 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         dimensions.append("station")
     if route == "retail_resource_share" and "resource" not in dimensions:
         dimensions.append("resource")
+    if _assistant_route_uses_retail_operation_cutoff(domain, route):
+        period_label, start, end = _assistant_cap_period_to_operational_cutoff(period_label, start, end, today)
     comparison = _assistant_comparison_payload(text, period_label, start, end)
     execution_hints = []
     if route in {"retail_comparison", "station_trend_anomaly", "retail_trend"}:
@@ -1945,6 +2075,113 @@ def register_assistant_routes(app):
             return 0.0
 
 
+    def _optional_float(value):
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+
+    def _retail_mass_is_plausible(volume, mass):
+        try:
+            volume_value = float(volume or 0)
+            mass_value = float(mass or 0)
+        except (TypeError, ValueError):
+            return False
+        if volume_value <= 0:
+            return mass_value >= 0
+        if mass_value <= 0:
+            return False
+        density = mass_value / volume_value
+        return 0.4 <= density <= 1.1
+
+
+    def _retail_mass_from_item(item):
+        volume = item.get("volume") if isinstance(item, dict) else 0
+        tons_value = _optional_float(item.get("tons") if isinstance(item, dict) else None)
+        if tons_value is not None:
+            mass_value = tons_value * 1000
+            if _retail_mass_is_plausible(volume, mass_value):
+                return mass_value
+        mass_value = _optional_float(item.get("mass") if isinstance(item, dict) else None)
+        if mass_value is not None and _retail_mass_is_plausible(volume, mass_value):
+            return mass_value
+        return None
+
+
+    def _retail_resource_key_from_name(value):
+        name = str(value or "").strip().lower()
+        if not name:
+            return 0
+        if "-35" in name:
+            return 110
+        if "спбт" in name or "сжиж" in name:
+            return 108
+        if "95" in name:
+            return 104
+        if "92" in name:
+            return 103
+        if "80" in name:
+            return 102
+        if "д/т" in name or "диз" in name:
+            return 106
+        return 0
+
+
+    def _retail_report_column_map(sheet):
+        header = next(sheet.iter_rows(min_row=4, max_row=4, values_only=True), ())
+        labels = [str(value or "").strip() for value in header]
+
+        def find(*candidates, default=0):
+            for candidate in candidates:
+                for index, label in enumerate(labels):
+                    if candidate in label:
+                        return index
+            return default
+
+        return {
+            "product": find("油品名", default=3),
+            "sales_tons": find("销售总吨", "销售量吨", default=20),
+            "end_inventory": find("期末量", default=23),
+            "end_inventory_tons": find("期末吨", default=24),
+        }
+
+
+    def _retail_resource_tons_from_report(ym):
+        workbook_path = _retail_report_workbook_from_index(ym)
+        if not workbook_path:
+            return {}
+        try:
+            from openpyxl import load_workbook
+        except Exception:
+            return {}
+        workbook = None
+        resource_tons = {}
+        try:
+            workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+            sheet_name = "总表" if "总表" in workbook.sheetnames else workbook.sheetnames[0]
+            sheet = workbook[sheet_name]
+            columns = _retail_report_column_map(sheet)
+            product_idx = columns["product"]
+            tons_idx = columns["sales_tons"]
+            for row in sheet.iter_rows(min_row=5, values_only=True):
+                product_name = str(row[product_idx] if len(row) > product_idx and row[product_idx] is not None else "").strip()
+                if not product_name or "合计" in product_name or "итого" in product_name.lower():
+                    continue
+                resource_key = _retail_resource_key_from_name(product_name)
+                if not resource_key:
+                    continue
+                resource_tons[resource_key] = resource_tons.get(resource_key, 0.0) + _float_cell(row[tons_idx] if len(row) > tons_idx else None)
+        except Exception:
+            return {}
+        finally:
+            if workbook is not None:
+                workbook.close()
+        return {key: round(value, 3) for key, value in resource_tons.items()}
+
+
     def _retail_report_extras_from_workbook(ym):
         workbook_path = _retail_report_workbook_from_index(ym)
         if not workbook_path:
@@ -1958,6 +2195,10 @@ def register_assistant_routes(app):
             workbook = load_workbook(workbook_path, read_only=True, data_only=True)
             sheet_name = "总表" if "总表" in workbook.sheetnames else workbook.sheetnames[0]
             sheet = workbook[sheet_name]
+            columns = _retail_report_column_map(sheet)
+            product_idx = columns["product"]
+            inventory_idx = columns["end_inventory"]
+            inventory_tons_idx = columns["end_inventory_tons"]
             result = {
                 "totalEndInventory": 0.0,
                 "totalEndInventoryTons": 0.0,
@@ -1973,11 +2214,11 @@ def register_assistant_routes(app):
                     current_shop_key = station_key
                 if current_shop_key is None:
                     continue
-                product_name = str(row[3] if len(row) > 3 and row[3] is not None else "").strip()
+                product_name = str(row[product_idx] if len(row) > product_idx and row[product_idx] is not None else "").strip()
                 if not product_name or "合计" in product_name or "итого" in product_name.lower():
                     continue
-                end_inventory = _float_cell(row[23] if len(row) > 23 else None)
-                end_inventory_tons = _float_cell(row[24] if len(row) > 24 else None)
+                end_inventory = _float_cell(row[inventory_idx] if len(row) > inventory_idx else None)
+                end_inventory_tons = _float_cell(row[inventory_tons_idx] if len(row) > inventory_tons_idx else None)
                 if not end_inventory and not end_inventory_tons:
                     continue
                 item = result["stations"].setdefault(str(current_shop_key), {
@@ -2015,6 +2256,9 @@ def register_assistant_routes(app):
             workbook = load_workbook(workbook_path, read_only=True, data_only=True)
             sheet_name = "总表" if "总表" in workbook.sheetnames else workbook.sheetnames[0]
             sheet = workbook[sheet_name]
+            columns = _retail_report_column_map(sheet)
+            product_idx = columns["product"]
+            tons_idx = columns["sales_tons"]
             current_shop_key = None
             for row in sheet.iter_rows(min_row=5, values_only=True):
                 station_key = _station_key_from_cell(row[0] if len(row) > 0 else None)
@@ -2022,10 +2266,10 @@ def register_assistant_routes(app):
                     current_shop_key = station_key
                 if current_shop_key is None:
                     continue
-                product_name = str(row[3] if len(row) > 3 and row[3] is not None else "").strip()
+                product_name = str(row[product_idx] if len(row) > product_idx and row[product_idx] is not None else "").strip()
                 if not product_name or "合计" in product_name or "итого" in product_name.lower():
                     continue
-                station_tons[current_shop_key] = station_tons.get(current_shop_key, 0.0) + _float_cell(row[20] if len(row) > 20 else None)
+                station_tons[current_shop_key] = station_tons.get(current_shop_key, 0.0) + _float_cell(row[tons_idx] if len(row) > tons_idx else None)
         except Exception:
             return {}
         finally:
@@ -2108,9 +2352,9 @@ def register_assistant_routes(app):
     def _normalize_retail_snapshot_payload(payload, ym=None):
         if not payload:
             return None
-        density = _retail_density_map()
         if ym is None:
             ym = payload.get("month")
+        resource_tons_from_report = _retail_resource_tons_from_report(ym) if ym else {}
         station_tons_from_report = _retail_station_tons_from_report(ym) if ym else {}
         summary = payload.get("summary") or {}
         resources = []
@@ -2118,12 +2362,18 @@ def register_assistant_routes(app):
             resource_key = int(item.get("resourceKey") or item.get("key") or 0)
             volume = float(item.get("volume") or 0)
             amount = float(item.get("amount") or 0)
+            mass_value = _retail_mass_from_item(item)
+            tons_value = mass_value / 1000 if mass_value is not None else None
+            if tons_value is None and resource_key in resource_tons_from_report:
+                tons_value = resource_tons_from_report[resource_key]
+                mass_value = tons_value * 1000
             resources.append({
                 "resourceKey": resource_key,
                 "key": resource_key,
                 "name": item.get("name") or "--",
                 "volume": round(volume, 2),
-                "tons": round(volume * density.get(resource_key, 0) / 1000, 3),
+                "mass": round(float(mass_value if mass_value is not None else (tons_value or 0) * 1000), 3),
+                "tons": round(float(tons_value or 0), 3),
                 "amount": round(amount, 2),
             })
         resource_total_liters = round(sum(float(item.get("volume") or 0) for item in resources), 2)
@@ -2136,15 +2386,18 @@ def register_assistant_routes(app):
                 shop_key_int = int(shop_key)
             except (TypeError, ValueError):
                 shop_key_int = None
-            tons_value = item.get("tons")
-            if (tons_value is None or not float(tons_value or 0)) and shop_key_int in station_tons_from_report:
+            mass_value = _retail_mass_from_item(item)
+            tons_value = mass_value / 1000 if mass_value is not None else None
+            if tons_value is None and shop_key_int in station_tons_from_report:
                 tons_value = station_tons_from_report[shop_key_int]
+                mass_value = tons_value * 1000
             stations.append({
                 "shopKey": shop_key,
                 "name": item.get("name") or "--",
                 "short": item.get("short") or "",
                 "region": item.get("region") or "--",
                 "volume": round(float(item.get("volume") or 0), 2),
+                "mass": round(float(mass_value if mass_value is not None else (tons_value or 0) * 1000), 3) if tons_value is not None or mass_value is not None else None,
                 "tons": round(float(tons_value or 0), 3) if tons_value is not None else None,
                 "amount": round(float(item.get("amount") or 0), 2),
             })
@@ -2162,19 +2415,26 @@ def register_assistant_routes(app):
             {
                 "region": item.get("region") or item.get("name") or "--",
                 "volume": round(float(item.get("volume") or 0), 2),
-                "tons": round(float(item.get("tons") or region_tons_from_stations.get(item.get("region") or item.get("name") or "--") or 0), 3),
+                "tons": round(float(
+                    ((_retail_mass_from_item(item) or 0) / 1000)
+                    or region_tons_from_stations.get(item.get("region") or item.get("name") or "--")
+                    or 0
+                ), 3),
                 "amount": round(float(item.get("amount") or 0), 2),
             }
             for item in region_iter
         ]
         stations.sort(key=lambda item: item["amount"], reverse=True)
         regions.sort(key=lambda item: item["amount"], reverse=True)
+        station_total_tons = round(sum(float(item.get("tons") or 0) for item in stations), 3)
+        summary_tons = _optional_float(summary.get("totalTons"))
+        total_tons = resource_total_tons or station_total_tons or float(summary_tons or 0)
         return {
             "source": payload.get("source") or "OilStationSnapshot",
             "summary": {
                 "totalTxn": int(summary.get("totalTxn") or 0),
                 "totalLiters": round(float(summary.get("totalLiters") or resource_total_liters or 0), 2),
-                "totalTons": round(float(summary.get("totalTons") or resource_total_tons or 0), 3),
+                "totalTons": round(total_tons, 3),
                 "totalSales": round(float(summary.get("totalSales") or resource_total_sales or 0), 2),
                 "totalSalesCny": round(float(summary.get("totalSalesCny") or 0), 2),
             },
@@ -2197,24 +2457,27 @@ def register_assistant_routes(app):
             for key in ("totalTxn", "totalLiters", "totalTons", "totalSales", "totalSalesCny"):
                 merged["summary"][key] += float(summary.get(key) or 0)
             for item in normalized.get("byResource") or []:
-                bucket = resource_map.setdefault(item.get("resourceKey"), {**item, "volume": 0, "tons": 0, "amount": 0})
+                bucket = resource_map.setdefault(item.get("resourceKey"), {**item, "volume": 0, "mass": 0, "tons": 0, "amount": 0})
                 bucket["volume"] += float(item.get("volume") or 0)
+                bucket["mass"] += float(item.get("mass") or 0)
                 bucket["tons"] += float(item.get("tons") or 0)
                 bucket["amount"] += float(item.get("amount") or 0)
             for item in normalized.get("stations") or []:
                 key = item.get("shopKey") or item.get("name")
-                bucket = station_map.setdefault(key, {**item, "volume": 0, "tons": 0, "amount": 0})
+                bucket = station_map.setdefault(key, {**item, "volume": 0, "mass": 0, "tons": 0, "amount": 0})
                 bucket["volume"] += float(item.get("volume") or 0)
+                bucket["mass"] += float(item.get("mass") or 0)
                 bucket["tons"] += float(item.get("tons") or 0)
                 bucket["amount"] += float(item.get("amount") or 0)
             for item in normalized.get("regions") or []:
                 key = item.get("region")
-                bucket = region_map.setdefault(key, {**item, "volume": 0, "tons": 0, "amount": 0})
+                bucket = region_map.setdefault(key, {**item, "volume": 0, "mass": 0, "tons": 0, "amount": 0})
                 bucket["volume"] += float(item.get("volume") or 0)
+                bucket["mass"] += float(item.get("mass") or 0)
                 bucket["tons"] += float(item.get("tons") or 0)
                 bucket["amount"] += float(item.get("amount") or 0)
         merged["byResource"] = sorted(
-            ({**item, "volume": round(item["volume"], 2), "tons": round(item["tons"], 3), "amount": round(item["amount"], 2)} for item in resource_map.values()),
+            ({**item, "volume": round(item["volume"], 2), "mass": round(item["mass"], 3), "tons": round(item["tons"], 3), "amount": round(item["amount"], 2)} for item in resource_map.values()),
             key=lambda item: item["volume"],
             reverse=True,
         )
@@ -2225,12 +2488,12 @@ def register_assistant_routes(app):
             if resource_tons and (not summary_tons or abs(summary_tons - resource_tons) > max(1.0, resource_tons * 0.05)):
                 merged["summary"]["totalTons"] = resource_tons
         merged["stations"] = sorted(
-            ({**item, "volume": round(item["volume"], 2), "tons": round(item["tons"], 3), "amount": round(item["amount"], 2)} for item in station_map.values()),
+            ({**item, "volume": round(item["volume"], 2), "mass": round(item["mass"], 3), "tons": round(item["tons"], 3), "amount": round(item["amount"], 2)} for item in station_map.values()),
             key=lambda item: item["amount"],
             reverse=True,
         )
         merged["regions"] = sorted(
-            ({**item, "volume": round(item["volume"], 2), "tons": round(item["tons"], 3), "amount": round(item["amount"], 2)} for item in region_map.values()),
+            ({**item, "volume": round(item["volume"], 2), "mass": round(item["mass"], 3), "tons": round(item["tons"], 3), "amount": round(item["amount"], 2)} for item in region_map.values()),
             key=lambda item: item["amount"],
             reverse=True,
         )
@@ -2641,6 +2904,7 @@ def register_assistant_routes(app):
             "summary": {
                 "totalVolume": 0.0,
                 "totalWeightKg": 0.0,
+                "totalTons": 0.0,
                 "totalAmount": 0.0,
                 "totalRecords": 0,
                 "activeStations": 0,
@@ -2753,6 +3017,7 @@ def register_assistant_routes(app):
                 copied = dict(item)
                 copied["volume"] = round(float(copied.get("volume") or 0), 2)
                 copied["mass"] = round(float(copied.get("mass") or 0), 2)
+                copied["tons"] = round(copied["mass"] / 1000, 3)
                 copied["amount"] = round(float(copied.get("amount") or 0), 2)
                 copied["records"] = int(copied.get("records") or 0)
                 result.append(copied)
@@ -2768,6 +3033,7 @@ def register_assistant_routes(app):
             "summary": {
                 "totalVolume": round(total_volume, 2),
                 "totalWeightKg": round(total_mass, 2),
+                "totalTons": round(total_mass / 1000, 3),
                 "totalAmount": round(total_amount, 2),
                 "totalRecords": len(records),
                 "activeStations": len([item for item in stations.values() if item.get("volume") or item.get("mass") or item.get("amount")]),
@@ -2782,7 +3048,7 @@ def register_assistant_routes(app):
 
     def _assistant_self_use_answer(label, data):
         summary = data.get("summary") or {}
-        total_weight_tons = _assistant_float(summary.get("totalWeightKg")) / 1000
+        total_weight_tons = _assistant_float(summary.get("totalTons")) or _assistant_float(summary.get("totalWeightKg")) / 1000
         lines = [
             f"{label}自用油数据如下：",
             (
@@ -2801,7 +3067,7 @@ def register_assistant_routes(app):
             for item in data.get("byResource", [])[:8]:
                 lines.append(
                     f"{item.get('name') or '--'}：{_fmt_volume(item.get('volume'))}，"
-                    f"{_fmt_tons(_assistant_float(item.get('mass')) / 1000)}，"
+                    f"{_fmt_tons(_assistant_float(item.get('tons')) or _assistant_float(item.get('mass')) / 1000)}，"
                     f"{_fmt_amount(item.get('amount'), '索姆')}"
                 )
         if data.get("sourceError"):
@@ -2815,7 +3081,7 @@ def register_assistant_routes(app):
             [
                 item.get("name") or "--",
                 _fmt_volume(item.get("volume")),
-                _fmt_tons(_assistant_float(item.get("mass")) / 1000),
+                _fmt_tons(_assistant_float(item.get("tons")) or _assistant_float(item.get("mass")) / 1000),
                 _fmt_amount(item.get("amount"), "索姆"),
                 item.get("records") or 0,
             ]
@@ -2824,7 +3090,7 @@ def register_assistant_routes(app):
         resource_rows.append([
             "合计",
             _fmt_volume(summary.get("totalVolume")),
-            _fmt_tons(_assistant_float(summary.get("totalWeightKg")) / 1000),
+            _fmt_tons(_assistant_float(summary.get("totalTons")) or _assistant_float(summary.get("totalWeightKg")) / 1000),
             _fmt_amount(summary.get("totalAmount"), "索姆"),
             summary.get("totalRecords") or 0,
         ])
@@ -2838,7 +3104,7 @@ def register_assistant_routes(app):
                 item.get("name") or "--",
                 item.get("region") or "--",
                 _fmt_volume(item.get("volume")),
-                _fmt_tons(_assistant_float(item.get("mass")) / 1000),
+                _fmt_tons(_assistant_float(item.get("tons")) or _assistant_float(item.get("mass")) / 1000),
                 _fmt_amount(item.get("amount"), "索姆"),
                 item.get("records") or 0,
             ]
@@ -2849,7 +3115,7 @@ def register_assistant_routes(app):
                 "合计",
                 "全部区域",
                 _fmt_volume(summary.get("totalVolume")),
-                _fmt_tons(_assistant_float(summary.get("totalWeightKg")) / 1000),
+                _fmt_tons(_assistant_float(summary.get("totalTons")) or _assistant_float(summary.get("totalWeightKg")) / 1000),
                 _fmt_amount(summary.get("totalAmount"), "索姆"),
                 summary.get("totalRecords") or 0,
             ])
@@ -4662,14 +4928,49 @@ def register_assistant_routes(app):
         return copied
 
 
+    def _retail_payload_needs_mass_refresh(data):
+        if not isinstance(data, dict):
+            return False
+        resources = data.get("byResource") or data.get("resources") or []
+        if not resources:
+            return False
+        resource_tons = 0.0
+        has_volume_without_tons = False
+        for item in resources:
+            if not isinstance(item, dict):
+                continue
+            volume = float(item.get("volume") or 0)
+            if volume <= 0:
+                continue
+            mass = _retail_mass_from_item(item)
+            if mass is None:
+                has_volume_without_tons = True
+                continue
+            resource_tons += mass / 1000
+        summary = data.get("summary") or {}
+        summary_tons = float(summary.get("totalTons") or 0)
+        if has_volume_without_tons and summary_tons > 0:
+            return True
+        if summary_tons > 0 and resource_tons > 0:
+            return abs(summary_tons - resource_tons) > max(1.0, summary_tons * 0.05)
+        return False
+
+
     def _assistant_retail_data_for_period(start, end, resource=None, *, plan=None, user_context=None):
         data = _retail_snapshot_for_period(start, end)
-        if not data:
+        needs_refresh = _retail_payload_needs_mass_refresh(data)
+        if not data or needs_refresh:
             response = open_oilstation(
                 "/api/assistant/retail-summary",
-                query_string={"start": start.isoformat(), "end": end.isoformat()},
+                query_string={
+                    "start": start.isoformat(),
+                    "end": end.isoformat(),
+                    **({"refresh": "1"} if needs_refresh else {}),
+                },
             )
-            data = response.get_json() if response.status_code < 400 else {}
+            fresh_data = response.get_json() if response.status_code < 400 else {}
+            if fresh_data:
+                data = fresh_data
         data = _assistant_filter_retail_resource(data or {}, resource)
         return _assistant_apply_station_scope(data, plan or {}, user_context)
 

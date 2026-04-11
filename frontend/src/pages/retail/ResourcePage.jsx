@@ -12,14 +12,34 @@ const RESOURCE_COLORS = { 102: '#00e5a0', 103: '#00d4ff', 104: '#a78bfa', 106: '
 
 const darkTooltip = { backgroundColor: 'rgba(10,20,50,0.9)', borderColor: 'rgba(0,180,255,0.3)', textStyle: { color: '#e0e8f5', fontSize: 11 } };
 
+function numeric(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function tonsOf(item) {
+  const tons = numeric(item?.totalTons ?? item?.tons ?? item?.latestMonthTons);
+  if (tons > 0) return tons;
+  const mass = numeric(item?.mass ?? item?.totalWeightKg ?? item?.latestMonthMass);
+  return mass > 0 ? mass / 1000 : 0;
+}
+
+function formatTons(value) {
+  return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+}
+
 function normalizeResources(rows) {
   const buckets = new Map();
   (rows || []).forEach(row => {
     const rawKey = Number(row.resourceKey ?? row.key ?? 0);
     const key = RESOURCE_ALIASES[rawKey] || rawKey;
     if (!RESOURCE_NAMES[key]) return;
-    const cur = buckets.get(key) || { resourceKey: key, key, name: RESOURCE_NAMES[key], volume: 0, amount: 0, color: RESOURCE_COLORS[key], yoyVolumeParts: [], yoySalesParts: [], momVolumeParts: [], momSalesParts: [], latestMonthVolume: 0, latestMonthAmount: 0 };
+    const cur = buckets.get(key) || { resourceKey: key, key, name: RESOURCE_NAMES[key], volume: 0, tons: 0, mass: 0, amount: 0, color: RESOURCE_COLORS[key], yoyVolumeParts: [], yoySalesParts: [], momVolumeParts: [], momSalesParts: [], latestMonthVolume: 0, latestMonthAmount: 0 };
+    const rowTons = tonsOf(row);
+    const rowMass = numeric(row.mass ?? row.latestMonthMass) || rowTons * 1000;
     cur.volume += Number(row.volume || 0);
+    cur.mass += rowMass;
+    cur.tons += rowTons || rowMass / 1000;
     cur.amount += Number(row.amount || 0);
     cur.latestMonthVolume += Number(row.latestMonthVolume || 0);
     cur.latestMonthAmount += Number(row.latestMonthAmount || 0);
@@ -34,6 +54,8 @@ function normalizeResources(rows) {
       delete item[f + 'Parts'];
     });
     item.volume = Number(item.volume.toFixed(2));
+    item.mass = Number(item.mass.toFixed(3));
+    item.tons = Number(item.tons.toFixed(3));
     item.amount = Number(item.amount.toFixed(2));
     return item;
   });
@@ -53,6 +75,7 @@ export default function ResourcePage() {
   const [periodLabel, setPeriodLabel] = useState('--');
   const [totalAmount, setTotalAmount] = useState(0);
   const [totalVolume, setTotalVolume] = useState(0);
+  const [totalTons, setTotalTons] = useState(0);
 
   const { registerControls, clearControls } = useRetailHeader();
 
@@ -104,6 +127,7 @@ export default function ResourcePage() {
         setResources(res);
         setTotalAmount(res.reduce((s, r) => s + (r.amount || 0), 0));
         setTotalVolume(res.reduce((s, r) => s + (r.volume || 0), 0));
+        setTotalTons(tonsOf(data.summary) || res.reduce((s, r) => s + tonsOf(r), 0));
         setPeriodLabel(data.periodLabel || data.latestMonth || '--');
       } catch (e) { console.error('油品数据加载失败', e); }
     })();
@@ -147,7 +171,7 @@ export default function ResourcePage() {
         {/* KPI Row */}
         <div className="retail-kpi-row">
           <div className="retail-kpi-card c1"><div className="kpi-label">销售金额</div><div className="kpi-value">{(totalAmount / 10000).toFixed(2)}</div><div className="kpi-unit">万索姆</div></div>
-          <div className="retail-kpi-card c2"><div className="kpi-label">销售量</div><div className="kpi-value">{(totalVolume / 10000).toFixed(2)}</div><div className="kpi-unit">万升</div></div>
+          <div className="retail-kpi-card c2"><div className="kpi-label">销售量</div><div className="kpi-value">{(totalVolume / 10000).toFixed(2)}</div><div className="kpi-unit">万升</div><div className="kpi-change">吨位 {formatTons(totalTons)} 吨</div></div>
           <div className="retail-kpi-card c3"><div className="kpi-label">在售油品</div><div className="kpi-value">{resources.length}</div><div className="kpi-unit">类</div></div>
           <div className="retail-kpi-card c4"><div className="kpi-label">统计口径</div><div className="kpi-value">{periodLabel}</div><div className="kpi-unit">报表口径</div></div>
         </div>
@@ -158,13 +182,14 @@ export default function ResourcePage() {
           <div className="panel-body" style={{ overflow: 'auto', padding: 8 }}>
             <table className="retail-rank-table">
               <thead>
-                <tr><th>油品</th><th>销售量</th><th>金额</th><th>同比金额</th><th>最近月环比</th></tr>
+                <tr><th>油品</th><th>销售量</th><th>吨位</th><th>金额</th><th>同比金额</th><th>最近月环比</th></tr>
               </thead>
               <tbody>
                 {resources.map(r => (
                   <tr key={r.key}>
                     <td><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: r.color, marginRight: 6 }} />{r.name}</td>
                     <td>{volumeFormat(r.volume)} L</td>
+                    <td>{formatTons(tonsOf(r))} 吨</td>
                     <td>{numberFormat(r.amount)}</td>
                     <td>{pctCell(r.yoySales)}</td>
                     <td>{pctCell(r.momSales)}</td>

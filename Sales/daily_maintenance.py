@@ -35,6 +35,42 @@ def _accounting_station_no(shop_key: int) -> str:
     return str(shop_key).zfill(3)
 
 
+def _text_quality_score(text: str) -> int:
+    return (
+        len(re.findall(r"[\u4e00-\u9fff]", text)) * 5
+        + len(re.findall(r"[А-Яа-яЁё]", text)) * 2
+        - len(re.findall(r"[ÐÑÃÂ�]|Р[\u00a0-\u00bf]|С[\u0080-\u00bf]", text)) * 8
+        - len(re.findall(r"[\u00c0-\u00ff]", text)) * 2
+    )
+
+
+def _decode_utf8_mojibake_text(value: Any) -> Any:
+    if not isinstance(value, str) or not value:
+        return value
+    best = value
+    best_score = _text_quality_score(value)
+    for encoding in ("cp1251", "latin1", "cp1252"):
+        try:
+            candidate = value.encode(encoding).decode("utf-8")
+        except UnicodeError:
+            continue
+        score = _text_quality_score(candidate)
+        if score > best_score:
+            best = candidate
+            best_score = score
+    return best
+
+
+def normalize_accounting_text(value: Any) -> Any:
+    if isinstance(value, str):
+        return _decode_utf8_mojibake_text(value)
+    if isinstance(value, list):
+        return [normalize_accounting_text(item) for item in value]
+    if isinstance(value, dict):
+        return {key: normalize_accounting_text(item) for key, item in value.items()}
+    return value
+
+
 def _accounting_failed_item_key(item: dict[str, Any]) -> tuple[Any, ...]:
     return (
         item.get("type"),
@@ -60,6 +96,7 @@ def _dedupe_accounting_failed_items(items: list[dict[str, Any]]) -> list[dict[st
 def accounting_failed_items_from_summary(summary: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(summary, dict):
         return []
+    summary = normalize_accounting_text(summary)
 
     items: list[dict[str, Any]] = []
     for skipped in summary.get("skipped") or []:
@@ -180,13 +217,15 @@ def run_retail_accounting_report_maintenance():
         cwd=str(OILSTATION_ROOT),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=900,
     )
     output = (completed.stdout or completed.stderr or "").strip()
     if completed.returncode != 0:
         raise RuntimeError(output[-1200:] or f"吉方会计日报脚本退出码 {completed.returncode}")
     try:
-        return json.loads(output)
+        return normalize_accounting_text(json.loads(output))
     except Exception:
         return {
             "returnCode": completed.returncode,

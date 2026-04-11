@@ -8,6 +8,7 @@ import { downloadRetailRangeReport } from '@/api/export';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
+import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -129,7 +130,12 @@ export default function Station() {
           </Row>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(((detail.summary as any).amount ?? detail.summary.totalSales ?? 0) / 10000)} suffix={t('common.wan')} /></Card></Col>
-            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round((detail.summary as any).volume ?? detail.summary.totalLiters ?? 0)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={6}>
+              <Card size="small">
+                <Statistic title={t('retail.totalLiters')} value={Math.round((detail.summary as any).volume ?? detail.summary.totalLiters ?? 0)} suffix="L" />
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(detail.summary))} t</Text>
+              </Card>
+            </Col>
             <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>
             <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters ?? 0)} suffix="L" /></Card></Col>
           </Row>

@@ -218,6 +218,7 @@ def _station_template(shop_key: int) -> dict:
         "lat": coords.get("lat", 0),
         "txnCount": 0,
         "volume": 0.0,
+        "mass": 0.0,
         "tons": 0.0,
         "amount": 0.0,
         "cash": 0.0,
@@ -230,8 +231,13 @@ def _station_template(shop_key: int) -> dict:
 
 def _round_station(item: dict) -> dict:
     amount = round(float(item.get("amount") or 0), 2)
+    mass = float(item.get("mass") or 0)
+    tons = float(item.get("tons") or 0)
+    if not mass and tons:
+        mass = tons * 1000
     item["volume"] = round(float(item.get("volume") or 0), 2)
-    item["tons"] = round(float(item.get("tons") or 0), 3)
+    item["mass"] = round(mass, 3)
+    item["tons"] = round((mass / 1000) if mass else tons, 3)
     item["amount"] = amount
     item["cash"] = round(float(item.get("cash") or 0), 2)
     item["card"] = round(float(item.get("card") or 0), 2)
@@ -276,6 +282,7 @@ def _add_aggregate(
     tons = mass / 1000
     station["txnCount"] += int(txn_count or 0)
     station["volume"] += total_volume
+    station["mass"] = float(station.get("mass") or 0) + mass
     station["tons"] += tons
     station["amount"] += total_amount
     station["cash"] += cash_amount
@@ -284,19 +291,22 @@ def _add_aggregate(
     station["cardLiters"] += card_volume
     station["bonus"] += bonus_amount
 
-    daily_item = daily_totals.setdefault(current_date, {"volume": 0.0, "amount": 0.0})
+    daily_item = daily_totals.setdefault(current_date, {"volume": 0.0, "mass": 0.0, "amount": 0.0})
     daily_item["volume"] += total_volume
+    daily_item["mass"] += mass
     daily_item["amount"] += total_amount
 
     per_station = station_daily.setdefault(shop_key, {})
-    per_station_day = per_station.setdefault(current_date, {"volume": 0.0, "amount": 0.0})
+    per_station_day = per_station.setdefault(current_date, {"volume": 0.0, "mass": 0.0, "amount": 0.0})
     per_station_day["volume"] += total_volume
+    per_station_day["mass"] += mass
     per_station_day["amount"] += total_amount
 
     region = station["region"]
     region_item = region_totals.setdefault(region, {
         "amount": 0.0,
         "volume": 0.0,
+        "mass": 0.0,
         "tons": 0.0,
         "cash": 0.0,
         "card": 0.0,
@@ -306,25 +316,27 @@ def _add_aggregate(
     })
     region_item["amount"] += total_amount
     region_item["volume"] += total_volume
+    region_item["mass"] += mass
     region_item["tons"] += tons
     region_item["cash"] += cash_amount
     region_item["card"] += card_amount
     region_item["bonus"] += bonus_amount
 
-    add_resource_bucket(resource_totals, resource_key, total_volume, total_amount)
+    add_resource_bucket(resource_totals, resource_key, total_volume, total_amount, mass)
     region_resource = resource_by_region.setdefault(region, {})
-    add_resource_bucket(region_resource, resource_key, total_volume, total_amount)
+    add_resource_bucket(region_resource, resource_key, total_volume, total_amount, mass)
 
     if day_totals is not None:
         day_item = day_totals.setdefault(current_date, {
             "stations": {},
             "resources": {},
-            "daily": {"date": current_date, "volume": 0.0, "amount": 0.0},
+            "daily": {"date": current_date, "volume": 0.0, "mass": 0.0, "amount": 0.0},
             "totalTxn": 0,
         })
         day_station = day_item["stations"].setdefault(shop_key, _station_template(shop_key))
         day_station["txnCount"] += int(txn_count or 0)
         day_station["volume"] += total_volume
+        day_station["mass"] = float(day_station.get("mass") or 0) + mass
         day_station["tons"] += tons
         day_station["amount"] += total_amount
         day_station["cash"] += cash_amount
@@ -333,9 +345,10 @@ def _add_aggregate(
         day_station["cardLiters"] += card_volume
         day_station["bonus"] += bonus_amount
         day_item["daily"]["volume"] += total_volume
+        day_item["daily"]["mass"] += mass
         day_item["daily"]["amount"] += total_amount
         day_item["totalTxn"] += int(txn_count or 0)
-        add_resource_bucket(day_item["resources"], resource_key, total_volume, total_amount)
+        add_resource_bucket(day_item["resources"], resource_key, total_volume, total_amount, mass)
 
 
 def _merge_db_missing_days(
@@ -463,6 +476,7 @@ def _regions_from_station_rows(station_rows: list[dict]) -> dict:
         item = regions.setdefault(region, {
             "amount": 0.0,
             "volume": 0.0,
+            "mass": 0.0,
             "tons": 0.0,
             "cashSales": 0.0,
             "cardSales": 0.0,
@@ -474,6 +488,7 @@ def _regions_from_station_rows(station_rows: list[dict]) -> dict:
         })
         item["amount"] += station["amount"]
         item["volume"] += station["volume"]
+        item["mass"] += float(station.get("mass") or 0)
         item["tons"] += station.get("tons", 0)
         item["cashSales"] += station["cash"]
         item["cardSales"] += station["card"]
@@ -486,6 +501,7 @@ def _regions_from_station_rows(station_rows: list[dict]) -> dict:
     for item in regions.values():
         for key in ("amount", "volume", "cashSales", "cardSales", "cash", "card", "bonus"):
             item[key] = round(item[key], 2)
+        item["mass"] = round(item["mass"], 3)
         item["tons"] = round(item["tons"], 3)
     return regions
 
@@ -499,12 +515,14 @@ def _write_day_snapshots(day_totals: dict) -> int:
         }
         station_rows = [_round_station(station_map[shop_key]) for shop_key in sorted(station_map)]
         by_resource = format_resource_rows([
-            (key, item["volume"], item["amount"])
+            (key, item["volume"], item["amount"], item.get("mass", 0))
             for key, item in values["resources"].items()
         ])
         daily_item = {
             "date": current_date,
             "volume": round(values["daily"]["volume"], 2),
+            "mass": round(values["daily"].get("mass") or 0, 3),
+            "tons": round(float(values["daily"].get("mass") or 0) / 1000, 3),
             "amount": round(values["daily"]["amount"], 2),
         }
         next_day = (date.fromisoformat(current_date) + timedelta(days=1)).isoformat()
@@ -514,6 +532,7 @@ def _write_day_snapshots(day_totals: dict) -> int:
                 "totalTxn": int(values.get("totalTxn") or 0),
                 "totalShops": len(SHOP_KEY_MAP),
                 "totalLiters": daily_item["volume"],
+                "totalTons": daily_item["tons"],
                 "totalSales": daily_item["amount"],
                 "cashSales": round(sum(item["cash"] for item in station_rows), 2),
                 "cardSales": round(sum(item["card"] for item in station_rows), 2),
@@ -642,6 +661,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
                 **values,
                 "amount": round(values["amount"], 2),
                 "volume": round(values["volume"], 2),
+                "mass": round(values.get("mass", 0), 3),
                 "tons": round(values.get("tons", 0), 3),
                 "cashSales": round(values["cash"], 2),
                 "cardSales": round(values["card"], 2),
@@ -652,12 +672,24 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
             for region, values in region_totals.items()
         }
         daily_rows = [
-            {"date": current_date, "volume": round(values["volume"], 2), "amount": round(values["amount"], 2)}
+            {
+                "date": current_date,
+                "volume": round(values["volume"], 2),
+                "mass": round(values.get("mass") or 0, 3),
+                "tons": round(float(values.get("mass") or 0) / 1000, 3),
+                "amount": round(values["amount"], 2),
+            }
             for current_date, values in sorted(daily_totals.items())
         ]
         station_daily_rows = {
             shop_key: [
-                {"date": current_date, "volume": round(values["volume"], 2), "amount": round(values["amount"], 2)}
+                {
+                    "date": current_date,
+                    "volume": round(values["volume"], 2),
+                    "mass": round(values.get("mass") or 0, 3),
+                    "tons": round(float(values.get("mass") or 0) / 1000, 3),
+                    "amount": round(values["amount"], 2),
+                }
                 for current_date, values in sorted(days.items())
             ]
             for shop_key, days in station_daily.items()
@@ -687,6 +719,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
             "totalTxn": int((existing_monthly.get("summary") or {}).get("totalTxn") or 0),
             "totalShops": len(SHOP_KEY_MAP),
             "totalLiters": round(sum(item["volume"] for item in station_rows), 2),
+            "totalTons": round(sum(item["tons"] for item in station_rows), 3),
             "totalSales": round(sum(item["amount"] for item in station_rows), 2),
             "cashSales": round(sum(item["cash"] for item in station_rows), 2),
             "cardSales": round(sum(item["card"] for item in station_rows), 2),
@@ -704,8 +737,11 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
             cur_cmp = conn_cmp.cursor()
             prev_summary = query_month_summary(cur_cmp, dates['prev'])
             yoy_summary = query_month_summary(cur_cmp, dates['yoy'])
+            monthly_inventory = get_report_month_inventory(cur_cmp, ym)
         finally:
             conn_cmp.close()
+        monthly_summary["inventory"] = monthly_inventory
+        monthly_summary["inventoryMonth"] = ym
 
         def calc_change(current, previous):
             if not previous or previous <= 0:
@@ -742,6 +778,8 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
                 region: {
                     "amount": values["amount"],
                     "volume": values["volume"],
+                    "mass": values.get("mass", 0),
+                    "tons": values.get("tons", 0),
                     "cashSales": values["cash"],
                     "cardSales": values["card"],
                     "stationCount": values["stationCount"],
@@ -754,7 +792,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
                 for region, values in regions.items()
             },
             "byResource": format_resource_rows([
-                (key, values["volume"], values["amount"]) for key, values in resource_totals.items()
+                (key, values["volume"], values["amount"], values.get("mass", 0)) for key, values in resource_totals.items()
             ]),
             "daily": daily_rows,
         }
@@ -781,11 +819,11 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
             "month": ym,
             "regions": regions,
             "byResource": format_resource_rows([
-                (key, values["volume"], values["amount"]) for key, values in resource_totals.items()
+                (key, values["volume"], values["amount"], values.get("mass", 0)) for key, values in resource_totals.items()
             ]),
             "byResourceByRegion": {
                 region: format_resource_rows([
-                    (key, values["volume"], values["amount"]) for key, values in resource_map.items()
+                    (key, values["volume"], values["amount"], values.get("mass", 0)) for key, values in resource_map.items()
                 ])
                 for region, resource_map in resource_by_region.items()
             },
@@ -941,41 +979,73 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
                 'selfUseNumber': self_use_number,
             })
 
-            by_station.setdefault(sk, {'shopKey': sk, 'name': info['name'], 'volume': 0.0, 'amount': 0.0, 'txnCount': 0})
+            by_station.setdefault(sk, {'shopKey': sk, 'name': info['name'], 'volume': 0.0, 'mass': 0.0, 'amount': 0.0, 'txnCount': 0})
             by_station[sk]['volume'] += vol
+            by_station[sk]['mass'] += mass
             by_station[sk]['amount'] += amt
             by_station[sk]['txnCount'] += 1
 
             resource_bucket = report_rk if report_rk >= 100 else rk
-            by_resource.setdefault(resource_bucket, {'resourceKey': resource_bucket, 'name': product_name, 'volume': 0.0, 'amount': 0.0})
+            by_resource.setdefault(resource_bucket, {'resourceKey': resource_bucket, 'name': product_name, 'volume': 0.0, 'mass': 0.0, 'amount': 0.0})
             by_resource[resource_bucket]['volume'] += vol
+            by_resource[resource_bucket]['mass'] += mass
             by_resource[resource_bucket]['amount'] += amt
 
-            by_region.setdefault(region, {'volume': 0.0, 'amount': 0.0, 'activeCount': 0})
+            by_region.setdefault(region, {'volume': 0.0, 'mass': 0.0, 'amount': 0.0, 'activeCount': 0})
             by_region[region]['volume'] += vol
+            by_region[region]['mass'] += mass
             by_region[region]['amount'] += amt
 
-            daily.setdefault(date_str, {'volume': 0.0, 'amount': 0.0})
+            daily.setdefault(date_str, {'volume': 0.0, 'mass': 0.0, 'amount': 0.0})
             daily[date_str]['volume'] += vol
+            daily[date_str]['mass'] += mass
             daily[date_str]['amount'] += amt
 
         station_rows = [
-            {'shopKey': sk, 'name': item['name'], 'volume': round(item['volume'], 2), 'amount': round(item['amount'], 2), 'txnCount': item['txnCount']}
+            {
+                'shopKey': sk,
+                'name': item['name'],
+                'volume': round(item['volume'], 2),
+                'mass': round(item['mass'], 3),
+                'tons': round(item['mass'] / 1000, 3),
+                'amount': round(item['amount'], 2),
+                'txnCount': item['txnCount'],
+            }
             for sk, item in sorted(by_station.items())
         ]
 
         resource_rows = [
-            {'resourceKey': rk, 'name': item['name'], 'volume': round(item['volume'], 2), 'amount': round(item['amount'], 2)}
+            {
+                'resourceKey': rk,
+                'name': item['name'],
+                'volume': round(item['volume'], 2),
+                'mass': round(item['mass'], 3),
+                'tons': round(item['mass'] / 1000, 3),
+                'density': round(item['mass'] / item['volume'], 3) if item['volume'] else 0,
+                'amount': round(item['amount'], 2),
+            }
             for rk, item in sorted(by_resource.items())
         ]
 
         region_rows = {
-            region: {'volume': round(item['volume'], 2), 'amount': round(item['amount'], 2), 'activeCount': item['activeCount']}
+            region: {
+                'volume': round(item['volume'], 2),
+                'mass': round(item['mass'], 3),
+                'tons': round(item['mass'] / 1000, 3),
+                'amount': round(item['amount'], 2),
+                'activeCount': item['activeCount'],
+            }
             for region, item in sorted(by_region.items())
         }
 
         daily_rows = [
-            {'date': date_str, 'volume': round(item['volume'], 2), 'amount': round(item['amount'], 2)}
+            {
+                'date': date_str,
+                'volume': round(item['volume'], 2),
+                'mass': round(item['mass'], 3),
+                'tons': round(item['mass'] / 1000, 3),
+                'amount': round(item['amount'], 2),
+            }
             for date_str, item in sorted(daily.items())
         ]
 
@@ -1008,6 +1078,7 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
             'summary': {
                 'totalVolume': round(total_volume, 2),
                 'totalWeightKg': round(total_mass, 2),
+                'totalTons': round(total_mass / 1000, 3),
                 'totalAmount': round(total_amount, 2),
                 'totalRecords': len(records),
                 'activeStations': len(station_rows)

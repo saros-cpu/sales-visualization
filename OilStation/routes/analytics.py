@@ -23,7 +23,16 @@ from constants import (
     SHOP_KEY_MAP,
 )
 from db import get_connection
-from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, SK29_RSK_MAP, STATION_RK_CORRECTIONS
+from export_excel import (
+    RESOURCE_DENSITY,
+    SK4_RSK_MAP,
+    SK6_RSK_MAP,
+    SK28_RSK_MAP,
+    SK29_RSK_MAP,
+    STATION_RK_CORRECTIONS,
+    _allow_fixed_density_fallback,
+    _selling_mass_expr,
+)
 
 from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, get_report_month_inventory, query_month_summary
 
@@ -241,6 +250,10 @@ def _total_tons_from_daily_resource(daily_resource_rows):
     total = 0.0
     missing = []
     for item in daily_resource_rows or []:
+        mass = retail_mass_from_item(item)
+        if mass is not None:
+            total += mass / 1000
+            continue
         volume = float(item.get("volume") or 0)
         if not volume:
             continue
@@ -267,6 +280,10 @@ def _total_tons_from_resource_summary(resources, business_day=None):
     total = 0.0
     missing = []
     for item in resources or []:
+        mass = retail_mass_from_item(item)
+        if mass is not None:
+            total += mass / 1000
+            continue
         volume = float(item.get("volume") or 0)
         if not volume:
             continue
@@ -324,13 +341,15 @@ def canonical_resource_key(resource_key):
     return RESOURCE_ALIASES.get(rk, rk)
 
 
-def add_resource_bucket(target, resource_key, volume, amount):
+def add_resource_bucket(target, resource_key, volume, amount, mass=None):
     rk = canonical_resource_key(resource_key)
     if rk < 100 or rk not in KNOWN_RESOURCE_KEYS:
         return
-    bucket = target.setdefault(rk, {'volume': 0.0, 'amount': 0.0})
+    bucket = target.setdefault(rk, {'volume': 0.0, 'amount': 0.0, 'mass': 0.0})
     bucket['volume'] += float(volume or 0)
     bucket['amount'] += float(amount or 0)
+    if mass is not None:
+        bucket['mass'] += float(mass or 0)
 
 
 def report_volume_expr(alias="s"):
@@ -348,6 +367,17 @@ def report_amount_expr(alias="s"):
         f"WHEN ({alias}.DerivedPaymentTypeKey IS NULL OR {alias}.DerivedPaymentTypeKey NOT IN (2, 3, 4)) "
         f" AND {alias}.BasePaymentTypeKey IN (1, 2) THEN {alias}.ShopCost ELSE 0 END) "
         f"+ SUM(CASE WHEN {alias}.DerivedPaymentTypeKey = 3 THEN {alias}.ShopCost ELSE 0 END)"
+    )
+
+
+def report_mass_expr(alias="s", period_start=None):
+    use_ai80_fallback = not _allow_fixed_density_fallback(period_start)
+    selling_mass = _selling_mass_expr(alias, use_ai80_missing_density_fallback=use_ai80_fallback)
+    return (
+        "SUM(CASE "
+        f"WHEN ({alias}.DerivedPaymentTypeKey IS NULL OR {alias}.DerivedPaymentTypeKey NOT IN (2, 3, 4)) "
+        f" AND {alias}.BasePaymentTypeKey IN (1, 2) THEN {selling_mass} ELSE 0 END) "
+        f"+ SUM(CASE WHEN {alias}.DerivedPaymentTypeKey = 3 THEN {selling_mass} ELSE 0 END)"
     )
 
 
@@ -440,16 +470,20 @@ def calc_change(current, previous):
 def format_resource_rows(rows):
     merged = {}
     for row in rows:
-        add_resource_bucket(merged, row[0], row[1], row[2])
+        mass = row[3] if len(row) > 3 else None
+        add_resource_bucket(merged, row[0], row[1], row[2], mass)
     result = []
     for rk, values in merged.items():
         volume = round(values['volume'], 2)
         amount = round(values['amount'], 2)
+        mass = round(float(values.get('mass') or 0), 3)
         result.append({
             'resourceKey': rk,
             'key': rk,
             'name': RESOURCE_NAMES.get(rk, f'Other-{rk}'),
             'volume': volume,
+            'mass': mass,
+            'tons': round(mass / 1000, 3),
             'amount': amount,
             'color': RESOURCE_COLORS.get(rk, '#999999'),
         })
@@ -855,11 +889,95 @@ def _station_map_details_payload():
     return payload
 
 
+RETAIL_DENSITY_MIN = 0.4
+RETAIL_DENSITY_MAX = 1.1
+
+
+def retail_mass_is_plausible(volume, mass):
+    try:
+        volume_value = float(volume or 0)
+        mass_value = float(mass or 0)
+    except (TypeError, ValueError):
+        return False
+    if volume_value <= 0:
+        return mass_value >= 0
+    if mass_value <= 0:
+        return False
+    density = mass_value / volume_value
+    return RETAIL_DENSITY_MIN <= density <= RETAIL_DENSITY_MAX
+
+
+def retail_mass_from_item(item):
+    volume = item.get("volume") if isinstance(item, dict) else 0
+    if isinstance(item, dict) and item.get("tons") is not None:
+        try:
+            mass = float(item.get("tons") or 0) * 1000
+        except (TypeError, ValueError):
+            mass = 0
+        if retail_mass_is_plausible(volume, mass):
+            return mass
+    if isinstance(item, dict) and item.get("mass") is not None:
+        try:
+            mass = float(item.get("mass") or 0)
+        except (TypeError, ValueError):
+            mass = 0
+        if retail_mass_is_plausible(volume, mass):
+            return mass
+    return None
+
+
+def retail_payload_mass_needs_refresh(payload):
+    if not isinstance(payload, dict):
+        return False
+    items = []
+    for key in ("byResource", "resources", "stations"):
+        values = payload.get(key)
+        if isinstance(values, list):
+            items.extend(values)
+    if not items:
+        return False
+    resource_tons = 0.0
+    has_volume_without_mass = False
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            volume = float(item.get("volume") or item.get("latestMonthVolume") or 0)
+        except (TypeError, ValueError):
+            volume = 0
+        if volume <= 0:
+            continue
+        if "mass" not in item:
+            has_volume_without_mass = True
+            continue
+        mass = retail_mass_from_item(item)
+        if mass is None:
+            has_volume_without_mass = True
+            continue
+        resource_tons += mass / 1000
+    if has_volume_without_mass:
+        return True
+    summary = payload.get("summary") or {}
+    try:
+        summary_tons = float(summary.get("totalTons") or 0)
+    except (TypeError, ValueError):
+        summary_tons = 0
+    if summary_tons > 0 and resource_tons > 0:
+        return abs(summary_tons - resource_tons) > max(1.0, summary_tons * 0.05)
+    return False
+
+
 def add_resource_tons(resources):
     total = 0.0
     for item in resources:
-        density = RESOURCE_DENSITY.get(int(item.get("resourceKey") or item.get("key") or 0), 0)
-        tons = round(float(item.get("volume") or 0) * density / 1000, 3)
+        mass = retail_mass_from_item(item)
+        if mass is not None:
+            tons = round(mass / 1000, 3)
+        else:
+            density = RESOURCE_DENSITY.get(int(item.get("resourceKey") or item.get("key") or 0), 0)
+            mass = float(item.get("volume") or 0) * density
+            tons = round(mass / 1000, 3)
+        item["mass"] = round(mass, 3)
         item["tons"] = tons
         total += tons
     return round(total, 3)
@@ -892,6 +1010,7 @@ def _resource_map_from_rows(rows):
             item.get("resourceKey") or item.get("key"),
             item.get("volume"),
             item.get("amount"),
+            retail_mass_from_item(item),
         )
     return bucket
 
@@ -900,7 +1019,7 @@ def _sum_resource_maps(*maps):
     merged = {}
     for resource_map in maps:
         for rk, values in (resource_map or {}).items():
-            add_resource_bucket(merged, rk, values.get("volume"), values.get("amount"))
+            add_resource_bucket(merged, rk, values.get("volume"), values.get("amount"), values.get("mass"))
     return merged
 
 
@@ -911,15 +1030,19 @@ def _resource_items_from_map(resource_map, previous=None, month_data=None, prev_
     resource_keys = sorted(set(resource_map) | set(previous) | set(month_data) | set(prev_month_data))
     resources = []
     for rk in resource_keys:
-        cur_d = resource_map.get(rk, {"volume": 0, "amount": 0})
-        prev_d = previous.get(rk, {"volume": 0, "amount": 0})
-        mon_d = month_data.get(rk, {"volume": 0, "amount": 0})
-        prev_mon_d = prev_month_data.get(rk, {"volume": 0, "amount": 0})
+        cur_d = resource_map.get(rk, {"volume": 0, "amount": 0, "mass": 0})
+        prev_d = previous.get(rk, {"volume": 0, "amount": 0, "mass": 0})
+        mon_d = month_data.get(rk, {"volume": 0, "amount": 0, "mass": 0})
+        prev_mon_d = prev_month_data.get(rk, {"volume": 0, "amount": 0, "mass": 0})
+        mass = round(float(cur_d.get("mass") or 0), 3)
+        latest_month_mass = round(float(mon_d.get("mass") or 0), 3)
         resources.append({
             "resourceKey": rk,
             "key": rk,
             "name": RESOURCE_NAMES.get(rk, f"Other-{rk}"),
             "volume": round(cur_d["volume"], 2),
+            "mass": mass,
+            "tons": round(mass / 1000, 3),
             "amount": round(cur_d["amount"], 2),
             "color": RESOURCE_COLORS.get(rk, "#999999"),
             "yoyVolume": calc_change(cur_d["volume"], prev_d["volume"]),
@@ -927,6 +1050,8 @@ def _resource_items_from_map(resource_map, previous=None, month_data=None, prev_
             "momVolume": calc_change(mon_d["volume"], prev_mon_d["volume"]),
             "momSales": calc_change(mon_d["amount"], prev_mon_d["amount"]),
             "latestMonthVolume": round(mon_d["volume"], 2),
+            "latestMonthMass": latest_month_mass,
+            "latestMonthTons": round(latest_month_mass / 1000, 3),
             "latestMonthAmount": round(mon_d["amount"], 2),
         })
     resources.sort(key=lambda item: RESOURCE_ORDER_INDEX.get(item["key"], 999))
@@ -954,6 +1079,7 @@ def _dashboard_yearly_from_monthly_snapshots(year):
             bucket = stations.setdefault(int(shop_key), {
                 "txnCount": 0,
                 "volume": 0.0,
+                "mass": 0.0,
                 "amount": 0.0,
                 "cash": 0.0,
                 "card": 0.0,
@@ -963,6 +1089,7 @@ def _dashboard_yearly_from_monthly_snapshots(year):
             })
             bucket["txnCount"] += int(station.get("txnCount") or 0)
             bucket["volume"] += float(station.get("volume") or 0)
+            bucket["mass"] += float(station.get("mass") or 0) or float(station.get("tons") or 0) * 1000
             bucket["amount"] += float(station.get("amount") or station.get("totalSales") or 0)
             bucket["cash"] += float(station.get("cash") or station.get("cashSales") or 0)
             bucket["card"] += float(station.get("card") or station.get("cardSales") or 0)
@@ -985,6 +1112,8 @@ def _dashboard_yearly_from_monthly_snapshots(year):
             "lat": coords.get("lat", 0),
             "txnCount": int(data.get("txnCount") or 0),
             "volume": round(float(data.get("volume") or 0), 2),
+            "mass": round(float(data.get("mass") or 0), 3),
+            "tons": round(float(data.get("mass") or 0) / 1000, 3),
             "amount": amount,
             "cash": round(float(data.get("cash") or 0), 2),
             "card": round(float(data.get("card") or 0), 2),
@@ -1001,6 +1130,7 @@ def _dashboard_yearly_from_monthly_snapshots(year):
         bucket = regions.setdefault(region, {
             "amount": 0.0,
             "volume": 0.0,
+            "tons": 0.0,
             "cash": 0.0,
             "card": 0.0,
             "bonus": 0.0,
@@ -1010,6 +1140,7 @@ def _dashboard_yearly_from_monthly_snapshots(year):
         bucket["stationCount"] += 1
         bucket["amount"] += station["amount"]
         bucket["volume"] += station["volume"]
+        bucket["tons"] += station.get("tons") or 0
         bucket["cash"] += station["cash"]
         bucket["card"] += station["card"]
         bucket["bonus"] += station["bonus"]
@@ -1018,6 +1149,7 @@ def _dashboard_yearly_from_monthly_snapshots(year):
     for data in regions.values():
         for key in ("amount", "volume", "cash", "card", "bonus"):
             data[key] = round(data[key], 2)
+        data["tons"] = round(data.get("tons") or 0, 3)
 
     return {
         "year": year,
@@ -1039,7 +1171,7 @@ def _dashboard_yearly_from_monthly_snapshots(year):
         ],
         "regions": regions,
         "byResource": format_resource_rows([
-            (rk, values["volume"], values["amount"])
+            (rk, values["volume"], values["amount"], values.get("mass", 0))
             for rk, values in resource_totals.items()
         ]),
         "snapshot": True,
@@ -1095,6 +1227,7 @@ def _resources_yearly_from_monthly_snapshots(year, month=None):
         "resources": resources,
         "summary": {
             "totalVolume": round(sum(item["volume"] for item in resources), 2),
+            "totalTons": round(sum(item["tons"] for item in resources), 3),
             "totalAmount": round(sum(item["amount"] for item in resources), 2),
             "resourceCount": len([item for item in resources if item["amount"] > 0 or item["volume"] > 0]),
         },
@@ -1281,11 +1414,11 @@ def api_resources_yearly():
         return jsonify({"error": "month must be between 1 and 12"}), 400
     cache_key = f'resources_yearly:{year}:{month or "year"}'
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         return jsonify(cached)
     if cache_allowed():
         snapshot_result = _resources_yearly_from_monthly_snapshots(year, month)
-        if snapshot_result:
+        if snapshot_result and not retail_payload_mass_needs_refresh(snapshot_result):
             set_cached(cache_key, snapshot_result)
             return jsonify(snapshot_result)
 
@@ -1713,7 +1846,7 @@ def _attach_monthly_inventory(year_month, payload, cur=None):
 def api_monthly(year_month):
     cache_key = f'monthly:{year_month}'
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         cache_changed = False
         if "totalTons" not in (cached.get("summary") or {}) or "totalSalesCny" not in (cached.get("summary") or {}):
             cached = _attach_monthly_finance_metrics(cached)

@@ -5,10 +5,15 @@ import { useTranslation } from 'react-i18next';
 import { getSelfUseByRange } from '@/api/retail';
 import { downloadSelfUseReport } from '@/api/export';
 import { useNameI18n } from '@/utils/i18nNames';
+import { formatRetailTons, numericMetric as numeric, retailTonsOf } from '@/utils/retailMetrics';
 import { useAuth } from '@/contexts/AuthContext';
 import dayjs from 'dayjs';
 
 const { RangePicker } = DatePicker;
+
+function formatNumber(value: unknown, digits = 3) {
+  return numeric(value).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
 
 export default function SelfUse() {
   const { t } = useTranslation();
@@ -53,6 +58,8 @@ export default function SelfUse() {
     { title: t('retail.product'), dataIndex: 'productName', key: 'productName', render: (v: string | number) => product(String(v || '')) },
     { title: t('retail.plateNumber'), dataIndex: 'plateNumber', key: 'plateNumber', render: (v: string | number) => String(v || '-') },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', sorter: (a: any, b: any) => a.volume - b.volume, render: (v: number) => `${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}L` },
+    { title: t('retail.totalTons'), dataIndex: 'mass', key: 'tons', sorter: (a: any, b: any) => retailTonsOf(a) - retailTonsOf(b), render: (_: number, r: any) => `${formatRetailTons(retailTonsOf(r))} t` },
+    { title: t('retail.density'), dataIndex: 'density', key: 'density', render: (v: number) => v ? formatNumber(v, 4) : '-' },
   ];
 
   const summary = data?.summary;
@@ -82,6 +89,8 @@ export default function SelfUse() {
       {summary && (
         <Space style={{ marginBottom: 12, color: '#666' }}>
           <span>{t('common.total', { count: summary.totalRecords })} {t('retail.volume')} {summary.totalVolume.toLocaleString()}L</span>
+          <span>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(summary))}t</span>
+          {summary.totalWeightKg ? <span>{t('retail.weightKg')} {formatNumber(summary.totalWeightKg)}kg</span> : null}
         </Space>
       )}
       <Table

@@ -8,6 +8,7 @@ import KpiCard from '@/components/ui/KpiCard';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n, ZH_REGION_KEY } from '@/utils/i18nNames';
+import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -30,6 +31,10 @@ export default function Overview() {
   const dash = dashQ.data;
   const kpi = kpiQ.data?.summary as Record<string, number> | undefined;
   const activeShopValue = kpi ? `${kpi.activeShops ?? 0}/${kpi.totalShops ?? '-'}` : '0/-';
+  const totalTons = retailTonsOf(kpi)
+    || retailTonsOf((resQ.data as any)?.summary)
+    || (resQ.data?.resources ?? []).reduce((sum: number, row: any) => sum + retailTonsOf(row), 0)
+    || (dash?.byResource ?? []).reduce((sum: number, row: any) => sum + retailTonsOf(row), 0);
 
   const onGenerate = async () => {
     try {
@@ -86,7 +91,13 @@ export default function Overview() {
           <KpiCard title={t('retail.totalSales')} value={kpi?.totalSales ?? 0} precision={0} suffix="сом" />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <KpiCard title={t('retail.totalLiters')} value={kpi?.totalLiters ?? 0} precision={0} suffix="L" />
+          <KpiCard
+            title={t('retail.totalLiters')}
+            value={kpi?.totalLiters ?? 0}
+            precision={0}
+            suffix="L"
+            extra={<span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</span>}
+          />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <KpiCard title={t('retail.activeShops')} value={activeShopValue} />

@@ -386,6 +386,7 @@
     "overview": "Обзор", "region": "Регион", "station": "АЗС", "monthly": "Месячный",
     "resource": "Нефтепродукты", "report": "Отчет", "alert": "Оповещения", "selfUse": "Собственное использование",
     "year": "Год", "month": "Месяц", "totalSales": "Общий объем продаж", "totalLiters": "Общий объем (л)",
+    "totalTons": "Общий вес", "weightKg": "Масса", "density": "Плотность",
     "amount": "Сумма", "volume": "Объем",
     "activeShops": "Активные АЗС", "inventory": "Остатки", "generateReport": "Создать отчет",
     "financeWeeklyReport": "Финансовый недельный отчет", "generateWeeklyReport": "Создать отчет", "selectWeeklyReportRange": "Выберите период недельного отчета",

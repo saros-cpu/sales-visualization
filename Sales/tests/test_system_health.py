@@ -7,7 +7,12 @@ if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 import daily_maintenance
 from api_v2 import system
-from api_v2.system import _action_center, _accounting_failed_items_from_summary, _run_retail_accounting_reports_task
+from api_v2.system import (
+    _action_center,
+    _accounting_failed_items_from_summary,
+    _normalize_accounting_text,
+    _run_retail_accounting_reports_task,
+)
 
 
 def action_codes(automation):
@@ -92,6 +97,17 @@ class SystemHealthActionCenterTests(unittest.TestCase):
         self.assertEqual(items[1]["type"], "warning")
         self.assertEqual(items[1]["shopKey"], 3)
         self.assertIn("未匹配机表行", items[1]["reason"])
+
+    def test_accounting_summary_repairs_utf8_decoded_as_cp1251(self):
+        mojibake = "008: жњЄеЊ№й…ЌжњєиЎЁиЎЊ 12"
+        normalized = _normalize_accounting_text({"warnings": [mojibake]})
+        items = _accounting_failed_items_from_summary(normalized, {
+            8: {"name": "STN-15", "short": "S-16", "region": "REG-02"},
+        })
+
+        self.assertEqual(normalized["warnings"][0], "008: 未匹配机表行 12")
+        self.assertEqual(items[0]["shopKey"], 8)
+        self.assertEqual(items[0]["reason"], "未匹配机表行 12")
 
     def test_accounting_summary_preserves_direct_failed_items(self):
         items = _accounting_failed_items_from_summary({
@@ -188,6 +204,17 @@ class SystemHealthActionCenterTests(unittest.TestCase):
         self.assertEqual(items[1]["shopKey"], 3)
         self.assertEqual(items[1]["stationNo"], "003")
         self.assertIn("未匹配机表行", items[1]["reason"])
+
+    def test_daily_accounting_failed_items_repair_utf8_decoded_as_cp1251(self):
+        items = daily_maintenance.accounting_failed_items_from_summary({
+            "warnings": [
+                "008: жњЄеЊ№й…ЌжњєиЎЁиЎЊ 12",
+            ],
+        })
+
+        self.assertEqual(items[0]["shopKey"], 8)
+        self.assertEqual(items[0]["stationNo"], "008")
+        self.assertEqual(items[0]["reason"], "未匹配机表行 12")
 
     def test_daily_accounting_run_task_records_failed_items(self):
         records = []

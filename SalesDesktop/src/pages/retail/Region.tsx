@@ -6,6 +6,7 @@ import { getRegions, getStations, getDaily } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n, EN_REGION_KEY, ZH_REGION_KEY } from '@/utils/i18nNames';
+import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 const REGION_ORDER = ['CTY-31', 'chu', 'CTY-30', 'CTY-29', 'CTY-33', 'CTY-35'];
@@ -81,7 +82,12 @@ export default function Region() {
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(regionData.amount / 10000)} suffix={t('common.wan')} /></Card></Col>
-            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalLiters')} value={Math.round(regionData.volume)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={6}>
+              <Card size="small">
+                <Statistic title={t('retail.totalLiters')} value={Math.round(regionData.volume)} suffix="L" />
+                <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(regionData))} t</div>
+              </Card>
+            </Col>
             <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
             <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>
           </Row>

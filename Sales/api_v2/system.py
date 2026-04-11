@@ -383,6 +383,42 @@ def _accounting_file_station(file_name: str) -> tuple[int, int] | None:
     return int(match.group(1)), int(match.group(2) or 0)
 
 
+def _text_quality_score(text: str) -> int:
+    return (
+        len(re.findall(r"[\u4e00-\u9fff]", text)) * 5
+        + len(re.findall(r"[А-Яа-яЁё]", text)) * 2
+        - len(re.findall(r"[ÐÑÃÂ�]|Р[\u00a0-\u00bf]|С[\u0080-\u00bf]", text)) * 8
+        - len(re.findall(r"[\u00c0-\u00ff]", text)) * 2
+    )
+
+
+def _decode_utf8_mojibake_text(value: Any) -> Any:
+    if not isinstance(value, str) or not value:
+        return value
+    best = value
+    best_score = _text_quality_score(value)
+    for encoding in ("cp1251", "latin1", "cp1252"):
+        try:
+            candidate = value.encode(encoding).decode("utf-8")
+        except UnicodeError:
+            continue
+        score = _text_quality_score(candidate)
+        if score > best_score:
+            best = candidate
+            best_score = score
+    return best
+
+
+def _normalize_accounting_text(value: Any) -> Any:
+    if isinstance(value, str):
+        return _decode_utf8_mojibake_text(value)
+    if isinstance(value, list):
+        return [_normalize_accounting_text(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_accounting_text(item) for key, item in value.items()}
+    return value
+
+
 def _station_payload(shop_key: int, catalog: dict[int, dict[str, Any]], status: dict[str, Any] | None = None) -> dict[str, Any]:
     station = catalog.get(shop_key) or {"name": f"Station-{shop_key}", "short": "", "region": ""}
     payload = {
@@ -432,6 +468,7 @@ def _accounting_failed_items_from_summary(
 ) -> list[dict[str, Any]]:
     if not isinstance(summary, dict):
         return []
+    summary = _normalize_accounting_text(summary)
     catalog = catalog or retail_station_catalog_cached()
     items: list[dict[str, Any]] = []
     for skipped in summary.get("skipped") or []:
@@ -602,7 +639,9 @@ def _accounting_report_status(cur, target_day: date) -> dict[str, Any]:
     latest = _latest_automation_row(cur, "retail_accounting_reports")
     warnings: list[str] = []
     skipped: list[dict[str, Any]] = []
-    latest_summary = latest.get("summary") if isinstance(latest, dict) else None
+    latest_summary = _normalize_accounting_text(latest.get("summary")) if isinstance(latest, dict) else None
+    if isinstance(latest, dict) and isinstance(latest_summary, dict):
+        latest = {**latest, "summary": latest_summary}
     if isinstance(latest_summary, dict) and latest_summary.get("targetDate") == target_day.isoformat():
         warnings = list(latest_summary.get("warnings") or [])
         skipped = list(latest_summary.get("skipped") or [])
@@ -662,13 +701,15 @@ def _run_retail_accounting_report_task(target_day: date | None = None, force: bo
         cwd=str(OILSTATION_ROOT),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=900,
     )
     output = (completed.stdout or completed.stderr or "").strip()
     if completed.returncode != 0:
         raise RuntimeError(output[-1200:] or f"吉方会计日报脚本退出码 {completed.returncode}")
     try:
-        return json.loads(output)
+        return _normalize_accounting_text(json.loads(output))
     except Exception as exc:
         raise RuntimeError("吉方会计日报脚本返回内容不是 JSON") from exc
 

@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
-import { getCockpit, getManagementOverview, saveCockpitTemplate, type CockpitComponent, type CockpitTemplate, type ComponentDefinition, type KpiDefinition } from '@/api/management';
+import { getCockpit, getManagementOverview, saveCockpitTemplate, type CockpitComponent, type CockpitTemplate, type ComponentDefinition, type KpiDefinition, type KpiMetricValue } from '@/api/management';
 import ChartCard from '@/components/ui/ChartCard';
 import PageState from '@/components/ui/PageState';
 import type { KpiTone } from '@/components/ui/KpiCard';
@@ -199,11 +199,22 @@ function formatCockpitKpiValue(value: number | string | null | undefined, precis
   return numeric.toFixed(2);
 }
 
+function secondaryMetricLabel(metric: KpiMetricValue | undefined, language: string) {
+  if (!metric) return '';
+  return language.startsWith('ru')
+    ? metric.secondaryLabelRu || metric.secondaryLabelZh || ''
+    : metric.secondaryLabelZh || metric.secondaryLabelRu || '';
+}
+
 function CockpitKpiPanel({
   title,
   value,
   suffix,
   precision,
+  secondaryValue,
+  secondarySuffix,
+  secondaryPrecision,
+  secondaryLabel,
   tone,
   valueColor,
   tooltip,
@@ -214,19 +225,33 @@ function CockpitKpiPanel({
   value: number | string | null | undefined;
   suffix?: string;
   precision?: number;
+  secondaryValue?: number | string | null;
+  secondarySuffix?: string;
+  secondaryPrecision?: number;
+  secondaryLabel?: string;
   tone?: KpiTone;
   valueColor?: string;
   tooltip?: ReactNode;
   style?: CSSProperties;
   onClick?: () => void;
 }) {
+  const hasSecondaryValue = secondaryValue !== null && secondaryValue !== undefined && secondaryValue !== '';
   const content = (
     <Card size="small" className={['cockpit-component-card', 'cockpit-kpi-panel', onClick ? 'cockpit-kpi-clickable' : ''].filter(Boolean).join(' ')} style={style} onClick={onClick}>
       <div className="cockpit-kpi-panel-body">
         <div className="cockpit-kpi-panel-title">{title}</div>
-        <div className="cockpit-kpi-panel-value" style={{ color: valueColor || cockpitToneColors[tone || 'neutral'] }}>
-          <span className="cockpit-kpi-panel-number">{formatCockpitKpiValue(value, precision)}</span>
-          {suffix && <span className="cockpit-kpi-panel-unit">{suffix}</span>}
+        <div className="cockpit-kpi-panel-stat">
+          <div className="cockpit-kpi-panel-value" style={{ color: valueColor || cockpitToneColors[tone || 'neutral'] }}>
+            <span className="cockpit-kpi-panel-number">{formatCockpitKpiValue(value, precision)}</span>
+            {suffix && <span className="cockpit-kpi-panel-unit">{suffix}</span>}
+          </div>
+          {hasSecondaryValue && (
+            <div className="cockpit-kpi-panel-secondary">
+              {secondaryLabel && <span className="cockpit-kpi-panel-secondary-label">{secondaryLabel}</span>}
+              <span>{formatCockpitKpiValue(secondaryValue, secondaryPrecision)}</span>
+              {secondarySuffix && <span className="cockpit-kpi-panel-secondary-unit">{secondarySuffix}</span>}
+            </div>
+          )}
         </div>
       </div>
     </Card>
@@ -897,6 +922,10 @@ export default function VisualCockpit() {
             value={metric?.value ?? 0}
             suffix={unitFor(definition, i18n.language)}
             precision={definition?.precision}
+            secondaryValue={metric?.secondaryValue}
+            secondarySuffix={metric?.secondaryUnit}
+            secondaryPrecision={metric?.secondaryPrecision}
+            secondaryLabel={secondaryMetricLabel(metric, i18n.language)}
             tone={toneFor(definition, metric?.value)}
             valueColor={cockpitKpiValueColor(definition, metricKey)}
             tooltip={metric?.updatedAt ? `${t('common.updated')}: ${metric.updatedAt}` : undefined}

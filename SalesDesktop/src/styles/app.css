@@ -606,6 +606,12 @@ body {
   white-space: nowrap;
 }
 
+.cockpit-kpi-panel-stat {
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .cockpit-kpi-panel-number {
   min-width: 0;
   overflow: hidden;
@@ -618,6 +624,28 @@ body {
   font-size: 0.56em;
   font-weight: 700;
   line-height: 1;
+}
+
+.cockpit-kpi-panel-secondary {
+  display: flex;
+  min-width: 0;
+  margin-top: 5px;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
+  color: #6b7280;
+  font-size: var(--cockpit-kpi-secondary-size, 12px);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cockpit-kpi-panel-secondary-label {
+  flex: 0 0 auto;
+}
+
+.cockpit-kpi-panel-secondary-unit {
+  flex: 0 0 auto;
 }
 
 .cockpit-component-card > .ant-card-head {

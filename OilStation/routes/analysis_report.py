@@ -222,6 +222,12 @@ def _exchange_rates_for_period(start, end):
 def _resource_tons(resources):
     total = 0.0
     for item in resources:
+        if item.get("tons") is not None:
+            total += float(item.get("tons") or 0)
+            continue
+        if item.get("mass") is not None:
+            total += float(item.get("mass") or 0) / 1000
+            continue
         density = RESOURCE_DENSITY.get(int(item.get("resourceKey") or item.get("key") or 0), 0)
         total += float(item.get("volume") or 0) * density / 1000
     return _round_half_up(total, 3)
@@ -478,7 +484,6 @@ def _inventory_contract_totals(start, end):
         conn.close()
 
     for (shop_key, resource_key), volume in (end_balance or {}).items():
-        density = RESOURCE_DENSITY.get(int(resource_key or 0), 0)
         item = result["stations"].setdefault(int(shop_key), {
             "endInventory": 0.0,
             "endInventoryTons": 0.0,
@@ -486,7 +491,12 @@ def _inventory_contract_totals(start, end):
             "contractAmount": 0.0,
         })
         liters = float(volume or 0)
-        tons = liters * density / 1000
+        mass = float(getattr(end_balance, "mass", {}).get((shop_key, resource_key), 0) or 0)
+        if mass:
+            tons = mass / 1000
+        else:
+            density = RESOURCE_DENSITY.get(int(resource_key or 0), 0)
+            tons = liters * density / 1000
         item["endInventory"] += liters
         item["endInventoryTons"] += tons
         result["totalEndInventory"] += liters

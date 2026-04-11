@@ -14,8 +14,7 @@ export const getStationMapDetails = () => get('/api/station-map-details');
 
 // ── 月度 ──
 export const getMonthlyData = (ym, { refresh } = {}) => {
-  const params = refresh ? `?_=${Date.now()}` : '';
-  return get(`/api/monthly/${ym}${params}`);
+  return get(`/api/monthly/${ym}`, refresh ? { refresh: '1' } : undefined);
 };
 export const getStations = (ym) => get(`/api/stations/${ym}`);
 export const getStationsForMonth = (ym) => get(`/api/stations/${ym}`);

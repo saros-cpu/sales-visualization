@@ -3,7 +3,6 @@ import { Button, Drawer, Input, Space, Typography, Tag, Spin, Empty, Tooltip, me
 import { CopyOutlined, DownloadOutlined, RobotOutlined, SendOutlined } from '@ant-design/icons';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import ReactECharts from 'echarts-for-react';
 import {
   askAssistant,
   getAssistantQualityDashboard,
@@ -208,78 +207,6 @@ function TableResult({ table }: { table: AssistantTable }) {
           ))}
         </tbody>
       </table>
-    </section>
-  );
-}
-
-function chartToOption(chart: AssistantChart) {
-  const palette = ['#1677ff', '#52c41a', '#ff7a45', '#722ed1', '#13c2c2', '#eb2f96', '#faad14'];
-  if (chart.type === 'pie') {
-    return {
-      color: palette,
-      tooltip: { trigger: 'item' },
-      legend: { bottom: 0, type: 'scroll' },
-      series: [{
-        name: chart.title || '图表',
-        type: 'pie',
-        radius: ['42%', '70%'],
-        center: ['50%', '43%'],
-        avoidLabelOverlap: true,
-        label: { formatter: '{b}: {d}%' },
-        data: chart.data || [],
-      }],
-    };
-  }
-
-  const series = chart.series || [];
-  const units = Array.from(new Set(series.map(item => item.unit || '').filter(Boolean))).slice(0, 2);
-  const yAxis = units.length > 1
-    ? units.map((unit, index) => ({
-        type: 'value',
-        name: unit,
-        position: index === 0 ? 'left' : 'right',
-        axisLabel: { color: '#64748b' },
-      }))
-    : [{ type: 'value', name: units[0] || chart.unit || '', axisLabel: { color: '#64748b' } }];
-
-  return {
-    color: palette,
-    tooltip: { trigger: 'axis' },
-    legend: { top: 0, type: 'scroll' },
-    grid: { left: 48, right: units.length > 1 ? 54 : 20, top: 44, bottom: (chart.xAxis?.length || 0) > 12 ? 54 : 30 },
-    dataZoom: (chart.xAxis?.length || 0) > 12 ? [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 8 }] : undefined,
-    xAxis: {
-      type: 'category',
-      data: chart.xAxis || [],
-      axisLabel: { color: '#64748b', interval: 'auto' },
-    },
-    yAxis,
-    series: series.map(item => {
-      const unitIndex = Math.max(0, units.indexOf(item.unit || ''));
-      return {
-        name: item.name || '数值',
-        type: item.type === 'line' ? 'line' : 'bar',
-        yAxisIndex: units.length > 1 ? unitIndex : 0,
-        data: item.data || [],
-        smooth: item.type === 'line',
-        symbolSize: item.type === 'line' ? 5 : undefined,
-        barMaxWidth: 26,
-        label: { show: false },
-        emphasis: { focus: 'series' },
-      };
-    }),
-  };
-}
-
-function ChartResult({ chart }: { chart: AssistantChart }) {
-  if (!chart || (chart.type === 'pie' ? !chart.data?.length : !chart.series?.length)) return null;
-  const xCount = chart.xAxis?.length || chart.data?.length || 0;
-  const height = Math.min(360, Math.max(240, 220 + Math.ceil(xCount / 12) * 28));
-  return (
-    <section className="global-ai-chart">
-      {chart.title && <div className="global-ai-chart-title">{chart.title}</div>}
-      {chart.summary && <div className="global-ai-chart-summary">{chart.summary}</div>}
-      <ReactECharts option={chartToOption(chart)} style={{ height, width: '100%' }} notMerge lazyUpdate />
     </section>
   );
 }
@@ -505,18 +432,17 @@ export default function GlobalAiAssistant() {
             ) : messages.map((item, index) => {
               const clarificationOptions = item.clarification?.options || [];
               const showClarificationOptions = index === latestClarificationIndex && !loading && clarificationOptions.length > 0;
+              const hasAssistantTables = item.role === 'assistant' && Boolean(item.tables?.length);
+              const showAssistantDetails = item.role === 'assistant' && !hasAssistantTables;
               return (
                 <div key={index} className={`global-ai-message ${item.role}`}>
-		                  {item.content && (!item.tables?.length || item.llmUsed || item.charts?.length) && (
-	                    <Paragraph className="global-ai-summary">{item.content}</Paragraph>
-	                  )}
-	                  {item.role === 'assistant' && <PlanMeta plan={item.assistantPlan} />}
-	                  {item.role === 'assistant' && <ResponseMeta item={item} />}
-	                  {item.role === 'assistant' && <FeedbackBar item={item} question={messages[index - 1]?.role === 'user' ? messages[index - 1]?.content : undefined} />}
-	                  {item.charts?.map((chart, chartIndex) => (
-	                    <ChartResult key={chartIndex} chart={chart} />
-	                  ))}
-	                  {item.tables?.map((table, tableIndex) => (
+			                  {item.content && (item.role !== 'assistant' || !hasAssistantTables) && (
+			                    <Paragraph className="global-ai-summary">{item.content}</Paragraph>
+			                  )}
+			                  {showAssistantDetails && <PlanMeta plan={item.assistantPlan} />}
+			                  {showAssistantDetails && <ResponseMeta item={item} />}
+			                  {showAssistantDetails && <FeedbackBar item={item} question={messages[index - 1]?.role === 'user' ? messages[index - 1]?.content : undefined} />}
+			                  {item.tables?.map((table, tableIndex) => (
                     <TableResult key={tableIndex} table={table} />
                   ))}
                   {showClarificationOptions && (

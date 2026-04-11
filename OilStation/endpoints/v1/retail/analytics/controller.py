@@ -343,21 +343,17 @@ def _build_self_use_month_response(year_month):
                 'selfUseNumber': self_use_number,
             })
 
+        aggregates = _build_self_use_aggregates(records)
         result = {
             'month': year_month,
             'sourceVersion': SELF_USE_REPORT24_SOURCE_VERSION,
             'records': records,
-            'summary': {
-                'totalVolume': round(total_volume, 2),
-                'totalWeightKg': round(total_mass, 2),
-                'totalAmount': round(total_amount, 2),
-                'totalRecords': len(records),
-            },
+            'summary': aggregates['summary'],
             'comparison': {},
-            'byStation': [],
-            'byResource': [],
-            'byRegion': {},
-            'daily': [],
+            'byStation': aggregates['byStation'],
+            'byResource': aggregates['byResource'],
+            'byRegion': aggregates['byRegion'],
+            'daily': aggregates['daily'],
         }
 
         if cache_allowed():
@@ -415,11 +411,11 @@ def _normalize_self_use_snapshot(snapshot):
         total_mass += mass
         if old_values != rec:
             changed = True
-    summary = snapshot.setdefault('summary', {})
-    total_weight = round(total_mass, 2)
-    if summary.get('totalWeightKg') != total_weight:
-        summary['totalWeightKg'] = total_weight
-        changed = True
+    aggregates = _build_self_use_aggregates(records)
+    for key, value in aggregates.items():
+        if snapshot.get(key) != value:
+            snapshot[key] = value
+            changed = True
     if changed and snapshot.get('month'):
         snapshot['sourceVersion'] = SELF_USE_REPORT24_SOURCE_VERSION
         set_cached(f"self_use:{snapshot['month']}", snapshot)
@@ -466,6 +462,111 @@ def _safe_int(value, default=0):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _build_self_use_aggregates(records):
+    by_station = {}
+    by_resource = {}
+    by_region = {}
+    daily = {}
+    total_volume = 0.0
+    total_amount = 0.0
+    total_mass = 0.0
+    for rec in records or []:
+        sk = _safe_int(rec.get('shopKey'))
+        rk = _safe_int(rec.get('resourceKey'))
+        volume = float(rec.get('volume') or 0)
+        mass = float(rec.get('mass') or 0)
+        amount = float(rec.get('amount') or 0)
+        total_volume += volume
+        total_mass += mass
+        total_amount += amount
+        info = SHOP_KEY_MAP.get(sk, {'name': rec.get('stationName') or f'Station-{sk}', 'region': ''})
+        station_name = info.get('name') or rec.get('stationName') or f'Station-{sk}'
+        region = info.get('region') or rec.get('region') or ''
+        product_name = rec.get('productName') or RESOURCE_NAMES.get(rk, f'Other-{rk}')
+        date_str = str(rec.get('date') or '')
+
+        station = by_station.setdefault(sk, {'shopKey': sk, 'name': station_name, 'volume': 0.0, 'mass': 0.0, 'amount': 0.0, 'txnCount': 0})
+        station['volume'] += volume
+        station['mass'] += mass
+        station['amount'] += amount
+        station['txnCount'] += 1
+
+        resource = by_resource.setdefault(rk, {'resourceKey': rk, 'name': product_name, 'volume': 0.0, 'mass': 0.0, 'amount': 0.0})
+        resource['volume'] += volume
+        resource['mass'] += mass
+        resource['amount'] += amount
+
+        region_item = by_region.setdefault(region, {'volume': 0.0, 'mass': 0.0, 'amount': 0.0, 'activeCount': 0})
+        region_item['volume'] += volume
+        region_item['mass'] += mass
+        region_item['amount'] += amount
+
+        day = daily.setdefault(date_str, {'volume': 0.0, 'mass': 0.0, 'amount': 0.0})
+        day['volume'] += volume
+        day['mass'] += mass
+        day['amount'] += amount
+
+    station_rows = [
+        {
+            'shopKey': sk,
+            'name': item['name'],
+            'volume': round(item['volume'], 2),
+            'mass': round(item['mass'], 3),
+            'tons': round(item['mass'] / 1000, 3),
+            'amount': round(item['amount'], 2),
+            'txnCount': item['txnCount'],
+        }
+        for sk, item in sorted(by_station.items())
+    ]
+    resource_rows = [
+        {
+            'resourceKey': rk,
+            'name': item['name'],
+            'volume': round(item['volume'], 2),
+            'mass': round(item['mass'], 3),
+            'tons': round(item['mass'] / 1000, 3),
+            'density': round(item['mass'] / item['volume'], 3) if item['volume'] else 0,
+            'amount': round(item['amount'], 2),
+        }
+        for rk, item in sorted(by_resource.items())
+    ]
+    region_rows = {
+        region: {
+            'volume': round(item['volume'], 2),
+            'mass': round(item['mass'], 3),
+            'tons': round(item['mass'] / 1000, 3),
+            'amount': round(item['amount'], 2),
+            'activeCount': item['activeCount'],
+        }
+        for region, item in sorted(by_region.items())
+    }
+    daily_rows = [
+        {
+            'date': date_str,
+            'volume': round(item['volume'], 2),
+            'mass': round(item['mass'], 3),
+            'tons': round(item['mass'] / 1000, 3),
+            'amount': round(item['amount'], 2),
+        }
+        for date_str, item in sorted(daily.items())
+        if date_str
+    ]
+    return {
+        'summary': {
+            'totalVolume': round(total_volume, 2),
+            'totalWeightKg': round(total_mass, 2),
+            'totalTons': round(total_mass / 1000, 3),
+            'totalAmount': round(total_amount, 2),
+            'totalRecords': len(records or []),
+            'activeStations': len(station_rows),
+        },
+        'byStation': station_rows,
+        'byResource': resource_rows,
+        'byRegion': region_rows,
+        'daily': daily_rows,
+    }
 
 
 @analytics_api.route('/api/retail/self-use/<year_month>')
@@ -521,6 +622,7 @@ def api_retail_self_use_range():
         'summary': {
             'totalVolume': round(total_volume, 2),
             'totalWeightKg': round(total_mass, 2),
+            'totalTons': round(total_mass / 1000, 3),
             'totalAmount': round(total_amount, 2),
             'totalRecords': len(records),
         },
@@ -533,11 +635,11 @@ def api_dashboard_yearly():
     year = request.args.get("year", type=int) or datetime.now().year
     cache_key = f'dashboard_yearly:{year}'
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         return jsonify(cached)
     if cache_allowed():
         snapshot_result = _dashboard_yearly_from_monthly_snapshots(year)
-        if snapshot_result:
+        if snapshot_result and not retail_payload_mass_needs_refresh(snapshot_result):
             set_cached(cache_key, snapshot_result)
             return jsonify(snapshot_result)
 
@@ -557,6 +659,7 @@ def api_dashboard_yearly():
         year_condition = business_period_condition_with_pruning("s", "sh")
         total_volume = report_volume_expr("s")
         total_amount = report_amount_expr("s")
+        total_mass = report_mass_expr("s", year_start)
         resource_totals = {}
         resource_key = resource_key_expr("s")
         cur.execute(f"""
@@ -570,7 +673,8 @@ def api_dashboard_yearly():
                 {report_card_amount_expr("s")} as card_sales,
                 {report_cash_volume_expr("s")} as cash_liters,
                 {report_card_volume_expr("s")} as card_liters,
-                SUM(s.BonusOutCost) as bonus_cost
+                SUM(s.BonusOutCost) as bonus_cost,
+                {total_mass} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {year_condition}
@@ -586,6 +690,7 @@ def api_dashboard_yearly():
                 'txnCount': 0,
                 'volume': 0.0,
                 'amount': 0.0,
+                'mass': 0.0,
                 'cash': 0.0,
                 'card': 0.0,
                 'cashLiters': 0.0,
@@ -595,15 +700,16 @@ def api_dashboard_yearly():
             shop_bucket['txnCount'] += int(row[2] or 0)
             shop_bucket['volume'] += float(row[3] or 0)
             shop_bucket['amount'] += float(row[4] or 0)
+            shop_bucket['mass'] += float(row[10] or 0)
             shop_bucket['cash'] += float(row[5] or 0)
             shop_bucket['card'] += float(row[6] or 0)
             shop_bucket['cashLiters'] += float(row[7] or 0)
             shop_bucket['cardLiters'] += float(row[8] or 0)
             shop_bucket['bonus'] += float(row[9] or 0)
-            add_resource_bucket(resource_totals, resource_key_value, row[3], row[4])
+            add_resource_bucket(resource_totals, resource_key_value, row[3], row[4], row[10])
 
         for data in sales_data.values():
-            for key in ('volume', 'amount', 'cash', 'card', 'cashLiters', 'cardLiters', 'bonus'):
+            for key in ('volume', 'amount', 'mass', 'cash', 'card', 'cashLiters', 'cardLiters', 'bonus'):
                 data[key] = round(data[key], 2)
 
         by_resource = []
@@ -612,6 +718,7 @@ def api_dashboard_yearly():
                 rk,
                 round(values['volume'], 2),
                 round(values['amount'], 2),
+                round(values.get('mass', 0), 3),
             ))
         by_resource = format_resource_rows(by_resource)
 
@@ -629,6 +736,8 @@ def api_dashboard_yearly():
                 'lat': coords.get('lat', 0),
                 'txnCount': data.get('txnCount', 0),
                 'volume': data.get('volume', 0),
+                'mass': round(float(data.get('mass', 0) or 0), 3),
+                'tons': round(float(data.get('mass', 0) or 0) / 1000, 3),
                 'amount': amount,
                 'cash': data.get('cash', 0),
                 'card': data.get('card', 0),
@@ -645,6 +754,7 @@ def api_dashboard_yearly():
             regions.setdefault(region_name, {
                 'amount': 0,
                 'volume': 0,
+                'tons': 0,
                 'cash': 0,
                 'card': 0,
                 'bonus': 0,
@@ -657,6 +767,7 @@ def api_dashboard_yearly():
             amount = float(data.get('amount', 0) or 0)
             regions[region_name]['amount'] += amount
             regions[region_name]['volume'] += float(data.get('volume', 0) or 0)
+            regions[region_name]['tons'] += float(data.get('mass', 0) or 0) / 1000
             regions[region_name]['cash'] += float(data.get('cash', 0) or 0)
             regions[region_name]['card'] += float(data.get('card', 0) or 0)
             regions[region_name]['bonus'] += float(data.get('bonus', 0) or 0)
@@ -666,6 +777,7 @@ def api_dashboard_yearly():
         for data in regions.values():
             for key in ('amount', 'volume', 'cash', 'card', 'bonus'):
                 data[key] = round(data[key], 2)
+            data['tons'] = round(data.get('tons', 0), 3)
 
         result = {
             'year': year,
@@ -702,11 +814,11 @@ def api_resources_yearly():
         return jsonify({"error": "month must be between 1 and 12"}), 400
     cache_key = f'resources_yearly:{year}:{month or "year"}'
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         return jsonify(cached)
     if cache_allowed():
         snapshot_result = _resources_yearly_from_monthly_snapshots(year, month)
-        if snapshot_result:
+        if snapshot_result and not retail_payload_mass_needs_refresh(snapshot_result):
             set_cached(cache_key, snapshot_result)
             return jsonify(snapshot_result)
 
@@ -749,10 +861,12 @@ def api_resources_yearly():
         amount_expr = report_amount_expr("s")
 
         def query_period(start, end):
+            mass_expr = report_mass_expr("s", start)
             cur.execute(f"""
                 SELECT {resource_key} as resource_key,
                        {volume_expr} as vol,
-                       {amount_expr} as amt
+                       {amount_expr} as amt,
+                       {mass_expr} as mass
                 FROM shift sh
                 JOIN selling s FORCE INDEX (Index_SS)
                   ON s.ShopKey = sh.ShopKey
@@ -769,7 +883,7 @@ def api_resources_yearly():
             """, (end, start, end))
             data = {}
             for r in cur.fetchall():
-                add_resource_bucket(data, r[0], r[1], r[2])
+                add_resource_bucket(data, r[0], r[1], r[2], r[3])
             return data
 
         current = query_period(period_start, period_end)
@@ -806,15 +920,19 @@ def api_resources_yearly():
         resource_keys = sorted(set(current) | set(previous) | set(month_data) | set(prev_month_data))
         resources = []
         for rk in resource_keys:
-            cur_d = current.get(rk, {'volume': 0, 'amount': 0})
-            prev_d = previous.get(rk, {'volume': 0, 'amount': 0})
-            mon_d = month_data.get(rk, {'volume': 0, 'amount': 0})
-            prev_mon_d = prev_month_data.get(rk, {'volume': 0, 'amount': 0})
+            cur_d = current.get(rk, {'volume': 0, 'amount': 0, 'mass': 0})
+            prev_d = previous.get(rk, {'volume': 0, 'amount': 0, 'mass': 0})
+            mon_d = month_data.get(rk, {'volume': 0, 'amount': 0, 'mass': 0})
+            prev_mon_d = prev_month_data.get(rk, {'volume': 0, 'amount': 0, 'mass': 0})
+            mass = round(float(cur_d.get('mass') or 0), 3)
+            latest_month_mass = round(float(mon_d.get('mass') or 0), 3)
             resources.append({
                 'resourceKey': rk,
                 'key': rk,
                 'name': RESOURCE_NAMES.get(rk, f'Other-{rk}'),
                 'volume': round(cur_d['volume'], 2),
+                'mass': mass,
+                'tons': round(mass / 1000, 3),
                 'amount': round(cur_d['amount'], 2),
                 'color': RESOURCE_COLORS.get(rk, '#999999'),
                 'yoyVolume': calc_change(cur_d['volume'], prev_d['volume']),
@@ -822,6 +940,8 @@ def api_resources_yearly():
                 'momVolume': calc_change(mon_d['volume'], prev_mon_d['volume']),
                 'momSales': calc_change(mon_d['amount'], prev_mon_d['amount']),
                 'latestMonthVolume': round(mon_d['volume'], 2),
+                'latestMonthMass': latest_month_mass,
+                'latestMonthTons': round(latest_month_mass / 1000, 3),
                 'latestMonthAmount': round(mon_d['amount'], 2),
             })
         resources.sort(key=lambda item: RESOURCE_ORDER_INDEX.get(item['key'], 999))
@@ -837,6 +957,7 @@ def api_resources_yearly():
             'resources': resources,
             'summary': {
                 'totalVolume': round(sum(item['volume'] for item in resources), 2),
+                'totalTons': round(sum(item['tons'] for item in resources), 3),
                 'totalAmount': round(sum(item['amount'] for item in resources), 2),
                 'resourceCount': len([item for item in resources if item['amount'] > 0 or item['volume'] > 0]),
             },
@@ -862,7 +983,7 @@ def api_integration_retail_summary():
 
     cache_key = f"integration:retail-summary:{year}:{month or 'year'}"
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         return jsonify(cached)
 
     if month:
@@ -883,6 +1004,7 @@ def api_integration_retail_summary():
         cur = conn.cursor()
         business_day = shift_business_date_expr("sh")
         resource_key = report_resource_key_expr("s")
+        mass_expr = report_mass_expr("s", start)
         daily_rows = {}
         by_resource_rows = {}
         daily_resource = []
@@ -903,7 +1025,8 @@ def api_integration_retail_summary():
                            WHEN (s.DerivedPaymentTypeKey IS NULL OR s.DerivedPaymentTypeKey NOT IN (2, 3, 4))
                             AND s.BasePaymentTypeKey IN (1, 2)
                            THEN s.ShopCost ELSE 0 END)
-                       + SUM(CASE WHEN s.DerivedPaymentTypeKey = 3 THEN s.ShopCost ELSE 0 END) as total_sales
+                       + SUM(CASE WHEN s.DerivedPaymentTypeKey = 3 THEN s.ShopCost ELSE 0 END) as total_sales,
+                       {mass_expr} as total_mass
                 FROM shift sh
                 JOIN selling s FORCE INDEX (Index_SS)
                   ON s.ShopKey = sh.ShopKey
@@ -929,6 +1052,7 @@ def api_integration_retail_summary():
                 txn_count = int(row[2] or 0)
                 volume = float(row[3] or 0)
                 amount = float(row[4] or 0)
+                mass = float(row[5] or 0)
                 if not volume and not amount:
                     continue
                 total_txn += txn_count
@@ -939,14 +1063,18 @@ def api_integration_retail_summary():
                     "date": business_day_value,
                     "resourceKey": rk,
                     "volume": round(volume, 3),
+                    "mass": round(mass, 3),
+                    "tons": round(mass / 1000, 3),
                     "amount": round(amount, 2),
                 })
-                daily_bucket = daily_rows.setdefault(business_day_value, [0.0, 0.0])
+                daily_bucket = daily_rows.setdefault(business_day_value, [0.0, 0.0, 0.0])
                 daily_bucket[0] += volume
                 daily_bucket[1] += amount
-                resource_bucket = by_resource_rows.setdefault(rk, [0.0, 0.0])
+                daily_bucket[2] += mass
+                resource_bucket = by_resource_rows.setdefault(rk, [0.0, 0.0, 0.0])
                 resource_bucket[0] += volume
                 resource_bucket[1] += amount
+                resource_bucket[2] += mass
             if shop_has_sales:
                 active_shops.add(shop_key)
 
@@ -954,12 +1082,14 @@ def api_integration_retail_summary():
             {
                 "date": day,
                 "volume": round(values[0], 3),
+                "tons": round(values[2] / 1000, 3),
                 "amount": round(values[1], 2),
             }
             for day, values in sorted(daily_rows.items())
         ]
         total_liters = sum(values[0] for values in daily_rows.values())
         total_sales = sum(values[1] for values in daily_rows.values())
+        total_mass = sum(values[2] for values in daily_rows.values())
 
         result = {
             "source": "OilStationReport",
@@ -971,12 +1101,13 @@ def api_integration_retail_summary():
                 "totalTxn": total_txn,
                 "activeShops": len(active_shops),
                 "totalLiters": round(total_liters, 3),
+                "totalTons": round(total_mass / 1000, 3),
                 "totalSales": round(total_sales, 2),
             },
             "daily": daily,
             "dailyResource": daily_resource,
             "byResource": format_resource_rows([
-                (rk, values[0], values[1])
+                (rk, values[0], values[1], values[2])
                 for rk, values in by_resource_rows.items()
             ]),
         }
@@ -1000,7 +1131,7 @@ def api_assistant_retail_summary():
 
     cache_key = f"assistant:retail-summary:{start}:{end}"
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         return jsonify(cached)
 
     conn = get_connection()
@@ -1009,12 +1140,14 @@ def api_assistant_retail_summary():
         period_condition = business_period_condition_with_pruning("s", "sh")
         total_volume = report_volume_expr("s")
         total_amount = report_amount_expr("s")
+        total_mass = report_mass_expr("s", start)
         resource_key = report_resource_key_expr("s")
         cur.execute(f"""
             SELECT {resource_key} AS resource_key,
                    COUNT(*) AS txn_count,
                    {total_volume} AS total_liters,
-                   {total_amount} AS total_sales
+                   {total_amount} AS total_sales,
+                   {total_mass} AS total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1023,14 +1156,15 @@ def api_assistant_retail_summary():
             ORDER BY total_liters DESC
         """, business_period_params(start, end))
         rows = cur.fetchall()
-        resources = format_resource_rows([(row[0], row[2], row[3]) for row in rows])
+        resources = format_resource_rows([(row[0], row[2], row[3], row[4]) for row in rows])
         total_tons = add_resource_tons(resources)
         cur.execute(f"""
             SELECT s.ShopKey,
                    {resource_key} AS resource_key,
                    COUNT(*) AS txn_count,
                    {total_volume} AS total_liters,
-                   {total_amount} AS total_sales
+                   {total_amount} AS total_sales,
+                   {total_mass} AS total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1041,11 +1175,11 @@ def api_assistant_retail_summary():
         """, business_period_params(start, end))
         station_resource_rows = cur.fetchall()
         station_buckets = {}
-        for shop_key, rk, txn_count, liters, amount in station_resource_rows:
+        for shop_key, rk, txn_count, liters, amount, mass in station_resource_rows:
             shop_key = int(shop_key)
             bucket = station_buckets.setdefault(shop_key, {"txn": 0, "resources": []})
             bucket["txn"] += int(txn_count or 0)
-            bucket["resources"].append((rk, liters, amount))
+            bucket["resources"].append((rk, liters, amount, mass))
         station_rows = []
         region_buckets = {}
         for shop_key, bucket in station_buckets.items():
@@ -1053,6 +1187,7 @@ def api_assistant_retail_summary():
             station_resources = format_resource_rows(bucket["resources"])
             station_tons = add_resource_tons(station_resources)
             station_liters = round(sum(float(item.get("volume") or 0) for item in station_resources), 2)
+            station_mass = round(sum(float(item.get("mass") or 0) for item in station_resources), 3)
             station_amount = round(sum(float(item.get("amount") or 0) for item in station_resources), 2)
             station_rows.append({
                 "shopKey": shop_key,
@@ -1061,6 +1196,7 @@ def api_assistant_retail_summary():
                 "region": info.get("region") or "未知区域",
                 "txn": bucket["txn"],
                 "volume": station_liters,
+                "mass": station_mass,
                 "tons": station_tons,
                 "amount": station_amount,
             })
@@ -1135,6 +1271,11 @@ def api_monthly(year_month):
     cache_key = f'monthly:{year_month}'
     cached = get_cached(cache_key)
     if cached and cache_allowed():
+        if retail_payload_mass_needs_refresh(cached) and retail_repair_payload_mass_from_report(year_month, cached):
+            set_cached(cache_key, cached)
+        if retail_payload_mass_needs_refresh(cached):
+            cached = None
+    if cached and cache_allowed():
         cache_changed = False
         if "totalTons" not in (cached.get("summary") or {}) or "totalSalesCny" not in (cached.get("summary") or {}):
             cached = _attach_monthly_finance_metrics(cached)
@@ -1190,6 +1331,7 @@ def api_monthly(year_month):
 
         # ---- 按站点汇总 ----
         period_condition = business_period_condition_with_pruning("s", "sh")
+        mass_expr = report_mass_expr("s", ym_start)
         cur.execute(f"""
             SELECT
                 s.ShopKey,
@@ -1201,7 +1343,8 @@ def api_monthly(year_month):
                 {report_card_amount_expr("s")} as card_sales,
                 {report_cash_volume_expr("s")} as cash_liters,
                 {report_card_volume_expr("s")} as card_liters,
-                {report_bonus_amount_expr("s")} as bonus_cost
+                {report_bonus_amount_expr("s")} as bonus_cost,
+                {mass_expr} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1221,6 +1364,8 @@ def api_monthly(year_month):
                 'region': info['region'],
                 'txnCount': int(r[1] or 0),
                 'volume': round(float(r[2] or 0), 2),
+                'mass': round(float(r[10] or 0), 3),
+                'tons': round(float(r[10] or 0) / 1000, 3),
                 'amount': round(float(r[3] or 0), 2),
                 'baseCost': round(float(r[4] or 0), 2),
                 'cashSales': round(float(r[5] or 0), 2),
@@ -1269,9 +1414,10 @@ def api_monthly(year_month):
         for s in stations_data:
             rgn = s['region']
             if rgn not in regions:
-                regions[rgn] = {'amount': 0, 'volume': 0, 'cashSales': 0, 'cardSales': 0, 'stationCount': 0, 'activeCount': 0}
+                regions[rgn] = {'amount': 0, 'volume': 0, 'tons': 0, 'cashSales': 0, 'cardSales': 0, 'stationCount': 0, 'activeCount': 0}
             regions[rgn]['amount'] += s['amount']
             regions[rgn]['volume'] += s['volume']
+            regions[rgn]['tons'] += s.get('tons', 0)
             regions[rgn]['cashSales'] += s['cashSales']
             regions[rgn]['cardSales'] += s['cardSales']
             regions[rgn]['stationCount'] += 1
@@ -1295,7 +1441,10 @@ def api_monthly(year_month):
         total_volume = report_volume_expr("s")
         total_amount = report_amount_expr("s")
         cur.execute(f"""
-            SELECT {resource_key} as resource_key, {total_volume} as total_vol, {total_amount} as total_amt
+            SELECT {resource_key} as resource_key,
+                   {total_volume} as total_vol,
+                   {total_amount} as total_amt,
+                   {mass_expr} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1309,7 +1458,8 @@ def api_monthly(year_month):
                 {business_day} as day,
                 {resource_key} as resource_key,
                 {report_volume_expr("s")} as total_liters,
-                {report_amount_expr("s")} as total_sales
+                {report_amount_expr("s")} as total_sales,
+                {mass_expr} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1326,6 +1476,8 @@ def api_monthly(year_month):
                 'date': str(r[0]),
                 'resourceKey': canonical_resource_key(rk),
                 'volume': round(float(r[2] or 0), 3),
+                'mass': round(float(r[4] or 0), 3),
+                'tons': round(float(r[4] or 0) / 1000, 3),
                 'amount': round(float(r[3] or 0), 2),
             })
 
@@ -1372,7 +1524,7 @@ def api_monthly(year_month):
 def api_station_monthly(year_month, shop_key):
     cache_key = f'station:{year_month}:{shop_key}'
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         return jsonify(cached)
 
     conn = get_connection()
@@ -1384,6 +1536,7 @@ def api_station_monthly(year_month, shop_key):
 
         # 站点汇总
         period_condition = business_period_condition_with_pruning("s", "sh")
+        mass_expr = report_mass_expr("s", ym_start)
         cur.execute(f"""
             SELECT
                 COUNT(*) as txn_count,
@@ -1394,7 +1547,8 @@ def api_station_monthly(year_month, shop_key):
                 {report_card_amount_expr("s")} as card_sales,
                 {report_cash_volume_expr("s")} as cash_liters,
                 {report_card_volume_expr("s")} as card_liters,
-                {report_bonus_amount_expr("s")} as bonus_cost
+                {report_bonus_amount_expr("s")} as bonus_cost,
+                {mass_expr} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE s.ShopKey = %s
@@ -1407,6 +1561,8 @@ def api_station_monthly(year_month, shop_key):
         summary = {
             'txnCount': int(r[0] or 0),
             'volume': round(float(r[1] or 0), 2),
+            'mass': round(float(r[9] or 0), 3),
+            'tons': round(float(r[9] or 0) / 1000, 3),
             'amount': round(float(r[2] or 0), 2),
             'baseCost': round(float(r[3] or 0), 2),
             'cashSales': round(float(r[4] or 0), 2),
@@ -1477,7 +1633,8 @@ def api_station_monthly(year_month, shop_key):
                 {report_volume_expr("s")} as total_liters,
                 {report_amount_expr("s")} as total_sales,
                 {report_cash_amount_expr("s")} as cash_sales,
-                {report_card_amount_expr("s")} as card_sales
+                {report_card_amount_expr("s")} as card_sales,
+                {mass_expr} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE s.ShopKey = %s
@@ -1492,13 +1649,17 @@ def api_station_monthly(year_month, shop_key):
             'amount': round(float(r2[2] or 0), 2),
             'cashSales': round(float(r2[3] or 0), 2),
             'cardSales': round(float(r2[4] or 0), 2),
+            'tons': round(float(r2[5] or 0) / 1000, 3),
         } for r2 in cur.fetchall()]
 
         resource_key = resource_key_expr("s")
         total_volume = report_volume_expr("s")
         total_amount = report_amount_expr("s")
         cur.execute(f"""
-            SELECT {resource_key} as resource_key, {total_volume} as total_vol, {total_amount} as total_amt
+            SELECT {resource_key} as resource_key,
+                   {total_volume} as total_vol,
+                   {total_amount} as total_amt,
+                   {mass_expr} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE s.ShopKey = %s
@@ -1533,7 +1694,7 @@ def api_stations(year_month):
     """返回当月所有站点数据，用于首页地图和排行榜"""
     cache_key = f'stations:{year_month}'
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         return jsonify(cached)
 
     conn = get_connection()
@@ -1542,6 +1703,7 @@ def api_stations(year_month):
         ym_start, ym_end = get_query_date_range(year_month)
 
         period_condition = business_period_condition_with_pruning("s", "sh")
+        mass_expr = report_mass_expr("s", ym_start)
         cur.execute(f"""
             SELECT
                 s.ShopKey,
@@ -1552,7 +1714,8 @@ def api_stations(year_month):
                 {report_card_amount_expr("s")} as card_sales,
                 {report_cash_volume_expr("s")} as cash_liters,
                 {report_card_volume_expr("s")} as card_liters,
-                {report_bonus_amount_expr("s")} as bonus_cost
+                {report_bonus_amount_expr("s")} as bonus_cost,
+                {mass_expr} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1566,6 +1729,8 @@ def api_stations(year_month):
             sales_data[r[0]] = {
                 'txnCount': int(r[1] or 0),
                 'volume': round(float(r[2] or 0), 2),
+                'mass': round(float(r[9] or 0), 3),
+                'tons': round(float(r[9] or 0) / 1000, 3),
                 'amount': round(float(r[3] or 0), 2),
                 'cash': round(float(r[4] or 0), 2),
                 'card': round(float(r[5] or 0), 2),
@@ -1588,6 +1753,8 @@ def api_stations(year_month):
                 'lat': coords.get('lat', 0),
                 'txnCount': sd.get('txnCount', 0),
                 'volume': sd.get('volume', 0),
+                'mass': sd.get('mass', 0),
+                'tons': sd.get('tons', 0),
                 'amount': sd.get('amount', 0),
                 'cash': sd.get('cash', 0),
                 'card': sd.get('card', 0),
@@ -1620,7 +1787,7 @@ def api_daily(year_month):
     """返回当月所有站点的每日销售汇总，用于趋势图"""
     cache_key = f'daily:{year_month}'
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_daily_payload_mass_needs_refresh(cached):
         return jsonify(cached)
 
     conn = get_connection()
@@ -1631,21 +1798,35 @@ def api_daily(year_month):
         # 全网每日汇总
         period_condition = business_period_condition_with_pruning("s", "sh")
         business_day = business_date_expr("s", "sh")
+        mass_expr = report_mass_expr("s", ym_start)
         cur.execute(f"""
             SELECT {business_day} as dt,
-                   {report_volume_expr("s")} as vol, {report_amount_expr("s")} as amt
+                   {report_volume_expr("s")} as vol,
+                   {report_amount_expr("s")} as amt,
+                   {mass_expr} as mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
               AND (s.DerivedPaymentTypeKey IS NULL OR s.DerivedPaymentTypeKey NOT IN (2, 4))
             GROUP BY dt ORDER BY dt
         """, business_period_params(ym_start, ym_end))
-        daily = [{'date': str(r[0]), 'volume': round(float(r[1] or 0), 2), 'amount': round(float(r[2] or 0), 2)} for r in cur.fetchall()]
+        daily = [
+            {
+                'date': str(r[0]),
+                'volume': round(float(r[1] or 0), 2),
+                'mass': round(float(r[3] or 0), 3),
+                'tons': round(float(r[3] or 0) / 1000, 3),
+                'amount': round(float(r[2] or 0), 2),
+            }
+            for r in cur.fetchall()
+        ]
 
         # 每个站点的每日汇总
         cur.execute(f"""
             SELECT s.ShopKey, {business_day} as dt,
-                   {report_volume_expr("s")} as vol, {report_amount_expr("s")} as amt
+                   {report_volume_expr("s")} as vol,
+                   {report_amount_expr("s")} as amt,
+                   {mass_expr} as mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1658,7 +1839,13 @@ def api_daily(year_month):
             sk = r[0]
             if sk not in stations_daily:
                 stations_daily[sk] = []
-            stations_daily[sk].append({'date': str(r[1]), 'volume': round(float(r[2] or 0), 2), 'amount': round(float(r[3] or 0), 2)})
+            stations_daily[sk].append({
+                'date': str(r[1]),
+                'volume': round(float(r[2] or 0), 2),
+                'mass': round(float(r[4] or 0), 3),
+                'tons': round(float(r[4] or 0) / 1000, 3),
+                'amount': round(float(r[3] or 0), 2),
+            })
 
         result = {'month': year_month, 'daily': daily, 'stations': stations_daily}
         set_cached(cache_key, result)
@@ -1673,8 +1860,11 @@ def api_regions(year_month):
     """返回当月各区域汇总数据（含同比环比）"""
     cache_key = f'regions:{year_month}'
     cached = get_cached(cache_key)
-    if cached and cache_allowed():
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
+        cache_changed = retail_repair_payload_mass_from_report(year_month, cached)
         if _attach_region_snapshot_comparisons(year_month, cached):
+            cache_changed = True
+        if cache_changed:
             set_cached(cache_key, cached)
         return jsonify(cached)
 
@@ -1687,13 +1877,15 @@ def api_regions(year_month):
 
         # 当月区域汇总（含现金/刷卡分拆）
         period_condition = business_period_condition_with_pruning("s", "sh")
+        mass_expr = report_mass_expr("s", ym_start)
         cur.execute(f"""
             SELECT s.ShopKey,
                    {report_volume_expr("s")} as vol,
                    {report_amount_expr("s")} as amt,
                    {report_cash_amount_expr("s")} as cash_sales,
                    {report_card_amount_expr("s")} as card_sales,
-                   {report_bonus_amount_expr("s")} as bonus_cost
+                   {report_bonus_amount_expr("s")} as bonus_cost,
+                   {mass_expr} as total_mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1708,9 +1900,11 @@ def api_regions(year_month):
             info = SHOP_KEY_MAP.get(sk, {'name': f'Station-{sk}', 'region': 'unknown'})
             rgn = info['region']
             if rgn not in regions:
-                regions[rgn] = {'amount': 0, 'volume': 0, 'cash': 0, 'card': 0, 'bonus': 0, 'stationCount': 0, 'activeCount': 0}
+                regions[rgn] = {'amount': 0, 'volume': 0, 'mass': 0, 'tons': 0, 'cash': 0, 'card': 0, 'bonus': 0, 'stationCount': 0, 'activeCount': 0}
             regions[rgn]['amount'] += float(r[2] or 0)
             regions[rgn]['volume'] += float(r[1] or 0)
+            regions[rgn]['mass'] += float(r[6] or 0)
+            regions[rgn]['tons'] += float(r[6] or 0) / 1000
             regions[rgn]['cash'] += float(r[3] or 0)
             regions[rgn]['card'] += float(r[4] or 0)
             regions[rgn]['bonus'] += float(r[5] or 0)
@@ -1722,7 +1916,7 @@ def api_regions(year_month):
             if rgn in regions:
                 regions[rgn]['stationCount'] += 1
             else:
-                regions[rgn] = {'amount': 0, 'volume': 0, 'cash': 0, 'card': 0, 'bonus': 0, 'stationCount': 1, 'activeCount': 0}
+                regions[rgn] = {'amount': 0, 'volume': 0, 'mass': 0, 'tons': 0, 'cash': 0, 'card': 0, 'bonus': 0, 'stationCount': 1, 'activeCount': 0}
 
         # 环比同比
         def calc_change(cur_val, prev_val):
@@ -1767,7 +1961,11 @@ def api_regions(year_month):
         total_volume = report_volume_expr("s")
         total_amount = report_amount_expr("s")
         cur.execute(f"""
-            SELECT s.ShopKey, {resource_key} as resource_key, {total_volume} as vol, {total_amount} as amt
+            SELECT s.ShopKey,
+                   {resource_key} as resource_key,
+                   {total_volume} as vol,
+                   {total_amount} as amt,
+                   {mass_expr} as mass
             FROM selling s
             {shift_join("s", "sh")}
             WHERE {period_condition}
@@ -1775,24 +1973,30 @@ def api_regions(year_month):
             GROUP BY s.ShopKey, resource_key
         """, business_period_params(ym_start, ym_end))
         region_resource_rows = {}
-        for shop_key, rk, vol, amt in cur.fetchall():
+        for shop_key, rk, vol, amt, mass in cur.fetchall():
             rk = canonical_resource_key(rk)
             if rk < 100 or rk not in KNOWN_RESOURCE_KEYS:
                 continue
             info = SHOP_KEY_MAP.get(shop_key, {'region': 'unknown'})
             bucket = region_resource_rows.setdefault(info['region'], {})
-            item = bucket.setdefault(rk, [0.0, 0.0])
+            item = bucket.setdefault(rk, [0.0, 0.0, 0.0])
             item[0] += float(vol or 0)
             item[1] += float(amt or 0)
+            item[2] += float(mass or 0)
         by_resource_by_region = {
-            region: format_resource_rows([(rk, vals[0], vals[1]) for rk, vals in rows.items()])
+            region: format_resource_rows([(rk, vals[0], vals[1], vals[2]) for rk, vals in rows.items()])
             for region, rows in region_resource_rows.items()
         }
         by_resource = format_resource_rows([
-            (rk, sum(rows.get(rk, [0, 0])[0] for rows in region_resource_rows.values()),
-             sum(rows.get(rk, [0, 0])[1] for rows in region_resource_rows.values()))
+            (rk, sum(rows.get(rk, [0, 0, 0])[0] for rows in region_resource_rows.values()),
+             sum(rows.get(rk, [0, 0, 0])[1] for rows in region_resource_rows.values()),
+             sum(rows.get(rk, [0, 0, 0])[2] for rows in region_resource_rows.values()))
             for rk in {rk for rows in region_resource_rows.values() for rk in rows}
         ])
+        for item in regions.values():
+            for key in ('amount', 'volume', 'mass', 'cash', 'card', 'bonus'):
+                item[key] = round(float(item.get(key) or 0), 3 if key == 'mass' else 2)
+            item['tons'] = round(float(item.get('tons') or 0), 3)
 
         result = {
             'month': year_month,

@@ -5,18 +5,19 @@ const api = createApi('/api');
 interface StationData {
   shopKey: number; name: string; short: string; region: string;
   lng: number; lat: number;
-  txnCount: number; volume: number; amount: number; cash: number;
+  txnCount: number; volume: number; mass?: number; tons?: number; amount: number; cash: number;
   card: number; cashLiters: number; cardLiters: number; bonus: number;
   status: string; closedReason?: string;
 }
 
 interface ResourceData {
-  resourceKey: number; name: string; volume: number; amount: number; color: string;
+  resourceKey: number; name: string; volume: number; mass?: number; tons?: number; density?: number; amount: number; color: string;
   yoyVolume?: number; yoySales?: number; momVolume?: number; momSales?: number;
+  latestMonthMass?: number; latestMonthTons?: number;
 }
 
 interface DailyData {
-  date: string; volume: number; amount: number;
+  date: string; volume: number; mass?: number; tons?: number; amount: number;
   cashSales?: number; cardSales?: number;
 }
 
@@ -29,7 +30,7 @@ interface MonthlySummary {
 }
 
 interface RegionData {
-  amount: number; volume: number; cash: number; card: number; bonus: number;
+  amount: number; volume: number; mass?: number; tons?: number; cash: number; card: number; bonus: number;
   stationCount: number; activeCount: number;
   momSales?: number; momVolume?: number; yoySales?: number; yoyVolume?: number;
 }
@@ -76,7 +77,7 @@ export interface DailyDataResponse {
 export interface ResourceYearlyData {
   year: number; month: number;
   resources: ResourceData[];
-  summary: { totalVolume: number; totalAmount: number; resourceCount: number };
+  summary: { totalVolume: number; totalTons?: number; totalAmount: number; resourceCount: number };
 }
 
 export async function getDashboardYearly(year: number) {
@@ -156,6 +157,8 @@ export interface SelfUseRecord {
   resourceKey: number;
   productName: string;
   volume: number;
+  mass?: number;
+  density?: number;
   amount: number;
   plateNumber: string;
 }
@@ -165,6 +168,8 @@ export interface SelfUseData {
   records: SelfUseRecord[];
   summary: {
     totalVolume: number;
+    totalWeightKg?: number;
+    totalTons?: number;
     totalAmount: number;
     totalRecords: number;
   };
@@ -181,6 +186,9 @@ export interface SelfUseRangeData {
   records: SelfUseRecord[];
   summary: {
     totalVolume: number;
+    totalWeightKg?: number;
+    totalTons?: number;
+    totalAmount?: number;
     totalRecords: number;
   };
 }
