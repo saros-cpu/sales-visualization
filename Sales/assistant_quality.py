@@ -16,13 +16,17 @@ ROUTE_PERMISSION_MAP: dict[str, tuple[str, ...]] = {
     "station_trend_anomaly": ("retail:view",),
     "station_data_check": ("retail:view",),
     "station_status": ("retail:view",),
+    "dashboard_summary": ("dashboard:view",),
+    "map_location": ("map:view",),
     "self_use_summary": ("retail:view",),
     "wholesale_summary": ("wholesale:view",),
     "wholesale_review": ("wholesale:view",),
+    "train_entry_summary": ("train_entry:view",),
     "combined_summary": ("dashboard:view",),
     "exchange_summary": ("exchange:view",),
     "market_summary": ("exchange:view",),
     "density_summary": ("retail:view",),
+    "retail_alert_summary": ("retail:view",),
     "accounting_report_status": ("retail:view",),
     "contract_summary": ("contracts:view",),
     "procurement_summary": ("procurement:view",),
@@ -36,25 +40,30 @@ ROUTE_PERMISSION_MAP: dict[str, tuple[str, ...]] = {
     "alias_summary": ("aliases:view",),
     "user_permission_summary": ("users:view",),
     "settings_summary": ("settings:view",),
+    "report_center_summary": ("retail:export", "wholesale:export"),
     "compound_query": ("dashboard:view",),
 }
 
 SUMMARY_ROUTES = {
     "retail_summary",
+    "dashboard_summary",
     "self_use_summary",
     "wholesale_summary",
+    "train_entry_summary",
     "combined_summary",
     "procurement_summary",
     "weighing_summary",
     "materials_summary",
     "material_transfer_summary",
     "transfer_loss_summary",
+    "retail_alert_summary",
     "system_health_summary",
     "knowledge_summary",
     "audit_log_summary",
     "alias_summary",
     "user_permission_summary",
     "settings_summary",
+    "report_center_summary",
 }
 
 CHART_CAPABLE_ROUTES = {
@@ -66,8 +75,10 @@ CHART_CAPABLE_ROUTES = {
     "retail_inventory",
     "retail_kpi",
     "station_trend_anomaly",
+    "dashboard_summary",
     "self_use_summary",
     "wholesale_summary",
+    "train_entry_summary",
     "combined_summary",
     "exchange_summary",
     "density_summary",
@@ -76,6 +87,7 @@ CHART_CAPABLE_ROUTES = {
     "materials_summary",
     "material_transfer_summary",
     "transfer_loss_summary",
+    "retail_alert_summary",
     "compound_query",
 }
 
@@ -162,13 +174,25 @@ def _station_entity_allowed(user_context: dict[str, Any] | None, plan: dict[str,
     module_key = route_module(plan)
     if ((user_context or {}).get("dataScopes") or {}).get(module_key) != "custom":
         return True
-    station = (plan.get("entities") or {}).get("station") if isinstance(plan.get("entities"), dict) else None
-    if not isinstance(station, dict):
+    entities = plan.get("entities") if isinstance(plan.get("entities"), dict) else {}
+    scoped_entities = [
+        entity for key in ("station", "depot")
+        if isinstance((entity := entities.get(key)), dict)
+    ]
+    if not scoped_entities:
         return True
     ids, labels = _custom_resource_sets(user_context, module_key, ("station", "depot"))
-    candidates = {str(station.get("shopKey") or ""), str(station.get("stationNo") or ""), str(station.get("id") or "")}
-    label_candidates = {str(station.get("name") or ""), str(station.get("short") or "")}
-    return bool((ids and candidates.intersection(ids)) or (labels and label_candidates.intersection(labels)))
+    for entity in scoped_entities:
+        candidates = {
+            str(entity.get("shopKey") or ""),
+            str(entity.get("stationNo") or ""),
+            str(entity.get("id") or ""),
+            str(entity.get("name") or ""),
+        }
+        label_candidates = {str(entity.get("name") or ""), str(entity.get("short") or "")}
+        if not ((ids and candidates.intersection(ids)) or (labels and label_candidates.intersection(labels))):
+            return False
+    return True
 
 
 def has_required_permission(user_context: dict[str, Any] | None, plan: dict[str, Any] | None) -> bool:

@@ -460,6 +460,49 @@ class AssistantQueryPlanTests(unittest.TestCase):
         self.assertEqual(plan["period"]["start"], "2026-01-01")
         self.assertEqual(plan["period"]["endExclusive"], "2026-07-23")
 
+    def test_current_year_station_volume_ranking(self):
+        plan = build_assistant_query_plan("今年加油站销量排行", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "retail_ranking")
+        self.assertEqual(plan["domain"], "retail")
+        self.assertEqual(plan["metric"], "volume")
+        self.assertIn("station", plan["dimensions"])
+        self.assertFalse(plan["needsClarification"])
+        self.assertEqual(plan["period"]["start"], "2026-01-01")
+
+    def test_station_location_routes_to_map_location(self):
+        plan = build_assistant_query_plan("2号站位置在哪", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "map_location")
+        self.assertEqual(plan["domain"], "map")
+        self.assertIn("station", plan["dimensions"])
+        self.assertEqual(plan["entities"]["station"]["shopKey"], 2)
+        self.assertFalse(plan["needsClarification"])
+        codes = {item["code"]: item["status"] for item in plan["selfCheck"]["checks"]}
+        self.assertEqual(codes["period_not_required"], "pass")
+
+    def test_depot_location_routes_to_map_location(self):
+        plan = build_assistant_query_plan("DemoDepotNorth在哪里", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "map_location")
+        self.assertEqual(plan["domain"], "map")
+        self.assertIn("depot", plan["dimensions"])
+        self.assertEqual(plan["entities"]["depot"]["name"], "DemoDepotNorth")
+        self.assertFalse(plan["needsClarification"])
+
+    def test_facility_count_routes_to_map_location(self):
+        plan = build_assistant_query_plan("现在有多少个在营站？多少个油库", today=date(2026, 7, 22))
+
+        self.assertEqual(plan["route"], "map_location")
+        self.assertEqual(plan["domain"], "map")
+        self.assertEqual(plan["intent"], "count")
+        self.assertEqual(plan["metric"], "count")
+        self.assertIn("station", plan["dimensions"])
+        self.assertIn("depot", plan["dimensions"])
+        self.assertFalse(plan["needsClarification"])
+        codes = {item["code"]: item["status"] for item in plan["selfCheck"]["checks"]}
+        self.assertEqual(codes["period_not_required"], "pass")
+
     def test_self_use_questions_route_to_self_use_domain(self):
         plan = build_assistant_query_plan("去年自用油数据", today=date(2026, 7, 22))
 

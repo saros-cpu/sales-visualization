@@ -126,6 +126,27 @@ class AssistantQualityTests(unittest.TestCase):
         self.assertTrue(has_required_permission(scoped_user, allowed_plan))
         self.assertFalse(has_required_permission(scoped_user, denied_plan))
 
+    def test_map_location_uses_map_permission_and_depot_scope(self):
+        station_plan = build_assistant_query_plan("2号站位置在哪", today=TODAY)
+        depot_plan = build_assistant_query_plan("DemoDepotNorth在哪里", today=TODAY)
+        retail_only = {"user": {"id": 4, "role": "viewer"}, "permissionCodes": ["retail:view"]}
+        scoped_map_user = {
+            "user": {"id": 5, "role": "viewer"},
+            "permissionCodes": ["map:view"],
+            "dataScopes": {"map": "custom"},
+            "dataScopeResources": {"map": {"depot": [{"id": "DemoDepotNorth", "label": "DemoDepotNorth"}]}},
+        }
+        denied_map_user = {
+            "user": {"id": 6, "role": "viewer"},
+            "permissionCodes": ["map:view"],
+            "dataScopes": {"map": "custom"},
+            "dataScopeResources": {"map": {"depot": [{"id": "DemoDepotSouth", "label": "DemoDepotSouth"}]}},
+        }
+
+        self.assertFalse(has_required_permission(retail_only, station_plan))
+        self.assertTrue(has_required_permission(scoped_map_user, depot_plan))
+        self.assertFalse(has_required_permission(denied_map_user, depot_plan))
+
     def test_query_spec_exposes_custom_data_scope(self):
         plan = build_assistant_query_plan("今年零售数据", today=TODAY)
         scoped_user = {

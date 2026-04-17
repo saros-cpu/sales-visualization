@@ -52,6 +52,10 @@ class AssistantBusinessEvalTests(unittest.TestCase):
                     station = (plan.get("entities") or {}).get("station") or {}
                     self.assertEqual(station.get("shopKey"), expected["station"])
 
+                if "depot" in expected:
+                    depot = (plan.get("entities") or {}).get("depot") or {}
+                    self.assertEqual(depot.get("name"), expected["depot"])
+
                 period = plan.get("period") or {}
                 if "periodStart" in expected:
                     self.assertEqual(period.get("start"), expected["periodStart"])

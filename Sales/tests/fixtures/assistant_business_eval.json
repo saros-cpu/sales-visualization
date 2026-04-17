@@ -148,8 +148,8 @@
     "id": "train_entry_export",
     "question": "火车外运录入数据",
     "expected": {
-      "route": "wholesale_summary",
-      "domain": "wholesale",
+      "route": "train_entry_summary",
+      "domain": "train_entry",
       "needsClarification": false
     }
   },
@@ -456,6 +456,140 @@
       "periodStart": "2026-07-01",
       "needsClarification": true,
       "missing": ["dimension"]
+    }
+  },
+  {
+    "id": "retail_station_volume_rank_ytd",
+    "question": "今年加油站销量排行",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "intent": "ranking",
+      "metric": "volume",
+      "periodStart": "2026-01-01",
+      "dimensions": ["station"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "map_station_location",
+    "question": "2号站位置在哪",
+    "expected": {
+      "route": "map_location",
+      "domain": "map",
+      "intent": "location",
+      "dimensions": ["station"],
+      "station": 2,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "map_depot_locations",
+    "question": "油库位置在哪",
+    "expected": {
+      "route": "map_location",
+      "domain": "map",
+      "intent": "location",
+      "dimensions": ["depot"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "map_north_depot_location",
+    "question": "DemoDepotNorth在哪里",
+    "expected": {
+      "route": "map_location",
+      "domain": "map",
+      "intent": "location",
+      "dimensions": ["depot"],
+      "depot": "DemoDepotNorth",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "map_facility_count",
+    "question": "现在有多少个在营站？多少个油库",
+    "expected": {
+      "route": "map_location",
+      "domain": "map",
+      "intent": "count",
+      "metric": "count",
+      "dimensions": ["station", "depot"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "dashboard_core_kpis",
+    "question": "首页驾驶舱现在显示哪些核心指标",
+    "expected": {
+      "route": "dashboard_summary",
+      "domain": "dashboard",
+      "metric": "status",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_alert_page",
+    "question": "零售预警有哪些站点异常",
+    "expected": {
+      "route": "retail_alert_summary",
+      "domain": "retail_alert",
+      "intent": "status",
+      "metric": "count",
+      "dimensions": ["station", "status"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "station_open_status",
+    "question": "14号站现在营业吗",
+    "expected": {
+      "route": "station_status",
+      "domain": "retail",
+      "intent": "status",
+      "dimensions": ["station"],
+      "station": 14,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "report_center_catalog",
+    "question": "报表中心有哪些报表",
+    "expected": {
+      "route": "report_center_summary",
+      "domain": "reports",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "report_retail_exports",
+    "question": "零售日报可以导出哪些文件",
+    "expected": {
+      "route": "report_center_summary",
+      "domain": "reports",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "train_entry_today_records",
+    "question": "火车外运录入今天有哪些记录",
+    "expected": {
+      "route": "train_entry_summary",
+      "domain": "train_entry",
+      "periodStart": "2026-07-22",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "settings_client_version",
+    "question": "当前客户端版本是多少",
+    "expected": {
+      "route": "settings_summary",
+      "domain": "settings",
+      "metric": "status",
+      "needsClarification": false
     }
   },
   {

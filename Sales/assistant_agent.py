@@ -32,6 +32,13 @@ ACTION_PATTERNS = (
 )
 
 
+READ_ONLY_ACTION_QUESTION_PATTERNS = (
+    r"(可以|能|能够|支持).{0,12}(导出|下载).{0,12}(哪些|什么|列表|文件|报表)",
+    r"(有哪些|哪些|什么).{0,12}(可以|可|能|支持).{0,8}(导出|下载)",
+    r"(导出|下载).{0,8}(哪些|什么).{0,8}(文件|报表|内容)",
+)
+
+
 STRICT_ACTION_PATTERNS = (
     r"(帮我|请|替我|给我|直接|立刻|马上|把).{0,16}(修改|删除|新增|创建|保存|提交|导入|导出|刷新|重启|执行|运行|写入|生成文件|下载)",
     r"(帮我|请|替我|给我|直接|立刻|马上|把).{0,20}(改|调整|设置).{0,20}(数据|合同|文件|账号|权限|用户|记录|缓存)",
@@ -58,6 +65,8 @@ def detect_language(question: str | None, fallback: str | None = None) -> str:
 
 def is_action_request(question: str | None) -> bool:
     text = (question or "").strip().lower()
+    if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in READ_ONLY_ACTION_QUESTION_PATTERNS):
+        return False
     patterns = (*ACTION_PATTERNS, *STRICT_ACTION_PATTERNS)
     return bool(text) and any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 

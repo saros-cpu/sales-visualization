@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from functools import wraps
 import html
+import importlib.util
 import json
 import logging
 import os
@@ -62,6 +63,14 @@ _ASSISTANT_DATE_PATTERN = (
     r"(\d{1,2})\s*(?:日|号)?"
 )
 _ASSISTANT_RANGE_PATTERN = r"(?:至|到|--?|—|~|～)"
+_ASSISTANT_LOCATION_SIGNAL_WORDS = (
+    "位置", "位置信息", "在哪", "在哪里", "在哪儿", "哪里", "坐标", "经纬度", "地点", "地址",
+)
+_ASSISTANT_COUNT_SIGNAL_WORDS = ("多少", "多少个", "几个", "几家", "数量", "个数", "总数", "共有", "总共")
+_ASSISTANT_ACTIVE_STATION_WORDS = ("在营站", "在营加油站", "营业站", "正常营业站", "运营站", "营运站", "开业站")
+_ASSISTANT_MAP_OBJECT_WORDS = (
+    "地图", "加油站", "站点", "油站", "油库", "仓库", "库区", "库点", *_ASSISTANT_ACTIVE_STATION_WORDS,
+)
 _ASSISTANT_TOOL_CATALOG = {
     "retail_summary": {
         "name": "retail_summary",
@@ -99,6 +108,18 @@ _ASSISTANT_TOOL_CATALOG = {
         "readOnly": True,
         "dataSource": "station_status_catalog",
     },
+    "dashboard_summary": {
+        "name": "dashboard_summary",
+        "description": "数据驾驶舱指标、组件和看板只读摘要",
+        "readOnly": True,
+        "dataSource": "dashboard_cockpit",
+    },
+    "map_location": {
+        "name": "map_location",
+        "description": "加油站和油库地图位置、区域、经纬度查询",
+        "readOnly": True,
+        "dataSource": "map_station_depot_coordinates",
+    },
     "accounting_report_status": {
         "name": "accounting_report_status",
         "description": "吉方财务交接日报生成和缺站状态",
@@ -116,6 +137,12 @@ _ASSISTANT_TOOL_CATALOG = {
         "description": "批发复核异常提示",
         "readOnly": True,
         "dataSource": "wholesale_snapshots",
+    },
+    "train_entry_summary": {
+        "name": "train_entry_summary",
+        "description": "火车入库/外运录入只读汇总",
+        "readOnly": True,
+        "dataSource": "train_entry",
     },
     "combined_summary": {
         "name": "combined_summary",
@@ -176,6 +203,12 @@ _ASSISTANT_TOOL_CATALOG = {
         "description": "零售年度 KPI 查询",
         "readOnly": True,
         "dataSource": "retail_kpi_snapshots",
+    },
+    "retail_alert_summary": {
+        "name": "retail_alert_summary",
+        "description": "零售预警、趋势异常、停业站点和运营建议摘要",
+        "readOnly": True,
+        "dataSource": "retail_alert_insights",
     },
     "self_use_summary": {
         "name": "self_use_summary",
@@ -249,6 +282,12 @@ _ASSISTANT_TOOL_CATALOG = {
         "readOnly": True,
         "dataSource": "runtime_settings",
     },
+    "report_center_summary": {
+        "name": "report_center_summary",
+        "description": "报表中心可下载报表、权限和只读口径说明",
+        "readOnly": True,
+        "dataSource": "report_center_exports",
+    },
     "compound_query": {
         "name": "compound_query",
         "description": "复合自然语言问题拆解与只读工具编排",
@@ -268,6 +307,81 @@ def assistant_tool_catalog():
         }
         for key, value in sorted(_ASSISTANT_TOOL_CATALOG.items())
     }
+
+
+def _assistant_oilstation_constants_cached():
+    if not hasattr(_assistant_oilstation_constants_cached, "_module"):
+        spec = importlib.util.spec_from_file_location(
+            "sales_assistant_oilstation_constants",
+            OILSTATION_ROOT / "constants.py",
+        )
+        if not spec or not spec.loader:
+            raise RuntimeError("OilStation constants module is unavailable")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _assistant_oilstation_constants_cached._module = module
+    return _assistant_oilstation_constants_cached._module
+
+
+def _assistant_station_coords_cached():
+    try:
+        coords = getattr(_assistant_oilstation_constants_cached(), "SHOP_COORDS", {})
+    except Exception:
+        coords = {}
+    result = {}
+    for shop_key, item in (coords or {}).items():
+        try:
+            result[int(shop_key)] = {
+                "lng": float((item or {}).get("lng") or 0),
+                "lat": float((item or {}).get("lat") or 0),
+            }
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def _assistant_depot_catalog_cached():
+    if not hasattr(_assistant_depot_catalog_cached, "_cache"):
+        try:
+            raw = getattr(_assistant_oilstation_constants_cached(), "DEPOT_COORDS", {})
+        except Exception:
+            raw = {}
+        depots = {}
+        for name, item in (raw or {}).items():
+            info = item or {}
+            depots[str(name)] = {
+                "name": str(name),
+                "short": str(info.get("short") or ""),
+                "region": str(info.get("region") or ""),
+                "lng": float(info.get("lng") or 0),
+                "lat": float(info.get("lat") or 0),
+                "status": str(info.get("status") or "normal"),
+                "closedReason": str(info.get("closedReason") or ""),
+                "type": "depot",
+            }
+        _assistant_depot_catalog_cached._cache = depots
+    return _assistant_depot_catalog_cached._cache
+
+
+def _assistant_depot_from_text(text):
+    folded = str(text or "").casefold()
+    depots = _assistant_depot_catalog_cached()
+    for name, item in depots.items():
+        aliases = [
+            str(name).strip(),
+            str(item.get("short") or "").strip(),
+        ]
+        if name.startswith("北方"):
+            aliases.extend(["DemoDepotNorth", "北油库"])
+        if name.startswith("南方"):
+            aliases.extend(["DemoDepotSouth", "南油库"])
+        if any(alias and alias.casefold() in folded for alias in aliases):
+            return dict(item)
+    return None
+
+
+def _assistant_location_requested(text):
+    return _assistant_contains_any(text, _ASSISTANT_LOCATION_SIGNAL_WORDS)
 
 
 _ASSISTANT_FOLLOWUP_WORDS = (
@@ -312,9 +426,13 @@ _ASSISTANT_METRIC_WORDS = (
 )
 _ASSISTANT_BUSINESS_LEXICON = {
     "domains": {
+        "dashboard": ("驾驶舱", "数据驾驶舱", "可视化驾驶舱", "数据可视化", "首页", "首页看板", "核心指标", "指标卡", "KPI卡片", "看板"),
         "self_use": ("自用油", "自用油数据", "自用油量", "自用", "内部用油", "公司用油", "公司自用油"),
         "retail": ("零售", "加油站", "站点", "油站", "站里", "销售站"),
+        "retail_alert": ("零售预警", "预警摘要", "趋势异常", "库存预警", "预警规则", "运营建议", "经营建议", "异常提醒"),
         "wholesale": ("批发", "外运", "出口", "本地", "客户"),
+        "train_entry": ("火车入库", "火车录入", "火车外运录入", "火车数据", "入库录入", "入厂日期", "数据录入"),
+        "reports": ("报表中心", "报表文件", "导出报表", "导出文件", "下载报表", "月报", "年报", "日销表", "零售日报", "自用油报表", "批发报表", "批发明细"),
         "accounting": ("吉方", "交接日报", "会计日报", "财务交接", "日报缺", "缺站"),
         "combined": ("合并", "总销售", "整体", "公司", "全部业务", "经营情况"),
         "exchange": ("汇率", "美元", "人民币", "美金", "索姆/人民币"),
@@ -325,13 +443,14 @@ _ASSISTANT_BUSINESS_LEXICON = {
         "weighing": ("称重", "地磅", "过磅", "磅单", "待审核", "待复核", "审核称重"),
         "materials": ("物资", "物料", "办公用品", "物资库存", "物资入库", "调拨单"),
         "transfer_loss": ("调拨损耗", "损耗率", "损耗情况", "运输损耗", "途中损耗"),
-        "system_health": ("系统健康", "健康检查", "运行治理", "提醒中心", "告警", "自动任务", "任务状态", "服务状态"),
+        "system_health": ("系统健康", "健康检查", "运行治理", "提醒中心", "告警", "自动任务", "任务状态", "服务状态", "AI助手", "AI助手状态", "AI状态", "大模型状态"),
         "knowledge": ("知识库", "知识文章", "附件索引", "资料库", "文档库", "口径说明"),
         "audit": ("审计", "审计日志", "操作日志", "登录日志"),
         "alias": ("别名", "别名匹配", "未匹配名称", "客户别名", "油品别名"),
         "users": ("用户", "账号", "权限", "角色", "部门", "组织权限"),
-        "management": ("管理中心", "驾驶舱配置", "看板配置", "组件配置"),
-        "settings": ("设置", "系统设置", "客户端设置", "api地址", "API地址", "更新源"),
+        "management": ("管理中心", "配置中心", "驾驶舱配置", "看板配置", "组件配置", "字典项", "模板配置"),
+        "settings": ("设置", "系统设置", "客户端", "客户端设置", "客户端版本", "版本", "安装包", "api地址", "API地址", "更新源", "自动更新"),
+        "map": ("地图",),
     },
     "metrics": {
         "amount": ("金额", "销售额", "营业额", "收入", "钱", "索姆", "人民币", "元", "款"),
@@ -340,10 +459,13 @@ _ASSISTANT_BUSINESS_LEXICON = {
         "count": ("笔数", "单数", "交易数", "车次", "次数"),
     },
         "dimensions": {
-            "station": ("站点", "加油站", "哪家站", "哪个站", "各站", "站排行", "站点排行", "油站", "按站点", "分站", "站点拆分"),
+            "station": (
+                "站点", "加油站", "哪家站", "哪个站", "各站", "站排行", "站点排行",
+                "油站", "按站点", "分站", "站点拆分", *_ASSISTANT_ACTIVE_STATION_WORDS,
+            ),
             "resource": ("油品", "产品", "品类", "资源", "汽油", "柴油", "д/т", "аи", "按油品", "油品拆分"),
             "region": ("区域", "地区", "州", "各州", "按区域", "区域拆分"),
-            "customer": ("客户", "客户排行", "哪家客户", "按客户", "客户拆分"),
+            "customer": ("客户", "客户排行", "哪家客户", "按客户", "客户拆分", "去向", "客户/去向", "收货单位"),
             "supplier": ("供应商", "供货商", "发货单位"),
             "vehicle": ("车辆", "车号", "车牌"),
             "status": ("状态", "待审核", "待复核", "待审批", "告警", "异常"),
@@ -361,11 +483,16 @@ _ASSISTANT_BUSINESS_LEXICON = {
             "status": ("状态", "停业", "暂停营业", "维修", "停电", "缺站"),
             "data_availability": ("数据", "传回来", "补回来", "补传", "上传", "更新", "到了", "有没有"),
             "visualization": ("图", "图表", "趋势图", "折线图", "柱状图", "柱形图", "饼图", "环图", "可视化", "画图", "做图"),
+            "location": _ASSISTANT_LOCATION_SIGNAL_WORDS,
+            "count": _ASSISTANT_COUNT_SIGNAL_WORDS,
         },
     }
-_ASSISTANT_DOMAIN_OPTIONS = ("零售", "自用油", "批发", "合并", "吉方日报", "采购", "称重", "物资", "系统健康")
+_ASSISTANT_DOMAIN_OPTIONS = (
+    "驾驶舱", "零售", "零售预警", "自用油", "批发", "合并", "吉方日报",
+    "报表中心", "采购", "火车入库录入", "称重", "物资", "地图位置", "系统健康",
+)
 _ASSISTANT_METRIC_OPTIONS = ("销量", "销售额", "吨数")
-_ASSISTANT_RANKING_DIMENSION_OPTIONS = ("站点", "油品", "区域", "客户", "供应商", "车辆", "状态")
+_ASSISTANT_RANKING_DIMENSION_OPTIONS = ("站点", "油品", "区域", "客户", "供应商", "车辆", "油库", "状态")
 _ASSISTANT_COMPARISON_SIGNAL_WORDS = (
     "同比", "环比", "对比", "较去年", "比去年", "较上月", "比上月", "比上个月",
     "和去年", "跟去年", "与去年", "去年和今年", "今年和去年",
@@ -918,8 +1045,12 @@ def _assistant_matching_terms(text, words):
     matches = []
     for word in words:
         item = str(word)
-        if item and item.casefold() in folded:
-            matches.append(item)
+        token = item.casefold()
+        if not item or token not in folded:
+            continue
+        if token == "客户" and not re.search(r"客户(?!端)", folded):
+            continue
+        matches.append(item)
     return matches
 
 
@@ -961,9 +1092,12 @@ def _assistant_domain_from_terms(business_terms, default="retail"):
         "users",
         "management",
         "settings",
+        "dashboard",
         "transfer_loss",
         "materials",
         "procurement",
+        "train_entry",
+        "retail_alert",
     ):
         if domain_terms.get(domain_name):
             return domain_name
@@ -977,6 +1111,10 @@ def _assistant_domain_from_terms(business_terms, default="retail"):
         return "contract"
     if domain_terms.get("accounting"):
         return "accounting"
+    if domain_terms.get("reports"):
+        return "reports"
+    if domain_terms.get("map"):
+        return "map"
     if domain_terms.get("self_use"):
         return "self_use"
     if domain_terms.get("combined") and not domain_terms.get("retail"):
@@ -1092,6 +1230,20 @@ def _assistant_has_explicit_time_signal(text):
     return bool(_ASSISTANT_EXPLICIT_TIME_PATTERN.search(str(text or "")))
 
 
+def _assistant_route_requires_period(route):
+    return route not in {
+        "map_location",
+        "station_status",
+        "dashboard_summary",
+        "report_center_summary",
+        "settings_summary",
+        "user_permission_summary",
+        "alias_summary",
+        "knowledge_summary",
+        "system_health_summary",
+    }
+
+
 def _assistant_self_check(text, plan):
     checks = []
 
@@ -1115,7 +1267,9 @@ def _assistant_self_check(text, plan):
     needs_clarification = bool(plan.get("needsClarification"))
     period_label = str(period.get("label") or "")
 
-    if _assistant_has_explicit_time_signal(text):
+    if not _assistant_route_requires_period(route) and period_label == "最近7天":
+        add("period_not_required", "时间条件", "pass", "该类资料查询无需时间条件")
+    elif _assistant_has_explicit_time_signal(text):
         if period and period_label != "最近7天":
             add("period_explicit", "时间条件识别", "pass", f"已解析为 {period_label}")
         else:
@@ -1142,7 +1296,7 @@ def _assistant_self_check(text, plan):
             add("ranking_dimension", "排行维度", "fail", "问题像排行，但未选中排行工具或维度")
 
     if _assistant_contains_any(text, _ASSISTANT_TREND_SIGNAL_WORDS):
-        if route in {"retail_trend", "station_trend_anomaly", "compound_query"}:
+        if route in {"retail_trend", "station_trend_anomaly", "retail_alert_summary", "compound_query"}:
             add("trend_route", "趋势/异常工具", "pass", route)
         elif needs_clarification:
             add("trend_route", "趋势/异常工具", "warn", "趋势问题需要先澄清")
@@ -1168,7 +1322,7 @@ def _assistant_self_check(text, plan):
         else:
             add("compound_decomposition", "复合问题拆解", "fail", "复合问题没有形成足够子计划")
 
-    if explicit.get("period") is False and period_label == "最近7天":
+    if _assistant_route_requires_period(route) and explicit.get("period") is False and period_label == "最近7天":
         assumptions = plan.get("assumptions") if isinstance(plan.get("assumptions"), list) else []
         if "未明确时间时默认查询最近7天" not in assumptions:
             assumptions.append("未明确时间时默认查询最近7天")
@@ -1334,6 +1488,16 @@ def _assistant_page_hints(page_context):
     hints = {"contextUsed": []}
     if "retail" in path or module == "retail":
         hints["domain"] = "retail"
+    if path == "/" or "cockpit" in path or module == "dashboard":
+        hints["domain"] = "dashboard"
+    if "map" in path:
+        hints["domain"] = "map"
+    if "reports" in path:
+        hints["domain"] = "reports"
+    if "train-entry" in path or module == "train_entry":
+        hints["domain"] = "train_entry"
+    if "retail/alert" in path:
+        hints["domain"] = "retail_alert"
     if "wholesale" in path or module == "wholesale":
         hints["domain"] = "wholesale"
     if "contract" in path:
@@ -1501,6 +1665,14 @@ def _assistant_context_station(plan):
     return dict(station)
 
 
+def _assistant_context_depot(plan):
+    entities = plan.get("entities") if isinstance(plan, dict) else {}
+    depot = entities.get("depot") if isinstance(entities, dict) else None
+    if not isinstance(depot, dict) or not depot.get("name"):
+        return None
+    return dict(depot)
+
+
 def _assistant_period_from_plan(plan):
     period = plan.get("period") if isinstance(plan, dict) else None
     if not isinstance(period, dict):
@@ -1552,7 +1724,9 @@ def _assistant_route_for_domain(domain, previous_route="retail_summary", previou
         return "wholesale_summary", "summary"
     if domain == "self_use":
         return "self_use_summary", "summary"
-    if str(previous_route or "").startswith("retail_") or previous_route in {"station_data_check", "station_trend_anomaly", "station_status"}:
+    if domain == "map":
+        return "map_location", "location"
+    if str(previous_route or "").startswith("retail_") or previous_route in {"station_data_check", "station_trend_anomaly", "station_status", "map_location"}:
         return previous_route, previous_intent or "summary"
     return "retail_summary", "summary"
 
@@ -1577,6 +1751,7 @@ def _assistant_resolve_clarification_plan(text, previous_plan, today):
     metric = previous_plan.get("metric") if previous_plan.get("metric") in {"amount", "volume", "tons"} else "amount"
     dimensions = [str(item) for item in (previous_plan.get("dimensions") or []) if item]
     station = _assistant_station_from_text(text) or _assistant_context_station(previous_plan)
+    depot = _assistant_depot_from_text(text) or _assistant_context_depot(previous_plan)
     period = _assistant_period_from_plan(previous_plan)
     if period:
         period_label, start, end = period
@@ -1633,6 +1808,13 @@ def _assistant_resolve_clarification_plan(text, previous_plan, today):
 
     if route == "retail_ranking" and not dimensions:
         dimensions = ["station"]
+    if (
+        _assistant_location_requested(text)
+        and (station or depot or any(item in dimensions for item in ("station", "depot")))
+    ):
+        domain = "map"
+        route = "map_location"
+        intent = "location"
 
     clarification = None
     if route == "retail_ranking" and dimensions_explicit and not metric_explicit:
@@ -1648,7 +1830,7 @@ def _assistant_resolve_clarification_plan(text, previous_plan, today):
         "route": route,
         "metric": metric,
         "dimensions": dimensions,
-        "entities": {"station": station} if station else {},
+        "entities": {key: value for key, value in (("station", station), ("depot", depot)) if value},
         "period": _assistant_period_payload(period_label, start, end),
         "tool": _assistant_tool_payload(route),
         "contextUsed": list(dict.fromkeys(context_used)),
@@ -1704,6 +1886,12 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         if previous_station:
             station = previous_station
             context_used.append("station")
+    depot = _assistant_depot_from_text(text)
+    if followup and not depot:
+        previous_depot = _assistant_context_depot(previous_plan)
+        if previous_depot:
+            depot = previous_depot
+            context_used.append("depot")
     resource = None if station else _assistant_resource_from_text(text)
     if not resource and not station and (followup or _assistant_context_reference_requested(text)):
         resource = _assistant_resource_from_context(context)
@@ -1721,6 +1909,8 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     dimensions = []
     if station:
         dimensions.append("station")
+    if depot:
+        dimensions.append("depot")
     if resource:
         dimensions.append("resource")
     dimensions.extend(_assistant_dimensions_from_terms(business_terms))
@@ -1753,13 +1943,80 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     route = "retail_summary"
     intent = "summary"
 
-    status_words = ("停业", "站点状态", "异常站点", "暂停营业", "维修", "停电", "装修", "修路", "迁址")
+    status_words = (
+        "营业吗", "是否营业", "营业状态", "在营业", "在营", "开业", "恢复营业", "正常营业", "停业", "站点状态",
+        "异常站点", "暂停营业", "维修", "停电", "装修", "修路", "迁址",
+    )
     data_recovery_words = ("数据", "传回来", "补回来", "回来", "补传", "上传", "更新", "到了", "有没有")
     trend_words = ("趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常")
     comparison_words = _ASSISTANT_COMPARISON_SIGNAL_WORDS
     ranking_words = _ASSISTANT_RANKING_SIGNAL_WORDS
+    location_object_requested = (
+        bool(station or depot)
+        or any(item in dimensions for item in ("station", "depot"))
+        or _assistant_contains_any(text, _ASSISTANT_MAP_OBJECT_WORDS)
+    )
+    facility_count_requested = (
+        _assistant_contains_any(text, _ASSISTANT_COUNT_SIGNAL_WORDS)
+        and location_object_requested
+        and not explicit_metric
+        and not _assistant_contains_any(text, (
+            "经营", "销售", "销量", "销售额", "营业额", "金额", "升", "升数", "吨", "吨数", "吨位",
+            "油量", "数据", "统计", "排行", "排名", "趋势", "库存", "价格", "KPI", "kpi", "自用油", "批发",
+        ))
+    )
+    location_requested = (
+        _assistant_location_requested(text)
+        or facility_count_requested
+        or (
+            domain == "map"
+            and _assistant_contains_any(text, ("有哪些", "都有哪些", "列表", "点位", "分布", "地图"))
+            and not _assistant_contains_any(text, ("经营", "销售", "销量", "销售额", "营业额", "数据", "情况", "统计", "排行", "趋势"))
+            and not explicit_metric
+            and not _assistant_contains_any(text, (*ranking_words, *trend_words, *comparison_words))
+        )
+    ) and location_object_requested
+    if domain == "map" and not location_requested:
+        domain = "retail"
 
-    if domain in {"market", "exchange", "density", "contract"}:
+    if location_requested:
+        domain = "map"
+        route = "map_location"
+        intent = "count" if facility_count_requested else "location"
+        if not explicit_metric:
+            metric = "count" if facility_count_requested else "status"
+        if station and "station" not in dimensions:
+            dimensions.append("station")
+        if depot and "depot" not in dimensions:
+            dimensions.append("depot")
+        if not any(item in dimensions for item in ("station", "depot")):
+            if _assistant_contains_any(text, ("油库", "仓库", "库区", "库点")):
+                dimensions.append("depot")
+            if _assistant_contains_any(text, ("加油站", "站点", "油站", *_ASSISTANT_ACTIVE_STATION_WORDS)):
+                dimensions.append("station")
+        if not any(item in dimensions for item in ("station", "depot")):
+            dimensions.extend(["station", "depot"])
+    elif domain == "dashboard":
+        route = "dashboard_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "status"
+    elif domain == "reports":
+        route = "report_center_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "count"
+    elif domain == "train_entry":
+        route = "train_entry_summary"
+        intent = "summary"
+        if not explicit_metric:
+            metric = "tons" if _assistant_contains_any(text, ("吨", "重量", "净重", "入库量", "外运量")) else "count"
+    elif domain == "retail_alert":
+        route = "retail_alert_summary"
+        intent = "status"
+        if not explicit_metric:
+            metric = "count"
+    elif domain in {"market", "exchange", "density", "contract"}:
         route = f"{domain}_summary"
         intent = "summary"
     elif domain == "procurement":
@@ -1845,9 +2102,13 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     elif station and _assistant_contains_any(text, status_words) and _assistant_contains_any(text, data_recovery_words):
         route = "station_data_check"
         intent = "data_availability"
+        if not explicit_metric:
+            metric = "status"
     elif _assistant_contains_any(text, status_words):
         route = "station_status"
         intent = "status"
+        if not explicit_metric:
+            metric = "status"
     elif _assistant_contains_any(text, ("库存", "期末")):
         route = "retail_inventory"
         intent = "inventory"
@@ -1946,7 +2207,7 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         "route": route,
         "metric": metric,
         "dimensions": dimensions,
-        "entities": {key: value for key, value in (("station", station), ("resource", resource)) if value},
+        "entities": {key: value for key, value in (("station", station), ("resource", resource), ("depot", depot)) if value},
         "period": _assistant_period_payload(period_label, start, end),
         "tool": _assistant_tool_payload(route),
         "contextUsed": list(dict.fromkeys(context_used)),
@@ -2812,7 +3073,7 @@ def register_assistant_routes(app):
                 ["站点", "区域", "销量", "吨位", "销售金额"],
                 [
                     [item.get("name") or "--", item.get("region") or "--", _fmt_volume(item.get("volume")), _fmt_tons(item.get("tons")), _fmt_amount(item.get("amount"), "索姆")]
-                    for item in payload.get("stations", [])[:12]
+                    for item in payload.get("stations", [])
                 ],
             ))
         if _assistant_has_any(question, ("区域", "州", "地区")) and payload.get("regions"):
@@ -3383,6 +3644,429 @@ def register_assistant_routes(app):
             if end == next_month:
                 return start.year, start.month
         return start.year, start.month if start.year == end.year and start.month == end.month else None
+
+
+    def _assistant_plain_number(value, precision=2):
+        try:
+            numeric = float(value or 0)
+        except (TypeError, ValueError):
+            return str(value or "--")
+        if abs(numeric - round(numeric)) < 0.000001:
+            return f"{int(round(numeric)):,}"
+        return f"{numeric:,.{precision}f}"
+
+
+    def _assistant_json_loads(value, fallback):
+        if value in (None, ""):
+            return fallback
+        if isinstance(value, (dict, list)):
+            return value
+        try:
+            return json.loads(str(value))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return fallback
+
+
+    def _assistant_dashboard_data(start, end):
+        year, month = _assistant_year_month_from_period(start, end)
+        year = year or start.year
+        month = month or start.month
+        try:
+            from api_v2.management import public_kpi_catalog, component_catalog, _metric_values_and_component_data
+        except Exception as exc:
+            return {"summary": {"error": str(exc)}, "kpis": [], "components": [], "componentData": {}}
+        catalog = public_kpi_catalog()
+        components = component_catalog()
+        metrics = {}
+        component_data = {}
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                metrics, component_data = _metric_values_and_component_data(cur, year, month)
+        except Exception as exc:
+            return {
+                "summary": {"year": year, "month": month, "error": str(exc)},
+                "kpis": [
+                    {
+                        "key": item.get("key"),
+                        "title": item.get("titleZh") or item.get("key"),
+                        "unit": item.get("unit") or "",
+                        "group": item.get("group") or "",
+                        "periodScope": item.get("periodScope") or "latest",
+                    }
+                    for item in catalog
+                ],
+                "components": components,
+                "componentData": {},
+            }
+        finally:
+            conn.close()
+
+        kpis = []
+        for item in catalog:
+            key = item.get("key")
+            value = metrics.get(key) or {}
+            kpis.append({
+                "key": key,
+                "title": item.get("titleZh") or key,
+                "unit": item.get("unit") or "",
+                "group": item.get("group") or "",
+                "periodScope": item.get("periodScope") or "latest",
+                "value": value.get("value"),
+                "secondaryValue": value.get("secondaryValue"),
+                "secondaryUnit": value.get("secondaryUnit"),
+                "updatedAt": value.get("updatedAt"),
+            })
+        return {
+            "summary": {"year": year, "month": month, "kpiCount": len(kpis), "componentCount": len(components)},
+            "kpis": kpis,
+            "components": components,
+            "componentData": component_data,
+        }
+
+
+    def _assistant_dashboard_answer(data):
+        summary = data.get("summary") or {}
+        if summary.get("error"):
+            return f"驾驶舱配置目录可以读取，但实时指标查询失败：{summary.get('error')}"
+        lines = [
+            f"数据驾驶舱当前包含 {int(summary.get('kpiCount') or 0)} 个 KPI 指标、{int(summary.get('componentCount') or 0)} 个组件定义。",
+            f"当前口径按 {summary.get('year')}-{int(summary.get('month') or 0):02d} 和年度快照汇总，具体指标见表格。",
+        ]
+        focus_keys = {
+            "retail_sales_amount", "retail_volume_liters", "yearly_wholesale_tons",
+            "yearly_procurement_tons", "contract_active", "train_entry_today_rows",
+            "automation_failed",
+        }
+        focus = [item for item in data.get("kpis") or [] if item.get("key") in focus_keys]
+        if focus:
+            lines.append("主要指标：" + "；".join(
+                f"{item.get('title')} {_assistant_plain_number(item.get('value'), 3)}{item.get('unit') or ''}"
+                for item in focus[:7]
+            ))
+        return "\n".join(lines)
+
+
+    def _assistant_dashboard_tables(data):
+        kpi_rows = []
+        for item in data.get("kpis") or []:
+            value = _assistant_plain_number(item.get("value"), 3)
+            secondary = ""
+            if item.get("secondaryValue") is not None:
+                secondary = f"{_assistant_plain_number(item.get('secondaryValue'), 3)}{item.get('secondaryUnit') or ''}"
+            kpi_rows.append([
+                item.get("title") or item.get("key") or "--",
+                value,
+                item.get("unit") or "",
+                secondary or "--",
+                item.get("group") or "--",
+                item.get("periodScope") or "latest",
+            ])
+        component_rows = [
+            [
+                item.get("titleZh") or item.get("key") or "--",
+                item.get("type") or "--",
+                item.get("group") or "--",
+                item.get("periodScope") or "--",
+                item.get("permissionCode") or "--",
+            ]
+            for item in data.get("components") or []
+        ]
+        tables = []
+        if kpi_rows:
+            tables.append(_assistant_table("驾驶舱KPI指标", ["指标", "数值", "单位", "辅助值", "分组", "周期"], kpi_rows))
+        if component_rows:
+            tables.append(_assistant_table("驾驶舱组件目录", ["组件", "类型", "分组", "周期", "权限"], component_rows))
+        return tables
+
+
+    def _assistant_report_center_data():
+        reports = [
+            ["零售月报", "月度", "retail:export", "按年月下载零售月报"],
+            ["零售年报", "年度", "retail:export", "按年份下载零售年报"],
+            ["批发月报", "月度", "wholesale:export", "按年月下载批发汇总报表"],
+            ["零售月度Excel", "月度", "retail:export", "导出零售月度Excel明细"],
+            ["零售区间日报", "日期区间", "retail:export", "按起止日期导出零售日报/区间报表"],
+            ["自用油区间报表", "日期区间", "retail:export", "按原报表24口径导出自用油"],
+            ["批发明细", "月度", "wholesale:export", "按年月下载批发明细"],
+        ]
+        return {"reports": reports, "readOnly": True}
+
+
+    def _assistant_report_center_answer(data):
+        reports = data.get("reports") or []
+        return (
+            f"报表中心当前有 {len(reports)} 类可下载报表。我可以说明报表类型、时间参数和权限要求，"
+            "但 AI 助手不会直接触发下载、导出或生成写操作。"
+        )
+
+
+    def _assistant_report_center_tables(data):
+        return [_assistant_table("报表中心目录", ["报表", "时间口径", "权限", "说明"], data.get("reports") or [])]
+
+
+    def _assistant_train_entry_classification(record):
+        sender = str(record.get("sender_name") or record.get("senderName") or "").strip()
+        receiver = str(record.get("receiver_name") or record.get("receiverName") or "").strip()
+        text = f"{sender} {receiver}"
+        internal_words = ("油库", "加油站", "仓库", "ProductTeam", "物流管理部", "CUSTOMER-S-АББР", "Example")
+        sender_internal = any(word in sender for word in internal_words)
+        receiver_internal = any(word in receiver for word in internal_words)
+        if sender_internal and receiver_internal:
+            return "外运"
+        if re.search(r"供应|采购|炼厂|завод|постав", text, flags=re.IGNORECASE):
+            return "采购"
+        if re.search(r"客户|出口|销售|покуп|client", text, flags=re.IGNORECASE):
+            return "批发"
+        return "待确认"
+
+
+    def _assistant_train_entry_data(start, end):
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                if not _assistant_table_exists(cur, "train_entry"):
+                    return {"summary": {"records": 0, "tons": 0.0}, "products": [], "classifications": [], "recent": [], "sourceError": "train_entry table missing"}
+                weigh_no_expr = "weigh_no" if _assistant_column_exists(cur, "train_entry", "weigh_no") else "'' AS weigh_no"
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS records,
+                           COALESCE(SUM(weight_kg), 0) / 1000 AS tons,
+                           COUNT(DISTINCT NULLIF(vehicle_no, '')) AS vehicles,
+                           COUNT(DISTINCT NULLIF(sender_name, '')) AS senders,
+                           COUNT(DISTINCT NULLIF(receiver_name, '')) AS receivers
+                    FROM train_entry
+                    WHERE entry_date >= %s AND entry_date < %s
+                    """,
+                    (start, end),
+                )
+                summary = dict(cur.fetchone() or {})
+                cur.execute(
+                    """
+                    SELECT COALESCE(NULLIF(product_name, ''), '--') AS name,
+                           COUNT(*) AS records,
+                           COALESCE(SUM(weight_kg), 0) / 1000 AS tons
+                    FROM train_entry
+                    WHERE entry_date >= %s AND entry_date < %s
+                    GROUP BY COALESCE(NULLIF(product_name, ''), '--')
+                    ORDER BY tons DESC, records DESC
+                    LIMIT 12
+                    """,
+                    (start, end),
+                )
+                products = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    f"""
+                    SELECT id, entry_date, product_name, {weigh_no_expr}, sender_name, receiver_name,
+                           vehicle_no, weight_kg, remark, created_at
+                    FROM train_entry
+                    WHERE entry_date >= %s AND entry_date < %s
+                    ORDER BY entry_date DESC, created_at DESC, id DESC
+                    LIMIT 20
+                    """,
+                    (start, end),
+                )
+                recent = [dict(row) for row in cur.fetchall()]
+                classification_map = {}
+                for item in recent:
+                    key = _assistant_train_entry_classification(item)
+                    bucket = classification_map.setdefault(key, {"name": key, "records": 0, "tons": 0.0})
+                    bucket["records"] += 1
+                    bucket["tons"] += float(item.get("weight_kg") or 0) / 1000
+                classifications = sorted(classification_map.values(), key=lambda item: item["tons"], reverse=True)
+                return {"summary": summary, "products": products, "classifications": classifications, "recent": recent}
+        finally:
+            conn.close()
+
+
+    def _assistant_train_entry_answer(label, data):
+        summary = data.get("summary") or {}
+        lines = [f"{label}火车入库/外运录入数据如下："]
+        lines.append(
+            f"合计 {int(summary.get('records') or 0)} 条，重量 {float(summary.get('tons') or 0):,.3f} 吨，"
+            f"车辆 {int(summary.get('vehicles') or 0)} 辆，发货单位 {int(summary.get('senders') or 0)} 个，收货单位 {int(summary.get('receivers') or 0)} 个。"
+        )
+        if data.get("products"):
+            lines.append("油品录入排行：" + "；".join(
+                f"{item.get('name') or '--'} {float(item.get('tons') or 0):,.3f} 吨"
+                for item in data["products"][:5]
+            ))
+        if data.get("sourceError"):
+            lines.append(f"数据读取提示：{data.get('sourceError')}")
+        return "\n".join(lines)
+
+
+    def _assistant_train_entry_tables(label, data):
+        summary = data.get("summary") or {}
+        tables = [_assistant_table(
+            f"{label}火车录入汇总",
+            ["指标", "数值"],
+            [
+                ["记录数", int(summary.get("records") or 0)],
+                ["重量(吨)", f"{float(summary.get('tons') or 0):,.3f}"],
+                ["车辆数", int(summary.get("vehicles") or 0)],
+                ["发货单位数", int(summary.get("senders") or 0)],
+                ["收货单位数", int(summary.get("receivers") or 0)],
+            ],
+        )]
+        if data.get("products"):
+            tables.append(_assistant_table(
+                f"{label}油品录入排行",
+                ["油品", "吨数", "记录数"],
+                [[item.get("name") or "--", f"{float(item.get('tons') or 0):,.3f}", int(item.get("records") or 0)] for item in data["products"]],
+            ))
+        if data.get("classifications"):
+            tables.append(_assistant_table(
+                f"{label}识别类型",
+                ["类型", "吨数", "记录数"],
+                [[item.get("name") or "--", f"{float(item.get('tons') or 0):,.3f}", int(item.get("records") or 0)] for item in data["classifications"]],
+            ))
+        if data.get("recent"):
+            tables.append(_assistant_table(
+                f"{label}近期录入明细",
+                ["日期", "车号", "发货单位", "收货单位", "油品", "吨数", "磅单号"],
+                [
+                    [
+                        item.get("entry_date") or "--",
+                        item.get("vehicle_no") or "--",
+                        item.get("sender_name") or "--",
+                        item.get("receiver_name") or "--",
+                        item.get("product_name") or "--",
+                        f"{float(item.get('weight_kg') or 0) / 1000:,.3f}",
+                        item.get("weigh_no") or "--",
+                    ]
+                    for item in data["recent"][:12]
+                ],
+            ))
+        return tables
+
+
+    def _assistant_train_entry_charts(label, data):
+        chart = _assistant_rank_chart(f"{label}火车录入油品吨数", data.get("products") or [], "tons", name_key="name")
+        return [chart] if chart else []
+
+
+    def _assistant_retail_alert_data(start, end):
+        ym = f"{start.year}-{start.month:02d}"
+        insights = {"trendAnomalies": [], "suggestions": [], "sourceSummary": {}, "periodKey": ym}
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                if _assistant_table_exists(cur, "retail_alert_insights"):
+                    cur.execute(
+                        """
+                        SELECT trend_anomalies, suggestions, source_summary, ai_status, generated_at
+                        FROM retail_alert_insights
+                        WHERE period_key = %s AND language = 'zh'
+                        ORDER BY generated_at DESC
+                        LIMIT 1
+                        """,
+                        (ym,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        insights = {
+                            "trendAnomalies": _assistant_json_loads(row.get("trend_anomalies"), []),
+                            "suggestions": _assistant_json_loads(row.get("suggestions"), []),
+                            "sourceSummary": _assistant_json_loads(row.get("source_summary"), {}),
+                            "periodKey": ym,
+                            "aiStatus": row.get("ai_status"),
+                            "generatedAt": row.get("generated_at"),
+                        }
+        finally:
+            conn.close()
+
+        if not insights.get("trendAnomalies") and not insights.get("suggestions"):
+            monthly = _read_retail_snapshot("monthly", ym) or {}
+            daily = [item for item in (monthly.get("daily") or []) if float(item.get("volume") or 0) > 0]
+            anomalies = []
+            for index, item in enumerate(daily):
+                if index < 3:
+                    continue
+                previous = daily[max(0, index - 7):index]
+                baseline = sum(float(row.get("volume") or 0) for row in previous) / len(previous) if previous else 0
+                current = float(item.get("volume") or 0)
+                if baseline > 0 and abs(current - baseline) / baseline >= 0.3:
+                    anomalies.append({
+                        "date": item.get("date"),
+                        "currentVolume": round(current, 2),
+                        "baselineVolume": round(baseline, 2),
+                        "changePct": round((current - baseline) / baseline * 100, 1),
+                    })
+            summary = monthly.get("summary") or {}
+            insights.update({
+                "trendAnomalies": anomalies[:30],
+                "suggestions": ["当前零售趋势整体平稳，建议继续关注日销量、站点营业状态和油品结构变化。"] if not anomalies else ["存在日销量趋势异常，建议优先核查异常日期对应站点营业状态、库存和价格调整记录。"],
+                "sourceSummary": {
+                    "month": ym,
+                    "totalLiters": summary.get("totalLiters"),
+                    "totalSales": summary.get("totalSales"),
+                    "activeShops": summary.get("activeShops"),
+                    "dailyCount": len(monthly.get("daily") or []),
+                },
+            })
+
+        statuses = _assistant_active_station_status_map()
+        status_items = []
+        for item in statuses.values():
+            public_status, reason = _assistant_station_public_status(item)
+            if public_status != "正常营业":
+                status_items.append({
+                    "name": item.get("name"),
+                    "region": item.get("region"),
+                    "status": public_status,
+                    "reason": reason,
+                    "startedAt": item.get("startedAt"),
+                })
+        insights["stationStatuses"] = status_items
+        return insights
+
+
+    def _assistant_retail_alert_answer(label, data):
+        anomalies = data.get("trendAnomalies") or []
+        statuses = data.get("stationStatuses") or []
+        suggestions = data.get("suggestions") or []
+        period = data.get("periodKey") or label
+        lines = [f"{period}零售预警摘要：趋势异常 {len(anomalies)} 条，当前异常/暂停营业站点 {len(statuses)} 个。"]
+        if suggestions:
+            lines.append("运营建议：" + "；".join(str(item) for item in suggestions[:3]))
+        if data.get("generatedAt"):
+            lines.append(f"预警生成时间：{data.get('generatedAt')}")
+        return "\n".join(lines)
+
+
+    def _assistant_retail_alert_tables(label, data):
+        summary = data.get("sourceSummary") or {}
+        tables = [_assistant_table(
+            f"{data.get('periodKey') or label}零售预警摘要",
+            ["项目", "数值"],
+            [
+                ["趋势异常", len(data.get("trendAnomalies") or [])],
+                ["异常/暂停营业站点", len(data.get("stationStatuses") or [])],
+                ["月销量", _fmt_volume(summary.get("totalLiters"))],
+                ["月销售额", _fmt_amount(summary.get("totalSales"), "索姆")],
+                ["活跃站点", summary.get("activeShops") or "--"],
+            ],
+        )]
+        if data.get("stationStatuses"):
+            tables.append(_assistant_table(
+                "当前站点异常状态",
+                ["站点", "区域", "状态", "原因", "开始时间"],
+                [[item.get("name") or "--", item.get("region") or "--", item.get("status") or "--", item.get("reason") or "", item.get("startedAt") or "--"] for item in data["stationStatuses"]],
+            ))
+        if data.get("trendAnomalies"):
+            tables.append(_assistant_table(
+                "趋势异常",
+                ["日期", "当前销量", "基准销量", "变化率"],
+                [[item.get("date") or "--", _fmt_volume(item.get("currentVolume")), _fmt_volume(item.get("baselineVolume")), _fmt_pct(float(item.get("changePct") or 0))] for item in data["trendAnomalies"][:12]],
+            ))
+        if data.get("suggestions"):
+            tables.append(_assistant_table(
+                "运营建议",
+                ["序号", "建议"],
+                [[index, str(item)] for index, item in enumerate(data["suggestions"][:8], start=1)],
+            ))
+        return tables
 
 
     def _format_assistant_wholesale_answer(label, data, question):
@@ -4503,10 +5187,54 @@ def register_assistant_routes(app):
             conn.close()
 
 
-    def _assistant_settings_answer():
+    def _assistant_settings_data():
+        root = Path(__file__).resolve().parents[1]
+        data = {
+            "publicEntry": "http://198.51.100.10/",
+            "backendListen": "127.0.0.1:8900",
+            "updateFeed": "http://198.51.100.10/download/latest.yml",
+            "clientVersion": "",
+            "packageVersion": "",
+            "buildDate": "",
+            "developer": "",
+            "installer": "",
+            "readOnly": True,
+        }
+        version_path = root / "SalesDesktop" / "src" / "version.ts"
+        try:
+            text = version_path.read_text(encoding="utf-8-sig")
+            version_match = re.search(r"export\s+const\s+VERSION\s*=\s*['\"]([^'\"]+)['\"]", text)
+            build_match = re.search(r"export\s+const\s+BUILD_DATE\s*=\s*['\"]([^'\"]+)['\"]", text)
+            developer_match = re.search(r"export\s+const\s+DEVELOPER\s*=\s*['\"]([^'\"]+)['\"]", text)
+            if version_match:
+                data["clientVersion"] = version_match.group(1)
+            if build_match:
+                data["buildDate"] = build_match.group(1)
+            if developer_match:
+                data["developer"] = developer_match.group(1)
+        except OSError:
+            pass
+        package_path = root / "SalesDesktop" / "package.json"
+        try:
+            package = json.loads(package_path.read_text(encoding="utf-8-sig"))
+            data["packageVersion"] = str(package.get("version") or "")
+        except (OSError, json.JSONDecodeError):
+            pass
+        version = data["clientVersion"] or data["packageVersion"]
+        if version:
+            data["installer"] = f"SalesDesktop Setup {version}.exe"
+        return data
+
+
+    def _assistant_settings_answer(data=None):
+        data = data or _assistant_settings_data()
+        version = data.get("clientVersion") or data.get("packageVersion") or "--"
+        build_date = data.get("buildDate") or "--"
+        installer = data.get("installer") or "--"
         return (
-            "设置页属于只读安全边界：我可以说明当前系统公开入口和配置边界，但不会读取或修改本机隐藏配置、密钥或用户本地缓存。\n"
-            "当前生产公开入口为 http://198.51.100.10/，后端生产服务只监听 127.0.0.1:8900，客户端自动更新源为 /download/latest.yml。"
+            "设置页属于只读安全边界：我可以说明当前系统公开入口、客户端版本和更新边界，但不会读取或修改本机隐藏配置、密钥或用户本地缓存。\n"
+            f"当前客户端版本为 {version}（构建日期 {build_date}），安装包 {installer}。\n"
+            f"生产公开入口为 {data.get('publicEntry')}，后端生产服务只监听 {data.get('backendListen')}，客户端自动更新源为 {data.get('updateFeed')}。"
         )
 
 
@@ -4739,13 +5467,46 @@ def register_assistant_routes(app):
         return f"{sign}{v:.1f}%"
 
 
-    def _assistant_station_status_answer():
-        conn = get_connection()
+    def _assistant_active_station_status_map():
+        conn = None
         try:
+            conn = get_connection()
             cur = conn.cursor()
-            statuses = active_station_statuses(cur)
+            return active_station_statuses(cur)
+        except Exception as exc:
+            try:
+                app.logger.warning("assistant station status lookup failed: %s", exc)
+            except Exception:
+                pass
+            return {}
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
+
+
+    def _assistant_station_public_status(status):
+        if not status:
+            return "正常营业", ""
+        reason = status.get("closedReason") or status.get("statusLabel") or status.get("note") or ""
+        if status.get("status") == "closed":
+            return "暂停营业", reason
+        if status.get("status") == "warning":
+            return "异常", reason
+        return "正常营业", reason
+
+
+    def _assistant_station_status_answer(station=None):
+        statuses = _assistant_active_station_status_map()
+        if isinstance(station, dict) and station.get("shopKey"):
+            try:
+                shop_key = int(station.get("shopKey"))
+            except (TypeError, ValueError):
+                shop_key = None
+            status = statuses.get(shop_key) if shop_key is not None else None
+            status_text, reason = _assistant_station_public_status(status)
+            station_name = station.get("name") or (f"{shop_key}号站" if shop_key is not None else "该站")
+            detail = f"，原因：{reason}" if reason else ""
+            return f"{station_name}当前状态：{status_text}{detail}。"
         if not statuses:
             return "当前所有站点正常营业。"
         closed = [s for s in statuses.values() if s.get("status") == "closed"]
@@ -4768,13 +5529,26 @@ def register_assistant_routes(app):
         return "\n".join(lines)
 
 
-    def _assistant_station_status_tables():
-        conn = get_connection()
-        try:
-            cur = conn.cursor()
-            statuses = active_station_statuses(cur)
-        finally:
-            conn.close()
+    def _assistant_station_status_tables(station=None):
+        statuses = _assistant_active_station_status_map()
+        if isinstance(station, dict) and station.get("shopKey"):
+            try:
+                shop_key = int(station.get("shopKey"))
+            except (TypeError, ValueError):
+                shop_key = None
+            status = statuses.get(shop_key) if shop_key is not None else None
+            status_text, reason = _assistant_station_public_status(status)
+            return [_assistant_table(
+                "站点当前状态",
+                ["站号", "站点", "区域", "状态", "原因"],
+                [[
+                    shop_key or station.get("shopKey") or "--",
+                    station.get("name") or "--",
+                    station.get("region") or "--",
+                    status_text,
+                    reason or "",
+                ]],
+            )]
         if not statuses:
             return []
         closed = [s for s in statuses.values() if s.get("status") == "closed"]
@@ -4796,6 +5570,200 @@ def register_assistant_routes(app):
                 for s in all_items
             ],
         )]
+
+
+    def _assistant_coord(value):
+        try:
+            return f"{float(value):.5f}"
+        except (TypeError, ValueError):
+            return "--"
+
+
+    def _assistant_station_location_rows(plan):
+        entities = plan.get("entities") if isinstance(plan, dict) else {}
+        target_station = entities.get("station") if isinstance(entities, dict) else None
+        catalog = retail_station_catalog_cached()
+        coords = _assistant_station_coords_cached()
+        statuses = _assistant_active_station_status_map()
+        if isinstance(target_station, dict) and target_station.get("shopKey"):
+            try:
+                keys = [int(target_station.get("shopKey"))]
+            except (TypeError, ValueError):
+                keys = []
+        else:
+            keys = sorted(catalog)
+        rows = []
+        for shop_key in keys:
+            info = dict(catalog.get(shop_key) or {})
+            if target_station and int(target_station.get("shopKey") or 0) == shop_key:
+                info.update({key: value for key, value in target_station.items() if value not in (None, "")})
+            coord = coords.get(shop_key) or {}
+            status_text, reason = _assistant_station_public_status(statuses.get(shop_key))
+            rows.append({
+                "shopKey": shop_key,
+                "name": info.get("name") or f"{shop_key}号站",
+                "short": info.get("short") or "",
+                "region": info.get("region") or "",
+                "lng": coord.get("lng"),
+                "lat": coord.get("lat"),
+                "status": status_text,
+                "note": reason,
+                "type": "station",
+            })
+        return rows
+
+
+    def _assistant_depot_location_rows(plan):
+        entities = plan.get("entities") if isinstance(plan, dict) else {}
+        target_depot = entities.get("depot") if isinstance(entities, dict) else None
+        depots = _assistant_depot_catalog_cached()
+        if isinstance(target_depot, dict) and target_depot.get("name"):
+            names = [str(target_depot.get("name"))]
+        else:
+            names = sorted(depots)
+        rows = []
+        for name in names:
+            info = dict(depots.get(name) or target_depot or {})
+            if not info:
+                continue
+            status = str(info.get("status") or "normal")
+            rows.append({
+                "name": info.get("name") or name,
+                "short": info.get("short") or "",
+                "region": info.get("region") or "",
+                "lng": info.get("lng"),
+                "lat": info.get("lat"),
+                "status": "停用" if status == "closed" else "正常",
+                "note": info.get("closedReason") or "",
+                "type": "depot",
+            })
+        return rows
+
+
+    def _assistant_facility_count_tables(stations, depots, include_stations=True, include_depots=True):
+        operating_stations = [item for item in stations if item.get("status") != "暂停营业"]
+        closed_stations = [item for item in stations if item.get("status") == "暂停营业"]
+        normal_depots = [item for item in depots if item.get("status") == "正常"]
+        inactive_depots = [item for item in depots if item.get("status") != "正常"]
+        rows = []
+        if include_stations:
+            rows.extend([
+                ["在营加油站", len(operating_stations), "当前站点状态不影响销售"],
+                ["暂停营业站", len(closed_stations), "当前状态影响销售"],
+                ["加油站总数", len(stations), "地图站点目录"],
+            ])
+        if include_depots:
+            rows.extend([
+                ["油库总数", len(depots), "地图油库目录"],
+                ["正常油库", len(normal_depots), "DEPOT_COORDS status=normal"],
+                ["停用油库", len(inactive_depots), "DEPOT_COORDS status=closed/非normal"],
+            ])
+        tables = [_assistant_table("当前设施数量", ["项目", "数量", "口径"], rows)] if rows else []
+        detail_rows = [
+            ["加油站", item.get("name"), item.get("region"), item.get("status"), item.get("note") or ""]
+            for item in closed_stations
+        ]
+        detail_rows.extend(
+            ["油库", item.get("name"), item.get("region"), item.get("status"), item.get("note") or ""]
+            for item in inactive_depots
+        )
+        if detail_rows:
+            tables.append(_assistant_table("暂停/停用明细", ["类型", "名称", "区域", "状态", "原因"], detail_rows))
+        return tables, {
+            "operatingStations": len(operating_stations),
+            "closedStations": len(closed_stations),
+            "totalStations": len(stations),
+            "totalDepots": len(depots),
+            "normalDepots": len(normal_depots),
+            "inactiveDepots": len(inactive_depots),
+        }
+
+
+    def _assistant_map_location_payload(plan):
+        dimensions = set(str(item) for item in (plan.get("dimensions") or []) if item)
+        entities = plan.get("entities") if isinstance(plan, dict) else {}
+        has_station_target = isinstance((entities or {}).get("station"), dict)
+        has_depot_target = isinstance((entities or {}).get("depot"), dict)
+        include_stations = has_station_target or "station" in dimensions
+        include_depots = has_depot_target or "depot" in dimensions
+        if not include_stations and not include_depots:
+            include_stations = include_depots = True
+        stations = _assistant_station_location_rows(plan) if include_stations else []
+        depots = _assistant_depot_location_rows(plan) if include_depots else []
+        if plan.get("intent") == "count" or plan.get("metric") == "count":
+            tables, counts = _assistant_facility_count_tables(stations, depots, include_stations, include_depots)
+            answer_parts = []
+            if include_stations:
+                answer_parts.append(
+                    f"当前在营加油站 {counts['operatingStations']} 个，暂停营业站 {counts['closedStations']} 个，站点总数 {counts['totalStations']} 个"
+                )
+            if include_depots:
+                answer_parts.append(
+                    f"油库总数 {counts['totalDepots']} 个，其中正常 {counts['normalDepots']} 个，停用 {counts['inactiveDepots']} 个"
+                )
+            return "；".join(answer_parts) + "。", tables, {
+                "source": "OilStation/constants.py SHOP_COORDS, DEPOT_COORDS + retail_station_status",
+                "counts": counts,
+                "stations": stations,
+                "depots": depots,
+            }
+        tables = []
+        if stations:
+            tables.append(_assistant_table(
+                "加油站地图位置",
+                ["站号", "站点", "简称", "区域", "状态", "经度", "纬度", "备注"],
+                [
+                    [
+                        item.get("shopKey"),
+                        item.get("name"),
+                        item.get("short"),
+                        item.get("region"),
+                        item.get("status"),
+                        _assistant_coord(item.get("lng")),
+                        _assistant_coord(item.get("lat")),
+                        item.get("note") or "",
+                    ]
+                    for item in stations
+                ],
+            ))
+        if depots:
+            tables.append(_assistant_table(
+                "油库地图位置",
+                ["油库", "简称", "区域", "状态", "经度", "纬度", "备注"],
+                [
+                    [
+                        item.get("name"),
+                        item.get("short"),
+                        item.get("region"),
+                        item.get("status"),
+                        _assistant_coord(item.get("lng")),
+                        _assistant_coord(item.get("lat")),
+                        item.get("note") or "",
+                    ]
+                    for item in depots
+                ],
+            ))
+        if has_station_target and stations:
+            station = stations[0]
+            answer = (
+                f"{station.get('shopKey')}号站 {station.get('name')} 位于 {station.get('region') or '--'}，"
+                f"经度 {_assistant_coord(station.get('lng'))}，纬度 {_assistant_coord(station.get('lat'))}，"
+                f"当前状态 {station.get('status')}。"
+            )
+        elif has_depot_target and depots:
+            depot = depots[0]
+            answer = (
+                f"{depot.get('name')} 位于 {depot.get('region') or '--'}，"
+                f"经度 {_assistant_coord(depot.get('lng'))}，纬度 {_assistant_coord(depot.get('lat'))}，"
+                f"当前状态 {depot.get('status')}。"
+            )
+        else:
+            answer = f"地图位置数据包含 {len(stations)} 个加油站、{len(depots)} 个油库，详见表格。"
+        return answer, tables, {
+            "source": "OilStation/constants.py SHOP_COORDS, DEPOT_COORDS",
+            "stations": stations,
+            "depots": depots,
+        }
 
 
     def _assistant_response(question, plan, **payload):
@@ -5065,6 +6033,77 @@ def register_assistant_routes(app):
         match_question = plan.get("normalizedQuestion") or original_question
         route = plan.get("route")
         resource = (plan.get("entities") or {}).get("resource")
+        if route == "map_location":
+            answer, tables, data = _assistant_map_location_payload(plan)
+            return {
+                "periodLabel": "地图位置",
+                "answer": answer,
+                "tables": tables,
+                "data": data,
+            }
+        if route == "dashboard_summary":
+            data = _assistant_dashboard_data(start, end)
+            return {
+                "periodLabel": "数据驾驶舱",
+                "queryStart": start.isoformat(),
+                "queryEndExclusive": end.isoformat(),
+                "answer": _assistant_dashboard_answer(data),
+                "tables": _assistant_dashboard_tables(data),
+                "data": data,
+            }
+        if route == "report_center_summary":
+            data = _assistant_report_center_data()
+            return {
+                "periodLabel": "报表中心",
+                "answer": _assistant_report_center_answer(data),
+                "tables": _assistant_report_center_tables(data),
+                "data": data,
+            }
+        if route == "settings_summary":
+            data = _assistant_settings_data()
+            return {
+                "periodLabel": "系统设置",
+                "answer": _assistant_settings_answer(data),
+                "tables": [_assistant_table("设置只读摘要", ["项目", "值"], [
+                    ["客户端版本", data.get("clientVersion") or data.get("packageVersion") or "--"],
+                    ["构建日期", data.get("buildDate") or "--"],
+                    ["当前安装包", data.get("installer") or "--"],
+                    ["生产公开入口", data.get("publicEntry")],
+                    ["后端监听", data.get("backendListen")],
+                    ["客户端更新源", data.get("updateFeed")],
+                    ["AI写操作", "禁止"],
+                ])],
+                "data": data,
+            }
+        if route == "train_entry_summary":
+            data = _assistant_train_entry_data(start, end)
+            return {
+                "periodLabel": label,
+                "queryStart": start.isoformat(),
+                "queryEndExclusive": end.isoformat(),
+                "answer": _assistant_train_entry_answer(label, data),
+                "tables": _assistant_train_entry_tables(label, data),
+                "charts": _assistant_train_entry_charts(label, data),
+                "data": data,
+            }
+        if route == "retail_alert_summary":
+            data = _assistant_retail_alert_data(start, end)
+            return {
+                "periodLabel": data.get("periodKey") or label,
+                "queryStart": start.isoformat(),
+                "queryEndExclusive": end.isoformat(),
+                "answer": _assistant_retail_alert_answer(label, data),
+                "tables": _assistant_retail_alert_tables(label, data),
+                "data": data,
+            }
+        if route == "station_status":
+            station = (plan.get("entities") or {}).get("station")
+            return {
+                "periodLabel": "当前",
+                "answer": _assistant_station_status_answer(station),
+                "tables": _assistant_station_status_tables(station),
+                "data": {"station": station} if station else {},
+            }
         if route == "self_use_summary":
             data = _assistant_self_use_data_for_period(start, end, resource)
             return {
@@ -5206,7 +6245,55 @@ def register_assistant_routes(app):
         return _fmt_amount(value, "索姆")
 
 
+    def _assistant_station_ranking_rows(data, metric):
+        raw_rows = data.get("stations") or []
+        filtered_by_scope = bool((data.get("dataScope") or {}).get("filtered"))
+        resource_filtered = bool(data.get("resourceFilter"))
+        status_map = _assistant_active_station_status_map()
+        rows_by_key = {}
+        extras = []
+        for item in raw_rows:
+            if not isinstance(item, dict):
+                continue
+            shop_key = _assistant_int(item.get("shopKey"))
+            if shop_key:
+                rows_by_key[shop_key] = dict(item)
+            else:
+                extras.append(dict(item))
+        if filtered_by_scope or resource_filtered:
+            rows = [
+                item for item in raw_rows
+                if _assistant_metric_value(item, metric)
+                or float(item.get("volume") or 0)
+                or float(item.get("amount") or 0)
+            ]
+        else:
+            rows = []
+            for shop_key, station in sorted(retail_station_catalog_cached().items()):
+                status = status_map.get(shop_key) or {}
+                if status.get("status") == "closed":
+                    continue
+                item = {**station, **(rows_by_key.get(shop_key) or {})}
+                item["shopKey"] = shop_key
+                item["volume"] = float(item.get("volume") or 0)
+                item["tons"] = float(item.get("tons") or 0)
+                item["mass"] = float(item.get("mass") or item["tons"] * 1000 or 0)
+                item["amount"] = float(item.get("amount") or 0)
+                rows.append(item)
+            for item in extras:
+                if (
+                    _assistant_metric_value(item, metric)
+                    or float(item.get("volume") or 0)
+                    or float(item.get("amount") or 0)
+                ):
+                    rows.append(item)
+        rows.sort(key=lambda item: _assistant_metric_value(item, metric), reverse=True)
+        return rows
+
+
     def _assistant_retail_ranking_rows(data, dimension, metric):
+        if dimension == "station":
+            return _assistant_station_ranking_rows(data, metric)
         source_key = {"resource": "byResource", "region": "regions"}.get(dimension, "stations")
         rows = [
             item for item in (data.get(source_key) or [])
@@ -5246,7 +6333,7 @@ def register_assistant_routes(app):
         dimension_label = {"resource": "油品", "region": "区域", "station": "站点"}.get(dimension, "站点")
         rows = _assistant_retail_ranking_rows(data, dimension, metric)
         table_rows = []
-        for index, item in enumerate(rows[:12], start=1):
+        for index, item in enumerate(rows, start=1):
             name = item.get("name") or item.get("region") or "--"
             table_row = [
                 index,
@@ -5590,6 +6677,68 @@ def register_assistant_routes(app):
                 **_assistant_compound_payload(question, plan, user_context),
             )
 
+        if route == "map_location":
+            answer, tables, data = _assistant_map_location_payload(plan)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="地图位置",
+                answer=answer,
+                tables=tables,
+                data=data,
+            )
+
+        if route == "dashboard_summary":
+            data = _assistant_dashboard_data(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="数据驾驶舱",
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_dashboard_answer(data),
+                tables=_assistant_dashboard_tables(data),
+                data=data,
+            )
+
+        if route == "report_center_summary":
+            data = _assistant_report_center_data()
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel="报表中心",
+                answer=_assistant_report_center_answer(data),
+                tables=_assistant_report_center_tables(data),
+                data=data,
+            )
+
+        if route == "train_entry_summary":
+            data = _assistant_train_entry_data(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_train_entry_answer(label, data),
+                tables=_assistant_train_entry_tables(label, data),
+                charts=_assistant_train_entry_charts(label, data),
+                data=data,
+            )
+
+        if route == "retail_alert_summary":
+            data = _assistant_retail_alert_data(start, end)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=data.get("periodKey") or label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_retail_alert_answer(label, data),
+                tables=_assistant_retail_alert_tables(label, data),
+                data=data,
+            )
+
         if route == "self_use_summary":
             data = _assistant_self_use_data_for_period(start, end, resource)
             data = _assistant_apply_station_scope(data, plan, user_context)
@@ -5666,12 +6815,14 @@ def register_assistant_routes(app):
             )
 
         if route == "station_status" or _assistant_has_any(match_question, ("停业", "站点状态", "异常站点", "暂停营业", "维修", "停电")):
+            station = (plan.get("entities") or {}).get("station")
             return _assistant_response(
                 question,
                 plan,
                 periodLabel="当前",
-                answer=_assistant_station_status_answer(),
-                tables=_assistant_station_status_tables(),
+                answer=_assistant_station_status_answer(station),
+                tables=_assistant_station_status_tables(station),
+                data={"station": station} if station else {},
             )
         if route == "procurement_summary":
             data = _assistant_procurement_data(start, end)
@@ -5802,18 +6953,16 @@ def register_assistant_routes(app):
                 data=data,
             )
         if route == "settings_summary":
-            data = {
-                "publicEntry": "http://198.51.100.10/",
-                "backendListen": "127.0.0.1:8900",
-                "updateFeed": "/download/latest.yml",
-                "readOnly": True,
-            }
+            data = _assistant_settings_data()
             return _assistant_response(
                 question,
                 plan,
                 periodLabel="系统设置",
-                answer=_assistant_settings_answer(),
+                answer=_assistant_settings_answer(data),
                 tables=[_assistant_table("设置只读摘要", ["项目", "值"], [
+                    ["客户端版本", data.get("clientVersion") or data.get("packageVersion") or "--"],
+                    ["构建日期", data.get("buildDate") or "--"],
+                    ["当前安装包", data.get("installer") or "--"],
                     ["生产公开入口", data["publicEntry"]],
                     ["后端监听", data["backendListen"]],
                     ["客户端更新源", data["updateFeed"]],
