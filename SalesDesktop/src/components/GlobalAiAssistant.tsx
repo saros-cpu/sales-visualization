@@ -77,6 +77,10 @@ function createAssistantSessionId() {
   return `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function isClearAssistantCommand(value: string) {
+  return /^(清空|清除|清屏|重置|删除)(问答|对话|聊天|记录|上下文)?$|^(clear|reset|delete)\s+(chat|conversation|history|context)$|^(очисти|сбрось|удали)\s+(чат|диалог|историю|контекст)$/i.test(value.trim());
+}
+
 function compactAssistantPlan(plan?: AssistantPlan): AssistantPlan | undefined {
   if (!plan) return undefined;
   return {
@@ -363,6 +367,12 @@ export default function GlobalAiAssistant() {
   const submit = async (manualQuestion?: string) => {
     const text = (typeof manualQuestion === 'string' ? manualQuestion : question).trim();
     if (!text || loading) return;
+    if (isClearAssistantCommand(text)) {
+      setMessages([]);
+      setQuestion('');
+      message.success('已清空问答');
+      return;
+    }
     const conversationContext = buildConversationContext(messages, sessionId, buildPageContext(location));
     setMessages(prev => [...prev, { role: 'user', content: text }]);
     setQuestion('');
@@ -372,6 +382,11 @@ export default function GlobalAiAssistant() {
         sessionId,
         conversationContext,
       });
+      if (data.uiCommand?.type === 'clearConversation') {
+        setMessages([]);
+        message.success('已清空问答');
+        return;
+      }
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: data.answer,

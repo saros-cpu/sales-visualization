@@ -28,6 +28,10 @@ function createAssistantSessionId() {
   return `web-ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function isClearAssistantCommand(value) {
+  return /^(清空|清除|清屏|重置|删除)(问答|对话|聊天|记录|上下文)?$|^(clear|reset|delete)\s+(chat|conversation|history|context)$|^(очисти|сбрось|удали)\s+(чат|диалог|историю|контекст)$/i.test(String(value || '').trim());
+}
+
 function compactAssistantPlan(plan) {
   if (!plan || typeof plan !== 'object') return undefined;
   return {
@@ -196,6 +200,16 @@ export default function DataAssistant() {
 
   async function submitQuestion(question) {
     if (!question?.trim()) return;
+    const text = question.trim();
+    if (isClearAssistantCommand(text)) {
+      if (abortRef.current) abortRef.current.abort();
+      setInput('');
+      setAnswer(null);
+      setError('');
+      setLoading(false);
+      lastQuestionRef.current = '';
+      return;
+    }
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -204,9 +218,14 @@ export default function DataAssistant() {
     setAnswer(null);
 
     try {
-      const text = question.trim();
       const context = buildConversationContext(sessionIdRef.current, lastQuestionRef.current, answer);
       const data = await queryAssistant(text, context);
+      if (data?.uiCommand?.type === 'clearConversation') {
+        setInput('');
+        setAnswer(null);
+        lastQuestionRef.current = '';
+        return;
+      }
       setAnswer(data);
       lastQuestionRef.current = text;
     } catch (err) {

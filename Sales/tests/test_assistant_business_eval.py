@@ -8,7 +8,7 @@ SALES_ROOT = Path(__file__).resolve().parents[1]
 if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
-from assistant_agent import is_action_request
+from assistant_agent import clear_assistant_response, is_action_request, is_clear_assistant_command
 from routes_assistant import build_assistant_query_plan
 
 
@@ -93,6 +93,15 @@ class AssistantBusinessEvalTests(unittest.TestCase):
 
             with self.subTest(case=case["id"], question=case["question"]):
                 self.assertTrue(is_action_request(case["question"]))
+
+    def test_clear_assistant_command_is_ui_command(self):
+        self.assertTrue(is_clear_assistant_command("清空问答"))
+        self.assertFalse(is_action_request("清空问答"))
+        payload = clear_assistant_response("清空问答", "zh")
+
+        self.assertEqual(payload["periodLabel"], "ui_command")
+        self.assertEqual(payload["uiCommand"]["type"], "clearConversation")
+        self.assertIn("清空问答", payload["answer"])
 
     def test_short_chart_followup_reuses_previous_self_use_domain_and_period(self):
         previous = build_assistant_query_plan("今年自用油数据", today=TODAY)

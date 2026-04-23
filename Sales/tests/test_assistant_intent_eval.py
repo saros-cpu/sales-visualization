@@ -403,6 +403,36 @@ class AssistantIntentEvalTests(unittest.TestCase):
         codes = {item["code"]: item["status"] for item in plan["selfCheck"]["checks"]}
         self.assertEqual(codes["ranking_dimension"], "pass")
 
+    def test_dashboard_page_context_does_not_override_web_quick_questions(self):
+        context = {"pageContext": {"path": "/", "module": "", "page": "home", "title": "数据驾驶舱"}}
+        cases = [
+            ("本月零售销量", "retail", "retail_summary", "2026-07-01"),
+            ("本月每日销量趋势", "retail", "retail_trend", "2026-07-01"),
+            ("月趋势", "retail", "retail_trend", "2026-07-01"),
+            ("2026年KPI", "retail", "retail_kpi", "2026-01-01"),
+            ("本月批发分类统计", "wholesale", "wholesale_summary", "2026-07-01"),
+            ("本月批发客户排行", "wholesale", "wholesale_summary", "2026-07-01"),
+            ("本月合并统计", "combined", "combined_summary", "2026-07-01"),
+            ("本月同比环比", "retail", "retail_comparison", "2026-07-01"),
+            ("本月油品占比", "retail", "retail_resource_share", "2026-07-01"),
+            ("本月零售价格", "retail", "retail_price", "2026-07-01"),
+            ("当前停业站点", "retail", "station_status", "2026-07-15"),
+            ("今日汇率", "exchange", "exchange_summary", "2026-07-22"),
+            ("市场观察", "market", "market_summary", "2026-07-15"),
+            ("当前密度", "density", "density_summary", "2026-07-15"),
+        ]
+        for question, domain, route, period_start in cases:
+            with self.subTest(question=question):
+                plan = build_assistant_query_plan(question, today=TODAY, context=context)
+
+                self.assertEqual(plan["domain"], domain)
+                self.assertEqual(plan["route"], route)
+                self.assertEqual(plan["period"]["start"], period_start)
+                self.assertNotEqual(plan["route"], "dashboard_summary")
+                if question in {"本月每日销量趋势", "月趋势"}:
+                    self.assertEqual(plan["metric"], "volume")
+                    self.assertEqual(plan["visual"]["preferredType"], "line")
+
     def test_compound_plan_self_check_covers_subplans(self):
         plan = build_assistant_query_plan("26年上半年零售总额、哪个站销售额最高、哪个油品销量下滑", today=TODAY)
 

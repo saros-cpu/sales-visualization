@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.8';
+export const VERSION = '3.9.9';
 export const BUILD_DATE = '2026-07-27';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.9',
+    date: '2026-07-27',
+    type: 'patch',
+    changes: [
+      '修复：AI 助手在驾驶舱或首页上下文下点击 Web 快捷问答时，不再把月趋势、同比环比、KPI、油品占比、零售价、停业站点等问题误路由到驾驶舱组件目录',
+      '修复：AI 助手“月趋势”和“本月每日销量趋势”稳定命中零售每日趋势工具，短问法“月趋势”默认按本月已完成经营日查询',
+      '新增：清空问答、清屏、重置对话等指令在桌面端和 Web 端本地清空会话；后端同步返回 clearConversation 界面指令兜底，不再进入业务查询',
+      '修复：AI 助手回答当前密度时改为读取当前月最新零售日快照，按实际质量除以销量计算油品平均密度和综合加权平均密度，不再以固定密度或维护表最新值作为主答案',
+      '测试：补充驾驶舱页面上下文下 Web 快捷问答回归测试、清空问答界面指令测试，并验证当前密度返回 2026-07-26 实绩加权密度',
+    ],
+  },
   {
     version: '3.9.8',
     date: '2026-07-27',

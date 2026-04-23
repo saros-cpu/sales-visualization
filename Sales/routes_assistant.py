@@ -19,7 +19,7 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import pymysql
 from flask import jsonify, request
-from assistant_agent import is_action_request, read_only_refusal
+from assistant_agent import clear_assistant_response, is_action_request, is_clear_assistant_command, read_only_refusal
 from assistant_quality import enrich_assistant_payload
 from config import DB_CONFIG
 from db import get_connection
@@ -1431,6 +1431,39 @@ def _assistant_context_reference_requested(text):
     )
 
 
+def _assistant_page_context_reference_requested(text):
+    return _assistant_contains_any(
+        text,
+        ("这个页面", "该页面", "当前页面", "本页", "这页", "当前页", "这里", "这个菜单", "当前菜单", "这个模块", "当前模块"),
+    )
+
+
+def _assistant_has_strong_business_intent(text, business_terms):
+    intents = business_terms.get("intents") if isinstance(business_terms, dict) else {}
+    strong_intents = (
+        "ranking",
+        "trend",
+        "trend_anomaly",
+        "comparison",
+        "status",
+        "visualization",
+        "location",
+        "count",
+    )
+    if any(intents.get(name) for name in strong_intents):
+        return True
+    if _assistant_contains_any(
+        text,
+        (
+            "KPI", "kpi", "关键指标", "年度指标", "年度目标", "目标完成",
+            "占比", "结构", "构成", "库存", "期末", "价格", "单价", "售价", "零售价",
+        ),
+    ):
+        return True
+    data_terms = {str(item) for item in (intents.get("data_availability") or [])}
+    return bool(data_terms - {"数据"})
+
+
 def _assistant_station_from_context(context):
     page = _assistant_context_page(context)
     catalog = retail_station_catalog_cached()
@@ -1871,6 +1904,8 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         and _assistant_contains_any(text, _ASSISTANT_COMPARISON_SIGNAL_WORDS)
     ):
         period_label, start, end = f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
+    if period_label == "最近7天" and _assistant_contains_any(text, ("月趋势", "月度趋势", "月走势图", "月度走势")):
+        period_label, start, end = "本月", today.replace(day=1), today + timedelta(days=1)
     if followup and period_label == "最近7天":
         previous_period = _assistant_period_from_plan(previous_plan)
         if previous_period:
@@ -1914,20 +1949,23 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     if resource:
         dimensions.append("resource")
     dimensions.extend(_assistant_dimensions_from_terms(business_terms))
-    if not dimensions and page_hints.get("dimensions") and _assistant_contains_any(text, ("这个", "该", "当前", "本页", "这里", "它", "这个页面")):
+    page_context_requested = _assistant_page_context_reference_requested(text)
+    strong_business_intent = _assistant_has_strong_business_intent(text, business_terms)
+    if not dimensions and page_hints.get("dimensions") and page_context_requested:
         dimensions.extend(page_hints.get("dimensions") or [])
         context_used.extend(page_hints.get("contextUsed") or [])
     dimensions = list(dict.fromkeys(dimensions))
     explicit_dimensions = list(dimensions)
 
     domain = _assistant_domain_from_terms(business_terms)
-    if not _assistant_has_explicit_domain(business_terms) and page_hints.get("domain"):
+    if (
+        not _assistant_has_explicit_domain(business_terms)
+        and page_hints.get("domain")
+        and (page_context_requested or not strong_business_intent)
+    ):
         domain = str(page_hints.get("domain"))
         context_used.extend(page_hints.get("contextUsed") or [])
-    elif (
-        page_hints.get("domain") == domain
-        and _assistant_contains_any(text, ("这个", "该", "当前", "本页", "这里", "它", "这个页面"))
-    ):
+    elif page_hints.get("domain") == domain and page_context_requested:
         context_used.extend(page_hints.get("contextUsed") or [])
     if followup and not _assistant_has_explicit_domain(business_terms):
         previous_domain = previous_plan.get("domain") if isinstance(previous_plan, dict) else None
@@ -4210,74 +4248,130 @@ def register_assistant_routes(app):
         return [chart] if chart else []
 
 
-    def _assistant_density_answer(cur):
-        cur.execute(
-            """
-            SELECT p.display_name, d.density, d.effective_date, d.source
-            FROM product_density_history d
-            JOIN products p ON p.id = d.product_id
-            JOIN (
-                SELECT product_id, MAX(effective_date) effective_date
-                FROM product_density_history
-                GROUP BY product_id
-            ) latest ON latest.product_id = d.product_id AND latest.effective_date = d.effective_date
-            ORDER BY p.product_code
-            """
-        )
-        rows = cur.fetchall()
+    def _assistant_density_from_resource_item(item):
+        volume = _assistant_float((item or {}).get("volume"))
+        mass = _assistant_float((item or {}).get("mass"))
+        tons = _assistant_float((item or {}).get("tons"))
+        if not mass and tons:
+            mass = tons * 1000
+        if volume <= 0 or mass <= 0:
+            return None
+        density = mass / volume
+        if density < 0.4 or density > 1.1:
+            return None
+        return {
+            "resourceKey": _assistant_int((item or {}).get("resourceKey") or (item or {}).get("key")),
+            "name": (item or {}).get("name") or "--",
+            "volume": round(volume, 2),
+            "mass": round(mass, 3),
+            "tons": round(mass / 1000, 3),
+            "density": round(density, 6),
+        }
+
+
+    def _assistant_latest_retail_density_data(today=None):
+        today = today or date.today()
+        if today.month == 1 and today.day == 1:
+            max_day = 1
+        else:
+            max_day = max(1, today.day - 1)
+        ym = f"{today.year}-{today.month:02d}"
+        for day in range(max_day, 0, -1):
+            current_day = date(today.year, today.month, day)
+            payload = _read_retail_snapshot("daily", current_day.isoformat())
+            normalized = _normalize_retail_snapshot_payload(payload, ym) if payload else None
+            rows = [
+                row for row in (
+                    _assistant_density_from_resource_item(item)
+                    for item in ((normalized or {}).get("byResource") or [])
+                )
+                if row
+            ]
+            total_volume = sum(float(item.get("volume") or 0) for item in rows)
+            total_mass = sum(float(item.get("mass") or 0) for item in rows)
+            if not rows or total_volume <= 0 or total_mass <= 0:
+                continue
+            rows.sort(key=lambda item: float(item.get("volume") or 0), reverse=True)
+            return {
+                "date": current_day.isoformat(),
+                "month": ym,
+                "source": "retail_daily_snapshot",
+                "summary": {
+                    "totalVolume": round(total_volume, 2),
+                    "totalMass": round(total_mass, 3),
+                    "totalTons": round(total_mass / 1000, 3),
+                    "weightedDensity": round(total_mass / total_volume, 6),
+                },
+                "byResource": rows,
+            }
+        return {
+            "date": None,
+            "month": ym,
+            "source": "retail_daily_snapshot",
+            "summary": {"totalVolume": 0.0, "totalMass": 0.0, "totalTons": 0.0, "weightedDensity": 0.0},
+            "byResource": [],
+        }
+
+
+    def _assistant_density_answer(data):
+        rows = data.get("byResource") or []
+        summary = data.get("summary") or {}
         if not rows:
-            return "暂未查询到密度维护记录。"
-        lines = ["当前最新密度如下："]
-        for name, density, effective_date, source in rows:
-            lines.append(f"{name}：{float(density):.6f}，生效日期 {effective_date}，来源 {source or '--'}")
+            return f"{data.get('month') or '当前月'}暂未找到可用零售日快照，无法按实际质量/销量计算密度。"
+        lines = [
+            f"{data.get('date')} 零售实绩加权平均密度为 {float(summary.get('weightedDensity') or 0):.6f}。",
+            f"该日销量 {_fmt_volume(summary.get('totalVolume'))}，质量 {_fmt_tons(summary.get('totalTons'))}。",
+            "口径：按当前月最新有零售日快照的质量 ÷ 销量计算，不使用固定密度。",
+        ]
+        for item in rows:
+            lines.append(
+                f"{item.get('name') or '--'}：{float(item.get('density') or 0):.6f}"
+                f"（{_fmt_volume(item.get('volume'))}，{_fmt_tons(item.get('tons'))}）"
+            )
         return "\n".join(lines)
 
 
-    def _assistant_density_tables(cur):
-        cur.execute(
-            """
-            SELECT p.display_name, d.density, d.effective_date, d.source
-            FROM product_density_history d
-            JOIN products p ON p.id = d.product_id
-            JOIN (
-                SELECT product_id, MAX(effective_date) effective_date
-                FROM product_density_history
-                GROUP BY product_id
-            ) latest ON latest.product_id = d.product_id AND latest.effective_date = d.effective_date
-            ORDER BY p.product_code
-            """
-        )
-        rows = cur.fetchall()
+    def _assistant_density_tables(data):
+        rows = data.get("byResource") or []
         if not rows:
             return []
+        summary = data.get("summary") or {}
+        table_rows = [
+            [
+                data.get("date") or "--",
+                item.get("name") or "--",
+                f"{float(item.get('density') or 0):.6f}",
+                _fmt_volume(item.get("volume")),
+                f"{float(item.get('mass') or 0):,.3f} kg",
+                _fmt_tons(item.get("tons")),
+                data.get("source") or "--",
+            ]
+            for item in rows
+        ]
+        table_rows.append([
+            data.get("date") or "--",
+            "综合加权平均",
+            f"{float(summary.get('weightedDensity') or 0):.6f}",
+            _fmt_volume(summary.get("totalVolume")),
+            f"{float(summary.get('totalMass') or 0):,.3f} kg",
+            _fmt_tons(summary.get("totalTons")),
+            data.get("source") or "--",
+        ])
         return [_assistant_table(
-            "当前密度",
-            ["油品", "密度", "生效日期", "来源"],
-            [[name, f"{float(density):.6f}", effective_date, source or "--"] for name, density, effective_date, source in rows],
+            "当前月最新日零售实际密度",
+            ["日期", "油品", "实际平均密度", "销量", "质量", "吨位", "来源"],
+            table_rows,
         )]
 
 
-    def _assistant_density_charts(cur):
-        cur.execute(
-            """
-            SELECT p.display_name, d.density
-            FROM product_density_history d
-            JOIN products p ON p.id = d.product_id
-            JOIN (
-                SELECT product_id, MAX(effective_date) effective_date
-                FROM product_density_history
-                GROUP BY product_id
-            ) latest ON latest.product_id = d.product_id AND latest.effective_date = d.effective_date
-            ORDER BY p.product_code
-            """
-        )
-        rows = cur.fetchall()
+    def _assistant_density_charts(data):
+        rows = data.get("byResource") or []
         chart = _assistant_chart(
-            "当前油品密度",
+            f"{data.get('date') or ''}零售实际密度",
             "bar",
-            x_axis=[str(name) for name, _ in rows],
-            series=[{"name": "密度", "type": "bar", "unit": "", "data": [density for _, density in rows]}],
-            summary="展示最新生效密度。",
+            x_axis=[str(item.get("name") or "--") for item in rows],
+            series=[{"name": "实际平均密度", "type": "bar", "unit": "", "data": [item.get("density") for item in rows]}],
+            summary="按当前月最新日快照的质量除以销量计算。",
         )
         return [chart] if chart else []
 
@@ -6075,6 +6169,15 @@ def register_assistant_routes(app):
                 ])],
                 "data": data,
             }
+        if route == "density_summary":
+            data = _assistant_latest_retail_density_data()
+            return {
+                "periodLabel": data.get("date") or data.get("month") or "当前密度",
+                "answer": _assistant_density_answer(data),
+                "tables": _assistant_density_tables(data),
+                "charts": _assistant_density_charts(data),
+                "data": data,
+            }
         if route == "train_entry_summary":
             data = _assistant_train_entry_data(start, end)
             return {
@@ -6637,6 +6740,8 @@ def register_assistant_routes(app):
         question = clean_str(payload.get("question"))
         if not question:
             return {"error": "question_required"}, 400
+        if is_clear_assistant_command(question):
+            return enrich_assistant_payload(clear_assistant_response(question, payload.get("language"))), 200
         if is_action_request(question):
             return enrich_assistant_payload(read_only_refusal(question, payload.get("language"))), 200
 
@@ -7144,15 +7249,16 @@ def register_assistant_routes(app):
                 conn.close()
             return _assistant_response(question, plan, periodLabel=label, answer=answer, tables=tables, charts=charts)
         if route == "density_summary" or "密度" in match_question:
-            conn = get_connection()
-            try:
-                cur = conn.cursor()
-                answer = _assistant_density_answer(cur)
-                tables = _assistant_density_tables(cur)
-                charts = _assistant_density_charts(cur)
-            finally:
-                conn.close()
-            return _assistant_response(question, plan, periodLabel="当前", answer=answer, tables=tables, charts=charts)
+            data = _assistant_latest_retail_density_data()
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=data.get("date") or data.get("month") or "当前密度",
+                answer=_assistant_density_answer(data),
+                tables=_assistant_density_tables(data),
+                charts=_assistant_density_charts(data),
+                data=data,
+            )
         if route == "retail_inventory" or _assistant_has_any(match_question, ("库存", "期末")):
             inventory_data = _retail_inventory_for_period(start, end)
             if inventory_data:

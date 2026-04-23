@@ -16,7 +16,13 @@ from assistant_quality import (
     has_required_permission,
     required_permissions,
 )
-from assistant_agent import enhance_assistant_response, is_action_request, read_only_refusal
+from assistant_agent import (
+    clear_assistant_response,
+    enhance_assistant_response,
+    is_action_request,
+    is_clear_assistant_command,
+    read_only_refusal,
+)
 from db import get_connection
 from routes_assistant import assistant_tool_catalog, build_assistant_query_plan, execute_assistant_query_payload
 from settings import get_settings
@@ -405,6 +411,11 @@ def assistant_query():
 
     user_id = int(get_jwt_identity())
     user_context = _user_context(user_id)
+    if is_clear_assistant_command(question):
+        result = clear_assistant_response(question, language)
+        result = enrich_assistant_payload(result, user_context)
+        result = _record_and_attach(user_id, question, result)
+        return jsonify({"code": 0, "message": "success", "data": result})
     if is_action_request(question):
         result = read_only_refusal(question, language)
         result = enrich_assistant_payload(result, user_context)
@@ -516,6 +527,12 @@ def assistant_query_stream():
             yield _sse_final("error")
             return
         yield _sse_event("started", {"question": question})
+        if is_clear_assistant_command(question):
+            result = enrich_assistant_payload(clear_assistant_response(question, language), user_context)
+            result = _record_and_attach(user_id, question, result)
+            yield _sse_event("completed", result)
+            yield _sse_final()
+            return
         if is_action_request(question):
             result = enrich_assistant_payload(read_only_refusal(question, language), user_context)
             result = _record_and_attach(user_id, question, result)

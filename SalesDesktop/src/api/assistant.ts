@@ -152,6 +152,10 @@ export interface AssistantResponse {
     updatedAt?: string;
     snippet?: string;
   }>;
+  uiCommand?: {
+    type?: string;
+    [key: string]: any;
+  };
   needsClarification?: boolean;
   clarification?: AssistantPlan['clarification'];
   agent?: {

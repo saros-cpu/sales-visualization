@@ -32,6 +32,13 @@ ACTION_PATTERNS = (
 )
 
 
+CLEAR_ASSISTANT_PATTERNS = (
+    r"^(清空|清除|清屏|重置|删除)(问答|对话|聊天|记录|上下文)?$",
+    r"^\s*(clear|reset|delete)\s+(chat|conversation|history|context)\s*$",
+    r"^\s*(очисти|сбрось|удали)\s+(чат|диалог|историю|контекст)\s*$",
+)
+
+
 READ_ONLY_ACTION_QUESTION_PATTERNS = (
     r"(可以|能|能够|支持).{0,12}(导出|下载).{0,12}(哪些|什么|列表|文件|报表)",
     r"(有哪些|哪些|什么).{0,12}(可以|可|能|支持).{0,8}(导出|下载)",
@@ -69,6 +76,29 @@ def is_action_request(question: str | None) -> bool:
         return False
     patterns = (*ACTION_PATTERNS, *STRICT_ACTION_PATTERNS)
     return bool(text) and any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def is_clear_assistant_command(question: str | None) -> bool:
+    text = (question or "").strip().lower()
+    return bool(text) and any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in CLEAR_ASSISTANT_PATTERNS)
+
+
+def clear_assistant_response(question: str, language: str | None = None) -> dict[str, Any]:
+    lang = detect_language(question, language)
+    answer = (
+        "Это команда интерфейса для очистки диалога. В новой версии клиент очистит историю локально; бизнес-данные не меняются."
+        if lang == "ru"
+        else "这是清空问答的界面指令。新版本客户端会在本地清空对话记录，不会查询或修改任何业务数据。"
+    )
+    return {
+        "ok": True,
+        "question": question,
+        "periodLabel": "ui_command",
+        "answer": answer,
+        "tables": [],
+        "agent": _agent_meta("clear_conversation_command", llm_used=False),
+        "uiCommand": {"type": "clearConversation"},
+    }
 
 
 def read_only_refusal(question: str, language: str | None = None) -> dict[str, Any]:
