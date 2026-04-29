@@ -1,6 +1,9 @@
 import unittest
 import sys
 from pathlib import Path
+from datetime import date, datetime
+import os
+import tempfile
 
 SALES_ROOT = Path(__file__).resolve().parents[1]
 if str(SALES_ROOT) not in sys.path:
@@ -10,6 +13,8 @@ from api_v2 import system
 from api_v2.system import (
     _action_center,
     _accounting_failed_items_from_summary,
+    _accounting_report_status,
+    _accounting_station_statuses_for_day,
     _normalize_accounting_text,
     _run_retail_accounting_reports_task,
 )
@@ -124,6 +129,157 @@ class SystemHealthActionCenterTests(unittest.TestCase):
         self.assertEqual(items[0]["stationNo"], "024")
         self.assertEqual(items[0]["reason"], "script crashed")
         self.assertEqual(items[0]["station"]["name"], "STN-47")
+
+    def test_accounting_status_uses_historical_station_status_for_target_day(self):
+        class FakeCursor:
+            def __init__(self):
+                self.params = None
+
+            def execute(self, sql, params=None):
+                self.params = params
+
+            def fetchall(self):
+                return [
+                    {
+                        "id": 9,
+                        "shop_key": 14,
+                        "status_type": "renovation",
+                        "status_label": "装修暂停营业",
+                        "started_at": datetime(2026, 7, 15, 23, 10),
+                        "expected_resume_at": None,
+                        "ended_at": datetime(2026, 7, 27, 18, 2, 32),
+                        "affects_sales": 1,
+                        "affects_inventory": 1,
+                        "suppress_alerts": 0,
+                        "note": "装修",
+                        "is_active": 0,
+                    }
+                ]
+
+        cursor = FakeCursor()
+        original_schema = system.ensure_station_status_schema
+        original_catalog = system.retail_station_catalog_cached
+        system.ensure_station_status_schema = lambda cur: None
+        system.retail_station_catalog_cached = lambda: {
+            14: {"name": "STN-27", "short": "S-28", "region": "REG-02"},
+        }
+        try:
+            statuses = _accounting_station_statuses_for_day(cursor, date(2026, 7, 24))
+        finally:
+            system.ensure_station_status_schema = original_schema
+            system.retail_station_catalog_cached = original_catalog
+
+        self.assertEqual(cursor.params[0], datetime(2026, 7, 25, 0, 0))
+        self.assertEqual(cursor.params[1], datetime(2026, 7, 24, 0, 0))
+        self.assertIn(14, statuses)
+        self.assertEqual(statuses[14]["status"], "closed")
+        self.assertEqual(statuses[14]["statusType"], "renovation")
+        self.assertFalse(statuses[14]["isActive"])
+
+    def test_accounting_status_ignores_latest_run_for_other_target_date(self):
+        original_root = system.ACCOUNTING_REPORT_ROOT
+        original_catalog = system.retail_station_catalog_cached
+        original_statuses = system._accounting_station_statuses_for_day
+        original_latest = system._latest_automation_row
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            day_dir = root / "20260724"
+            day_dir.mkdir()
+            (day_dir / "001.xlsx").write_bytes(b"placeholder")
+            system.ACCOUNTING_REPORT_ROOT = root
+            system.retail_station_catalog_cached = lambda: {
+                1: {"name": "STN-01", "short": "S-02", "region": "REG-01"},
+            }
+            system._accounting_station_statuses_for_day = lambda cur, target_day: {}
+            system._latest_automation_row = lambda cur, task: {
+                "summary": {
+                    "targetDate": "2026-07-25",
+                    "warnings": ["001: stale warning"],
+                }
+            }
+            try:
+                payload = _accounting_report_status(object(), date(2026, 7, 24))
+            finally:
+                system.ACCOUNTING_REPORT_ROOT = original_root
+                system.retail_station_catalog_cached = original_catalog
+                system._accounting_station_statuses_for_day = original_statuses
+                system._latest_automation_row = original_latest
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["failedCount"], 0)
+        self.assertEqual(payload["warnings"], [])
+
+    def test_accounting_status_ignores_stale_latest_run_when_generated_file_is_newer(self):
+        original_root = system.ACCOUNTING_REPORT_ROOT
+        original_catalog = system.retail_station_catalog_cached
+        original_statuses = system._accounting_station_statuses_for_day
+        original_latest = system._latest_automation_row
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            day_dir = root / "20260727"
+            day_dir.mkdir()
+            file_path = day_dir / "001.xlsx"
+            file_path.write_bytes(b"fixed report")
+            updated_at = datetime(2026, 7, 28, 9, 10).timestamp()
+            os.utime(file_path, (updated_at, updated_at))
+            system.ACCOUNTING_REPORT_ROOT = root
+            system.retail_station_catalog_cached = lambda: {
+                1: {"name": "STN-01", "short": "S-02", "region": "REG-01"},
+            }
+            system._accounting_station_statuses_for_day = lambda cur, target_day: {}
+            system._latest_automation_row = lambda cur, task: {
+                "status": "failed",
+                "finished_at": "2026-07-28 08:42:32",
+                "summary": {
+                    "targetDate": "2026-07-27",
+                    "generated": [{"file": str(day_dir / "001.xlsx")}],
+                    "warnings": ["001: stale warning"],
+                },
+            }
+            try:
+                payload = _accounting_report_status(object(), date(2026, 7, 27))
+            finally:
+                system.ACCOUNTING_REPORT_ROOT = original_root
+                system.retail_station_catalog_cached = original_catalog
+                system._accounting_station_statuses_for_day = original_statuses
+                system._latest_automation_row = original_latest
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["failedCount"], 0)
+        self.assertEqual(payload["warnings"], [])
+        self.assertTrue(payload["latestRun"]["stale"])
+
+    def test_accounting_status_keeps_generated_station_even_if_status_record_overlaps(self):
+        original_root = system.ACCOUNTING_REPORT_ROOT
+        original_catalog = system.retail_station_catalog_cached
+        original_statuses = system._accounting_station_statuses_for_day
+        original_latest = system._latest_automation_row
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            day_dir = root / "20260727"
+            day_dir.mkdir()
+            (day_dir / "005.xlsx").write_bytes(b"generated")
+            system.ACCOUNTING_REPORT_ROOT = root
+            system.retail_station_catalog_cached = lambda: {
+                5: {"name": "STN-09", "short": "S-10", "region": "REG-01"},
+            }
+            system._accounting_station_statuses_for_day = lambda cur, target_day: {
+                5: {"affectsSales": True, "statusType": "power_outage"}
+            }
+            system._latest_automation_row = lambda cur, task: None
+            try:
+                payload = _accounting_report_status(object(), date(2026, 7, 27))
+            finally:
+                system.ACCOUNTING_REPORT_ROOT = original_root
+                system.retail_station_catalog_cached = original_catalog
+                system._accounting_station_statuses_for_day = original_statuses
+                system._latest_automation_row = original_latest
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["expectedCount"], 1)
+        self.assertEqual(payload["generatedStationCount"], 1)
+        self.assertEqual(payload["closedCount"], 0)
+        self.assertFalse(payload["generatedFiles"][0]["closed"])
 
     def test_accounting_task_marks_skipped_items_as_failed(self):
         records = []

@@ -18,13 +18,13 @@ from xml.etree import ElementTree as ET
 
 import openpyxl
 import pymysql
+from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from business_time import shift_business_date_expr  # noqa: E402
 from config import DB_CONFIG  # noqa: E402
 from export_excel import _infer_resource_code_daily  # noqa: E402
 
@@ -575,6 +575,24 @@ def report_templates(template_dir: Path) -> dict[int, list[ReportTemplate]]:
     return {shop_key: sorted(items, key=lambda item: (item.sequence, item.path.name)) for shop_key, items in result.items()}
 
 
+def add_missing_station_templates(
+    templates_by_shop: dict[int, list[ReportTemplate]],
+    report_root: Path,
+    target_day: date,
+    primary_template_dir: Path,
+) -> dict[int, list[ReportTemplate]]:
+    target_name = day_folder_name(target_day)
+    fallback_dirs = [
+        path
+        for path in report_day_folders(report_root)
+        if path.name < target_name and path != primary_template_dir
+    ]
+    for folder in sorted(fallback_dirs, key=lambda path: path.name, reverse=True):
+        for shop_key, templates in report_templates(folder).items():
+            templates_by_shop.setdefault(shop_key, templates)
+    return templates_by_shop
+
+
 def template_shift_match_score(template: ReportTemplate, shift_range: ShiftRange) -> float | None:
     if template.shift_begin is None or template.shift_end is None:
         return None
@@ -649,11 +667,10 @@ def load_shift_range_for_template(
 
 
 def load_shift_ranges(cur, target_day: date) -> dict[int, list[ShiftRange]]:
-    business_day = shift_business_date_expr("s")
     start = target_day.isoformat()
     end = (target_day + timedelta(days=1)).isoformat()
     cur.execute(
-        f"""
+        """
         SELECT ShopKey, ShiftKey, DatetimeShiftBegin, DatetimeShiftEnd,
                TIMESTAMPDIFF(MINUTE, DatetimeShiftBegin, DatetimeShiftEnd) AS ShiftMinutes,
                (
@@ -663,8 +680,8 @@ def load_shift_ranges(cur, target_day: date) -> dict[int, list[ShiftRange]]:
                      AND ss.ShiftKey = s.ShiftKey
                ) AS SellingRows
         FROM shift s
-        WHERE {business_day} >= %s
-          AND {business_day} < %s
+        WHERE DatetimeShiftBegin >= %s
+          AND DatetimeShiftBegin < %s
           AND DatetimeShiftBegin IS NOT NULL
           AND DatetimeShiftEnd IS NOT NULL
           AND DatetimeShiftEnd > DatetimeShiftBegin
@@ -1192,6 +1209,14 @@ def best_match(candidates: list[dict], used: set[int], checks: list[tuple[str, f
     return None
 
 
+def first_remaining(candidates: list[dict], used: set[int]) -> dict | None:
+    for row in candidates:
+        if id(row) not in used:
+            used.add(id(row))
+            return row
+    return None
+
+
 def iter_main_specs(ws) -> list[dict]:
     receipt_row = find_label_row(ws, "Расшифровка поступления")
     specs: list[dict] = []
@@ -1264,7 +1289,8 @@ def assign_counter_rows(ws, counter_rows: list[dict], template_matches_shift: bo
     all_rows = sorted(counter_rows, key=lambda row: int(row.get("BalanceShopShiftKey") or 0))
     used: set[int] = set()
     assigned: dict[int, dict | None] = {}
-    for spec in iter_main_specs(ws):
+    specs = iter_main_specs(ws)
+    for spec in specs:
         row = spec["row"]
         checks = counter_match_checks(spec, template_matches_shift)
         candidates = grouped.get(spec["resource"], [])
@@ -1276,6 +1302,16 @@ def assign_counter_rows(ws, counter_rows: list[dict], template_matches_shift: bo
         if match is None:
             match = best_match(all_rows, used, checks)
         assigned[row] = match
+    for spec in specs:
+        row = spec["row"]
+        if assigned.get(row) is not None:
+            continue
+        if is_zero_like(spec.get("template_begin")) and is_zero_like(spec.get("template_end")):
+            continue
+        match = first_remaining(grouped.get(spec["resource"], []), used)
+        if match is None:
+            match = first_remaining(all_rows, used)
+        assigned[row] = match
     return assigned
 
 
@@ -1285,7 +1321,8 @@ def assign_tank_rows(ws, tank_rows: list[dict]) -> dict[int, dict | None]:
         rows.sort(key=lambda row: int(row.get("BalanceShopShiftKey") or 0))
     used: set[int] = set()
     assigned: dict[int, dict | None] = {}
-    for spec in iter_main_specs(ws):
+    specs = [spec for spec in iter_main_specs(ws) if spec["is_tank_row"]]
+    for spec in specs:
         if not spec["is_tank_row"]:
             continue
         row = spec["row"]
@@ -1312,6 +1349,11 @@ def assign_tank_rows(ws, tank_rows: list[dict]) -> dict[int, dict | None]:
                 ],
             )
         assigned[row] = match
+    for spec in specs:
+        row = spec["row"]
+        if assigned.get(row) is not None:
+            continue
+        assigned[row] = first_remaining(grouped.get(spec["resource"], []), used)
     return assigned
 
 
@@ -1403,6 +1445,12 @@ def clear_generated_cells(ws) -> None:
             ws.cell(row, col).value = None
 
 
+def clear_main_blank_columns(ws, row_number: int) -> None:
+    cell = ws.cell(row_number, 36)
+    if not isinstance(cell, MergedCell):
+        cell.value = ""
+
+
 def fill_main_table(
     ws,
     shift_range: ShiftRange,
@@ -1419,8 +1467,12 @@ def fill_main_table(
     all_supply_volume = sum(float(item.get("volume") or 0) for item in supply.values())
     has_previous_product_row = False
     previous_product_had_supply = False
-    for spec in iter_main_specs(ws):
+    specs = iter_main_specs(ws)
+    first_main_row = specs[0]["row"] if specs else None
+    for spec in specs:
         row_number = spec["row"]
+        if row_number != first_main_row:
+            clear_main_blank_columns(ws, row_number)
         counter = counter_assignments.get(row_number)
         if counter:
             begin = float(counter.get("BeginBalance") or 0)
@@ -1466,7 +1518,7 @@ def fill_main_table(
             else:
                 warnings.append(f"{shift_range.shop_key:03d}: 未匹配油罐行 {row_number}")
 
-        if not spec["is_product_row"]:
+        if not spec["is_product_row"] and not spec["is_tank_row"]:
             continue
 
         item = supply.get(resource, {})
@@ -1500,12 +1552,13 @@ def fill_main_table(
                 ws.cell(row_number, 6).value = value_or_blank(ws.cell(row_number, 6).value, volume, 2)
         elif has_supply:
             ws.cell(row_number, 6).value = round_float(volume, 2)
-        elif show_zero_supply:
+        elif spec["is_product_row"] and show_zero_supply:
             ws.cell(row_number, 6).value = 0.0
-        else:
+        elif spec["is_product_row"]:
             ws.cell(row_number, 6).value = ""
-        has_previous_product_row = True
-        previous_product_had_supply = has_supply
+        if spec["is_product_row"]:
+            has_previous_product_row = True
+            previous_product_had_supply = has_supply
     return warnings
 
 
@@ -1617,6 +1670,12 @@ def detail_doc_value(existing, docs: list[str], template_matches_shift: bool):
     return value
 
 
+def clear_detail_blank_columns(ws, row_number: int) -> None:
+    cell = ws.cell(row_number, 36)
+    if not isinstance(cell, MergedCell):
+        cell.value = ""
+
+
 def fill_detail_table(ws, supply: dict[int, dict], sales: dict[int, dict], template_matches_shift: bool = False) -> None:
     supply_assignments = assign_supply_entries(ws, supply, template_matches_shift=template_matches_shift)
     sales_assignments = assign_sales_entries(
@@ -1642,6 +1701,7 @@ def fill_detail_table(ws, supply: dict[int, dict], sales: dict[int, dict], templ
             supply_temperature = 0.0
             supply_docs = []
 
+        clear_detail_blank_columns(ws, row_number)
         ws.cell(row_number, 7).value = detail_doc_value(ws.cell(row_number, 7).value, supply_docs, template_matches_shift)
         ws.cell(row_number, 10).value = round_float(supply_volume, 2)
         ws.cell(row_number, 13).value = comma_number(supply_density, 15, trim=True) if supply_density else "0"
@@ -1656,9 +1716,20 @@ def fill_detail_table(ws, supply: dict[int, dict], sales: dict[int, dict], templ
         ws.cell(row_number, 39).value = round_float(sales_item.get("card_ts", 0), 2, adjust_float_tail=True)
 
 
+def is_zero_amount_words(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = " ".join(value.strip().casefold().split())
+    positive_zero = amount_words_ru(0).casefold()
+    negative_zero = amount_words_ru(Decimal("-0.000000001")).casefold()
+    return text in {positive_zero, negative_zero}
+
+
 def zero_amount_words_like_template(existing, fallback: str) -> str:
     if not isinstance(existing, str):
         return fallback
+    if is_zero_amount_words(existing):
+        return existing
     first_word = fallback.split(" ", 1)[0]
     if existing.strip().casefold().startswith(first_word.casefold()):
         return existing
@@ -1953,7 +2024,12 @@ def generate_reports(
         shutil.rmtree(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    templates_by_shop = report_templates(template_path)
+    templates_by_shop = add_missing_station_templates(
+        report_templates(template_path),
+        report_root,
+        target_day,
+        template_path,
+    )
     if not templates_by_shop:
         raise FileNotFoundError(f"模板目录没有 xlsx 文件: {template_path}")
 

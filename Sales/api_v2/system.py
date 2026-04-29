@@ -22,8 +22,8 @@ from shared_utils import (
     OILSTATION_ROOT,
     REFRESH_CACHE_LOCK,
     REFRESH_CACHE_STATUS,
-    active_station_statuses,
     ensure_automation_task_schema,
+    ensure_station_status_schema,
     record_automation_task,
     retail_station_catalog_cached,
 )
@@ -440,6 +440,67 @@ def _station_payload(shop_key: int, catalog: dict[int, dict[str, Any]], status: 
     return payload
 
 
+def _row_value(row: Any, key: str, index: int) -> Any:
+    return row.get(key) if isinstance(row, dict) else row[index]
+
+
+def _iso_or_none(value: Any) -> str | None:
+    if not value:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _accounting_station_statuses_for_day(cur, target_day: date) -> dict[int, dict[str, Any]]:
+    ensure_station_status_schema(cur)
+    day_start = datetime.combine(target_day, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+    cur.execute(
+        """
+        SELECT id, shop_key, status_type, status_label, started_at, expected_resume_at,
+               ended_at, affects_sales, affects_inventory, suppress_alerts, note, is_active
+        FROM retail_station_status
+        WHERE status_type <> 'normal'
+          AND started_at < %s
+          AND (ended_at IS NULL OR ended_at >= %s)
+        ORDER BY shop_key, started_at DESC, id DESC
+        """,
+        (day_end, day_start),
+    )
+    catalog = retail_station_catalog_cached()
+    statuses: dict[int, dict[str, Any]] = {}
+    for row in cur.fetchall():
+        shop_key = int(_row_value(row, "shop_key", 1))
+        if shop_key in statuses:
+            continue
+        status_type = _row_value(row, "status_type", 2)
+        status_label = _row_value(row, "status_label", 3)
+        note = _row_value(row, "note", 10) or ""
+        affects_sales = bool(_row_value(row, "affects_sales", 7))
+        station = catalog.get(shop_key, {"name": f"Station-{shop_key}", "short": "", "region": ""})
+        statuses[shop_key] = {
+            "id": _row_value(row, "id", 0),
+            "shopKey": shop_key,
+            "name": station.get("name") or f"Station-{shop_key}",
+            "short": station.get("short") or "",
+            "region": station.get("region") or "",
+            "status": "closed" if affects_sales else "warning",
+            "statusType": status_type,
+            "statusLabel": status_label,
+            "closedReason": note or status_label or status_type,
+            "note": note,
+            "startedAt": _iso_or_none(_row_value(row, "started_at", 4)),
+            "expectedResumeAt": _iso_or_none(_row_value(row, "expected_resume_at", 5)),
+            "endedAt": _iso_or_none(_row_value(row, "ended_at", 6)),
+            "affectsSales": affects_sales,
+            "affectsInventory": bool(_row_value(row, "affects_inventory", 8)),
+            "suppressAlerts": bool(_row_value(row, "suppress_alerts", 9)),
+            "isActive": bool(_row_value(row, "is_active", 11)),
+        }
+    return statuses
+
+
 def _accounting_failed_item_key(item: dict[str, Any]) -> tuple[Any, ...]:
     return (
         item.get("type"),
@@ -572,9 +633,44 @@ def _latest_automation_row(cur, task_name: str) -> dict[str, Any] | None:
     return item
 
 
+def _parse_accounting_status_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("T", " "))
+    except ValueError:
+        return None
+
+
+def _accounting_summary_artifact_updated_at(
+    summary: dict[str, Any] | None,
+    output_dir: Path,
+    archive: dict[str, Any] | None,
+) -> datetime | None:
+    if not isinstance(summary, dict):
+        return None
+    updated_at: list[datetime] = []
+    for item in summary.get("generated") or []:
+        if not isinstance(item, dict):
+            continue
+        file_name = Path(str(item.get("file") or "")).name
+        if not file_name:
+            continue
+        path = output_dir / file_name
+        if path.exists():
+            updated_at.append(datetime.fromtimestamp(path.stat().st_mtime))
+    if not updated_at and archive and archive.get("path"):
+        archive_path = Path(str(archive["path"]))
+        if archive_path.exists():
+            updated_at.append(datetime.fromtimestamp(archive_path.stat().st_mtime))
+    return max(updated_at) if updated_at else None
+
+
 def _accounting_report_status(cur, target_day: date) -> dict[str, Any]:
     catalog = retail_station_catalog_cached()
-    statuses = active_station_statuses(cur)
+    statuses = _accounting_station_statuses_for_day(cur, target_day)
     closed_statuses = {
         int(shop_key): status
         for shop_key, status in statuses.items()
@@ -617,6 +713,20 @@ def _accounting_report_status(cur, target_day: date) -> dict[str, Any]:
                 unrecognized_files.append(path.name)
             generated_files.append(file_info)
 
+    if generated_shop_keys:
+        closed_statuses = {
+            shop_key: status
+            for shop_key, status in closed_statuses.items()
+            if shop_key not in generated_shop_keys
+        }
+        for item in generated_files:
+            if item.get("shopKey"):
+                item["closed"] = int(item["shopKey"]) in closed_statuses
+        expected_shop_keys = [
+            shop_key
+            for shop_key in sorted(catalog)
+            if shop_key not in closed_statuses
+        ]
     missing_shop_keys = [shop_key for shop_key in expected_shop_keys if shop_key not in generated_shop_keys]
     closed_stations = [_station_payload(shop_key, catalog, status) for shop_key, status in sorted(closed_statuses.items())]
     unexpected_files = [
@@ -642,12 +752,34 @@ def _accounting_report_status(cur, target_day: date) -> dict[str, Any]:
     latest_summary = _normalize_accounting_text(latest.get("summary")) if isinstance(latest, dict) else None
     if isinstance(latest, dict) and isinstance(latest_summary, dict):
         latest = {**latest, "summary": latest_summary}
-    if isinstance(latest_summary, dict) and latest_summary.get("targetDate") == target_day.isoformat():
-        warnings = list(latest_summary.get("warnings") or [])
-        skipped = list(latest_summary.get("skipped") or [])
+    latest_summary_for_target = latest_summary if (
+        isinstance(latest_summary, dict)
+        and latest_summary.get("targetDate") == target_day.isoformat()
+    ) else None
+    latest_artifact_at = _accounting_summary_artifact_updated_at(latest_summary_for_target, output_dir, archive)
+    latest_run_at = _parse_accounting_status_datetime(
+        latest.get("finished_at") or latest.get("started_at")
+    ) if isinstance(latest, dict) else None
+    if (
+        latest_summary_for_target
+        and latest_artifact_at
+        and latest_run_at
+        and latest_artifact_at > latest_run_at + timedelta(seconds=1)
+    ):
+        latest_summary_for_target = None
+        if isinstance(latest, dict):
+            latest = {
+                **latest,
+                "stale": True,
+                "artifactUpdatedAt": latest_artifact_at.isoformat(sep=" ", timespec="seconds"),
+                "ignoredReason": "report files were updated after this automation run",
+            }
+    if latest_summary_for_target:
+        warnings = list(latest_summary_for_target.get("warnings") or [])
+        skipped = list(latest_summary_for_target.get("skipped") or [])
 
     failed_items = _dedupe_accounting_failed_items(
-        _accounting_failed_items_from_summary(latest_summary if isinstance(latest_summary, dict) else None, catalog)
+        _accounting_failed_items_from_summary(latest_summary_for_target, catalog)
         + _accounting_missing_failed_items(missing_shop_keys, catalog)
     )
     if missing_shop_keys:

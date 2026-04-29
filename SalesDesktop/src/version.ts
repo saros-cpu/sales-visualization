@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.9';
-export const BUILD_DATE = '2026-07-27';
+export const VERSION = '3.9.10';
+export const BUILD_DATE = '2026-07-28';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.10',
+    date: '2026-07-28',
+    type: 'patch',
+    changes: [
+      '修复：吉方财务交接日报按班次开始日期归属，跨日结束班次不再漏生成到目标日期之外',
+      '修复：已完成班次即使无销售数据或现金缴款为 0，也会生成吉方财务交接报告',
+      '优化：前一日报表目录缺少恢复营业站点模板时，自动从更早日报目录回溯可用模板',
+      '修复：吉方财务交接日报机表/油罐匹配、非首行进油量和空白列显示更贴近原 84 报表',
+      '修复：系统健康页在报表文件已补齐后忽略过期失败项，停电/停业状态不再覆盖已生成报表',
+      '验证：2026-07-27 吉方财务交接日报 28 份生成文件对照原零售服务端日报 28 份，业务值和结构均 0 差异',
+    ],
+  },
   {
     version: '3.9.9',
     date: '2026-07-27',
