@@ -21,4 +21,4 @@ nsis:
   uninstallerIcon: build/icon.ico
 publish:
   provider: generic
-  url: http://198.51.100.10/download
+  url: http://sales.example.com/download

@@ -9,6 +9,8 @@ if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
 from routes_assistant import build_assistant_query_plan
+from routes_assistant import assistant_project_coverage_status, assistant_tool_catalog
+from project_capabilities import project_assistant_capabilities
 
 
 TODAY = date(2026, 7, 22)
@@ -51,6 +53,30 @@ class AssistantProjectCoverageEvalTests(unittest.TestCase):
                     self.assertTrue(visual.get("requested"))
                     if "visualType" in expected:
                         self.assertEqual(visual.get("preferredType"), expected["visualType"])
+
+    def test_fixture_matches_production_project_capability_catalog(self):
+        fixture_ids = [case["id"] for case in self.cases]
+        production_ids = [case["id"] for case in project_assistant_capabilities()]
+
+        self.assertEqual(fixture_ids, production_ids)
+
+    def test_project_coverage_status_is_release_gate_ready(self):
+        status = assistant_project_coverage_status(today=TODAY)
+
+        self.assertEqual(status["status"], "ok")
+        self.assertEqual(status["failed"], 0)
+        self.assertEqual(status["passed"], status["total"])
+        self.assertFalse(status["missingToolRoutes"])
+        self.assertGreaterEqual(status["total"], 40)
+
+    def test_all_project_coverage_routes_have_readonly_tools(self):
+        tools = assistant_tool_catalog()
+        routes = {case["expected"]["route"] for case in project_assistant_capabilities()}
+
+        missing = sorted(route for route in routes if route not in tools)
+        writable = sorted(route for route in routes if route in tools and not tools[route].get("readOnly"))
+        self.assertEqual(missing, [])
+        self.assertEqual(writable, [])
 
 
 if __name__ == "__main__":

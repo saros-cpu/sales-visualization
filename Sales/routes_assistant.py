@@ -33,6 +33,7 @@ from services.weighing_service import get_weighing_list
 from summary_service import available_periods, period_bounds, summarize_combined, summarize_wholesale
 from wholesale_service import summarize_wholesale_page
 from routes_data import chinese_market_item, market_source_display
+from project_capabilities import project_assistant_capabilities, project_assistant_coverage_baseline_date
 
 
 _ASSISTANT_QUERY_EXECUTOR = None
@@ -306,6 +307,73 @@ def assistant_tool_catalog():
             "canWrite": False,
         }
         for key, value in sorted(_ASSISTANT_TOOL_CATALOG.items())
+    }
+
+
+def assistant_project_coverage_status(today=None):
+    today = today or project_assistant_coverage_baseline_date()
+    tools = assistant_tool_catalog()
+    rows = []
+    failed = []
+    for case in project_assistant_capabilities():
+        expected = case.get("expected") or {}
+        plan = build_assistant_query_plan(case.get("question") or "", today=today, context=case.get("context"))
+        checks = []
+
+        def check(code, ok, detail):
+            item = {"code": code, "ok": bool(ok), "detail": detail}
+            checks.append(item)
+            return bool(ok)
+
+        route = plan.get("route")
+        domain = plan.get("domain")
+        check("route", route == expected.get("route"), f"{route} == {expected.get('route')}")
+        check("domain", domain == expected.get("domain"), f"{domain} == {expected.get('domain')}")
+        check("clarification", not plan.get("needsClarification"), "must answer directly")
+        check("default_fallback", not (route == "retail_summary" and (plan.get("period") or {}).get("label") == "最近7天" and expected.get("route") != "retail_summary"), "must not fall back to recent retail summary")
+        check("tool", route in tools and bool((plan.get("tool") or {}).get("readOnly")), "route has read-only tool")
+        if "metric" in expected:
+            check("metric", plan.get("metric") == expected.get("metric"), f"{plan.get('metric')} == {expected.get('metric')}")
+        for dimension in expected.get("dimensions") or []:
+            check("dimension", dimension in (plan.get("dimensions") or []), f"{dimension} in dimensions")
+        if "station" in expected:
+            station = ((plan.get("entities") or {}).get("station") or {}).get("shopKey")
+            check("station", station == expected.get("station"), f"{station} == {expected.get('station')}")
+        if "resource" in expected:
+            resource = ((plan.get("entities") or {}).get("resource") or {}).get("resourceKey")
+            check("resource", resource == expected.get("resource"), f"{resource} == {expected.get('resource')}")
+        if "periodStart" in expected:
+            check("period", (plan.get("period") or {}).get("start") == expected.get("periodStart"), f"{(plan.get('period') or {}).get('start')} == {expected.get('periodStart')}")
+        if expected.get("visualRequested"):
+            visual = plan.get("visual") or {}
+            check("visual", bool(visual.get("requested")) and visual.get("preferredType") == expected.get("visualType"), f"{visual.get('preferredType')} == {expected.get('visualType')}")
+
+        passed = all(item["ok"] for item in checks)
+        row = {
+            "id": case.get("id"),
+            "module": case.get("module"),
+            "question": case.get("question"),
+            "route": route,
+            "domain": domain,
+            "passed": passed,
+            "checks": checks,
+        }
+        rows.append(row)
+        if not passed:
+            failed.append(row)
+    covered_routes = sorted({row.get("route") for row in rows if row.get("route")})
+    missing_tool_routes = sorted(route for route in covered_routes if route not in tools)
+    return {
+        "status": "ok" if not failed and not missing_tool_routes else "warning",
+        "checkedAt": datetime.now().isoformat(sep=" "),
+        "baselineDate": today.isoformat(),
+        "total": len(rows),
+        "passed": len(rows) - len(failed),
+        "failed": len(failed),
+        "coveredRoutes": covered_routes,
+        "missingToolRoutes": missing_tool_routes,
+        "failedItems": failed,
+        "items": rows,
     }
 
 
@@ -2238,6 +2306,12 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         confidence = min(confidence, 0.48)
     confidence = min(confidence, 0.95)
 
+    visual_requested = _assistant_chart_requested(text) or route in {
+        "retail_trend",
+        "station_trend_anomaly",
+        "retail_comparison",
+        "retail_resource_share",
+    } or (route == "self_use_summary" and "date" in dimensions)
     plan = {
         "normalizedQuestion": text,
         "domain": domain,
@@ -2252,7 +2326,7 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         "businessTerms": business_terms,
         "comparison": comparison,
         "visual": {
-            "requested": _assistant_chart_requested(text),
+            "requested": visual_requested,
             "preferredType": _assistant_chart_kind(text),
         },
         "executionHints": execution_hints,

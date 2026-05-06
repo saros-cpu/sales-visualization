@@ -18,6 +18,28 @@
     }
   },
   {
+    "id": "map_active_station_count",
+    "module": "地图 / 站点油库主数据",
+    "question": "现在有多少个在营站？多少个油库",
+    "expected": {
+      "route": "map_location",
+      "domain": "map",
+      "metric": "count",
+      "dimensions": ["station"]
+    }
+  },
+  {
+    "id": "map_station_location",
+    "module": "地图 / 站点油库主数据",
+    "question": "2号站位置在哪",
+    "expected": {
+      "route": "map_location",
+      "domain": "map",
+      "dimensions": ["station"],
+      "station": 2
+    }
+  },
+  {
     "id": "retail_overview",
     "module": "零售分析 / 总览",
     "question": "今年零售总销量和销售额",
@@ -64,6 +86,27 @@
     }
   },
   {
+    "id": "retail_trend_chart",
+    "module": "零售分析 / 趋势图",
+    "question": "月趋势",
+    "context": {
+      "pageContext": {
+        "path": "/",
+        "module": "",
+        "page": "home",
+        "title": "数据驾驶舱"
+      }
+    },
+    "expected": {
+      "route": "retail_trend",
+      "domain": "retail",
+      "metric": "volume",
+      "visualRequested": true,
+      "visualType": "line",
+      "periodStart": "2026-07-01"
+    }
+  },
+  {
     "id": "retail_resource",
     "module": "零售分析 / 油品",
     "question": "今年柴油零售数据",
@@ -73,6 +116,15 @@
       "dimensions": ["resource"],
       "resource": 106,
       "periodStart": "2026-01-01"
+    }
+  },
+  {
+    "id": "retail_density",
+    "module": "零售分析 / 实际密度",
+    "question": "当前密度数据",
+    "expected": {
+      "route": "density_summary",
+      "domain": "density"
     }
   },
   {
@@ -101,6 +153,19 @@
     "expected": {
       "route": "self_use_summary",
       "domain": "self_use",
+      "periodStart": "2026-01-01"
+    }
+  },
+  {
+    "id": "retail_self_use_trend",
+    "module": "零售分析 / 自用油趋势",
+    "question": "今年自用油按天趋势图",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "dimensions": ["date"],
+      "visualRequested": true,
+      "visualType": "line",
       "periodStart": "2026-01-01"
     }
   },
@@ -196,6 +261,15 @@
     "expected": {
       "route": "report_center_summary",
       "domain": "reports"
+    }
+  },
+  {
+    "id": "accounting_handover",
+    "module": "报表中心 / 吉方财务交接日报",
+    "question": "吉方财务交接日报昨天缺站了吗",
+    "expected": {
+      "route": "accounting_report_status",
+      "domain": "accounting"
     }
   },
   {
@@ -341,6 +415,15 @@
     "expected": {
       "route": "system_health_summary",
       "domain": "system_health"
+    }
+  },
+  {
+    "id": "release_rollback",
+    "module": "发布 / 回滚 / 清理",
+    "question": "客户端发布包和回滚策略是什么",
+    "expected": {
+      "route": "settings_summary",
+      "domain": "settings"
     }
   }
 ]

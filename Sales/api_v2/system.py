@@ -17,6 +17,7 @@ import pymysql
 from api_v2 import bp_v2
 from db import get_connection
 from routes_data import run_exchange_maintenance, run_market_watch_maintenance, run_retail_snapshot_maintenance
+from routes_assistant import assistant_project_coverage_status
 from services.retail_alert_service import generate_retail_alert_insights
 from shared_utils import (
     OILSTATION_ROOT,
@@ -877,6 +878,7 @@ def _action_center(
     accounting: dict[str, Any],
     retail_alerts: dict[str, Any],
     report_audit: dict[str, Any],
+    assistant_coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
 
@@ -1000,6 +1002,31 @@ def _action_center(
             "检查 OpenRouter 配置、模型可用性和网络访问；业务接口保持只读。",
             count=ai_failed,
             updated_at=ai.get("lastCalledAt"),
+        )
+
+    assistant_coverage = assistant_coverage or {}
+    assistant_failed = int(assistant_coverage.get("failed") or 0)
+    missing_tool_routes = list(assistant_coverage.get("missingToolRoutes") or [])
+    if assistant_failed or missing_tool_routes:
+        detail_parts = []
+        if assistant_failed:
+            failed_modules = [
+                str(item.get("module") or item.get("id") or "-")
+                for item in list(assistant_coverage.get("failedItems") or [])[:4]
+            ]
+            detail_parts.append(f"{assistant_failed} 个项目问答覆盖失败：{', '.join(failed_modules)}")
+        if missing_tool_routes:
+            detail_parts.append(f"缺少只读工具：{', '.join(str(item) for item in missing_tool_routes[:6])}")
+        add(
+            "assistant_project_coverage",
+            "danger",
+            "ai",
+            "AI 助手项目覆盖不完整",
+            "；".join(detail_parts),
+            "产品/运维",
+            "运行 AI 覆盖评测并补齐业务词典、工具路由或模块问法。",
+            count=assistant_failed + len(missing_tool_routes),
+            updated_at=assistant_coverage.get("checkedAt"),
         )
 
     anomaly_count = int(retail_alerts.get("anomalyCount") or 0)
@@ -1291,6 +1318,7 @@ def system_health():
             accounting = _accounting_report_status(cur, date.today() - timedelta(days=1))
             retail_alerts = _retail_alert_status(cur)
             report_audit = _latest_report_audit_status()
+            assistant_coverage = assistant_project_coverage_status()
             action_center = _action_center(
                 cache_items,
                 api,
@@ -1301,6 +1329,7 @@ def system_health():
                 accounting,
                 retail_alerts,
                 report_audit,
+                assistant_coverage,
             )
             status = _overall_status(cache_items, api, automation, knowledge, updater, action_center["items"])
             return jsonify({"code": 0, "message": "success", "data": {
@@ -1323,6 +1352,7 @@ def system_health():
                 "accountingLatest": accounting,
                 "retailAlerts": retail_alerts,
                 "reportAudit": report_audit,
+                "assistantProjectCoverage": assistant_coverage,
                 "actionCenter": action_center,
             }})
     finally:

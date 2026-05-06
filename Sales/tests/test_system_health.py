@@ -35,6 +35,22 @@ def action_codes(automation):
     return [item["code"] for item in result["items"]]
 
 
+def action_codes_with_assistant_coverage(assistant_coverage):
+    result = _action_center(
+        cache_items=[],
+        api_summary={"failed24h": 0},
+        automation=[],
+        ai={"failed7d": 0},
+        knowledge={"failedCount": 0, "missingFileCount": 0, "pendingCount": 0},
+        updater={"warnings": []},
+        accounting={"missingCount": 0},
+        retail_alerts={"anomalyCount": 0, "warnings": []},
+        report_audit={"found": False, "monthVs254": 0},
+        assistant_coverage=assistant_coverage,
+    )
+    return [item["code"] for item in result["items"]]
+
+
 class SystemHealthActionCenterTests(unittest.TestCase):
     def test_legacy_automation_all_does_not_trigger_current_failure(self):
         codes = action_codes([
@@ -47,6 +63,15 @@ class SystemHealthActionCenterTests(unittest.TestCase):
             {"task_name": "exchange_rates", "status": "failed", "error": "network"},
         ])
         self.assertIn("automation_failed", codes)
+
+    def test_assistant_project_coverage_failure_triggers_action(self):
+        codes = action_codes_with_assistant_coverage({
+            "failed": 1,
+            "failedItems": [{"module": "地图", "id": "map"}],
+            "missingToolRoutes": ["map_location"],
+        })
+
+        self.assertIn("assistant_project_coverage", codes)
 
     def test_api_summary_excludes_auth_denials_from_health_failures(self):
         class FakeCursor:

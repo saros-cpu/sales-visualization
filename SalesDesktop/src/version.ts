@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.10';
+export const VERSION = '3.9.11';
 export const BUILD_DATE = '2026-07-28';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,20 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.11',
+    date: '2026-07-28',
+    type: 'patch',
+    changes: [
+      '重要更新：AI 助手新增项目级覆盖清单和 release gate，覆盖客户端 41 个菜单/模块问法，防止明确业务问题回退到默认最近 7 天零售汇总',
+      '新增：系统健康返回 AI 项目覆盖状态，若路由、业务域、只读工具或时间口径失配，会进入提醒中心',
+      '新增：迟到数据审计/补跑脚本，可按业务日期识别日快照、月快照、自用油、年度快照和吉方财务交接报表是否需要重跑',
+      '新增：零售快照刷新脚本支持按历史日期或月份补跑，便于处理停电、延迟上传和跨日班次数据',
+      '新增：密度/吨位快照审计和数据库验数脚本升级，发布前检查会验证当前月快照升数、kg、吨和密度口径一致',
+      '优化：客户端默认生产入口和自动更新源切换为 HTTP 域名 http://sales.example.com，保留 IP 入口兜底；HTTPS 等正式 SSL 证书后启用',
+      '新增：发布维护脚本支持旧安装包安全清理、桌面更新源回滚和 HTTP 域名连通性检查',
+    ],
+  },
   {
     version: '3.9.10',
     date: '2026-07-28',

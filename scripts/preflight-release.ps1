@@ -66,13 +66,26 @@ Invoke-Check "Python syntax compile" {
         "Sales/api_v2/system.py",
         "Sales/api_v2/knowledge.py",
         "Sales/api_v2/permission_service.py",
-        "OilStation/scripts/generate_accounting_handover_reports.py"
+        "OilStation/scripts/generate_accounting_handover_reports.py",
+        "OilStation/scripts/refresh_current_snapshots.py",
+        "Sales/scripts/compare_retail_snapshot_db.py",
+        "scripts/late_retail_data_maintenance.py",
+        "scripts/audit_retail_density_mass.py"
     )
     Invoke-External $PythonExe (@("-m", "py_compile") + $files) $RepoRoot
 }
 
 Invoke-Check "Python unit tests" {
     Invoke-External $PythonExe @("-m", "unittest", "discover", "-s", "Sales/tests") $RepoRoot
+}
+
+Invoke-Check "Assistant project coverage" {
+    Invoke-External "powershell" @("-ExecutionPolicy", "Bypass", "-File", ".\scripts\assistant-coverage.ps1") $RepoRoot
+}
+
+Invoke-Check "Retail density/mass snapshots" {
+    $activeMonth = (Get-Date).ToString("yyyy-MM")
+    Invoke-External "powershell" @("-ExecutionPolicy", "Bypass", "-File", ".\scripts\audit-retail-density-mass.ps1", "-Start", $activeMonth, "-FailOnIssue") $RepoRoot
 }
 
 if (-not $SkipDesktopTypecheck) {
@@ -155,6 +168,26 @@ Invoke-Check "Nginx download route shape" {
         return
     }
     throw "/download/ should serve only SalesDesktop/download through try_files"
+}
+
+Invoke-Check "HTTP domain defaults" {
+    $domain = "http://sales.example.com"
+    $runtimeConfig = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron/runtime-config.cjs") -Encoding utf8 -Raw
+    $preload = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron/preload.cjs") -Encoding utf8 -Raw
+    $builder = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron-builder.yml") -Encoding utf8 -Raw
+    $nginxConf = Get-Content (Join-Path $RepoRoot "nginx.conf") -Encoding utf8 -Raw
+    if ($runtimeConfig -notmatch [regex]::Escape("const DEFAULT_API_HOST = process.env.SALES_API_HOST || '$domain'")) {
+        throw "desktop runtime default API host is not $domain"
+    }
+    if ($preload -notmatch [regex]::Escape("apiHost: '$domain'")) {
+        throw "desktop preload fallback API host is not $domain"
+    }
+    if ($builder -notmatch [regex]::Escape("url: $domain/download")) {
+        throw "electron updater publish URL is not $domain/download"
+    }
+    if ($nginxConf -match "return\s+301\s+https://") {
+        throw "nginx still redirects HTTP domain traffic to HTTPS before SSL is ready"
+    }
 }
 
 Invoke-Check "CodeGraph local index" -WarnOnly {

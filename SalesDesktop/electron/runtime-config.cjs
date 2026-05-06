@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_API_HOST = process.env.SALES_API_HOST || 'http://198.51.100.10';
+const DEFAULT_API_HOST = process.env.SALES_API_HOST || 'http://sales.example.com';
 const DEFAULT_UPDATE_PATH = '/download';
 
 function normalizeHost(value) {

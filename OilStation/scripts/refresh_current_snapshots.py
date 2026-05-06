@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from contextlib import contextmanager
 import msvcrt
 import os
@@ -841,10 +842,43 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
         workbook.close()
 
 
-def _refresh_snapshots() -> int:
-    today = date.today()
-    completed_day = today - timedelta(days=1)
-    ym = f"{completed_day.year}-{completed_day.month:02d}"
+def _month_label(year: int, month: int) -> str:
+    return f"{year}-{month:02d}"
+
+
+def _parse_month(value: str) -> tuple[int, int]:
+    try:
+        year_text, month_text = str(value).split("-", 1)
+        year = int(year_text)
+        month = int(month_text)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("month must use YYYY-MM") from None
+    if month < 1 or month > 12:
+        raise argparse.ArgumentTypeError("month must use YYYY-MM")
+    return year, month
+
+
+def _parse_day(value: str) -> date:
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        raise argparse.ArgumentTypeError("date must use YYYY-MM-DD") from None
+
+
+def _iter_months(start: tuple[int, int], end: tuple[int, int]):
+    year, month = start
+    end_year, end_month = end
+    while (year, month) <= (end_year, end_month):
+        yield year, month
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+
+
+def _refresh_month_snapshots(year: int, month: int) -> bool:
+    ym = _month_label(year, month)
     client = app.test_client()
     ok = True
 
@@ -854,15 +888,15 @@ def _refresh_snapshots() -> int:
     if self_use_snapshot:
         set_cached(f"self_use:{ym}", self_use_snapshot)
         print(f"ok self_use snapshot {ym}: {len(self_use_snapshot['records'])} records")
-    ok = _rebuild_yearly_snapshots(completed_day.year, completed_day.month) and ok
+    ok = _rebuild_yearly_snapshots(year, month) and ok
     requests = [
         (f"/api/regions/{ym}", {}),
-        ("/api/dashboard/yearly", {"year": str(completed_day.year)}),
-        ("/api/kpi/yearly", {"year": str(completed_day.year), "inventory": "0"}),
-        ("/api/resources/yearly", {"year": str(completed_day.year)}),
+        ("/api/dashboard/yearly", {"year": str(year)}),
+        ("/api/kpi/yearly", {"year": str(year), "inventory": "0"}),
+        ("/api/resources/yearly", {"year": str(year)}),
         (
             "/api/resources/yearly",
-            {"year": str(completed_day.year), "month": str(completed_day.month)},
+            {"year": str(year), "month": str(month)},
         ),
         (f"/api/retail/self-use/{ym}", {}),
     ]
@@ -870,7 +904,7 @@ def _refresh_snapshots() -> int:
         ok = _request(client, path, query) and ok
 
     start = f"{ym}-01"
-    end = _month_end_exclusive(completed_day.year, completed_day.month)
+    end = _month_end_exclusive(year, month)
     t0 = time.time()
     extras = _inventory_contract_totals(start, end)
     elapsed = time.time() - t0
@@ -878,6 +912,32 @@ def _refresh_snapshots() -> int:
         f"ok report_extras {ym}: inventory={extras.get('totalEndInventory', 0):.2f}, "
         f"contract={extras.get('totalContractVolume', 0):.2f}, elapsed={elapsed:.2f}s"
     )
+    return ok
+
+
+def _refresh_snapshots() -> int:
+    completed_day = date.today() - timedelta(days=1)
+    ok = _refresh_month_snapshots(completed_day.year, completed_day.month)
+    return 0 if ok else 1
+
+
+def _refresh_selected_snapshots(
+    dates: list[date] | None = None,
+    months: list[tuple[int, int]] | None = None,
+) -> int:
+    selected: set[tuple[int, int]] = set(months or [])
+    for item in dates or []:
+        selected.add((item.year, item.month))
+    if not selected:
+        return _refresh_snapshots()
+    ok = True
+    for year, month in sorted(selected):
+        if date(year, month, 1) > date.today():
+            print(f"skip future snapshot month {year}-{month:02d}")
+            ok = False
+            continue
+        print(f"refresh snapshot month {year}-{month:02d}")
+        ok = _refresh_month_snapshots(year, month) and ok
     return 0 if ok else 1
 
 
@@ -1097,11 +1157,24 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Refresh retail snapshots.")
+    parser.add_argument("--date", action="append", type=_parse_day, help="affected business date, YYYY-MM-DD; can be repeated")
+    parser.add_argument("--month", action="append", type=_parse_month, help="affected month, YYYY-MM; can be repeated")
+    parser.add_argument("--start", type=_parse_month, help="first affected month, YYYY-MM")
+    parser.add_argument("--end", type=_parse_month, help="last affected month, YYYY-MM")
+    args = parser.parse_args()
+
+    selected_months = list(args.month or [])
+    if args.start or args.end:
+        start = args.start or args.end
+        end = args.end or args.start
+        selected_months.extend(_iter_months(start, end))
+
     with _single_refresh_lock() as acquired:
         if not acquired:
             print("skip retail snapshot refresh: another refresh is already running")
             return 0
-        return _refresh_snapshots()
+        return _refresh_selected_snapshots(dates=args.date or [], months=selected_months)
 
 
 if __name__ == "__main__":

@@ -2,9 +2,20 @@
 
 项目根目录：`D:\SalesVisualization`
 
-本项目是公司销售数据可视化总平台，用于统一展示零售、批发与合并统计数据。当前系统由 Nginx 对外提供 `80/443` 入口，Flask 后端仅监听本机 `127.0.0.1:8900`。
+本项目是公司销售数据可视化总平台，用于统一展示零售、批发与合并统计数据。当前系统由 Nginx 对外提供 HTTP 入口，Flask 后端仅监听本机 `127.0.0.1:8900`；HTTPS 等正式 SSL 证书签发后再启用。
 
 ## 版本更新记录
+
+### 2026-07-28 (v3.9.11)
+
+- **AI 助手项目覆盖 release gate**：新增 `Sales/project_capabilities.py`，按客户端 41 个菜单/模块级问法自动验证 route/domain/metric/维度/只读工具，防止明确业务问题回退到最近 7 天零售汇总。
+- **系统健康联动**：系统健康新增 `assistantProjectCoverage`，AI 项目覆盖失败会进入提醒中心，便于发布前发现问答覆盖缺口。
+- **迟到数据审计与补跑**：新增 `scripts/audit-late-retail-data.ps1` / `scripts/late_retail_data_maintenance.py`，可按业务日期识别日快照、月快照、自用油、年度快照和吉方财务交接报表是否晚于数据上传时间，并可显式补跑。
+- **历史快照重跑能力**：`OilStation/scripts/refresh_current_snapshots.py` 支持 `--date/--month/--start/--end`，用于停电、延迟上传、跨日班次等场景的历史月份快照重建。
+- **真实密度/吨位审计**：新增 `audit-retail-density-mass`，并升级 `compare_retail_snapshot_db.py`，按数据库真实质量/密度字段对照快照升数、kg、吨和销售额。
+- **HTTP 域名默认入口**：桌面客户端默认 API 和更新源切换到 `http://sales.example.com`，保留 `http://198.51.100.10` 兜底；Nginx 取消证书未就绪前的 HTTP→HTTPS 跳转。
+- **发布维护工具**：新增旧安装包安全清理、桌面更新源回滚、HTTP 域名连通性检查脚本；本次清理旧公开安装包释放约 `248.63 MB`。
+- **发布同步**：客户端、Web、后端和自动更新包版本同步到 `3.9.11`。
 
 ### 2026-07-28 (v3.9.10)
 
@@ -447,7 +458,7 @@
 
 - 完成 React + Vite 前端迁移，所有页面从内联 HTML/JS 改为 React SPA 构建。
 - 部署 Nginx 1.26.3 作为反向代理：静态文件服务 + API 转发到 Flask :8900。
-- 访问地址新增 `http://localhost`（Nginx :80），原 `http://127.0.0.1:8900`（Flask）保留兼容。
+- 访问地址新增 `http://localhost`（Nginx :80），原 `http://127.0.0.1:8900`（Flask）保留兼容；2026-07-28 起生产默认入口切换为 `http://sales.example.com`。
 - 新增前端项目目录 `frontend/`，包含 React 源码、Vite 构建配置和部署脚本。
 - 首页 3D 地图尺寸固定为 650px，国家模型水平偏移 `viewOffsetX: -4.0` 避免道路面板遮挡。
 - 新增运维脚本：`deploy-production.ps1`（一键构建部署）、`nginx-ctl.ps1`（Nginx 控制）、`register-nginx-task.ps1`（开机自启）。
@@ -461,11 +472,13 @@
 
 ## 访问地址
 
-- **生产访问（Nginx）**：`http://localhost`（推荐）
+- **生产访问（Nginx）**：`http://sales.example.com`（推荐，HTTP 域名入口）
+- 备用外网访问：`http://198.51.100.10/`（经 Nginx 反向代理）
+- 本机访问：`http://localhost`
 - Flask 直连：`http://127.0.0.1:8900/`（兼容保留）
-- 外网访问：`http://198.51.100.10/`（经 Nginx 反向代理）
-- 零售总览：`http://localhost/retail`
-- 后台管理：`http://localhost/admin`
+- 零售总览：`http://sales.example.com/retail`
+- 后台管理：`http://sales.example.com/admin`
+- HTTPS：等待正式 SSL 证书签发后启用。
 
 所有业务页面均需要登录。普通用户可查看主页、批发、零售等数据页面；管理员可进入后台维护系统。
 
@@ -1056,7 +1069,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.9.10（与 version.ts 对齐）
+├── package.json              # 版本 3.9.11（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）
@@ -1084,7 +1097,7 @@ SalesDesktop/
 ```
 
 **架构特点**：
-- **双端统一**：客户端直连生产入口（`http://198.51.100.10`，由 Nginx 转发到本机后端 `127.0.0.1:8900`），不走本地服务器
+- **双端统一**：客户端默认直连生产域名入口（`http://sales.example.com`，由 Nginx 转发到本机后端 `127.0.0.1:8900`），IP 入口保留兜底，不走本地服务器
 - **双认证**：JWT Token（客户端）+ Session Cookie（Web 端），后端统一校验
 - **响应解包**：`http.ts` 自动解 `res.data.data → res.data`，API 封装层无感
 - **自动更新**：electron-updater + `latest.yml`，设置页触发检查更新
@@ -1092,11 +1105,11 @@ SalesDesktop/
 
 ## 后续优化方向
 
-- 域名和 HTTPS 完成后启用安全 Cookie。
-- 增加异常销量、异常价格、汇率缺失、快照滞后的主动提醒。
+- HTTPS 正式证书完成后启用安全 Cookie 和 HTTP→HTTPS 跳转。
+- 继续扩展异常销量、异常价格、汇率缺失、快照滞后的主动提醒。
 - 建立月度归档和自动备份策略。
 - 对首页、批发、零售和后台继续做小步视觉精修，避免大规模重构影响稳定。
-- 数据问答继续扩展经营问题模板，并保持表格优先展示。
+- 数据问答继续扩展经营问题模板，并通过项目级覆盖评测保持表格优先展示。
 - 补全迁移差距：ReferencePanel 实体标准选择器、HealthPanel 摘要卡片、API 函数导出。
 - 移除 `/legacy/*` 路由、Flask 旧 HTML 服务路由及旧版 `admin.html`/`wholesale.html` 等直接服务文件（当前阶段建议保留维护期）。
 

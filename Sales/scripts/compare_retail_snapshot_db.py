@@ -18,6 +18,7 @@ from routes.analytics import (  # noqa: E402
     report_card_volume_expr,
     report_cash_amount_expr,
     report_cash_volume_expr,
+    report_mass_expr,
     report_resource_key_expr,
     report_volume_expr,
 )
@@ -42,6 +43,7 @@ def _db_station_totals(start, end):
                    COUNT(*) AS txn_count,
                    {report_volume_expr("s")} AS total_volume,
                    {report_amount_expr("s")} AS total_amount,
+                   {report_mass_expr("s", start)} AS total_mass,
                    {report_cash_volume_expr("s")} AS cash_volume,
                    {report_cash_amount_expr("s")} AS cash_amount,
                    {report_card_volume_expr("s")} AS card_volume,
@@ -73,6 +75,7 @@ def _db_station_resources(start, end, shop_key):
                    COUNT(*) AS txn_count,
                    {report_volume_expr("s")} AS total_volume,
                    {report_amount_expr("s")} AS total_amount,
+                   {report_mass_expr("s", start)} AS total_mass,
                    {report_cash_volume_expr("s")} AS cash_volume,
                    {report_cash_amount_expr("s")} AS cash_amount,
                    {report_card_volume_expr("s")} AS card_volume,
@@ -152,9 +155,10 @@ def _business_day_activity(day, shop_key):
                 s.ShopKey,
                 COUNT(*) AS rows_count,
                 {report_volume_expr("s")} AS report_liters,
-                {report_amount_expr("s")} AS report_kgs,
-                MIN(s.TransactionDatetime),
-                MAX(s.TransactionDatetime),
+                   {report_amount_expr("s")} AS report_amount,
+                   {report_mass_expr("s", day)} AS report_mass,
+                   MIN(s.TransactionDatetime),
+                   MAX(s.TransactionDatetime),
                 MIN(sh.DatetimeShiftBegin),
                 MAX(sh.DatetimeShiftEnd)
             FROM selling s
@@ -178,6 +182,7 @@ def main():
     parser = argparse.ArgumentParser(description="Compare retail day snapshot with database totals.")
     parser.add_argument("--day", required=True, help="Business date, e.g. 2026-06-01")
     parser.add_argument("--focus-shop", type=int, default=14)
+    parser.add_argument("--json-output", help="Optional path for structured mismatch report.")
     args = parser.parse_args()
 
     day = args.day
@@ -188,34 +193,49 @@ def main():
     db_rows = _db_station_totals(start, end)
 
     print(f"{day} database vs daily snapshot")
-    print("ShopKey\tStation\tDB_L\tSnap_L\tDiff_L\tDB_KGS\tSnap_KGS\tDiff_KGS\tDB_Card\tSnap_Card")
+    print("ShopKey\tStation\tDB_L\tSnap_L\tDiff_L\tDB_KG\tSnap_KG\tDiff_KG\tDB_SOM\tSnap_SOM\tDiff_SOM\tDB_Card_SOM\tSnap_Card_SOM")
     mismatch_count = 0
+    mismatch_rows = []
     for shop_key in sorted(SHOP_KEY_MAP):
         row = db_rows.get(shop_key)
         db_volume = float(row[2] or 0) if row else 0.0
         db_amount = float(row[3] or 0) if row else 0.0
-        db_card = float(row[7] or 0) if row else 0.0
+        db_mass = float(row[4] or 0) if row else 0.0
+        db_card = float(row[8] or 0) if row else 0.0
         snap_item = snapshot_map.get(shop_key) or {}
         snap_volume = float(snap_item.get("volume") or 0)
         snap_amount = float(snap_item.get("amount") or 0)
+        snap_mass = float(snap_item.get("mass") or 0)
+        if not snap_mass and snap_item.get("tons"):
+            snap_mass = float(snap_item.get("tons") or 0) * 1000
         snap_card = float(snap_item.get("card") or 0)
         diff_volume = db_volume - snap_volume
         diff_amount = db_amount - snap_amount
-        is_mismatch = abs(diff_volume) > 0.01 or abs(diff_amount) > 0.01
+        diff_mass = db_mass - snap_mass
+        is_mismatch = abs(diff_volume) > 0.01 or abs(diff_amount) > 1 or abs(diff_mass) > 0.05
         if is_mismatch:
             mismatch_count += 1
+            mismatch_rows.append({
+                "shopKey": shop_key,
+                "station": SHOP_KEY_MAP[shop_key]["name"],
+                "diffVolume": round(diff_volume, 3),
+                "diffMassKg": round(diff_mass, 3),
+                "diffAmount": round(diff_amount, 2),
+            })
         if is_mismatch or shop_key == args.focus_shop:
             print(
                 f"{shop_key}\t{SHOP_KEY_MAP[shop_key]['name']}\t"
                 f"{db_volume:.2f}\t{snap_volume:.2f}\t{diff_volume:.2f}\t"
+                f"{db_mass:.3f}\t{snap_mass:.3f}\t{diff_mass:.3f}\t"
                 f"{db_amount:.2f}\t{snap_amount:.2f}\t{diff_amount:.2f}\t"
                 f"{db_card:.2f}\t{snap_card:.2f}"
             )
 
     print(f"\nMismatched stations: {mismatch_count}")
     print(f"\nShop {args.focus_shop} database resource detail")
-    print("Resource\tTxn\tLiters\tKGS\tCash_L\tCash_KGS\tCard_L\tCard_KGS\tBonus_KGS\tMinTime\tMaxTime")
-    for row in _db_station_resources(start, end, args.focus_shop):
+    print("Resource\tTxn\tLiters\tAmount_SOM\tMass_KG\tCash_L\tCash_SOM\tCard_L\tCard_SOM\tBonus_SOM\tMinTime\tMaxTime")
+    resource_rows = _db_station_resources(start, end, args.focus_shop)
+    for row in resource_rows:
         print("\t".join("" if value is None else str(value) for value in row))
 
     print(f"\nShop {args.focus_shop} raw transaction-date activity")
@@ -224,9 +244,24 @@ def main():
         print("\t".join("" if value is None else str(value) for value in row))
 
     print(f"\nShop {args.focus_shop} business-day activity without completed-shift filter")
-    print("BusinessDay\tShopKey\tRows\tReport_L\tReport_KGS\tMinTx\tMaxTx\tMinShiftBegin\tMaxShiftEnd")
-    for row in _business_day_activity(day, args.focus_shop):
+    print("BusinessDay\tShopKey\tRows\tReport_L\tReport_SOM\tReport_KG\tMinTx\tMaxTx\tMinShiftBegin\tMaxShiftEnd")
+    business_rows = _business_day_activity(day, args.focus_shop)
+    for row in business_rows:
         print("\t".join("" if value is None else str(value) for value in row))
+
+    if args.json_output:
+        payload = {
+            "day": day,
+            "focusShop": args.focus_shop,
+            "mismatchCount": mismatch_count,
+            "mismatches": mismatch_rows,
+            "focusResources": [list(row) for row in resource_rows],
+            "businessDayActivity": [list(row) for row in business_rows],
+        }
+        output_path = Path(args.json_output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        print(f"\nJSON mismatch report: {output_path}")
 
 
 if __name__ == "__main__":
