@@ -15,8 +15,8 @@ export default function Login() {
     try {
       const user = await login(values.username, values.password);
       window.location.hash = user.mustChangePassword ? '#/change-password' : '#/';
-    } catch {
-      message.error(t('login.error'));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t('login.error'));
     } finally {
       setLoading(false);
     }

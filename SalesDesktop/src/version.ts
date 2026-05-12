@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.11';
+export const VERSION = '3.9.12';
 export const BUILD_DATE = '2026-07-28';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.12',
+    date: '2026-07-28',
+    type: 'patch',
+    changes: [
+      '紧急修复：打包后的客户端若本机旧配置仍指向 127.0.0.1/localhost，自动回退到正式域名 http://sales.example.com，避免远端客户端误连本机导致登录失败',
+      '优化：登录页显示后端或网络层真实错误信息，不再把 API 地址、网络连接、服务异常统一误报为账号密码错误',
+    ],
+  },
   {
     version: '3.9.11',
     date: '2026-07-28',

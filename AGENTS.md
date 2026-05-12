@@ -15,12 +15,14 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `3.9.9`.
-- Current release commit: `bae565d fix: release assistant quick answers 3.9.9`.
-- Production public entry: `http://198.51.100.10/`.
+- Current released client version: `3.9.11`.
+- Current release code commit: `98d61e5 feat: release assistant coverage and maintenance 3.9.11`.
+- Production public entry: `http://sales.example.com/`.
+- Production backup entry: `http://198.51.100.10/`.
 - Backend listens only on `127.0.0.1:8900`.
-- Desktop update feed: `http://198.51.100.10/download/latest.yml`.
-- Current installer: `SalesDesktop Setup 3.9.9.exe`.
+- Desktop update feed: `http://sales.example.com/download/latest.yml`.
+- Current installer: `SalesDesktop Setup 3.9.11.exe`.
+- HTTPS certificate: pending; keep HTTP active until the public SSL certificate is ready.
 
 ## Report Boundaries
 
@@ -115,10 +117,10 @@ powershell -ExecutionPolicy Bypass -File .\Sales\restart_production_task.ps1
 For desktop auto-update verification:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.9.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.9.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.9.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "http://sales.example.com/download/latest.yml"
+Invoke-WebRequest -UseBasicParsing -Uri "http://sales.example.com/download/SalesDesktop%20Setup%203.9.11.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "http://sales.example.com/download/SalesDesktop%20Setup%203.9.11.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "http://sales.example.com/download/SalesDesktop%20Setup%203.9.11.exe"
 ```
 
 ## CodeGraph Memory

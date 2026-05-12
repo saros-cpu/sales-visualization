@@ -6,6 +6,12 @@
 
 ## 版本更新记录
 
+### 2026-07-28 (v3.9.12)
+
+- **登录热修复**：打包后的客户端若本机旧 `app-config.json` 仍指向 `127.0.0.1/localhost`，自动回退到正式域名 `http://sales.example.com`，避免远端客户端误连本机导致登录失败。
+- **错误提示修复**：登录页显示后端或网络层真实错误信息，不再把 API 地址、网络连接、服务异常统一误报为“账号密码错误”。
+- **验证**：`admin` 登录接口已在 `http://sales.example.com/api/v2/auth/login`、IP 入口和兼容入口返回 200；桌面 typecheck/test 通过。
+
 ### 2026-07-28 (v3.9.11)
 
 - **AI 助手项目覆盖 release gate**：新增 `Sales/project_capabilities.py`，按客户端 41 个菜单/模块级问法自动验证 route/domain/metric/维度/只读工具，防止明确业务问题回退到最近 7 天零售汇总。
@@ -1069,7 +1075,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.9.11（与 version.ts 对齐）
+├── package.json              # 版本 3.9.12（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

@@ -8,6 +8,15 @@ function normalizeHost(value) {
   return String(value || '').replace(/\/+$/, '');
 }
 
+function isLoopbackHost(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === 'localhost' || hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
 function readJson(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return {};
@@ -33,7 +42,10 @@ function configPaths(appRef) {
 
 function loadRuntimeConfig(appRef) {
   const fileConfig = configPaths(appRef).reduce((acc, filePath) => ({ ...acc, ...readJson(filePath) }), {});
-  const apiHost = normalizeHost(process.env.SALES_API_HOST || fileConfig.apiHost || DEFAULT_API_HOST);
+  const configuredApiHost = normalizeHost(process.env.SALES_API_HOST || fileConfig.apiHost || DEFAULT_API_HOST);
+  const apiHost = appRef?.isPackaged && !process.env.SALES_API_HOST && isLoopbackHost(configuredApiHost)
+    ? normalizeHost(DEFAULT_API_HOST)
+    : configuredApiHost;
   const updateUrl = normalizeHost(
     process.env.SALES_UPDATE_URL
       || fileConfig.updateUrl
