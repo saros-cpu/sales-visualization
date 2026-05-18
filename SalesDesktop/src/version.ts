@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.12';
+export const VERSION = '3.9.13';
 export const BUILD_DATE = '2026-07-28';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.13',
+    date: '2026-07-28',
+    type: 'patch',
+    changes: [
+      '紧急修复：客户端访问正式域名出现 Network Error 时，自动使用公网 IP http://198.51.100.10 重试 API 请求，避免 DNS 或域名网络未稳定时无法登录',
+      '验证：域名和 IP 健康接口、登录接口、CORS 预检、桌面 typecheck/test 均通过',
+    ],
+  },
   {
     version: '3.9.12',
     date: '2026-07-28',

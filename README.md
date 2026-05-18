@@ -6,6 +6,11 @@
 
 ## 版本更新记录
 
+### 2026-07-28 (v3.9.13)
+
+- **Network Error 热修复**：客户端访问 `http://sales.example.com` 出现网络错误时，自动使用公网 IP `http://198.51.100.10` 重试 API 请求，避免 DNS 或域名网络未稳定时无法登录。
+- **验证**：域名和 IP 健康接口、登录接口、CORS 预检、桌面 typecheck/test 均通过。
+
 ### 2026-07-28 (v3.9.12)
 
 - **登录热修复**：打包后的客户端若本机旧 `app-config.json` 仍指向 `127.0.0.1/localhost`，自动回退到正式域名 `http://sales.example.com`，避免远端客户端误连本机导致登录失败。
@@ -1075,7 +1080,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.9.12（与 version.ts 对齐）
+├── package.json              # 版本 3.9.13（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

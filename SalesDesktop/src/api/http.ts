@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosError, AxiCTY-30eaders } from 'axios';
 
 const DEFAULT_PUBLIC_API_HOST = import.meta.env.VITE_DEFAULT_API_HOST || 'http://198.51.100.10';
+const PUBLIC_FALLBACK_API_HOSTS = ['http://198.51.100.10'];
 export const PASSWORD_CHANGE_REQUIRED_MESSAGE = '首次登录或密码重置后，请先修改密码';
 
 function normalizeHost(host: string) {
@@ -47,6 +48,13 @@ export function resolveApiHost() {
 }
 
 export const API_HOST = resolveApiHost();
+
+function fallbackApiHosts() {
+  return Array.from(new Set([
+    normalizeHost(DEFAULT_PUBLIC_API_HOST),
+    ...PUBLIC_FALLBACK_API_HOSTS.map(normalizeHost),
+  ])).filter((host) => host && host !== API_HOST && isAllowedApiHost(host));
+}
 
 export function clearAuthTokens() {
   localStorage.removeItem('accessToken');
@@ -103,8 +111,17 @@ export function createApi(basePath: string): AxiosInstance {
     },
     async (err: AxiosError) => {
       const body = err.response?.data as Record<string, unknown> | undefined;
-      const config = err.config as (typeof err.config & { _retry?: boolean }) | undefined;
+      const config = err.config as (typeof err.config & { _fallbackRetry?: boolean; _retry?: boolean }) | undefined;
       const url = String(config?.url || '');
+
+      if (!err.response && config && !config._fallbackRetry) {
+        const fallbackHost = fallbackApiHosts()[0];
+        if (fallbackHost) {
+          config._fallbackRetry = true;
+          config.baseURL = `${fallbackHost}${basePath}`;
+          return instance(config);
+        }
+      }
 
       if (err.response?.status === 403 && isPasswordChangeRequired(body)) {
         if (!url.includes('/auth/change-password') && window.location.hash !== '#/change-password') {
