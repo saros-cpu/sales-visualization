@@ -75,17 +75,29 @@ app.config['JWT_HEADER_TYPE'] = 'Bearer'
 jwt = JWTManager(app)
 
 # CORS：手动处理跨域请求（Electron 加载本地文件时 origin 为 null 或 file://）
-import re
-_CORS_ORIGIN_RE = re.compile(r'^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^file://|^app://\.|^null$')
-_CORS_ALLOWED_ORIGINS = {
+_CORS_ORIGIN_RE = re.compile(r'^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^file://|^app://|^null$')
+_DEFAULT_CORS_ALLOWED_ORIGINS = {
+    "http://198.51.100.10",
+    "http://sales.example.com",
+    "https://sales.example.com",
+}
+_CORS_ALLOWED_ORIGINS = _DEFAULT_CORS_ALLOWED_ORIGINS | {
     item.strip().rstrip("/")
     for item in os.getenv("SALES_CORS_ORIGINS", "").split(",")
     if item.strip()
 }
 
+def _normalize_cors_origin(value):
+    origin = (value or "").strip()
+    if not origin:
+        return ""
+    if origin == "null" or origin.startswith("file://") or origin.startswith("app://"):
+        return origin
+    return origin.rstrip("/")
+
 @app.after_request
 def add_cors_headers(response):
-    origin = (request.headers.get('Origin') or '').rstrip("/")
+    origin = _normalize_cors_origin(request.headers.get('Origin'))
     if origin and (origin in _CORS_ALLOWED_ORIGINS or _CORS_ORIGIN_RE.match(origin)):
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'

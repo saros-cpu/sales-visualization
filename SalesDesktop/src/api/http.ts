@@ -13,15 +13,31 @@ function defaultAllowedApiHosts() {
     `http://${host}:8900`,
     `http://${host}:5173`,
   ]);
+  const runtimeAllowedHosts = (window.SALES_RUNTIME_CONFIG?.allowedHosts || [])
+    .map((host) => normalizeHost(String(host)))
+    .flatMap((host) => [
+      host,
+      `http://${host}`,
+      `https://${host}`,
+    ]);
   return new Set([
     normalizeHost(DEFAULT_PUBLIC_API_HOST),
     ...devHosts,
-    ...(window.SALES_RUNTIME_CONFIG?.allowedHosts || []).map(normalizeHost),
+    ...runtimeAllowedHosts,
   ]);
 }
 
 function isAllowedApiHost(host: string) {
-  return defaultAllowedApiHosts().has(normalizeHost(host));
+  const normalizedHost = normalizeHost(host);
+  const allowedHosts = defaultAllowedApiHosts();
+  if (allowedHosts.has(normalizedHost)) return true;
+  try {
+    const parsed = new URL(normalizedHost);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    return allowedHosts.has(parsed.hostname) || allowedHosts.has(parsed.origin);
+  } catch {
+    return false;
+  }
 }
 
 export function resolveApiHost() {

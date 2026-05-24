@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULT_API_HOST = process.env.SALES_API_HOST || 'http://sales.example.com';
-const DEFAULT_UPDATE_PATH = '/download';
+const DEFAULT_UPDATE_URL = 'http://198.51.100.10/download';
 
 function normalizeHost(value) {
   return String(value || '').replace(/\/+$/, '');
@@ -49,7 +49,7 @@ function loadRuntimeConfig(appRef) {
   const updateUrl = normalizeHost(
     process.env.SALES_UPDATE_URL
       || fileConfig.updateUrl
-      || `${apiHost}${DEFAULT_UPDATE_PATH}`,
+      || DEFAULT_UPDATE_URL,
   );
   return {
     apiHost,

@@ -6,6 +6,16 @@
 
 ## 版本更新记录
 
+### 2026-07-28 (v3.9.15)
+
+- **更新源兜底**：客户端自动更新检查增加公网 IP 更新源 `http://198.51.100.10/download` 兜底；`sales.example.com` 因付款、DNS 或运营商缓存异常不可用时，仍可通过 IP 获取新版本。
+- **阶段策略**：新版客户端默认更新源暂时固定为公网 IP，API 主入口继续保留 `http://sales.example.com` 并支持 IP 回退；正式 SSL 证书和域名状态稳定后再统一切 HTTPS。
+
+### 2026-07-28 (v3.9.14)
+
+- **Network Error 二次热修复**：打包客户端的 Electron CSP 连接白名单同步放行生产域名 `http://sales.example.com` 与备用公网 IP `http://198.51.100.10`，确保 3.9.13 的 IP 回退请求不会被客户端安全策略拦截。
+- **CORS 修复**：后端正确识别 `file://`、`null`、`app://` 来源，并显式允许生产域名/IP，覆盖桌面客户端本地页面和 Web 端跨源回退请求。
+
 ### 2026-07-28 (v3.9.13)
 
 - **Network Error 热修复**：客户端访问 `http://sales.example.com` 出现网络错误时，自动使用公网 IP `http://198.51.100.10` 重试 API 请求，避免 DNS 或域名网络未稳定时无法登录。
@@ -1080,7 +1090,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.9.13（与 version.ts 对齐）
+├── package.json              # 版本 3.9.15（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

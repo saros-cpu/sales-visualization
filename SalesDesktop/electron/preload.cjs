@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const DEFAULT_RUNTIME_CONFIG = {
   apiHost: 'http://sales.example.com',
-  updateUrl: 'http://sales.example.com/download',
+  updateUrl: 'http://198.51.100.10/download',
   allowedHosts: ['198.51.100.10', 'sales.example.com'],
 };
 

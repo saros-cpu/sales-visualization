@@ -15,13 +15,13 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `3.9.12`.
-- Current release code commit: `1c2417f fix: release desktop login configuration hotfix 3.9.12`.
+- Current released client version: `3.9.13`.
+- Current release code commit: `3ff33e0 fix: add desktop API network fallback 3.9.13`.
 - Production public entry: `http://sales.example.com/`.
 - Production backup entry: `http://198.51.100.10/`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `http://sales.example.com/download/latest.yml`.
-- Current installer: `SalesDesktop Setup 3.9.12.exe`.
+- Current installer: `SalesDesktop Setup 3.9.13.exe`.
 - HTTPS certificate: pending; keep HTTP active until the public SSL certificate is ready.
 
 ## Report Boundaries
@@ -118,9 +118,9 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "http://sales.example.com/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "http://sales.example.com/download/SalesDesktop%20Setup%203.9.12.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "http://sales.example.com/download/SalesDesktop%20Setup%203.9.12.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "http://sales.example.com/download/SalesDesktop%20Setup%203.9.12.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "http://sales.example.com/download/SalesDesktop%20Setup%203.9.13.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "http://sales.example.com/download/SalesDesktop%20Setup%203.9.13.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "http://sales.example.com/download/SalesDesktop%20Setup%203.9.13.exe"
 ```
 
 ## CodeGraph Memory

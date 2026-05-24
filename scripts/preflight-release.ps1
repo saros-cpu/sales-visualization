@@ -172,6 +172,7 @@ Invoke-Check "Nginx download route shape" {
 
 Invoke-Check "HTTP domain defaults" {
     $domain = "http://sales.example.com"
+    $updateBase = "http://198.51.100.10"
     $runtimeConfig = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron/runtime-config.cjs") -Encoding utf8 -Raw
     $preload = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron/preload.cjs") -Encoding utf8 -Raw
     $builder = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron-builder.yml") -Encoding utf8 -Raw
@@ -182,8 +183,14 @@ Invoke-Check "HTTP domain defaults" {
     if ($preload -notmatch [regex]::Escape("apiHost: '$domain'")) {
         throw "desktop preload fallback API host is not $domain"
     }
-    if ($builder -notmatch [regex]::Escape("url: $domain/download")) {
-        throw "electron updater publish URL is not $domain/download"
+    if ($runtimeConfig -notmatch [regex]::Escape("const DEFAULT_UPDATE_URL = '$updateBase/download'")) {
+        throw "desktop runtime default update URL is not $updateBase/download"
+    }
+    if ($preload -notmatch [regex]::Escape("updateUrl: '$updateBase/download'")) {
+        throw "desktop preload fallback update URL is not $updateBase/download"
+    }
+    if ($builder -notmatch [regex]::Escape("url: $updateBase/download")) {
+        throw "electron updater publish URL is not $updateBase/download"
     }
     if ($nginxConf -match "return\s+301\s+https://") {
         throw "nginx still redirects HTTP domain traffic to HTTPS before SSL is ready"

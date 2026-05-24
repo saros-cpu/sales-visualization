@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.13';
+export const VERSION = '3.9.15';
 export const BUILD_DATE = '2026-07-28';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,24 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.15',
+    date: '2026-07-28',
+    type: 'patch',
+    changes: [
+      '紧急修复：客户端自动更新源增加公网 IP 兜底，域名 sales.example.com 因付款、DNS 或运营商缓存异常不可用时，检查更新会自动改用 http://198.51.100.10/download',
+      '优化：新版客户端默认更新源暂时固定为公网 IP，API 主入口仍保留正式域名，并继续支持 IP 回退；正式 SSL 证书和域名状态稳定后再统一切 HTTPS',
+    ],
+  },
+  {
+    version: '3.9.14',
+    date: '2026-07-28',
+    type: 'patch',
+    changes: [
+      '紧急修复：客户端外网 API 回退到公网 IP 时，Electron CSP 连接白名单同步放行 sales.example.com 与 198.51.100.10，避免回退请求被客户端安全策略拦截后仍显示 Network Error',
+      '紧急修复：后端 CORS 正确识别 Electron file://、null、app:// 来源，并显式允许生产域名/IP，保证打包客户端和 Web 端跨源回退请求可通过预检',
+    ],
+  },
   {
     version: '3.9.13',
     date: '2026-07-28',

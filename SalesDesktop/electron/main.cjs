@@ -18,6 +18,7 @@ let updateCheckInFlight = false;
 const runtimeConfig = loadRuntimeConfig(app);
 const appIcon = path.join(__dirname, '..', 'build', 'icon.ico');
 const allowedExternalHosts = new Set(runtimeConfig.allowedHosts);
+const fallbackUpdateUrls = ['http://198.51.100.10/download'];
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.sales.desktop');
 }
@@ -29,10 +30,66 @@ function urlOrigin(value) {
   }
 }
 
+function normalizeUrl(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function connectOriginsForAllowedHosts() {
+  const origins = [];
+  for (const host of allowedExternalHosts) {
+    const normalizedHost = String(host || '').trim();
+    if (!normalizedHost) continue;
+    if (normalizedHost === 'localhost' || normalizedHost === '127.0.0.1') {
+      origins.push(`http://${normalizedHost}:8900`);
+      origins.push(`http://${normalizedHost}:5173`);
+      origins.push(`ws://${normalizedHost}:5173`);
+      continue;
+    }
+    origins.push(`http://${normalizedHost}`);
+    origins.push(`https://${normalizedHost}`);
+  }
+  return origins;
+}
+
+function isAllowedUpdateUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol)
+      && allowedExternalHosts.has(parsed.hostname)
+      && parsed.pathname.startsWith('/download');
+  } catch {
+    return false;
+  }
+}
+
+function updateFeedUrlCandidates() {
+  return Array.from(new Set([
+    normalizeUrl(runtimeConfig.updateUrl),
+    ...fallbackUpdateUrls.map(normalizeUrl),
+  ])).filter((url) => url && isAllowedUpdateUrl(url));
+}
+
+function isUpdateNetworkFailure(err) {
+  const message = String(err?.message || err || '').toLowerCase();
+  return [
+    'network',
+    'enotfound',
+    'eai_again',
+    'econnreset',
+    'econnrefused',
+    'etimedout',
+    'timeout',
+    'net::err',
+    'dns',
+    'getaddrinfo',
+  ].some((text) => message.includes(text));
+}
+
 const connectSrc = Array.from(new Set([
   "'self'",
   urlOrigin(runtimeConfig.apiHost),
   urlOrigin(runtimeConfig.updateUrl),
+  ...connectOriginsForAllowedHosts(),
   'http://localhost:8900',
   'http://127.0.0.1:8900',
   'ws://localhost:5173',
@@ -266,6 +323,37 @@ async function resolveUpdateInstallPrompt(action) {
 
 function setupUpdater() {
   const unsupportedMessage = '更新仅支持打包安装后的客户端';
+  const feedUrls = updateFeedUrlCandidates();
+  const setUpdateFeedUrl = (feedUrl) => {
+    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
+    appendUpdateLog('info', 'set update feed url', feedUrl);
+  };
+  const checkForUpdatesWithFeedFallback = async () => {
+    let lastError = null;
+    const candidates = feedUrls.length ? feedUrls : [runtimeConfig.updateUrl];
+    for (let index = 0; index < candidates.length; index += 1) {
+      const feedUrl = candidates[index];
+      setUpdateFeedUrl(feedUrl);
+      try {
+        return await autoUpdater.checkForUpdates();
+      } catch (err) {
+        lastError = err;
+        if (
+          isDuplicateUpdateError(err)
+          || !isUpdateNetworkFailure(err)
+          || index === candidates.length - 1
+        ) {
+          throw err;
+        }
+        appendUpdateLog('warn', 'update feed failed, retry next feed', {
+          feedUrl,
+          message: err?.message || String(err),
+          nextFeedUrl: candidates[index + 1],
+        });
+      }
+    }
+    throw lastError;
+  };
 
   const checkForUpdates = async () => {
     if (!app.isPackaged) {
@@ -278,7 +366,7 @@ function setupUpdater() {
     try {
       updateCheckInFlight = true;
       emitUpdateStatus({ status: 'checking', message: undefined });
-      await autoUpdater.checkForUpdates();
+      await checkForUpdatesWithFeedFallback();
       return updateStatus;
     } catch (err) {
       if (isDuplicateUpdateError(err)) {
@@ -340,7 +428,7 @@ function setupUpdater() {
   if (process.platform === 'win32' && 'verifyUpdateCodeSignature' in autoUpdater) {
     autoUpdater.verifyUpdateCodeSignature = async () => null;
   }
-  autoUpdater.setFeedURL({ provider: 'generic', url: runtimeConfig.updateUrl });
+  setUpdateFeedUrl(feedUrls[0] || runtimeConfig.updateUrl);
 
   autoUpdater.on('checking-for-update', () => {
     appendUpdateLog('info', 'checking for update');
