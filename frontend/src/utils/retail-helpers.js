@@ -74,6 +74,16 @@ export function pctColor(v) {
   return v > 0 ? '#00e5a0' : v < 0 ? '#ef5350' : 'rgba(160,180,210,0.6)';
 }
 
+export function metricNumber(value) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+export function sortRankingRows(rows, valueOf, limit) {
+  const sorted = [...(rows || [])].sort((left, right) => metricNumber(valueOf(right)) - metricNumber(valueOf(left)));
+  return typeof limit === 'number' ? sorted.slice(0, limit) : sorted;
+}
+
 // ── 油品合并排行（dashboard用） ──
 export function buildResourceRank(resources) {
   const merged = new Map();
@@ -93,7 +103,7 @@ export function buildResourceRank(resources) {
       existing.amount += Number(r.amount || 0);
       merged.set(rankKey, existing);
     });
-  return Array.from(merged.values()).sort((a, b) => b.amount - a.amount);
+  return sortRankingRows(Array.from(merged.values()), row => row.amount);
 }
 
 // ── 时钟 hook ──

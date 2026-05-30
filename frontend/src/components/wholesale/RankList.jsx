@@ -3,10 +3,15 @@ import { yuan, num, typeLabels } from '../../utils/format';
 
 export default function RankList({ rows = [], mode = 'customer', compact = true }) {
   if (!rows.length) return <p className="muted">暂无数据</p>;
+  const sortedRows = [...rows].sort((a, b) => {
+    const left = mode === 'pending' ? Number(a.rows || 0) : Number(a.tons || 0);
+    const right = mode === 'pending' ? Number(b.rows || 0) : Number(b.tons || 0);
+    return right - left;
+  });
 
   return (
     <div className={`rank-list${compact ? ' compact-rank' : ''}`}>
-      {rows.map((item, i) => {
+      {sortedRows.map((item, i) => {
         let sub;
         if (mode === 'transfer') {
           sub = `${typeLabels[item.entityType] || item.entityType} · ${item.productCount} 种油品`;

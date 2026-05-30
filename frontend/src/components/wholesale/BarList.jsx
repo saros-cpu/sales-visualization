@@ -3,11 +3,12 @@ import { yuan, num } from '../../utils/format';
 
 export default function BarList({ rows = [], showAmount = false }) {
   if (!rows.length) return <p className="muted">暂无数据</p>;
-  const max = Math.max(...rows.map(r => r.tons), 1);
+  const sortedRows = [...rows].sort((a, b) => Number(b.tons || 0) - Number(a.tons || 0));
+  const max = Math.max(...sortedRows.map(r => r.tons), 1);
 
   return (
     <div className="bar-list">
-      {rows.map((item, i) => (
+      {sortedRows.map((item, i) => (
         <div key={i} className="bar-row">
           <div>
             <span>{item.name}</span>

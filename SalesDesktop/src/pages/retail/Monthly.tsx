@@ -9,6 +9,7 @@ import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
 import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
+import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -53,8 +54,13 @@ export default function Monthly() {
 
   const topStations = useMemo(() => {
     if (!data?.stations) return [];
-    return [...data.stations].sort((a, b) => b.amount - a.amount).slice(0, 10);
+    return sortRankingRows(data.stations, (row: any) => row.amount, 10);
   }, [data]);
+
+  const productRows = useMemo(
+    () => sortRankingRows(data?.byResource ?? [], (row: any) => row.volume),
+    [data],
+  );
 
   const topColumns = [
     { title: '#', dataIndex: 'rank', key: 'rank', width: 40, render: (_: any, __: any, i: number) => i + 1 },
@@ -120,8 +126,8 @@ export default function Monthly() {
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 80, right: 20 },
                   xAxis: { type: 'value', name: CHART_AXIS.liters },
-                  yAxis: { type: 'category', data: (data?.byResource ?? []).map((r: any) => product(r.name)).reverse(), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: (data?.byResource ?? []).map((r: any) => r.volume).reverse() }],
+                  yAxis: { type: 'category', inverse: true, data: productRows.map((r: any) => product(r.name)), axisLabel: { fontSize: 11 } },
+                  series: [{ type: 'bar', data: productRows.map((r: any) => r.volume) }],
                 }}
               />
             </Col>

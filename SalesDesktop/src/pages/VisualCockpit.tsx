@@ -12,6 +12,7 @@ import PageState from '@/components/ui/PageState';
 import type { KpiTone } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { CHART_PALETTE } from '@/theme/charts';
+import { sortRankingRows } from '@/utils/rankingCharts';
 
 const { Text } = Typography;
 
@@ -507,13 +508,13 @@ function trendOption(data: any, language: string) {
 }
 
 function rankingOption(data: any) {
-  const rows = [...(data?.rows || [])].slice(0, 12).reverse();
+  const rows = sortRankingRows(data?.rows || [], (row: any) => row.value, 12);
   return {
     color: CHART_PALETTE,
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
     grid: { left: 16, right: 48, top: 20, bottom: 20, outerBoundsMode: 'same' as const, outerBoundsContain: 'axisLabel' as const },
     xAxis: { type: 'value' as const, name: data?.unit || '' },
-    yAxis: { type: 'category' as const, data: rows.map((row: any) => row.label || '-') },
+    yAxis: { type: 'category' as const, inverse: true, data: rows.map((row: any) => row.label || '-') },
     series: [{ type: 'bar' as const, data: rows.map((row: any) => row.value || 0) }],
   };
 }

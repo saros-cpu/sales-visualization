@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useChart } from '../../hooks/useChart';
 import { getYears, getMonths, getResourcesYearly } from '../../api/retail';
-import { numberFormat, volumeFormat, pctColor } from '../../utils/retail-helpers';
+import { numberFormat, volumeFormat, pctColor, sortRankingRows } from '../../utils/retail-helpers';
 import { useRetailHeader } from '../../components/layout/RetailHeaderContext';
 
 const RESOURCE_ORDER = [102, 103, 104, 106, 110, 108];
@@ -136,15 +136,17 @@ export default function ResourcePage() {
   // ── 渲染图表 ──
   useEffect(() => {
     // 1. 油品销售结构 (horizontal bar)
+    const rankedResources = sortRankingRows(resources, r => r.volume);
+
     const mc = mixC.init('chart-resource-mix');
     mc?.setOption({
       backgroundColor: 'transparent',
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...darkTooltip, formatter: p => `${(Array.isArray(p) ? p[0] : p).name}<br/>销售量：<b>${Number(p[0]?.value || p.value || 0).toFixed(2)}万升</b>` },
       grid: { top: 12, right: 58, bottom: 18, left: 64 },
       xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { lineStyle: { color: 'rgba(0,180,255,0.06)' } }, axisLine: { show: false } },
-      yAxis: { type: 'category', data: resources.map(r => r.name).reverse(), axisLabel: { color: 'rgba(200,220,240,0.75)', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
+      yAxis: { type: 'category', inverse: true, data: rankedResources.map(r => r.name), axisLabel: { color: 'rgba(200,220,240,0.75)', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
       series: [{
-        type: 'bar', data: resources.map(r => parseFloat(((r.volume || 0) / 10000).toFixed(2))).reverse(), barMaxWidth: 16,
+        type: 'bar', data: rankedResources.map(r => parseFloat(((r.volume || 0) / 10000).toFixed(2))), barMaxWidth: 16,
         itemStyle: { color: '#00d4ff', borderRadius: [0, 3, 3, 0] },
         label: { show: true, position: 'right', formatter: p => Number(p.value || 0).toFixed(2) + '万', color: 'rgba(220,240,255,0.86)', fontSize: 10 },
       }],
@@ -156,11 +158,11 @@ export default function ResourcePage() {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...darkTooltip },
       legend: { top: 4, textStyle: { color: 'rgba(160,180,210,0.65)' }, data: ['同比金额', '最近月环比'] },
       grid: { top: 34, left: 48, right: 18, bottom: 34 },
-      xAxis: { type: 'category', data: resources.map(r => r.name), axisLabel: { color: 'rgba(160,180,210,0.6)', fontSize: 10 }, axisLine: { lineStyle: { color: 'rgba(0,180,255,0.2)' } } },
+      xAxis: { type: 'category', data: rankedResources.map(r => r.name), axisLabel: { color: 'rgba(160,180,210,0.6)', fontSize: 10 }, axisLine: { lineStyle: { color: 'rgba(0,180,255,0.2)' } } },
       yAxis: { type: 'value', axisLabel: { color: 'rgba(160,180,210,0.55)', formatter: v => Number(v || 0).toFixed(2) + '%' }, splitLine: { lineStyle: { color: 'rgba(0,180,255,0.06)' } } },
       series: [
-        { name: '同比金额', type: 'bar', data: resources.map(r => r.yoySales || 0), itemStyle: { color: '#00d4ff' }, barMaxWidth: 16, label: { show: true, position: 'top', formatter: p => Number(p.value || 0).toFixed(2) + '%', color: 'rgba(220,240,255,0.82)', fontSize: 10 } },
-        { name: '最近月环比', type: 'bar', data: resources.map(r => r.momSales || 0), itemStyle: { color: '#ffa726' }, barMaxWidth: 16, label: { show: true, position: 'top', formatter: p => Number(p.value || 0).toFixed(2) + '%', color: 'rgba(220,240,255,0.82)', fontSize: 10 } },
+        { name: '同比金额', type: 'bar', data: rankedResources.map(r => r.yoySales || 0), itemStyle: { color: '#00d4ff' }, barMaxWidth: 16, label: { show: true, position: 'top', formatter: p => Number(p.value || 0).toFixed(2) + '%', color: 'rgba(220,240,255,0.82)', fontSize: 10 } },
+        { name: '最近月环比', type: 'bar', data: rankedResources.map(r => r.momSales || 0), itemStyle: { color: '#ffa726' }, barMaxWidth: 16, label: { show: true, position: 'top', formatter: p => Number(p.value || 0).toFixed(2) + '%', color: 'rgba(220,240,255,0.82)', fontSize: 10 } },
       ],
     }, true);
   }, [resources, periodLabel]);

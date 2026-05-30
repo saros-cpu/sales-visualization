@@ -9,6 +9,7 @@ import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
 import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
+import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -55,10 +56,16 @@ export default function Station() {
   const regionStations = useMemo(() => {
     if (!detail) return [];
     const rgn = (detail as any).region;
-    return stations
-      .filter((s: any) => s.region === rgn && s.status !== 'closed')
-      .sort((a: any, b: any) => b.amount - a.amount);
+    return sortRankingRows(
+      stations.filter((s: any) => s.region === rgn && s.status !== 'closed'),
+      (row: any) => row.amount,
+    );
   }, [stations, detail]);
+
+  const productRows = useMemo(
+    () => sortRankingRows(detail?.byResource ?? [], (row: any) => row.volume),
+    [detail],
+  );
 
   const options = useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -189,8 +196,8 @@ export default function Station() {
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 80, right: 20 },
                   xAxis: { type: 'value', name: CHART_AXIS.liters },
-                  yAxis: { type: 'category', data: (detail.byResource ?? []).map((r: any) => r.name).reverse(), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: (detail.byResource ?? []).map((r: any) => r.volume).reverse() }],
+                  yAxis: { type: 'category', inverse: true, data: productRows.map((r: any) => r.name), axisLabel: { fontSize: 11 } },
+                  series: [{ type: 'bar', data: productRows.map((r: any) => r.volume) }],
                 }}
               />
             </Col>
@@ -245,8 +252,8 @@ export default function Station() {
                       },
                     },
                   },
-                  yAxis: { type: 'category', data: regionStations.map((s: any) => station(s)).reverse(), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: regionStations.map((s: any) => s.amount).reverse() }],
+                  yAxis: { type: 'category', inverse: true, data: regionStations.map((s: any) => station(s)), axisLabel: { fontSize: 11 } },
+                  series: [{ type: 'bar', data: regionStations.map((s: any) => s.amount) }],
                 }}
               />
             </Col>

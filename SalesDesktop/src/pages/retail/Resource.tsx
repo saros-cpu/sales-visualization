@@ -7,6 +7,7 @@ import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { formatRetailTons, numericMetric as numeric, retailTonsOf } from '@/utils/retailMetrics';
+import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 // 与 Web 端 ResourcePage 保持一致的口径
@@ -70,6 +71,7 @@ export default function Resource() {
   const data = resQ.data;
 
   const resources = useMemo(() => normalizeResources((data as any)?.resources ?? []), [data]);
+  const rankedResources = useMemo(() => sortRankingRows(resources, (row: any) => row.volume), [resources]);
   const totalAmount = useMemo(() => resources.reduce((s, r) => s + (r.amount || 0), 0), [resources]);
   const totalVolume = useMemo(() => resources.reduce((s, r) => s + (r.volume || 0), 0), [resources]);
   const totalTons = numeric((data as any)?.summary?.totalTons) || resources.reduce((s, r) => s + retailTonsOf(r), 0);
@@ -108,8 +110,8 @@ export default function Resource() {
                 tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                 grid: { left: 80, right: 40 },
                 xAxis: { type: 'value', name: CHART_AXIS.liters },
-                yAxis: { type: 'category', data: resources.map((r) => r.name).reverse(), axisLabel: { fontSize: 11 } },
-                series: [{ type: 'bar', barMaxWidth: 18, data: resources.map((r) => ({ value: Math.round(r.volume), itemStyle: { color: r.color } })).reverse() }],
+                yAxis: { type: 'category', inverse: true, data: rankedResources.map((r) => r.name), axisLabel: { fontSize: 11 } },
+                series: [{ type: 'bar', barMaxWidth: 18, data: rankedResources.map((r) => ({ value: Math.round(r.volume), itemStyle: { color: r.color } })) }],
               }}
           />
         </Col>
@@ -119,12 +121,12 @@ export default function Resource() {
                 tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: any) => `${Number(v || 0).toFixed(2)}%` },
                 legend: { data: [t('common.yoy'), t('common.mom')], bottom: 0 },
                 grid: { left: 50, right: 20, top: 20, bottom: 40 },
-                xAxis: { type: 'category', data: resources.map((r) => r.name), axisLabel: { fontSize: 11 } },
+                xAxis: { type: 'category', data: rankedResources.map((r) => r.name), axisLabel: { fontSize: 11 } },
                 yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${v}%` } },
                 series: [
-                  { name: t('common.yoy'), type: 'bar', barMaxWidth: 18, itemStyle: { color: '#1677ff' }, data: resources.map((r) => r.yoySales ?? 0),
+                  { name: t('common.yoy'), type: 'bar', barMaxWidth: 18, itemStyle: { color: '#1677ff' }, data: rankedResources.map((r) => r.yoySales ?? 0),
                     label: { show: true, position: 'top', formatter: (p: any) => `${Number(p.value || 0).toFixed(1)}%`, fontSize: 10 } },
-                  { name: t('common.mom'), type: 'bar', barMaxWidth: 18, itemStyle: { color: '#fa8c16' }, data: resources.map((r) => r.momSales ?? 0),
+                  { name: t('common.mom'), type: 'bar', barMaxWidth: 18, itemStyle: { color: '#fa8c16' }, data: rankedResources.map((r) => r.momSales ?? 0),
                     label: { show: true, position: 'top', formatter: (p: any) => `${Number(p.value || 0).toFixed(1)}%`, fontSize: 10 } },
                 ],
               }}

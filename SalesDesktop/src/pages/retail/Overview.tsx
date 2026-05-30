@@ -9,6 +9,7 @@ import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n, ZH_REGION_KEY } from '@/utils/i18nNames';
 import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
+import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -35,6 +36,10 @@ export default function Overview() {
     || retailTonsOf((resQ.data as any)?.summary)
     || (resQ.data?.resources ?? []).reduce((sum: number, row: any) => sum + retailTonsOf(row), 0)
     || (dash?.byResource ?? []).reduce((sum: number, row: any) => sum + retailTonsOf(row), 0);
+  const regionSalesRows = sortRankingRows(Object.entries(dash?.regions ?? {}), ([, value]: [string, any]) => value?.amount);
+  const regionVolumeRows = sortRankingRows(Object.entries(dash?.regions ?? {}), ([, value]: [string, any]) => value?.volume);
+  const productRows = sortRankingRows(resQ.data?.resources ?? [], (row: any) => row.amount);
+  const top10 = sortRankingRows(dash?.stations ?? [], (row: any) => row.amount, 10);
 
   const onGenerate = async () => {
     try {
@@ -50,10 +55,10 @@ export default function Overview() {
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
     grid: { left: 120, right: 20, top: 10, bottom: 30 },
     xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
-    yAxis: { type: 'category' as const, data: Object.keys(dash.regions).reverse().map((r) => region(r)), axisLabel: { fontSize: 11 } },
+    yAxis: { type: 'category' as const, inverse: true, data: regionSalesRows.map(([r]) => region(r)), axisLabel: { fontSize: 11 } },
     series: [{
-      type: 'bar' as const, data: Object.keys(dash.regions).reverse().map((r) => ({
-        value: Math.round(dash.regions[r].amount / 10000),
+      type: 'bar' as const, data: regionSalesRows.map(([r, value]: [string, any]) => ({
+        value: Math.round((value?.amount ?? 0) / 10000),
         itemStyle: { color: REGION_COLORS[ZH_REGION_KEY[r]] || REGION_COLORS[r] || '#999' },
       })),
     }],
@@ -63,21 +68,17 @@ export default function Overview() {
     color: CHART_PALETTE,
     tooltip: { trigger: 'axis' as const },
     xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
-    yAxis: { type: 'category' as const, data: (resQ.data?.resources ?? []).map((r: any) => product(r.name)).reverse() },
-    series: [{ type: 'bar' as const, data: (resQ.data?.resources ?? []).map((r: any) => r.amount).reverse() }],
+    yAxis: { type: 'category' as const, inverse: true, data: productRows.map((r: any) => product(r.name)) },
+    series: [{ type: 'bar' as const, data: productRows.map((r: any) => r.amount) }],
   };
-
-  const top10 = dash?.stations
-    ? [...dash.stations].sort((a, b) => b.amount - a.amount).slice(0, 10)
-    : [];
 
   const top10Option = {
     color: CHART_PALETTE,
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
     grid: { left: 120, right: 20, top: 10, bottom: 30 },
     xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
-    yAxis: { type: 'category' as const, data: top10.map((s) => station(s)).reverse(), axisLabel: { fontSize: 11 } },
-    series: [{ type: 'bar' as const, data: top10.map((s) => Math.round(s.amount / 10000)).reverse() }],
+    yAxis: { type: 'category' as const, inverse: true, data: top10.map((s) => station(s)), axisLabel: { fontSize: 11 } },
+    series: [{ type: 'bar' as const, data: top10.map((s) => Math.round(s.amount / 10000)) }],
   };
 
   return (
@@ -125,10 +126,10 @@ export default function Overview() {
               tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
               grid: { left: 120, right: 20, top: 10, bottom: 30 },
               xAxis: { type: 'value' as const, name: '万L' },
-              yAxis: { type: 'category' as const, data: Object.keys(dash?.regions ?? {}).reverse().map((r) => region(r)), axisLabel: { fontSize: 11 } },
+              yAxis: { type: 'category' as const, inverse: true, data: regionVolumeRows.map(([r]) => region(r)), axisLabel: { fontSize: 11 } },
               series: [{
-                type: 'bar' as const, data: Object.keys(dash?.regions ?? {}).reverse().map((r) => ({
-                  value: Math.round((dash?.regions[r]?.volume ?? 0) / 10000),
+                type: 'bar' as const, data: regionVolumeRows.map(([r, value]: [string, any]) => ({
+                  value: Math.round((value?.volume ?? 0) / 10000),
                   itemStyle: { color: REGION_COLORS[ZH_REGION_KEY[r]] || REGION_COLORS[r] || '#999' },
                 })),
               }],

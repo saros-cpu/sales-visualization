@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.15';
+export const VERSION = '3.9.16';
 export const BUILD_DATE = '2026-07-28';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.16',
+    date: '2026-07-28',
+    type: 'patch',
+    changes: [
+      '修复：零售分析、驾驶舱和批发列表中的排行类图表统一按指标从多到少排序，横向排行图第一名固定显示在最上方',
+      '优化：新增排行图排序工具和回归测试，避免后续页面通过 reverse() 处理类目轴时再次出现视觉倒序',
+      '覆盖：总览 Top10、区域/油品/站点排行、月度油品结构、站点同区域对比、驾驶舱 ranking 组件以及 Web 端对应页面同步修正',
+    ],
+  },
   {
     version: '3.9.15',
     date: '2026-07-28',

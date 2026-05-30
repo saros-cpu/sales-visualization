@@ -1,13 +1,15 @@
 import { List, Progress } from 'antd';
+import { sortRankingRows } from '@/utils/rankingCharts';
 
 interface Row { name: string; tons: number; amountCny?: number; }
 
 export default function BarList({ rows, showAmount }: { rows: Row[]; showAmount?: boolean }) {
-  const max = Math.max(...rows.map((r) => r.tons), 1);
+  const sortedRows = sortRankingRows(rows, (row) => row.tons);
+  const max = Math.max(...sortedRows.map((r) => r.tons), 1);
   return (
     <List
       size="small"
-      dataSource={rows}
+      dataSource={sortedRows}
       renderItem={(r) => (
         <List.Item>
           <div style={{ width: '100%' }}>

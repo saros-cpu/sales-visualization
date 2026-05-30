@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getMonths, getMonthlyData, generateMonthlyReport } from '../../api/retail';
 import { download } from '../../api/client';
 import { useChart } from '../../hooks/useChart';
-import { REGION_COLORS, numberFormat, volumeFormat } from '../../utils/retail-helpers';
+import { REGION_COLORS, numberFormat, volumeFormat, sortRankingRows } from '../../utils/retail-helpers';
 import { useRetailHeader } from '../../components/layout/RetailHeaderContext';
 
 export default function MonthlyPage() {
@@ -130,7 +130,7 @@ export default function MonthlyPage() {
             formatter: (p) => `${(Array.isArray(p) ? p[0] : p).name}<br/>销售量：<b>${(Array.isArray(p) ? p[0] : p).value}万升</b>` },
           grid: { top: 12, right: 54, bottom: 18, left: 58 },
           xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { lineStyle: { color: 'rgba(0,180,255,0.06)' } } },
-          yAxis: { type: 'category', data: [], axisLabel: { color: 'rgba(200,220,240,0.72)', fontSize: 10 } },
+          yAxis: { type: 'category', inverse: true, data: [], axisLabel: { color: 'rgba(200,220,240,0.72)', fontSize: 10 } },
           series: [{ type: 'bar', data: [], barMaxWidth: 14, itemStyle: { color: '#00d4ff', borderRadius: [0, 3, 3, 0] }, label: { show: true, position: 'right', color: 'rgba(220,240,255,0.86)', fontSize: 10, formatter: p => p.value + '万' } }],
         });
       }
@@ -172,12 +172,13 @@ export default function MonthlyPage() {
     // Resource
     const rc = resourceChart.getInstance();
     if (rc) {
-      const resourceRows = (d.byResource || [])
-        .filter(r => !String(r.name || '').startsWith('Other'))
-        .sort((a, b) => (b.volume || 0) - (a.volume || 0));
+      const resourceRows = sortRankingRows(
+        (d.byResource || []).filter(r => !String(r.name || '').startsWith('Other')),
+        r => r.volume,
+      );
       rc.setOption({
-        yAxis: { data: resourceRows.map(r => r.name).reverse() },
-        series: [{ data: resourceRows.map(r => parseFloat(((r.volume || 0) / 10000).toFixed(2))).reverse() }],
+        yAxis: { inverse: true, data: resourceRows.map(r => r.name) },
+        series: [{ data: resourceRows.map(r => parseFloat(((r.volume || 0) / 10000).toFixed(2))) }],
       });
     }
   }, []);

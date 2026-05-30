@@ -8,6 +8,7 @@ import {
   REGION_COLORS, REGION_ORDER,
   fmtNum, fmtWanLiters, fmtLiters, fmtPct, pctColor,
   buildResourceRank,
+  sortRankingRows,
 } from '../../utils/retail-helpers';
 
 function numeric(value) {
@@ -219,10 +220,10 @@ export default function RetailDashboard() {
         tooltip: { trigger: 'axis' },
         grid: { left: 60, right: 54, top: 8, bottom: 12 },
         xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { lineStyle: { color: 'rgba(0,180,255,0.06)' } } },
-        yAxis: { type: 'category', data: rankData.map(r => r.name).reverse(), axisLabel: { color: 'rgba(200,220,240,0.75)', fontSize: 10 } },
+        yAxis: { type: 'category', inverse: true, data: rankData.map(r => r.name), axisLabel: { color: 'rgba(200,220,240,0.75)', fontSize: 10 } },
         series: [{
           type: 'bar',
-          data: rankData.map(r => r.amount).reverse(),
+          data: rankData.map(r => r.amount),
           itemStyle: { color: '#00d4ff', borderRadius: [0, 3, 3, 0] },
           barMaxWidth: 12,
           label: { show: true, position: 'right', color: 'rgba(220,240,255,0.86)', fontSize: 10, formatter: p => (p.value / 10000).toFixed(2) + '万' },
@@ -259,13 +260,12 @@ export default function RetailDashboard() {
     // Region rank
     const rrk = regionRankChart.getInstance();
     if (rrk) {
-      const sorted = [...REGION_ORDER].sort((a, b) => (regionMap[b]?.vol || 0) - (regionMap[a]?.vol || 0));
-      const display = [...sorted].reverse();
+      const display = sortRankingRows(REGION_ORDER, r => regionMap[r]?.vol);
       rrk.setOption({
         tooltip: { trigger: 'axis' },
         grid: { left: '3%', right: '12%', bottom: '3%', top: '3%', containLabel: true },
         xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
-        yAxis: { type: 'category', data: display, axisLabel: { show: true, color: 'rgba(210,230,245,0.82)', fontSize: 10, width: 58, overflow: 'break' } },
+        yAxis: { type: 'category', inverse: true, data: display, axisLabel: { show: true, color: 'rgba(210,230,245,0.82)', fontSize: 10, width: 58, overflow: 'break' } },
         series: [{
           type: 'bar',
           data: display.map(r => ({
@@ -304,11 +304,11 @@ export default function RetailDashboard() {
     // TOP10 rank
     const rk = rankChart.getInstance();
     if (rk) {
-      const top10 = [...stations].filter(s => s.status !== 'closed').sort((a, b) => b.amount - a.amount).slice(0, 10).reverse();
+      const top10 = sortRankingRows(stations.filter(s => s.status !== 'closed'), s => s.amount, 10);
       rk.setOption({
         tooltip: { trigger: 'axis' },
         grid: { left: '3%', right: '3%', bottom: '3%', top: '3%', containLabel: true },
-        yAxis: { type: 'category', data: top10.map(s => s.name), axisLabel: { show: false }, splitLine: { show: false } },
+        yAxis: { type: 'category', inverse: true, data: top10.map(s => s.name), axisLabel: { show: false }, splitLine: { show: false } },
         xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
         series: [{
           type: 'bar',

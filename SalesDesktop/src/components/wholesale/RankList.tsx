@@ -1,12 +1,14 @@
 import { List } from 'antd';
+import { sortRankingRows } from '@/utils/rankingCharts';
 
 interface Row { name: string; tons: number; amountCny?: number; matchedRows?: number; rows?: number; }
 
 export default function RankList({ rows, mode = 'customer' }: { rows: Row[]; mode?: 'customer' | 'pending' }) {
+  const sortedRows = sortRankingRows(rows, (row) => mode === 'pending' ? row.rows : row.tons);
   return (
     <List
       size="small"
-      dataSource={rows}
+      dataSource={sortedRows}
       renderItem={(r, i) => (
         <List.Item>
           <span style={{ width: 24, flex: '0 0 auto' }}>{i + 1}.</span>

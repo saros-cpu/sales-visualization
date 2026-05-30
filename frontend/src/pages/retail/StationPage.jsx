@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useChart } from '../../hooks/useChart';
 import { getMonths, getStations, getStationDetail } from '../../api/retail';
-import { REGION_COLORS, REGION_ORDER, numberFormat } from '../../utils/retail-helpers';
+import { REGION_COLORS, REGION_ORDER, numberFormat, sortRankingRows } from '../../utils/retail-helpers';
 
 const darkTooltip = {
   backgroundColor: 'rgba(10,20,50,0.9)',
@@ -116,8 +116,8 @@ export default function StationPage() {
     const color = REGION_COLORS[region] || '#00d4ff';
     const name = detail.name || '';
 
-    const regionSts = allStations.filter(x => x.region === region && x.status !== 'closed').sort((a, b) => b.amount - a.amount);
-    const activeAll = allStations.filter(x => x.status !== 'closed').sort((a, b) => b.amount - a.amount);
+    const regionSts = sortRankingRows(allStations.filter(x => x.region === region && x.status !== 'closed'), x => x.amount);
+    const activeAll = sortRankingRows(allStations.filter(x => x.status !== 'closed'), x => x.amount);
 
     // 1. 日销趋势
     const tc = trendC.init('chart-station-trend');
@@ -159,16 +159,19 @@ export default function StationPage() {
     }, true);
 
     // 3. 油品结构 (horizontal bar)
-    const resourceRows = (detail.byResource || []).filter(r => !String(r.name || '').startsWith('Other')).sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    const resourceRows = sortRankingRows(
+      (detail.byResource || []).filter(r => !String(r.name || '').startsWith('Other')),
+      r => r.volume,
+    );
     const rc = resourceC.init('chart-station-resource');
     rc?.setOption({
       backgroundColor: 'transparent',
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...darkTooltip, formatter: p => `${(Array.isArray(p) ? p[0] : p).name}<br/>销售量：<b>${p[0]?.value || p.value}万升</b>` },
       grid: { top: 14, right: 64, bottom: 18, left: 70 },
       xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { lineStyle: { color: 'rgba(0,180,255,0.06)' } }, axisLine: { show: false } },
-      yAxis: { type: 'category', data: resourceRows.map(r => r.name).reverse(), axisLabel: { color: 'rgba(200,220,240,0.75)', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
+      yAxis: { type: 'category', inverse: true, data: resourceRows.map(r => r.name), axisLabel: { color: 'rgba(200,220,240,0.75)', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
       series: [{
-        type: 'bar', data: resourceRows.map(r => parseFloat(((r.volume || 0) / 10000).toFixed(2))).reverse(), barMaxWidth: 16,
+        type: 'bar', data: resourceRows.map(r => parseFloat(((r.volume || 0) / 10000).toFixed(2))), barMaxWidth: 16,
         itemStyle: { color: '#00d4ff', borderRadius: [0, 3, 3, 0] },
         label: { show: true, position: 'right', formatter: p => p.value + '万', color: 'rgba(220,240,255,0.86)', fontSize: 10 },
       }],
@@ -198,10 +201,10 @@ export default function StationPage() {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...darkTooltip, formatter: p => `${p[0].name}：${(p[0].value / 1e4).toFixed(2)}万索姆` },
       grid: { top: 8, right: 60, bottom: 8, left: 80 },
       xAxis: { type: 'value', axisLabel: { color: 'rgba(160,180,210,0.5)', fontSize: 9, formatter: v => (v / 1e4).toFixed(2) + '万' }, splitLine: { lineStyle: { color: 'rgba(0,180,255,0.06)' } }, axisLine: { show: false } },
-      yAxis: { type: 'category', data: cmpData.map(x => x.name).reverse(), axisLabel: { color: 'rgba(200,220,240,0.7)', fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
+      yAxis: { type: 'category', inverse: true, data: cmpData.map(x => x.name), axisLabel: { color: 'rgba(200,220,240,0.7)', fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
       series: [{
         type: 'bar', barMaxWidth: 16,
-        data: cmpData.map(x => x.amount).reverse(),
+        data: cmpData.map(x => x.amount),
         itemStyle: { borderRadius: [0, 4, 4, 0], color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: color + '20' }, { offset: 1, color: color + '50' }] } },
         label: { show: true, position: 'right', fontSize: 9, color: 'rgba(200,220,240,0.5)', formatter: p => (p.value / 1e4).toFixed(2) + '万' },
       }],
@@ -239,8 +242,8 @@ export default function StationPage() {
   }, [detail, allStations, currentShopKey]);
 
   // ── 计算排行 ──
-  const regionSts = allStations.filter(x => x.region === detail?.region && x.status !== 'closed').sort((a, b) => b.amount - a.amount);
-  const activeAll = allStations.filter(x => x.status !== 'closed').sort((a, b) => b.amount - a.amount);
+  const regionSts = sortRankingRows(allStations.filter(x => x.region === detail?.region && x.status !== 'closed'), x => x.amount);
+  const activeAll = sortRankingRows(allStations.filter(x => x.status !== 'closed'), x => x.amount);
   const regionRank = regionSts.findIndex(x => x.shopKey === currentShopKey) + 1;
   const globalRank = activeAll.findIndex(x => x.shopKey === currentShopKey) + 1;
 

@@ -7,6 +7,7 @@ import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n, EN_REGION_KEY, ZH_REGION_KEY } from '@/utils/i18nNames';
 import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
+import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 
 const REGION_ORDER = ['CTY-31', 'chu', 'CTY-30', 'CTY-29', 'CTY-33', 'CTY-35'];
@@ -47,8 +48,13 @@ export default function Region() {
   const stationInRegion = (s: any) => (ZH_REGION_KEY[s.region] || s.region) === activeRegion;
 
   const regionStations = regionData
-    ? stations.filter(stationInRegion).sort((a: any, b: any) => b.amount - a.amount)
+    ? sortRankingRows(stations.filter(stationInRegion), (row: any) => row.amount)
     : [];
+  const productRows = sortRankingRows(
+    data?.byResourceByRegion?.[EN_REGION_KEY[activeRegion] || activeRegion] ?? data?.byResource ?? [],
+    (row: any) => row.volume,
+  );
+  const topPaymentStations = regionStations.slice(0, 8);
 
   // 当月日销趋势：按区域内站点聚合每日 volume/amount
   const regionDaily = useMemo(() => {
@@ -127,8 +133,8 @@ export default function Region() {
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 120, right: 20, top: 10, bottom: 30 },
                   xAxis: { type: 'value', name: CHART_AXIS.wan },
-                  yAxis: { type: 'category', data: regionStations.map((s: any) => station(s)).reverse(), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: regionStations.map((s: any) => Math.round(s.amount / 10000)).reverse() }],
+                  yAxis: { type: 'category', inverse: true, data: regionStations.map((s: any) => station(s)), axisLabel: { fontSize: 11 } },
+                  series: [{ type: 'bar', data: regionStations.map((s: any) => Math.round(s.amount / 10000)) }],
                 }}
               />
             </Col>
@@ -152,8 +158,8 @@ export default function Region() {
                   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                   grid: { left: 80, right: 20, top: 10, bottom: 30 },
                   xAxis: { type: 'value', name: CHART_AXIS.liters },
-                  yAxis: { type: 'category', data: (data?.byResourceByRegion?.[EN_REGION_KEY[activeRegion] || activeRegion] ?? data?.byResource ?? []).map((r: any) => product(r.name)).reverse(), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: (data?.byResourceByRegion?.[EN_REGION_KEY[activeRegion] || activeRegion] ?? data?.byResource ?? []).map((r: any) => r.volume).reverse() }],
+                  yAxis: { type: 'category', inverse: true, data: productRows.map((r: any) => product(r.name)), axisLabel: { fontSize: 11 } },
+                  series: [{ type: 'bar', data: productRows.map((r: any) => r.volume) }],
                 }}
               />
             </Col>
@@ -163,12 +169,12 @@ export default function Region() {
                   color: CHART_PALETTE,
                   tooltip: { trigger: 'axis' },
                   grid: { left: 120, right: 20, top: 10, bottom: 40 },
-                  xAxis: { type: 'category', data: regionStations.slice(0, 8).map((s: any) => station(s)).reverse(), axisLabel: { fontSize: 10 } },
+                  xAxis: { type: 'category', data: topPaymentStations.map((s: any) => station(s)), axisLabel: { fontSize: 10 } },
                   yAxis: { type: 'value', name: CHART_AXIS.wan },
                   legend: { data: [t('retail.cash'), t('retail.card')], bottom: 0 },
                   series: [
-                    { name: t('retail.cash'), type: 'bar', data: regionStations.slice(0, 8).map((s: any) => Math.round(s.cash / 10000)).reverse(), itemStyle: { color: '#ffa726' } },
-                    { name: t('retail.card'), type: 'bar', data: regionStations.slice(0, 8).map((s: any) => Math.round(s.card / 10000)).reverse(), itemStyle: { color: '#a78bfa' } },
+                    { name: t('retail.cash'), type: 'bar', data: topPaymentStations.map((s: any) => Math.round(s.cash / 10000)), itemStyle: { color: '#ffa726' } },
+                    { name: t('retail.card'), type: 'bar', data: topPaymentStations.map((s: any) => Math.round(s.card / 10000)), itemStyle: { color: '#a78bfa' } },
                   ],
                 }}
               />

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useChart } from '../../hooks/useChart';
 import { getMonths, getStations, getRegions, getDaily } from '../../api/retail';
-import { REGION_COLORS, REGION_ORDER } from '../../utils/retail-helpers';
+import { REGION_COLORS, REGION_ORDER, sortRankingRows } from '../../utils/retail-helpers';
 
 const darkTooltip = { backgroundColor: 'rgba(10,20,50,0.9)', borderColor: 'rgba(0,180,255,0.3)', textStyle: { color: '#e0e8f5', fontSize: 11 } };
 
@@ -115,14 +115,14 @@ export default function RegionPage() {
     }
 
     // 2. 站点排行
-    const rankData = [...activeSts].sort((a, b) => a.amount - b.amount);
+    const rankData = sortRankingRows(activeSts, s => s.amount);
     const rc = rankC.init('chart-region-rank');
     rc?.setOption({
       backgroundColor: 'transparent',
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...darkTooltip, formatter: p => `${p[0].name}<br/>销售金额：${(p[0].value / 1e4).toFixed(2)}万索姆` },
       grid: { top: 8, right: 80, bottom: 8, left: 80 },
       xAxis: { type: 'value', axisLabel: { color: 'rgba(160,180,210,0.5)', fontSize: 9, formatter: v => (v / 1e4).toFixed(2) + '万' }, splitLine: { lineStyle: { color: 'rgba(0,180,255,0.06)' } }, axisLine: { show: false } },
-      yAxis: { type: 'category', data: rankData.map(s => s.name), axisLabel: { color: 'rgba(200,220,240,0.7)', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
+      yAxis: { type: 'category', inverse: true, data: rankData.map(s => s.name), axisLabel: { color: 'rgba(200,220,240,0.7)', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
       series: [{
         type: 'bar', barMaxWidth: 18,
         data: rankData.map(s => ({ value: s.amount, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: color + '40' }, { offset: 1, color: color }] }, borderRadius: [0, 4, 4, 0] } })),
@@ -151,17 +151,19 @@ export default function RegionPage() {
     }, true);
 
     // 4. 油品结构
-    const resourceRows = ((allRegionsData.byResourceByRegion || {})[currentRegion] || allRegionsData.byResource || [])
-      .filter(r => !String(r.name || '').startsWith('Other'))
-      .sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    const resourceRows = sortRankingRows(
+      ((allRegionsData.byResourceByRegion || {})[currentRegion] || allRegionsData.byResource || [])
+        .filter(r => !String(r.name || '').startsWith('Other')),
+      r => r.volume,
+    );
     const resc = resourceC.init('chart-region-resource');
     resc?.setOption({
       backgroundColor: 'transparent',
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...darkTooltip, formatter: p => `${(Array.isArray(p) ? p[0] : p).name}<br/>销售量：<b>${p[0]?.value || p.value}万升</b>` },
       grid: { top: 8, right: 48, bottom: 16, left: 52 },
       xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { lineStyle: { color: 'rgba(0,180,255,0.06)' } }, axisLine: { show: false } },
-      yAxis: { type: 'category', data: resourceRows.map(r => r.name).reverse(), axisLabel: { color: 'rgba(200,220,240,0.75)', fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
-      series: [{ type: 'bar', data: resourceRows.map(r => parseFloat(((r.volume || 0) / 10000).toFixed(2))).reverse(), barMaxWidth: 14, itemStyle: { color: '#00d4ff', borderRadius: [0, 3, 3, 0] }, label: { show: true, position: 'right', formatter: p => p.value + '万', color: 'rgba(220,240,255,0.86)', fontSize: 10 } }],
+      yAxis: { type: 'category', inverse: true, data: resourceRows.map(r => r.name), axisLabel: { color: 'rgba(200,220,240,0.75)', fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
+      series: [{ type: 'bar', data: resourceRows.map(r => parseFloat(((r.volume || 0) / 10000).toFixed(2))), barMaxWidth: 14, itemStyle: { color: '#00d4ff', borderRadius: [0, 3, 3, 0] }, label: { show: true, position: 'right', formatter: p => p.value + '万', color: 'rgba(220,240,255,0.86)', fontSize: 10 } }],
     }, true);
 
     // 5. 现金 vs 刷卡（按站点）
