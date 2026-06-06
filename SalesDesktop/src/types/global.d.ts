@@ -32,6 +32,7 @@ declare global {
     SALES_RUNTIME_CONFIG?: {
       apiHost?: string;
       updateUrl?: string;
+      wallpaperToken?: string;
       allowedHosts?: string[];
     };
     electronAPI?: {
@@ -54,6 +55,11 @@ declare global {
       restartApp: () => Promise<unknown>;
       resolveInstallPrompt?: (action: UpdateInstallAction) => Promise<boolean>;
       onInstallPrompt?: (callback: (info: UpdateInstallInfo) => void) => () => void;
+    };
+    wallpaperAPI?: {
+      setInteractive: (enabled: boolean, durationMs?: number) => Promise<boolean>;
+      reload: () => Promise<boolean>;
+      ready?: () => Promise<boolean>;
     };
   }
 }

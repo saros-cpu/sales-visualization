@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from functools import wraps
+import hmac
 import html
 import importlib.util
 import json
@@ -52,6 +53,7 @@ from shared_utils import (
     has_users, session_user, wants_json, login_redirect,
     user_requires_password_change,
     enrich_retail_station_statuses,
+    active_station_statuses,
 )
 from routes_assistant import register_assistant_routes
 from routes_data import register_data_routes
@@ -149,6 +151,7 @@ PUBLIC_PAGE_PREFIXES = ()
 PUBLIC_API_PATHS = set()
 
 PUBLIC_API_PREFIXES = (
+    "/api/wallpaper/",
     "/api/v2/",
     "/api/download/",
     "/api/export/analysis/sales/download/",
@@ -368,6 +371,180 @@ def api_retail_pages():
             {"key": "alert", "label": "预警", "url": f"{base}/alert"},
         ],
     })
+
+
+_WALLPAPER_CONSTANTS_MODULE = None
+
+
+def _wallpaper_oilstation_constants():
+    global _WALLPAPER_CONSTANTS_MODULE
+    if _WALLPAPER_CONSTANTS_MODULE is not None:
+        return _WALLPAPER_CONSTANTS_MODULE
+    spec = importlib.util.spec_from_file_location(
+        "sales_wallpaper_oilstation_constants",
+        OILSTATION_ROOT / "constants.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    _WALLPAPER_CONSTANTS_MODULE = module
+    return module
+
+
+def _wallpaper_active_statuses():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        return active_station_statuses(cur)
+    finally:
+        conn.close()
+
+
+def _wallpaper_station_details():
+    try:
+        response = open_oilstation("/api/station-map-details")
+        if response.status_code >= 400:
+            return {}
+        payload = response.get_json(silent=True)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        logging.exception("wallpaper station details unavailable")
+        return {}
+
+
+def _wallpaper_full_access():
+    expected = os.getenv("SALES_WALLPAPER_TOKEN", "").strip()
+    if not expected:
+        return False
+    provided = (
+        request.headers.get("X-Wallpaper-Token")
+        or request.args.get("token")
+        or ""
+    ).strip()
+    return hmac.compare_digest(provided, expected)
+
+
+def _wallpaper_default_station_status(shop_key, constants_module):
+    closed_stations = getattr(constants_module, "CLOSED_STATIONS", {}) or {}
+    force_normal = getattr(constants_module, "FORCE_NORMAL_STATIONS", set()) or set()
+    if shop_key in closed_stations and shop_key not in force_normal:
+        return {
+            "status": "closed",
+            "statusType": "closed",
+            "statusLabel": "closed",
+            "closedReason": closed_stations.get(shop_key) or "",
+            "affectsSales": True,
+            "affectsInventory": False,
+            "suppressAlerts": False,
+            "statusNote": closed_stations.get(shop_key) or "",
+            "expectedResumeAt": None,
+        }
+    return {
+        "status": "normal",
+        "statusType": "normal",
+        "statusLabel": "normal",
+        "closedReason": "",
+        "affectsSales": False,
+        "affectsInventory": False,
+        "suppressAlerts": False,
+        "statusNote": "",
+        "expectedResumeAt": None,
+    }
+
+
+@app.route("/api/wallpaper/map")
+def api_wallpaper_map():
+    constants_module = _wallpaper_oilstation_constants()
+    include_sensitive = _wallpaper_full_access()
+    details_payload = _wallpaper_station_details() if include_sensitive else {}
+    detail_items = details_payload.get("items") if isinstance(details_payload, dict) else []
+    detail_by_shop = {
+        int(item.get("shopKey")): item
+        for item in detail_items or []
+        if isinstance(item, dict) and item.get("shopKey") is not None
+    }
+    try:
+        statuses = _wallpaper_active_statuses()
+    except Exception:
+        logging.exception("wallpaper station statuses unavailable")
+        statuses = {}
+
+    stations = []
+    shop_coords = getattr(constants_module, "SHOP_COORDS", {}) or {}
+    shop_catalog = getattr(constants_module, "SHOP_KEY_MAP", {}) or {}
+    for raw_shop_key, info in sorted(shop_catalog.items(), key=lambda item: int(item[0])):
+        shop_key = int(raw_shop_key)
+        coords = shop_coords.get(shop_key) or {}
+        status = statuses.get(shop_key) or _wallpaper_default_station_status(shop_key, constants_module)
+        detail = detail_by_shop.get(shop_key) or {}
+        station = {
+            "shopKey": shop_key,
+            "name": info.get("name", ""),
+            "short": info.get("short", ""),
+            "region": info.get("region", ""),
+            "lng": coords.get("lng"),
+            "lat": coords.get("lat"),
+            "type": "station",
+            "size": 0.28,
+            "status": status.get("status", "normal"),
+            "statusType": status.get("statusType", "normal"),
+            "statusLabel": status.get("statusLabel", ""),
+            "closedReason": status.get("closedReason", ""),
+            "statusNote": status.get("statusNote", ""),
+            "expectedResumeAt": status.get("expectedResumeAt"),
+            "affectsSales": bool(status.get("affectsSales")),
+            "affectsInventory": bool(status.get("affectsInventory")),
+            "suppressAlerts": bool(status.get("suppressAlerts")),
+        }
+        if include_sensitive:
+            station.update({
+                "inventory": float(detail.get("inventory") or 0),
+                "inventoryByResource": detail.get("inventoryByResource") or [],
+                "prices": detail.get("prices") or [],
+                "inventoryAsOf": detail.get("inventoryAsOf") or "",
+                "snapshotGeneratedAt": detail.get("snapshotGeneratedAt") or details_payload.get("snapshotGeneratedAt") or "",
+            })
+        stations.append(station)
+
+    depots = []
+    for name, info in sorted((getattr(constants_module, "DEPOT_COORDS", {}) or {}).items()):
+        status = info.get("status") or "normal"
+        depots.append({
+            "name": name,
+            "short": info.get("short", ""),
+            "region": info.get("region", ""),
+            "lng": info.get("lng"),
+            "lat": info.get("lat"),
+            "type": "depot",
+            "size": 0.55,
+            "status": status,
+            "statusType": status,
+            "statusLabel": status,
+            "closedReason": info.get("closedReason", ""),
+        })
+
+    active_station_count = sum(1 for item in stations if item.get("status") == "normal")
+    closed_station_count = sum(1 for item in stations if item.get("status") == "closed")
+    warning_station_count = sum(1 for item in stations if item.get("status") not in {"normal", "closed"})
+    inventory_total = round(sum(float(item.get("inventory") or 0) for item in stations), 2) if include_sensitive else None
+    payload = {
+        "source": "wallpaper_public_map",
+        "updatedAt": datetime.now().isoformat(timespec="seconds"),
+        "snapshotGeneratedAt": details_payload.get("snapshotGeneratedAt") or details_payload.get("updatedAt") or "",
+        "sensitiveData": include_sensitive,
+        "stations": stations,
+        "depots": depots,
+        "summary": {
+            "stationCount": len(stations),
+            "activeStationCount": active_station_count,
+            "closedStationCount": closed_station_count,
+            "warningStationCount": warning_station_count,
+            "depotCount": len(depots),
+            "activeDepotCount": sum(1 for item in depots if item.get("status") == "normal"),
+            "inventoryLiters": inventory_total,
+        },
+    }
+    return jsonify({"code": 0, "data": payload})
 
 
 @app.route("/retail-app/")

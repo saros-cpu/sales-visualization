@@ -15,13 +15,13 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `3.9.15`.
-- Current release code commit: `021d487 fix: release network resilience hotfix 3.9.15`.
+- Current released client version: `3.9.17`.
+- Current release code commit: `a98ed3f feat: add native sales wallpaper`.
 - Production public entry: `http://sales.example.com/`.
 - Production backup entry: `http://198.51.100.10/`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `http://198.51.100.10/download/latest.yml`.
-- Current installer: `SalesDesktop Setup 3.9.15.exe`.
+- Current installer: `SalesDesktop Setup 3.9.17.exe`.
 - HTTPS certificate: pending; keep HTTP active until the public SSL certificate is ready.
 
 ## Report Boundaries
@@ -118,19 +118,19 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.15.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.15.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.15.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.17.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.17.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.17.exe"
 ```
 
 ## CodeGraph Memory
 
 Current CodeGraph baseline:
 
-- Files: `335`
-- Nodes: `8,083`
-- Edges: `29,751`
-- DB size: `34.50 MB`
+- Files: `358`
+- Nodes: `8,433`
+- Edges: `30,207`
+- DB size: `58.13 MB`
 - Status: `Index is up to date`
 
 Use these common queries:

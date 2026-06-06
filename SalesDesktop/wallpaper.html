@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:8900 http://127.0.0.1:8900 http://198.51.100.10 http://sales.example.com https://sales.example.com ws://localhost:5173; img-src 'self' data: blob:; font-src 'self' data:">
+    <style>
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #07111f; }
+      #root { width: 100%; height: 100%; }
+    </style>
+    <link rel="stylesheet" href="/kgz-map/kgz-map.css">
+    <link rel="icon" type="image/svg+xml" href="/logo-icon.svg">
+    <title>销售地图动态背景</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/wallpaper/main.tsx"></script>
+  </body>
+</html>

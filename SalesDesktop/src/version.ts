@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.9.16';
-export const BUILD_DATE = '2026-07-28';
+export const VERSION = '3.9.17';
+export const BUILD_DATE = '2026-07-29';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.9.17',
+    date: '2026-07-29',
+    type: 'minor',
+    changes: [
+      '新增：独立 WebView2 原生动态背景包，复用吉尔吉斯 3D 地图和站点/油库数据接口，不并入主客户端安装包',
+      '新增：动态背景只读地图接口和本机静态资源服务，支持 token 扩展库存数据、接口失败时内置点位兜底，并在地图 ready 后才贴到桌面避免黑屏',
+      '修复：自用油按加油站统计表增加油品/车辆类型维度合计列，便于核对站点明细和汇总口径',
+    ],
+  },
   {
     version: '3.9.16',
     date: '2026-07-28',

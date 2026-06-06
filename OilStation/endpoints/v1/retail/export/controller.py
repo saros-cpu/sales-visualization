@@ -78,6 +78,13 @@ def _self_use_vehicle_remark(record):
     return '公司车辆' if person_key in SELF_USE_COMPANY_IDS else '员工车辆'
 
 
+def _self_use_station_total_group(item):
+    return (
+        str(item.get('product') or '-'),
+        '发电机' if item.get('remark') == '发电机' else '车辆',
+    )
+
+
 def _group_self_use_totals_by_station(records):
     totals = {}
     for rec in records:
@@ -113,7 +120,12 @@ def _group_self_use_station_blocks(records):
             'amount': values['amount'],
         })
     return [
-        ((station_name, station_short), items)
+        ((station_name, station_short), sorted(items, key=lambda item: (
+            str(item.get('product') or ''),
+            1 if item.get('remark') == '发电机' else 0,
+            str(item.get('plate') or ''),
+            str(item.get('remark') or ''),
+        )))
         for (station_order, station_name, station_short), items in sorted(blocks.items(), key=lambda item: item[0])
     ]
 
@@ -162,7 +174,7 @@ def _auto_fit_self_use_columns(ws, min_width=8, max_width=60):
 
 def _write_self_use_station_sheet(wb, records, styles):
     ws = wb.create_sheet('按加油站统计')
-    headers = ['加油站', '加油站俄语名称', '车牌号', '油品名称', '加油量公斤(kg)', '加油量升(L)', '金额(сом)', '备注']
+    headers = ['加油站', '加油站俄语名称', '车牌号', '油品名称', '加油量公斤(kg)', '加油量升(L)', '合计', '金额(сом)', '备注']
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = styles['header_font']
@@ -179,11 +191,22 @@ def _write_self_use_station_sheet(wb, records, styles):
         station_weight = sum(item['weightKg'] for item in items)
         station_volume = sum(item['volume'] for item in items)
         station_amount = sum(item['amount'] for item in items if item['remark'] == '员工车辆')
+        product_totals = {}
+        for item in items:
+            product_key = _self_use_station_total_group(item)
+            product_totals[product_key] = product_totals.get(product_key, 0.0) + item['volume']
+        product_total_rows = {}
         grand_weight += station_weight
         grand_volume += station_volume
         grand_amount += station_amount
 
         for item in items:
+            product_key = _self_use_station_total_group(item)
+            is_first_product_row = product_key not in product_total_rows
+            if is_first_product_row:
+                product_total_rows[product_key] = [row_idx, row_idx]
+            else:
+                product_total_rows[product_key][1] = row_idx
             employee_amount = _round_half_up(item['amount'], 2) if item['remark'] == '员工车辆' else ''
             row_values = [
                 station_name,
@@ -192,6 +215,7 @@ def _write_self_use_station_sheet(wb, records, styles):
                 item['product'],
                 _round_half_up(item['weightKg'], 2),
                 _round_half_up(item['volume'], 2),
+                _round_half_up(product_totals[product_key], 2) if is_first_product_row else '',
                 employee_amount,
                 item['remark'],
             ]
@@ -199,9 +223,16 @@ def _write_self_use_station_sheet(wb, records, styles):
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 cell.alignment = styles['center_align']
                 cell.border = styles['thin_border']
-                if col_idx in (5, 6, 7) and value != '':
+                if col_idx in (5, 6, 7, 8) and value != '':
                     cell.number_format = '#,##0.00'
             row_idx += 1
+
+        for start_row, end_row in product_total_rows.values():
+            if end_row > start_row:
+                ws.merge_cells(start_row=start_row, start_column=4, end_row=end_row, end_column=4)
+                ws.merge_cells(start_row=start_row, start_column=7, end_row=end_row, end_column=7)
+                ws.cell(row=start_row, column=4).alignment = styles['center_align']
+                ws.cell(row=start_row, column=7).alignment = styles['center_align']
 
         subtotal_row = row_idx
         subtotal_values = [
@@ -211,6 +242,7 @@ def _write_self_use_station_sheet(wb, records, styles):
             '',
             _round_half_up(station_weight, 2),
             _round_half_up(station_volume, 2),
+            '',
             _round_half_up(station_amount, 2) if station_amount else '',
             '',
         ]
@@ -220,7 +252,7 @@ def _write_self_use_station_sheet(wb, records, styles):
             cell.fill = styles['subtotal_fill']
             cell.alignment = styles['center_align']
             cell.border = styles['thin_border']
-            if col_idx in (5, 6, 7) and value != '':
+            if col_idx in (5, 6, 7, 8) and value != '':
                 cell.number_format = '#,##0.00'
 
         if subtotal_row > block_start:
@@ -235,15 +267,15 @@ def _write_self_use_station_sheet(wb, records, styles):
         1: '总合计',
         5: _round_half_up(grand_weight, 2),
         6: _round_half_up(grand_volume, 2),
-        7: _round_half_up(grand_amount, 2) if grand_amount else '',
+        8: _round_half_up(grand_amount, 2) if grand_amount else '',
     }
-    for col_idx in range(1, 9):
+    for col_idx in range(1, 10):
         cell = ws.cell(row=total_row, column=col_idx, value=total_values.get(col_idx, ''))
         cell.font = styles['bold_font']
         cell.fill = styles['total_fill']
         cell.alignment = styles['center_align']
         cell.border = styles['thin_border']
-        if col_idx in (5, 6, 7) and cell.value != '':
+        if col_idx in (5, 6, 7, 8) and cell.value != '':
             cell.number_format = '#,##0.00'
     ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=4)
 

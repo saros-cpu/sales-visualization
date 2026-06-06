@@ -2,12 +2,18 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const isWallpaperBuild = mode === 'wallpaper';
+
+  return {
   plugins: [react()],
   base: './',
   build: {
-    outDir: 'dist',
+    outDir: isWallpaperBuild ? 'dist-wallpaper' : 'dist',
     rollupOptions: {
+      input: isWallpaperBuild
+        ? { wallpaper: path.resolve(__dirname, 'wallpaper.html') }
+        : { main: path.resolve(__dirname, 'index.html') },
       output: {
         manualChunks(id) {
           const normalized = id.replace(/\\/g, '/');
@@ -50,4 +56,5 @@ export default defineConfig({
   server: { port: 5173 },
   root: '.',
   index: 'index.html',
+  };
 });

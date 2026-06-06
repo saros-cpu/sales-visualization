@@ -1,6 +1,6 @@
 {
     "name": "sales-desktop",
-    "version": "3.9.16",
+    "version": "3.9.17",
     "description": "销售管理系统桌面客户端",
     "author": "Юрий",
     "private": true,
@@ -13,7 +13,8 @@
         "build": "vite build",
         "preview": "vite preview",
         "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --dev\"",
-        "electron:build": "npm run build && electron-builder"
+        "electron:build": "npm run build && electron-builder",
+        "wallpaper:assets": "vite build --mode wallpaper"
     },
     "dependencies": {
         "@ant-design/icons": "^5.5.0",

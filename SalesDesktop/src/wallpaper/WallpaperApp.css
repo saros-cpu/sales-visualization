@@ -1,0 +1,255 @@
+.wallpaper-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  color: #eef6ff;
+  background: #07111f;
+  font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.wallpaper-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.wallpaper-map .kgz-map-root {
+  background: #07111f;
+}
+
+.wallpaper-hud {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  border: 1px solid rgba(148, 179, 211, 0.18);
+  background: rgba(5, 14, 28, 0.68);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(16px);
+}
+
+.wallpaper-top {
+  top: 28px;
+  left: 32px;
+  right: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: 0 22px;
+  border-radius: 8px;
+}
+
+.wallpaper-title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.wallpaper-subtitle {
+  margin-top: 6px;
+  color: #a9bfd5;
+  font-size: 13px;
+}
+
+.wallpaper-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 78px;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #d7edf8;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+}
+
+.wallpaper-live span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #46d37d;
+  box-shadow: 0 0 14px rgba(70, 211, 125, 0.85);
+}
+
+.wallpaper-live-cached span,
+.wallpaper-live-loading span {
+  background: #f5c84c;
+  box-shadow: 0 0 14px rgba(245, 200, 76, 0.85);
+}
+
+.wallpaper-live-error span {
+  background: #ef6461;
+  box-shadow: 0 0 14px rgba(239, 100, 97, 0.85);
+}
+
+.wallpaper-metrics {
+  top: 116px;
+  left: 32px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(98px, 1fr));
+  gap: 10px;
+  width: min(760px, calc(100vw - 64px));
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.wallpaper-metrics div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.wallpaper-metrics b {
+  display: block;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 23px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-metrics span {
+  display: block;
+  margin-top: 5px;
+  color: #a9bfd5;
+  font-size: 12px;
+}
+
+.wallpaper-panel {
+  right: 32px;
+  top: 116px;
+  width: min(340px, calc(100vw - 64px));
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.wallpaper-panel-bottom {
+  top: auto;
+  bottom: 68px;
+}
+
+.wallpaper-panel-title {
+  margin-bottom: 12px;
+  color: #d9ebfa;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.wallpaper-alert-list,
+.wallpaper-rank-list {
+  display: grid;
+  gap: 8px;
+}
+
+.wallpaper-alert-row,
+.wallpaper-rank-row {
+  display: grid;
+  align-items: center;
+  min-height: 32px;
+  column-gap: 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+  font-size: 13px;
+}
+
+.wallpaper-alert-row {
+  grid-template-columns: 10px minmax(0, 1fr);
+  padding: 9px 10px;
+}
+
+.wallpaper-alert-row strong,
+.wallpaper-rank-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-alert-row em {
+  grid-column: 2;
+  overflow: hidden;
+  color: #a9bfd5;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-rank-row {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  padding: 8px 10px;
+}
+
+.wallpaper-rank-row span {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: #08111f;
+  background: #9bdcf5;
+  font-weight: 700;
+}
+
+.wallpaper-rank-row em {
+  color: #e9c46a;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.wallpaper-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.wallpaper-dot-ok {
+  background: #46d37d;
+}
+
+.wallpaper-dot-warn {
+  background: #f5c84c;
+}
+
+.wallpaper-dot-danger {
+  background: #ef6461;
+}
+
+.wallpaper-empty {
+  color: #a9bfd5;
+  font-size: 13px;
+}
+
+.wallpaper-footer {
+  position: absolute;
+  left: 32px;
+  bottom: 24px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  max-width: calc(100vw - 400px);
+  color: #9fb5ca;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+@media (max-width: 1100px) {
+  .wallpaper-metrics {
+    grid-template-columns: repeat(3, minmax(92px, 1fr));
+  }
+
+  .wallpaper-panel,
+  .wallpaper-panel-bottom {
+    display: none;
+  }
+
+  .wallpaper-footer {
+    max-width: calc(100vw - 64px);
+  }
+}

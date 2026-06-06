@@ -6,6 +6,22 @@
 
 ## 版本更新记录
 
+### 2026-07-29 (v3.9.17)
+
+- **正式发布动态背景能力**：主项目新增 `/api/wallpaper/map` 只读接口、`SalesDesktop` 壁纸静态资源构建，以及独立 `SalesWallpaperNative` WebView2 原生动态背景包。
+- **黑屏防护**：原生壳改为本机 `127.0.0.1` 随机端口加载静态资源，地图 ready 后才贴到桌面；接口失败时使用内置点位兜底，避免纯黑背景。
+- **报表修正**：自用油“按加油站统计”页增加油品/车辆类型维度合计列，便于核对站点明细和合计口径。
+- **发布同步**：客户端、Web 和生产部署版本同步到 `3.9.17`；动态背景 zip 仍通过 `/download/wallpaper-native/` 独立分发，不进入主客户端自动更新链路。
+
+### 2026-07-29 (SalesWallpaper Native)
+
+- **独立动态背景**：新增 `SalesWallpaperNative` Windows 动态背景客户端，面向外网客户端电脑安装运行；本地服务器只提供轻量 JSON 接口，不运行壁纸进程。
+- **壁纸数据接口**：新增 `GET /api/wallpaper/map`。无 token 时只返回站点/油库/状态/汇总数量；配置 `SALES_WALLPAPER_TOKEN` 并在客户端 `wallpaperToken` 中写入相同 token 后，才返回库存、价格等敏感数据。
+- **独立打包边界**：主客户端默认构建仍只输出 `dist/index.html`；动态背景只复用 `SalesDesktop/dist-wallpaper/wallpaper.html` 静态资源，并由 `SalesWallpaperNative` 单独打包，不进入主客户端安装包和自动更新包。
+- **Electron 方案废弃**：早期 `SalesWallpaper` Electron 安装包体积接近主客户端，已从主项目构建脚本和配置中移除；后续只维护 WebView2 原生壳。
+- **黑屏防护**：原生壳在地图页面真正渲染完成并发送 ready 信号后，才贴到 Windows 桌面；仓库调试运行不会自动写入开机启动项，避免接口或资源未就绪时覆盖成黑色背景。
+- **WebView2 轻量版**：框架依赖版 zip 约 `7.6 MB`，自包含版 zip 约 `77.5 MB`，均独立放在 `/download/wallpaper-native/`，不接入主客户端自动更新。
+
 ### 2026-07-28 (v3.9.16)
 
 - **排行图顺序修复**：零售分析、驾驶舱和批发列表中的排行类图表统一按指标从多到少排序，横向排行图第一名固定显示在最上方，避免 Top10、区域排行、油品结构图出现视觉倒序。
@@ -1097,7 +1113,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.9.15（与 version.ts 对齐）
+├── package.json              # 版本 3.9.17（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）
