@@ -14,7 +14,7 @@ import PageState from '@/components/ui/PageState';
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 export default function ExchangeRates() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [data, setData] = useState<{ items: ExchangeRateItem[]; total: number; missingUsd: number; missingCny: number; openGaps: number } | null>(null);
@@ -57,7 +57,9 @@ export default function ExchangeRates() {
       const list = Array.isArray(p) ? p : [p];
       let html = `<b>${list[0]?.axisValue || ''}</b>`;
       list.forEach((item: any) => {
-        html += `<br/>${item.marker} ${item.seriesName}: ${item.value?.toFixed(4)}`;
+        const unit = i18n.language.startsWith('ru') ? 'KGS' : '索姆';
+        const value = item.value == null ? '-' : `${Number(item.value).toFixed(4)} ${unit}`;
+        html += `<br/>${item.marker} ${item.seriesName}: ${value}`;
       });
       return html;
     } },

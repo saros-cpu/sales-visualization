@@ -322,10 +322,10 @@ def _attach_monthly_finance_metrics(payload, daily_resource_rows=None):
 
 
 def station_status_for(shop_key, amount):
-    if shop_key in CLOSED_STATIONS:
-        return 'closed'
     if shop_key in FORCE_NORMAL_STATIONS:
         return 'normal'
+    if shop_key in CLOSED_STATIONS:
+        return 'closed'
     return 'normal' if amount > 0 else 'closed'
 
 

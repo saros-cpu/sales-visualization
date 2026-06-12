@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Row, Col, Card, Statistic, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { getResourcesYearly } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
@@ -62,6 +63,7 @@ function normalizeResources(rows: any[]): any[] {
 
 export default function Resource() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const year = parseInt(ym.split('-')[0]);
@@ -93,14 +95,14 @@ export default function Resource() {
         <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
       </Space>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(totalAmount / 10000)} suffix={t('common.wan')} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.totalSales')} value={Math.round(totalAmount / 10000)} suffix={CHART_AXIS.wanSom} /></Card></Col>
         <Col xs={24} sm={8}>
-          <Card size="small">
+          <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/monthly')}>
             <Statistic title={t('retail.totalLiters')} value={Math.round(totalVolume).toLocaleString()} suffix="L" />
             <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</div>
           </Card>
         </Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.resource')} value={resources.length} suffix={t('common.type')} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/overview')}><Statistic title={t('retail.resource')} value={resources.length} suffix={t('common.type')} /></Card></Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
@@ -111,7 +113,7 @@ export default function Resource() {
                 grid: { left: 80, right: 40 },
                 xAxis: { type: 'value', name: CHART_AXIS.liters },
                 yAxis: { type: 'category', inverse: true, data: rankedResources.map((r) => r.name), axisLabel: { fontSize: 11 } },
-                series: [{ type: 'bar', barMaxWidth: 18, data: rankedResources.map((r) => ({ value: Math.round(r.volume), itemStyle: { color: r.color } })) }],
+                series: [{ name: t('retail.volume'), type: 'bar', barMaxWidth: 18, data: rankedResources.map((r) => ({ value: Math.round(r.volume), itemStyle: { color: r.color } })) }],
               }}
           />
         </Col>

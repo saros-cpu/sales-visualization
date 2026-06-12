@@ -1,13 +1,20 @@
 import { useState, useMemo } from 'react';
 import { Row, Col, Card, Statistic, Table, Typography, Space, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
-import { getStationStatuses, getKpi, getDaily, getDashboardYearly } from '@/api/retail';
+import { getStationStatuses, getKpi, getDaily, getDashboardYearly, getStationMapDetails } from '@/api/retail';
 import { getRetailAlertInsights } from '@/api/retailAlerts';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
 
 const { Text } = Typography;
+
+function formatLiters(value: unknown, digits = 0) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return '--';
+  return numeric.toLocaleString('zh-CN', { maximumFractionDigits: digits });
+}
 
 function stationStatusTag(item: any) {
   const value = item?.statusType || item?.closedReason || item?.status || '';
@@ -26,6 +33,7 @@ function stationStatusTag(item: any) {
 
 export default function Alert() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const { region } = useNameI18n();
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
@@ -34,6 +42,7 @@ export default function Alert() {
   const kpiQ = useApiQuery(['retail', 'kpi'], getKpi);
   const dailyQ = useApiQuery(['retail', 'daily', ym], () => getDaily(ym));
   const dashQ = useApiQuery(['retail', 'dashboard-yearly', now.getFullYear()], () => getDashboardYearly(now.getFullYear()));
+  const mapDetailsQ = useApiQuery(['retail', 'station-map-details'], getStationMapDetails);
   const lang = i18n.language === 'ru' ? 'ru' : 'zh';
   const insightQ = useApiQuery(['retail', 'alert-insights', ym, lang], () => getRetailAlertInsights(ym, false, lang));
 
@@ -64,6 +73,26 @@ export default function Alert() {
     return result;
   }, [daily]);
   const anomalies = insightQ.data?.trendAnomalies?.length ? insightQ.data.trendAnomalies : fallbackAnomalies;
+  const inventoryLevels = useMemo(() => {
+    const rows: any[] = [];
+    for (const station of mapDetailsQ.data?.items ?? []) {
+      for (const resource of station.inventoryByResource ?? []) {
+        if (resource.fillStatus === 'critical' || resource.fillStatus === 'warning') {
+          rows.push({
+            shopKey: station.shopKey,
+            stationName: station.name || station.short || `站点${station.shopKey}`,
+            resourceKey: resource.resourceKey,
+            resourceName: resource.name,
+            inventory: resource.inventory,
+            capacity: resource.capacity,
+            fillPercent: resource.fillPercent,
+            fillStatus: resource.fillStatus,
+          });
+        }
+      }
+    }
+    return rows.sort((a, b) => Number(a.fillPercent ?? 999) - Number(b.fillPercent ?? 999));
+  }, [mapDetailsQ.data]);
 
   const regionKeys = dashQ.data ? Object.keys(dashQ.data.regions) : [];
   const topRegion = regionKeys.length > 0
@@ -77,9 +106,9 @@ export default function Alert() {
     <div>
       <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
       <Row gutter={[16, 16]} style={{ marginTop: 16, marginBottom: 16 }}>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.closedStations')} value={statuses.closed.length} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.expectedResume')} value={statuses.renovating.length} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title={t('retail.trendAnomaly')} value={anomalies.length} valueStyle={{ color: anomalies.length > 0 ? '#cf1322' : undefined }} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.closedStations')} value={statuses.closed.length} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.expectedResume')} value={statuses.renovating.length} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/monthly')}><Statistic title={t('retail.trendAnomaly')} value={anomalies.length} valueStyle={{ color: anomalies.length > 0 ? '#cf1322' : undefined }} /></Card></Col>
       </Row>
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
         <Card size="small" title={t('retail.closedStations')}>
@@ -101,7 +130,28 @@ export default function Alert() {
         </Card>
         <Card size="small" title={t('retail.inventoryAlert')}>
           <Text>{t('retail.inventory')}: {Math.round(kpi?.inventory ?? 0).toLocaleString()}L</Text>
-          <br /><Text type="secondary">{t('retail.alertRules')}: {t('retail.ruleLowInventoryShort')}</Text>
+          <br /><Text type="secondary">{t('retail.alertRules')}: 绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%</Text>
+          {inventoryLevels.length > 0 ? (
+            <Table
+              style={{ marginTop: 12 }}
+              dataSource={inventoryLevels}
+              rowKey={(r: any) => `${r.shopKey}-${r.resourceKey}`}
+              size="small"
+              columns={[
+                { title: t('retail.station'), dataIndex: 'stationName', key: 'stationName' },
+                { title: '油品', dataIndex: 'resourceName', key: 'resourceName' },
+                { title: t('retail.inventory'), dataIndex: 'inventory', key: 'inventory', render: (v: any) => `${formatLiters(v, 2)} L` },
+                { title: '容量', dataIndex: 'capacity', key: 'capacity', render: (v: any) => (v ? `${formatLiters(v)} L` : '-') },
+                { title: '水位', dataIndex: 'fillPercent', key: 'fillPercent', render: (v: any, row: any) => (
+                  <Tag color={row.fillStatus === 'critical' ? 'red' : 'gold'}>{Number(v || 0).toFixed(1)}%</Tag>
+                ) },
+              ]}
+              pagination={false}
+              scroll={{ x: 720, y: 260 }}
+            />
+          ) : (
+            <div style={{ marginTop: 12 }}><Text type="secondary">{t('common.noData')}</Text></div>
+          )}
         </Card>
         <Card size="small" title={t('retail.trendAnomaly')}>
           {anomalies.length > 0 ? (
@@ -127,7 +177,7 @@ export default function Alert() {
         <Card size="small" title={t('retail.alertRules')}>
           <ul>
             <li>{t('retail.ruleTrendAnomaly')}</li>
-            <li>{t('retail.ruleLowInventory')}</li>
+            <li>库存水位：黄色 30%-50%，红色 ＜ 30%</li>
             <li>{t('retail.ruleRegionConcentration')}</li>
             <li>{t('retail.ruleStationDowntime')}</li>
           </ul>

@@ -342,6 +342,8 @@ def _latest_completed_shift_marker_for_map():
 def _station_map_details_cache_current(cached):
     if not isinstance(cached, dict):
         return True
+    if not _station_map_details_has_capacity(cached):
+        return False
     _, workbook_path = _latest_report_workbook_for_map()
     if not workbook_path:
         latest_shift_end = _latest_completed_shift_marker_for_map()
@@ -370,6 +372,94 @@ def _station_map_details_cache_current(cached):
         and cached_mtime is not None
         and abs(cached_mtime - snapshot_state["sourceMtime"]) < 0.001
     )
+
+
+def _station_map_details_has_capacity(payload):
+    items = payload.get("items") if isinstance(payload, dict) else []
+    if not isinstance(items, list):
+        return False
+    for item in items:
+        rows = item.get("inventoryByResource") if isinstance(item, dict) else []
+        if rows and not all("fillStatus" in row for row in rows if isinstance(row, dict)):
+            return False
+    return True
+
+
+def _inventory_fill_status(percent):
+    try:
+        value = float(percent)
+    except (TypeError, ValueError):
+        return "unknown"
+    if value < 30:
+        return "critical"
+    if value < 50:
+        return "warning"
+    return "ok"
+
+
+def _station_inventory_capacity_by_resource():
+    station_keys = sorted(SHOP_KEY_MAP.keys())
+    if not station_keys:
+        return {}
+    station_key_sql = ",".join(str(key) for key in station_keys)
+    result = {}
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT ShopKey, ResourceKey, ResourceShopKey,
+                   SUM(COALESCE(NULLIF(Capacity, 0), NULLIF(RefCapacity, 0), 0)) AS capacity
+            FROM warehouseinfo
+            WHERE ShopKey IN ({station_key_sql})
+              AND COALESCE(NULLIF(Capacity, 0), NULLIF(RefCapacity, 0), 0) > 0
+            GROUP BY ShopKey, ResourceKey, ResourceShopKey
+            """
+        )
+        for shop_key, resource_key, resource_shop_key, capacity in cur.fetchall():
+            sk = int(shop_key)
+            rk = infer_balance_resource_key(sk, resource_key, None, resource_shop_key)
+            if rk < 100 or rk not in KNOWN_RESOURCE_KEYS:
+                continue
+            key = (sk, rk)
+            result[key] = round(result.get(key, 0.0) + float(capacity or 0), 2)
+    finally:
+        conn.close()
+    return result
+
+
+def _attach_station_inventory_levels(details):
+    capacity_by_resource = _station_inventory_capacity_by_resource()
+    iterable = details.values() if isinstance(details, dict) else details
+    for detail in iterable:
+        if not isinstance(detail, dict):
+            continue
+        shop_key = int(detail.get("shopKey") or 0)
+        total_capacity = 0.0
+        total_inventory = 0.0
+        for row in detail.get("inventoryByResource") or []:
+            if not isinstance(row, dict):
+                continue
+            resource_key = int(row.get("resourceKey") or 0)
+            inventory = round(float(row.get("inventory") or 0), 2)
+            capacity = round(float(capacity_by_resource.get((shop_key, resource_key)) or 0), 2)
+            total_inventory += inventory
+            if capacity <= 0:
+                row["fillStatus"] = "unknown"
+                continue
+            fill_percent = round(inventory / capacity * 100, 1)
+            row["capacity"] = capacity
+            row["fillPercent"] = fill_percent
+            row["fillStatus"] = _inventory_fill_status(fill_percent)
+            total_capacity += capacity
+        if total_capacity > 0:
+            station_percent = round(total_inventory / total_capacity * 100, 1)
+            detail["inventoryCapacity"] = round(total_capacity, 2)
+            detail["inventoryFillPercent"] = station_percent
+            detail["inventoryFillStatus"] = _inventory_fill_status(station_percent)
+        else:
+            detail["inventoryFillStatus"] = "unknown"
+    return details
 
 
 def _report_sheet_last_nonempty_day(workbook):
@@ -463,6 +553,7 @@ def _station_map_details_from_report_snapshot():
                 for item in rows
                 if item.get("price") is not None
             ]
+        _attach_station_inventory_levels(details)
         return {
             "items": list(details.values()),
             "updatedAt": datetime.now().isoformat(timespec="seconds"),
@@ -585,6 +676,7 @@ def _station_map_details_payload():
         detail["priceAsOf"] = price_dt.isoformat(sep=" ", timespec="minutes") if hasattr(price_dt, "isoformat") else None
         detail["snapshotGeneratedAt"] = detail["inventoryAsOf"] or detail["priceAsOf"]
 
+    _attach_station_inventory_levels(details)
     latest_shift_end = max((shift_end for _, shift_end in latest_shifts.values() if shift_end), default=None)
     generated_at = (
         latest_shift_end.isoformat(sep=" ", timespec="minutes")

@@ -47,6 +47,7 @@ from summary_service import available_periods, period_bounds, summarize_combined
 from text_utils import clean_str, normalize_station_name, normalize_text, parse_date, parse_decimal
 from wholesale_service import exchange_rates, summarize_wholesale_page
 from retail_internal import open_oilstation
+from services.inventory_alert_service import build_low_inventory_alerts
 
 
 from shared_utils import (
@@ -103,7 +104,7 @@ def add_cors_headers(response):
     if origin and (origin in _CORS_ALLOWED_ORIGINS or _CORS_ORIGIN_RE.match(origin)):
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, X-Wallpaper-Token'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
     return response
 
@@ -412,7 +413,92 @@ def _wallpaper_station_details():
         return {}
 
 
+def _wallpaper_oilstation_json(path, query_string=None):
+    response = open_oilstation(path, query_string=query_string)
+    if response.status_code >= 400:
+        raise RuntimeError(response.get_data(as_text=True) or f"{path} failed")
+    payload = response.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _wallpaper_float(value):
+    try:
+        return round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _wallpaper_display_end(start_value, exclusive_end_value):
+    start_text = str(start_value or "").strip()[:10]
+    end_text = str(exclusive_end_value or "").strip()[:10]
+    if not end_text:
+        return ""
+    try:
+        start_day = date.fromisoformat(start_text) if start_text else None
+        end_day = date.fromisoformat(end_text)
+    except ValueError:
+        return end_text
+    if start_day and end_day > start_day:
+        return (end_day - timedelta(days=1)).isoformat()
+    return end_day.isoformat()
+
+
+def _wallpaper_sales_summary():
+    now = datetime.now()
+    year = now.year
+    year_payload = _wallpaper_oilstation_json(
+        "/api/kpi/yearly",
+        {"year": year, "inventory": 0},
+    )
+    month_payload = _wallpaper_oilstation_json("/api/kpi")
+
+    year_summary = year_payload.get("summary") or {}
+    month_summary = month_payload.get("summary") or {}
+    month_label = str(month_payload.get("month") or year_summary.get("activeMonth") or f"{year}-{now.month:02d}")
+    month_start = str(month_summary.get("queryStart") or f"{month_label}-01")[:10]
+    month_end_exclusive = str(
+        month_summary.get("queryEndExclusive")
+        or month_summary.get("queryEnd")
+        or ""
+    )[:10]
+    year_start = str(year_summary.get("queryStart") or f"{year}-01-01")[:10]
+    year_end_exclusive = str(
+        year_summary.get("queryEndExclusive")
+        or year_summary.get("queryEnd")
+        or ""
+    )[:10]
+
+    return {
+        "year": int(year_payload.get("year") or year),
+        "yearStart": year_start,
+        "yearEnd": _wallpaper_display_end(year_start, year_end_exclusive),
+        "yearEndExclusive": year_end_exclusive,
+        "yearVolumeLiters": _wallpaper_float(year_summary.get("totalLiters") or year_summary.get("totalVolume")),
+        "yearAmount": _wallpaper_float(year_summary.get("totalSales") or year_summary.get("totalAmount")),
+        "month": month_label,
+        "monthStart": month_start,
+        "monthEnd": _wallpaper_display_end(month_start, month_end_exclusive),
+        "monthEndExclusive": month_end_exclusive,
+        "monthVolumeLiters": _wallpaper_float(month_summary.get("totalLiters") or month_summary.get("totalVolume")),
+        "monthAmount": _wallpaper_float(month_summary.get("totalSales") or month_summary.get("totalAmount")),
+    }
+
+
 def _wallpaper_full_access():
+    trusted_ips = {
+        item.strip()
+        for item in os.getenv("SALES_WALLPAPER_TRUSTED_IPS", "").split(",")
+        if item.strip()
+    }
+    request_ip = (
+        request.headers.get("X-Real-IP")
+        or (request.headers.get("X-Forwarded-For") or "").split(",", 1)[0]
+        or request.remote_addr
+        or ""
+    ).strip()
+    if request_ip and request_ip in trusted_ips:
+        return True
+
     expected = os.getenv("SALES_WALLPAPER_TOKEN", "").strip()
     if not expected:
         return False
@@ -439,6 +525,10 @@ def _wallpaper_default_station_status(shop_key, constants_module):
             "statusNote": closed_stations.get(shop_key) or "",
             "expectedResumeAt": None,
         }
+    return _wallpaper_normal_station_status()
+
+
+def _wallpaper_normal_station_status():
     return {
         "status": "normal",
         "statusType": "normal",
@@ -457,6 +547,12 @@ def api_wallpaper_map():
     constants_module = _wallpaper_oilstation_constants()
     include_sensitive = _wallpaper_full_access()
     details_payload = _wallpaper_station_details() if include_sensitive else {}
+    sales_summary = None
+    if include_sensitive:
+        try:
+            sales_summary = _wallpaper_sales_summary()
+        except Exception:
+            logging.exception("wallpaper sales summary unavailable")
     detail_items = details_payload.get("items") if isinstance(details_payload, dict) else []
     detail_by_shop = {
         int(item.get("shopKey")): item
@@ -476,6 +572,8 @@ def api_wallpaper_map():
         shop_key = int(raw_shop_key)
         coords = shop_coords.get(shop_key) or {}
         status = statuses.get(shop_key) or _wallpaper_default_station_status(shop_key, constants_module)
+        if shop_key in (getattr(constants_module, "FORCE_NORMAL_STATIONS", set()) or set()):
+            status = _wallpaper_normal_station_status()
         detail = detail_by_shop.get(shop_key) or {}
         station = {
             "shopKey": shop_key,
@@ -501,6 +599,9 @@ def api_wallpaper_map():
                 "inventory": float(detail.get("inventory") or 0),
                 "inventoryByResource": detail.get("inventoryByResource") or [],
                 "prices": detail.get("prices") or [],
+                "inventoryCapacity": detail.get("inventoryCapacity"),
+                "inventoryFillPercent": detail.get("inventoryFillPercent"),
+                "inventoryFillStatus": detail.get("inventoryFillStatus") or "unknown",
                 "inventoryAsOf": detail.get("inventoryAsOf") or "",
                 "snapshotGeneratedAt": detail.get("snapshotGeneratedAt") or details_payload.get("snapshotGeneratedAt") or "",
             })
@@ -527,6 +628,22 @@ def api_wallpaper_map():
     closed_station_count = sum(1 for item in stations if item.get("status") == "closed")
     warning_station_count = sum(1 for item in stations if item.get("status") not in {"normal", "closed"})
     inventory_total = round(sum(float(item.get("inventory") or 0) for item in stations), 2) if include_sensitive else None
+    inventory_alerts = {"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}
+    if include_sensitive:
+        try:
+            inventory_alerts = build_low_inventory_alerts(stations)
+            alerts_by_shop = {}
+            for item in inventory_alerts.get("items", []):
+                if item.get("shopKey") is None:
+                    continue
+                alerts_by_shop.setdefault(int(item.get("shopKey")), []).append(item)
+            for station in stations:
+                alerts = alerts_by_shop.get(int(station.get("shopKey") or 0)) or []
+                if alerts:
+                    station["inventoryAlert"] = alerts[0]
+                    station["inventoryAlerts"] = alerts
+        except Exception:
+            logging.exception("wallpaper inventory alerts unavailable")
     payload = {
         "source": "wallpaper_public_map",
         "updatedAt": datetime.now().isoformat(timespec="seconds"),
@@ -542,8 +659,16 @@ def api_wallpaper_map():
             "depotCount": len(depots),
             "activeDepotCount": sum(1 for item in depots if item.get("status") == "normal"),
             "inventoryLiters": inventory_total,
+            "inventoryAlertCount": inventory_alerts.get("summary", {}).get("alertCount", 0) if include_sensitive else None,
+            "inventoryCriticalCount": inventory_alerts.get("summary", {}).get("criticalCount", 0) if include_sensitive else None,
+            "inventoryWarningCount": inventory_alerts.get("summary", {}).get("warningCount", 0) if include_sensitive else None,
         },
     }
+    if include_sensitive and sales_summary:
+        payload["salesSummary"] = sales_summary
+    if include_sensitive:
+        payload["inventoryAlerts"] = inventory_alerts.get("items", [])
+        payload["inventoryAlertSummary"] = inventory_alerts.get("summary", {})
     return jsonify({"code": 0, "data": payload})
 
 

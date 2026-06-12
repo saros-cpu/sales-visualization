@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Row, Col, Space, Card, Button } from 'antd';
 import { FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { fetchWholesale } from '@/api/wholesale';
 import { downloadWholesaleReport } from '@/api/export';
@@ -10,9 +11,18 @@ import type { WholesaleClass } from '@/types/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 const ORDER: WholesaleClass[] = ['export_wholesale', 'local_wholesale', 'unknown', 'transfer', 'procurement', 'processing'];
+const CARD_ROUTES: Record<WholesaleClass, string> = {
+  export_wholesale: '/wholesale/customers',
+  local_wholesale: '/wholesale/customers',
+  unknown: '/wholesale/query',
+  transfer: '/wholesale/transfer',
+  procurement: '/wholesale/products',
+  processing: '/wholesale/products',
+};
 
 export default function Overview() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { can } = useAuth();
   const canExport = can('wholesale:export');
   const now = new Date();
@@ -39,7 +49,13 @@ export default function Overview() {
           if (!card) return null;
           return (
             <Col xs={24} sm={12} md={8} xl={4} key={key} style={{ display: 'flex' }}>
-              <Card size="small" title={t(`wholesale.${key}`)} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <Card
+                size="small"
+                title={t(`wholesale.${key}`)}
+                className="kpi-card-clickable"
+                style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+                onClick={() => navigate(CARD_ROUTES[key])}
+              >
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 24, fontWeight: 600 }}>{card.tons.toLocaleString()} т</div>
                   <div style={{ fontSize: 12, color: '#909090' }}>

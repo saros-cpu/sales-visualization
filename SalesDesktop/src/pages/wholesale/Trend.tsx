@@ -6,10 +6,10 @@ import { fetchWholesale } from '@/api/wholesale';
 import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
-import { CHART_PALETTE } from '@/theme/charts';
+import { CHART_AXIS, CHART_PALETTE } from '@/theme/charts';
 
 export default function Trend() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState<number | undefined>(now.getMonth() + 1);
@@ -31,6 +31,9 @@ export default function Trend() {
     { name: t('wholesale.transferClass'), type: 'line' as const, data: trend.map((d) => d.transferTons) },
     { name: t('wholesale.amountCny'), type: 'bar' as const, yAxisIndex: 1, data: trend.map((d) => Math.round(d.amountCny / 10000)) },
   ];
+  const isRu = i18n.language.startsWith('ru');
+  const tonsUnit = isRu ? 'т' : CHART_AXIS.tons;
+  const amountUnit = isRu ? '10 тыс. CNY' : CHART_AXIS.wanCny;
 
   const trendOption = {
     color: CHART_PALETTE,
@@ -38,15 +41,16 @@ export default function Trend() {
       const list = Array.isArray(p) ? p : [p];
       let html = `<b>${list[0]?.axisValue || ''}</b>`;
       list.forEach((item: any) => {
-        html += `<br/>${item.marker} ${item.seriesName}: ${item.value}${item.seriesName === t('wholesale.amountCny') ? '¥万' : ' т'}`;
+        const unit = item.seriesName === t('wholesale.amountCny') ? amountUnit : tonsUnit;
+        html += `<br/>${item.marker} ${item.seriesName}: ${item.value}${isRu ? ' ' : ''}${unit}`;
       });
       return html;
     } },
     legend: { data: legendData, bottom: 0 },
     xAxis: { type: 'category' as const, data: trend.map((d) => d.date.slice(5)) },
     yAxis: [
-      { type: 'value' as const, name: 'т' },
-      { type: 'value' as const, name: '¥万' },
+      { type: 'value' as const, name: tonsUnit },
+      { type: 'value' as const, name: amountUnit },
     ],
     series,
   };

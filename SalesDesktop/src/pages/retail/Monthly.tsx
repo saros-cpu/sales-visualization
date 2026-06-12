@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Row, Col, Card, Statistic, Typography, Button, Space, message } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { getMonthly } from '@/api/retail';
 import { downloadMonthlyReport } from '@/api/export';
@@ -23,6 +24,7 @@ function defaultRetailMonth() {
 
 export default function Monthly() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { can } = useAuth();
   const canExport = can('retail:export');
   const { region, station, product, isRu } = useNameI18n();
@@ -80,17 +82,17 @@ export default function Monthly() {
       {s && (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.monthlySales')} value={Math.round(s.totalSales / 10000)} suffix={t('common.wan')} /></Card></Col>
+            <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.monthlySales')} value={Math.round(s.totalSales / 10000)} suffix={CHART_AXIS.wanSom} /></Card></Col>
             <Col xs={24} sm={12} md={8} xl={4}>
-              <Card size="small">
+              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
                 <Statistic title={t('retail.totalLiters')} value={Math.round(s.totalLiters)} suffix="L" />
                 <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</Text>
               </Card>
             </Col>
-            <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.activeShops')} value={`${s.activeShops}/${s.totalShops}`} /></Card></Col>
-            <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.cardRatio')} value={s.totalSales > 0 ? `${Math.round((s.cardSales / s.totalSales) * 100)}%` : '-'} /></Card></Col>
-            <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.avgDaily')} value={data?.daily?.length ? Math.round(s.totalLiters / data.daily.length) : 0} suffix="L" /></Card></Col>
-            <Col xs={24} sm={12} md={8} xl={4}><Card size="small"><Statistic title={t('retail.inventory')} value={inventoryLiters} suffix="L" /></Card></Col>
+            <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.activeShops')} value={`${s.activeShops}/${s.totalShops}`} /></Card></Col>
+            <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.cardRatio')} value={s.totalSales > 0 ? `${Math.round((s.cardSales / s.totalSales) * 100)}%` : '-'} /></Card></Col>
+            <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}><Statistic title={t('retail.avgDaily')} value={data?.daily?.length ? Math.round(s.totalLiters / data.daily.length) : 0} suffix="L" /></Card></Col>
+            <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}><Statistic title={t('retail.inventory')} value={inventoryLiters} suffix="L" /></Card></Col>
           </Row>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
@@ -101,7 +103,7 @@ export default function Monthly() {
                     const list = Array.isArray(p) ? p : [p];
                     let html = `<b>${list[0]?.axisValue || ''}</b>`;
                     list.forEach((item: any) => {
-                      const val = item.seriesName === t('retail.volume') ? item.value.toLocaleString() + 'L' : item.value + t('common.wan');
+                      const val = item.seriesName === t('retail.volume') ? `${item.value.toLocaleString()}升` : `${item.value}万索姆`;
                       html += `<br/>${item.marker} ${item.seriesName}: ${val}`;
                     });
                     return html;
@@ -109,8 +111,8 @@ export default function Monthly() {
                   legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
                   xAxis: { type: 'category', data: (data?.daily ?? []).map((d: any) => d.date.slice(8)) },
                   yAxis: [
-                    { type: 'value', name: 'L' },
-                    { type: 'value', name: t('common.wan') },
+                    { type: 'value', name: CHART_AXIS.liters },
+                    { type: 'value', name: CHART_AXIS.wanSom },
                   ],
                   series: [
                     { name: t('retail.volume'), type: 'bar', data: (data?.daily ?? []).map((d: any) => d.volume) },
@@ -127,7 +129,7 @@ export default function Monthly() {
                   grid: { left: 80, right: 20 },
                   xAxis: { type: 'value', name: CHART_AXIS.liters },
                   yAxis: { type: 'category', inverse: true, data: productRows.map((r: any) => product(r.name)), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: productRows.map((r: any) => r.volume) }],
+                  series: [{ name: t('retail.volume'), type: 'bar', data: productRows.map((r: any) => r.volume) }],
                 }}
               />
             </Col>
@@ -138,7 +140,11 @@ export default function Monthly() {
                 height={430}
                 className="monthly-balanced-card"
                 option={{
-                  tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                  tooltip: { trigger: 'item', formatter: (p: any) => {
+                    const value = Number(p?.value || 0).toLocaleString();
+                    const percent = p?.percent == null ? '-' : `${p.percent}%`;
+                    return `${p?.marker || ''}${p?.name || ''}: ${value}索姆 (${percent})`;
+                  } },
                   legend: { bottom: 0, left: 'center' },
                   series: [{
                     type: 'pie', radius: ['40%', '70%'],

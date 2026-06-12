@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Row, Col, Space, Button, message } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { getYears, getDashboardYearly, getKpiYearly, getResourcesYearly } from '@/api/retail';
 import { downloadYearlyReport } from '@/api/export';
@@ -20,6 +21,7 @@ const REGION_COLORS: Record<string, string> = {
 
 export default function Overview() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { can } = useAuth();
   const canExport = can('retail:export');
   const { region, station, product } = useNameI18n();
@@ -40,6 +42,17 @@ export default function Overview() {
   const regionVolumeRows = sortRankingRows(Object.entries(dash?.regions ?? {}), ([, value]: [string, any]) => value?.volume);
   const productRows = sortRankingRows(resQ.data?.resources ?? [], (row: any) => row.amount);
   const top10 = sortRankingRows(dash?.stations ?? [], (row: any) => row.amount, 10);
+  const goRegion = (key: string) => {
+    const regionKey = ZH_REGION_KEY[key] || key;
+    if (regionKey) navigate(`/retail/region?region=${encodeURIComponent(regionKey)}`);
+  };
+  const goStation = (params: any) => {
+    const item = params?.data || {};
+    const query = new URLSearchParams();
+    if (item.shopKey) query.set('shopKey', String(item.shopKey));
+    if (item.stationName || params?.name) query.set('name', String(item.stationName || params.name));
+    if (query.toString()) navigate(`/retail/station?${query.toString()}`);
+  };
 
   const onGenerate = async () => {
     try {
@@ -57,8 +70,10 @@ export default function Overview() {
     xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
     yAxis: { type: 'category' as const, inverse: true, data: regionSalesRows.map(([r]) => region(r)), axisLabel: { fontSize: 11 } },
     series: [{
+      name: t('retail.amount'),
       type: 'bar' as const, data: regionSalesRows.map(([r, value]: [string, any]) => ({
         value: Math.round((value?.amount ?? 0) / 10000),
+        regionKey: ZH_REGION_KEY[r] || r,
         itemStyle: { color: REGION_COLORS[ZH_REGION_KEY[r]] || REGION_COLORS[r] || '#999' },
       })),
     }],
@@ -69,7 +84,7 @@ export default function Overview() {
     tooltip: { trigger: 'axis' as const },
     xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
     yAxis: { type: 'category' as const, inverse: true, data: productRows.map((r: any) => product(r.name)) },
-    series: [{ type: 'bar' as const, data: productRows.map((r: any) => r.amount) }],
+    series: [{ name: t('retail.amount'), type: 'bar' as const, data: productRows.map((r: any) => Math.round((r.amount ?? 0) / 10000)) }],
   };
 
   const top10Option = {
@@ -78,7 +93,11 @@ export default function Overview() {
     grid: { left: 120, right: 20, top: 10, bottom: 30 },
     xAxis: { type: 'value' as const, name: CHART_AXIS.wan },
     yAxis: { type: 'category' as const, inverse: true, data: top10.map((s) => station(s)), axisLabel: { fontSize: 11 } },
-    series: [{ type: 'bar' as const, data: top10.map((s) => Math.round(s.amount / 10000)) }],
+    series: [{ name: t('retail.amount'), type: 'bar' as const, data: top10.map((s) => ({
+      value: Math.round(s.amount / 10000),
+      shopKey: s.shopKey,
+      stationName: s.name,
+    })) }],
   };
 
   return (
@@ -89,7 +108,7 @@ export default function Overview() {
       </Space>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} lg={6}>
-          <KpiCard title={t('retail.totalSales')} value={kpi?.totalSales ?? 0} precision={0} suffix="сом" />
+          <KpiCard title={t('retail.totalSales')} value={Math.round((kpi?.totalSales ?? 0) / 10000)} precision={0} suffix={CHART_AXIS.wanSom} onClick={() => navigate('/retail/report')} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <KpiCard
@@ -98,38 +117,47 @@ export default function Overview() {
             precision={0}
             suffix="L"
             extra={<span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</span>}
+            onClick={() => navigate('/retail/resource')}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <KpiCard title={t('retail.activeShops')} value={activeShopValue} />
+          <KpiCard title={t('retail.activeShops')} value={activeShopValue} onClick={() => navigate('/retail/station')} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <KpiCard title={t('retail.inventory')} value={kpi?.inventory ?? 0} precision={0} />
+          <KpiCard title={t('retail.inventory')} value={kpi?.inventory ?? 0} precision={0} onClick={() => navigate('/retail/resource')} />
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <ChartCard title={t('retail.regionSales')} loading={dashQ.isLoading} option={regionOption} />
+          <ChartCard
+            title={t('retail.regionSales')}
+            loading={dashQ.isLoading}
+            option={regionOption}
+            onEvents={{ click: (params: any) => goRegion(params?.data?.regionKey || params?.name || '') }}
+          />
         </Col>
         <Col xs={24} lg={12}>
-          <ChartCard title={t('retail.productRank')} loading={resQ.isLoading} option={productOption} />
+          <ChartCard title={t('retail.productRank')} loading={resQ.isLoading} option={productOption} onEvents={{ click: () => navigate('/retail/resource') }} />
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <ChartCard title={t('retail.topStations')} loading={dashQ.isLoading} option={top10Option} />
+          <ChartCard title={t('retail.topStations')} loading={dashQ.isLoading} option={top10Option} onEvents={{ click: goStation }} />
         </Col>
         <Col xs={24} lg={12}>
           <ChartCard title={t('retail.regionSalesRank')} loading={dashQ.isLoading}
+            onEvents={{ click: (params: any) => goRegion(params?.data?.regionKey || params?.name || '') }}
             option={{
               color: CHART_PALETTE,
               tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
               grid: { left: 120, right: 20, top: 10, bottom: 30 },
-              xAxis: { type: 'value' as const, name: '万L' },
+              xAxis: { type: 'value' as const, name: CHART_AXIS.wanLiters },
               yAxis: { type: 'category' as const, inverse: true, data: regionVolumeRows.map(([r]) => region(r)), axisLabel: { fontSize: 11 } },
               series: [{
+                name: t('retail.volume'),
                 type: 'bar' as const, data: regionVolumeRows.map(([r, value]: [string, any]) => ({
                   value: Math.round((value?.volume ?? 0) / 10000),
+                  regionKey: ZH_REGION_KEY[r] || r,
                   itemStyle: { color: REGION_COLORS[ZH_REGION_KEY[r]] || REGION_COLORS[r] || '#999' },
                 })),
               }],

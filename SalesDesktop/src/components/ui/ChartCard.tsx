@@ -9,6 +9,7 @@ interface Props {
   loading?: boolean;
   height?: number;
   className?: string;
+  onEvents?: Record<string, (params: any) => void>;
 }
 
 const asArray = <T,>(value: T | T[] | undefined): T[] => {
@@ -33,6 +34,95 @@ function formatSeriesValue(value: any) {
 function dataValue(item: any) {
   const value = item && typeof item === 'object' && !Array.isArray(item) && 'value' in item ? item.value : item;
   return Array.isArray(value) ? value[value.length - 1] : value;
+}
+
+function axisValueLabel(params: any[]) {
+  const first = params[0] || {};
+  return first.axisValueLabel ?? first.axisValue ?? first.name ?? '';
+}
+
+function tooltipUnitLabel(unit = '') {
+  const label = String(unit || '').trim();
+  if (!label) return '';
+  const compact = label.replace(/\s+/g, '');
+  const labels: Record<string, string> = {
+    L: '升',
+    l: '升',
+    '万L': '万升',
+    '万l': '万升',
+    '万升': '万升',
+    '万': '万索姆',
+    '万сом': '万索姆',
+    '万som': '万索姆',
+    '万索姆': '万索姆',
+    'сом': '索姆',
+    som: '索姆',
+    KGS: '索姆',
+    kgs: '索姆',
+    '¥万': '万元',
+    '万元': '万元',
+    t: '吨',
+    'т': '吨',
+    '%': '%',
+  };
+  return labels[compact] || label;
+}
+
+function tooltipValueText(value: any, unit = '') {
+  if (value == null || value === '') return '-';
+  const text = String(formatSeriesValue(value));
+  const label = tooltipUnitLabel(unit);
+  return label ? `${text}${label}` : text;
+}
+
+function seriesUnit(item: any, xAxes: any[], yAxes: any[]) {
+  const configured = item?.tooltipUnit ?? item?.unit ?? item?.valueUnit;
+  if (configured) return String(configured);
+  const xAxis = xAxes[item?.xAxisIndex || 0] || xAxes[0] || {};
+  const yAxis = yAxes[item?.yAxisIndex || 0] || yAxes[0] || {};
+  if (yAxis.type !== 'category' && yAxis.name) return String(yAxis.name);
+  if (xAxis.type !== 'category' && xAxis.name) return String(xAxis.name);
+  return '';
+}
+
+function tooltipSeriesName(param: any, explicitName?: string) {
+  if (explicitName) return explicitName;
+  const name = String(param?.seriesName ?? '').trim();
+  return /^series\d+$/i.test(name) ? '' : name;
+}
+
+function withAxisTooltipUnits(option: any, xAxes: any[], yAxes: any[], rawSeries: any[]) {
+  const tooltip = option.tooltip;
+  if (!tooltip || Array.isArray(tooltip) || tooltip.trigger !== 'axis' || tooltip.formatter || tooltip.valueFormatter) return tooltip;
+  const unitByName = new Map<string, string>();
+  const unitByIndex = new Map<number, string>();
+  const nameByIndex = new Map<number, string>();
+  rawSeries.forEach((item, index) => {
+    const unit = seriesUnit(item, xAxes, yAxes);
+    unitByIndex.set(index, unit);
+    if (item?.name != null) {
+      const name = String(item.name);
+      nameByIndex.set(index, name);
+      unitByName.set(name, unit);
+    }
+  });
+  return {
+    ...tooltip,
+    formatter: (params: any) => {
+      const list = Array.isArray(params) ? params : [params];
+      let html = `<b>${axisValueLabel(list)}</b>`;
+      list.forEach((item: any) => {
+        const seriesIndex = Number(item?.seriesIndex);
+        const seriesName = tooltipSeriesName(item, nameByIndex.get(seriesIndex));
+        const unit = unitByIndex.get(seriesIndex) ?? unitByName.get(String(item?.seriesName ?? '')) ?? '';
+        const value = dataValue(item?.value);
+        html += seriesName
+          ? `<br/>${item?.marker || ''} ${seriesName}: ${tooltipValueText(value, unit)}`
+          : `<br/>${item?.marker || ''} ${tooltipValueText(value, unit)}`;
+      });
+      return html;
+    },
+  };
 }
 
 function isMixedBarLine(series: any[]) {
@@ -210,6 +300,8 @@ export function withReadableLabels(option: EChartsOption): EChartsOption {
     const normalized = yAxes.map((axis) => normalizeAxis(axis, false));
     next.yAxis = Array.isArray(next.yAxis) ? normalized : normalized[0];
   }
+
+  next.tooltip = withAxisTooltipUnits(next, xAxes, yAxes, rawSeries);
 
   if (xHasCategory || hasHorizontalBar) {
     const existingGrid = Array.isArray(next.grid) ? next.grid[0] : next.grid;
@@ -396,7 +488,7 @@ function adaptiveChartHeight(option: EChartsOption, baseHeight: number) {
   return Math.min(Math.max(baseHeight, target), 620);
 }
 
-export default function ChartCard({ title, option, loading, height = 320, className }: Props) {
+export default function ChartCard({ title, option, loading, height = 320, className, onEvents }: Props) {
   const chartRef = useRef<any>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const readableOption = useMemo(() => withReadableLabels(option), [option]);
@@ -416,7 +508,7 @@ export default function ChartCard({ title, option, loading, height = 320, classN
     <Card title={title} size="small" className={['chart-card', className].filter(Boolean).join(' ')}>
       <Spin spinning={!!loading} wrapperClassName="chart-spin">
         <div ref={wrapRef} className="chart-resize-wrap">
-          <ReactECharts ref={chartRef} option={readableOption} style={{ height: chartHeight, width: '100%' }} notMerge lazyUpdate />
+          <ReactECharts ref={chartRef} option={readableOption} onEvents={onEvents} style={{ height: chartHeight, width: '100%' }} notMerge lazyUpdate />
         </div>
       </Spin>
     </Card>

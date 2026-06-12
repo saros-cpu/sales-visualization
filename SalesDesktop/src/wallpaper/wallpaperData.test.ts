@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alertStations,
   formatLiters,
+  formatSom,
   mapLayers,
   normalizeWallpaperPayload,
   stationStatusText,
@@ -37,5 +38,9 @@ describe('wallpaperData', () => {
 
   it('formats large liter values compactly', () => {
     expect(formatLiters(123456)).toBe('12.3 万L');
+  });
+
+  it('formats som values compactly', () => {
+    expect(formatSom(12345678)).toBe('1,234.6 万索姆');
   });
 });

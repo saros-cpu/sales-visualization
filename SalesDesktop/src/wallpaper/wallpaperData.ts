@@ -11,7 +11,19 @@ export interface WallpaperStation {
   closedReason?: string;
   statusNote?: string;
   inventory?: number;
-  inventoryByResource?: Array<{ name?: string; inventory?: number; price?: number }>;
+  inventoryCapacity?: number;
+  inventoryFillPercent?: number;
+  inventoryFillStatus?: 'ok' | 'warning' | 'critical' | 'unknown';
+  inventoryAlert?: Record<string, unknown>;
+  inventoryAlerts?: Array<Record<string, unknown>>;
+  inventoryByResource?: Array<{
+    name?: string;
+    inventory?: number;
+    price?: number;
+    capacity?: number;
+    fillPercent?: number;
+    fillStatus?: 'ok' | 'warning' | 'critical' | 'unknown';
+  }>;
   inventoryAsOf?: string;
   snapshotGeneratedAt?: string;
 }
@@ -30,6 +42,7 @@ export interface WallpaperPayload {
   source?: string;
   updatedAt?: string;
   snapshotGeneratedAt?: string;
+  sensitiveData?: boolean;
   stations?: WallpaperStation[];
   depots?: WallpaperDepot[];
   summary?: {
@@ -40,7 +53,26 @@ export interface WallpaperPayload {
     depotCount?: number;
     activeDepotCount?: number;
     inventoryLiters?: number;
+    inventoryAlertCount?: number | null;
+    inventoryCriticalCount?: number | null;
+    inventoryWarningCount?: number | null;
   };
+  salesSummary?: {
+    year?: number;
+    yearStart?: string;
+    yearEnd?: string;
+    yearEndExclusive?: string;
+    yearVolumeLiters?: number;
+    yearAmount?: number;
+    month?: string;
+    monthStart?: string;
+    monthEnd?: string;
+    monthEndExclusive?: string;
+    monthVolumeLiters?: number;
+    monthAmount?: number;
+  };
+  inventoryAlerts?: Array<Record<string, unknown>>;
+  inventoryAlertSummary?: Record<string, unknown>;
 }
 
 export function normalizeWallpaperPayload(value: any): WallpaperPayload {
@@ -106,6 +138,18 @@ export function formatLiters(value?: number) {
     return `${(numeric / 10000).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 万L`;
   }
   return `${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} L`;
+}
+
+export function formatSom(value?: number) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return '0 索姆';
+  if (Math.abs(numeric) >= 100000000) {
+    return `${(numeric / 100000000).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 亿索姆`;
+  }
+  if (Math.abs(numeric) >= 10000) {
+    return `${(numeric / 10000).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 万索姆`;
+  }
+  return `${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} 索姆`;
 }
 
 export function formatClock(value?: string) {

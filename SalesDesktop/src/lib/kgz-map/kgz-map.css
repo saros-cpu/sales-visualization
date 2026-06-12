@@ -123,6 +123,22 @@
   margin-top: 0;
 }
 
+.kgz-map-tooltip-section em.kgz-inventory-ok span:last-child {
+  color: #86efac;
+}
+
+.kgz-map-tooltip-section em.kgz-inventory-warning span:last-child {
+  color: #facc15;
+}
+
+.kgz-map-tooltip-section em.kgz-inventory-critical span:last-child {
+  color: #f87171;
+}
+
+.kgz-map-tooltip-section em.kgz-inventory-unknown span:last-child {
+  color: #94a3b8;
+}
+
 .kgz-map-legend {
   position: absolute;
   right: 14px;

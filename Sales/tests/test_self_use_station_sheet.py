@@ -32,7 +32,7 @@ def _styles():
 
 
 class SelfUseStationSheetTests(unittest.TestCase):
-    def test_station_sheet_adds_product_total_and_keeps_generator_separate(self):
+    def test_station_sheet_adds_ton_totals_by_vehicle_type(self):
         wb = Workbook()
         records = [
             {
@@ -45,6 +45,19 @@ class SelfUseStationSheetTests(unittest.TestCase):
                 "mass": 7,
                 "amount": 100,
                 "personKey": 1,
+                "personGroup": 1,
+                "selfUseNumber": 0,
+            },
+            {
+                "shopKey": 1,
+                "stationName": "Station 1",
+                "stationShort": "AZS-1",
+                "plateNumber": "CAR-2",
+                "productName": "AI-92",
+                "volume": 4,
+                "mass": 2.8,
+                "amount": 40,
+                "personKey": 2,
                 "personGroup": 1,
                 "selfUseNumber": 0,
             },
@@ -86,17 +99,20 @@ class SelfUseStationSheetTests(unittest.TestCase):
             "油品名称",
             "加油量公斤(kg)",
             "加油量升(L)",
-            "合计",
+            "合计吨位(t)",
             "金额(сом)",
             "备注",
         ])
-        self.assertEqual(ws.cell(row=2, column=7).value, 15)
+        self.assertEqual(ws.cell(row=2, column=7).value, 0.0098)
         self.assertEqual(ws.cell(row=3, column=7).value, None)
-        self.assertEqual(ws.cell(row=4, column=7).value, 3)
-        self.assertEqual(ws.cell(row=4, column=9).value, "发电机")
+        self.assertEqual(ws.cell(row=4, column=7).value, 0.0035)
+        self.assertEqual(ws.cell(row=5, column=7).value, 0.0021)
+        self.assertEqual(ws.cell(row=5, column=9).value, "发电机")
         merged_ranges = {str(cell_range) for cell_range in ws.merged_cells.ranges}
         self.assertIn("D2:D3", merged_ranges)
         self.assertIn("G2:G3", merged_ranges)
+        self.assertNotIn("D2:D4", merged_ranges)
+        self.assertNotIn("G2:G4", merged_ranges)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,11 @@ const DEFAULTS = {
   viewOffsetX: 0,
   viewOffsetZ: 0,
   mode: 'standalone',
-  regionColor: '#0a1e3c'
+  regionColor: '#0a1e3c',
+  enableCameraControls: true,
+  maxPixelRatio: 2,
+  pointerIgnoreBottom: 0,
+  starDensity: 1
 };
 
 const ROAD_STYLE = {
@@ -84,6 +88,15 @@ function formatNumber(value, digits = 2) {
   });
 }
 
+function formatOptionalPercent(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '';
+  return `${numeric.toLocaleString('zh-CN', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1
+  })}%`;
+}
+
 function formatDateTimeText(value) {
   const text = String(value ?? '').trim();
   if (!text) return '';
@@ -102,24 +115,78 @@ function stationTimeRows(point) {
   const dataAsOf = formatDateTimeText(point.inventoryAsOf);
   const snapshotGeneratedAt = formatDateTimeText(point.snapshotGeneratedAt);
   const dataRow = dataAsOf && !hasTimePart(dataAsOf)
-    ? `<span class="kgz-map-tooltip-muted">数据日期：${escapeHtml(dataAsOf)}</span>`
+    ? `<span class="kgz-map-tooltip-muted">库存日期：${escapeHtml(dataAsOf)}</span>`
     : '';
   const snapshotRow = snapshotGeneratedAt
-    ? `<span class="kgz-map-tooltip-muted">快照时间：${escapeHtml(snapshotGeneratedAt)}</span>`
+    ? `<span class="kgz-map-tooltip-muted">库存快照：${escapeHtml(snapshotGeneratedAt)}</span>`
     : dataAsOf
-      ? `<span class="kgz-map-tooltip-muted">快照时间：${escapeHtml(dataAsOf)}</span>`
+      ? `<span class="kgz-map-tooltip-muted">库存快照：${escapeHtml(dataAsOf)}</span>`
     : '';
   return `${dataRow}${snapshotRow}`;
+}
+
+function stationStatusText(point) {
+  if (point.closedReason) return point.closedReason;
+  if (point.status === 'closed') return '停业/维修';
+  if (point.status && point.status !== 'normal') return point.statusLabel || point.statusNote || '异常/关注';
+  return point.statusLabel || '在营';
+}
+
+function disposeMaterial(material) {
+  if (!material) return;
+  if (material.map) material.map.dispose();
+  if (material.alphaMap) material.alphaMap.dispose();
+  if (material.emissiveMap) material.emissiveMap.dispose();
+  material.dispose?.();
+}
+
+function disposeObjectTree(object) {
+  object.traverse?.((child) => {
+    child.geometry?.dispose?.();
+    if (Array.isArray(child.material)) {
+      child.material.forEach(disposeMaterial);
+    } else {
+      disposeMaterial(child.material);
+    }
+  });
+}
+
+function disposeGroupChildren(group) {
+  for (const child of [...group.children]) {
+    group.remove(child);
+    disposeObjectTree(child);
+  }
+}
+
+function optionNumber(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function stationInventoryRows(point) {
+  if (point.type !== 'station') return '';
+  const hasInventory = point.inventory !== undefined && point.inventory !== null && Number.isFinite(Number(point.inventory));
+  if (hasInventory) {
+    const percent = formatOptionalPercent(point.inventoryFillPercent);
+    return `<span>当前库存：${formatNumber(point.inventory, 2)} L${percent ? ` · ${percent}` : ''}</span>`;
+  }
+  return '<span class="kgz-map-tooltip-muted">库存未返回：公开模式或未配置授权 token</span>';
 }
 
 function fuelDetailRows(point) {
   const rows = Array.isArray(point.inventoryByResource) ? point.inventoryByResource : [];
   if (!rows.length) return '';
   return `<div class="kgz-map-tooltip-section">
-    <b>库存 / 零售价</b>
+    <b>油品库存 / 零售价</b>
     ${rows.slice(0, 6).map((item) => {
-      const price = item.price == null ? '—' : `${formatNumber(item.price, 2)} 索姆/L`;
-      return `<em><span>${escapeHtml(item.name)}</span><span>${formatNumber(item.inventory, 2)} L · ${price}</span></em>`;
+      const price = item.price == null ? '未返回' : `${formatNumber(item.price, 2)} 索姆/L`;
+      const capacity = Number(item.capacity);
+      const fillPercent = formatOptionalPercent(item.fillPercent);
+      const fillText = Number.isFinite(capacity) && capacity > 0
+        ? `${formatNumber(item.inventory, 2)} / ${formatNumber(capacity, 0)} L${fillPercent ? ` · ${fillPercent}` : ''}`
+        : `${formatNumber(item.inventory, 2)} L`;
+      const status = ['ok', 'warning', 'critical'].includes(item.fillStatus) ? item.fillStatus : 'unknown';
+      return `<em class="kgz-inventory-${status}"><span>${escapeHtml(item.name)}</span><span>${fillText} · ${price}</span></em>`;
     }).join('')}
   </div>`;
 }
@@ -539,17 +606,40 @@ export class Kgz3DMap {
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
     this.camera.position.set(0, 34, 42);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const maxPixelRatio = Math.max(1, optionNumber(this.options.maxPixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.canvasWrap.appendChild(this.renderer.domElement);
+    this.contextLost = false;
+    this.onContextLost = (event) => {
+      event.preventDefault();
+      this.contextLost = true;
+      console.warn('[Kgz3DMap] WebGL context lost; waiting for restore');
+    };
+    this.onContextRestored = () => {
+      this.contextLost = false;
+      this.requestRender();
+      console.info('[Kgz3DMap] WebGL context restored');
+    };
+    this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost, false);
+    this.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored, false);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
+    const cameraControlsEnabled = this.options.enableCameraControls !== false;
+    this.controls.enabled = cameraControlsEnabled;
+    this.controls.enableRotate = cameraControlsEnabled;
+    this.controls.enableZoom = cameraControlsEnabled;
+    this.controls.enablePan = cameraControlsEnabled;
+    this.controls.enableDamping = cameraControlsEnabled;
     this.controls.dampingFactor = 0.08;
-    this.controls.zoomToCursor = true;
+    this.controls.zoomToCursor = cameraControlsEnabled;
     this.controls.zoomSpeed = 0.8;
     this.controls.minDistance = 18;
     this.controls.maxDistance = 105;
     this.controls.maxPolarAngle = Math.PI / 2.25;
+    if (!cameraControlsEnabled) {
+      this.controls.mouseButtons = {};
+      this.controls.touches = {};
+    }
     this.controls.addEventListener('change', () => this.requestRender());
 
     this.raycaster = new THREE.Raycaster();
@@ -572,6 +662,7 @@ export class Kgz3DMap {
 
   buildStars() {
     this.starGroup = new THREE.Group();
+    const starDensity = THREE.MathUtils.clamp(optionNumber(this.options.starDensity, 1), 0, 1);
     const layers = [
       { count: 4200, distanceMin: 120, distanceMax: 260, size: 1.8, color: 0xf8fbff, opacity: 0.96 },
       { count: 1800, distanceMin: 180, distanceMax: 340, size: 2.85, color: 0xbfdbfe, opacity: 0.9 },
@@ -580,7 +671,8 @@ export class Kgz3DMap {
 
     for (const layer of layers) {
       const positions = [];
-      for (let i = 0; i < layer.count; i++) {
+      const count = Math.round(layer.count * starDensity);
+      for (let i = 0; i < count; i++) {
         const distance = layer.distanceMin + Math.random() * (layer.distanceMax - layer.distanceMin);
         const v = new THREE.Vector3().randomDirection().multiplyScalar(distance);
         positions.push(v.x, v.y, v.z);
@@ -763,7 +855,7 @@ export class Kgz3DMap {
   }
 
   setPoints(points = []) {
-    this.pointGroup.clear();
+    disposeGroupChildren(this.pointGroup);
     this.pointMeshes = [];
     const palette = {
       depot: 0x22d3ee,
@@ -887,6 +979,15 @@ export class Kgz3DMap {
 
   handlePointerMove(event) {
     const rect = this.renderer.domElement.getBoundingClientRect();
+    const ignoreBottom = Math.max(0, optionNumber(this.options.pointerIgnoreBottom, 0));
+    const insideCanvas = event.clientX >= rect.left
+      && event.clientX <= rect.right
+      && event.clientY >= rect.top
+      && event.clientY <= rect.bottom - ignoreBottom;
+    if (!insideCanvas) {
+      this.clearHover();
+      return;
+    }
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
@@ -940,11 +1041,8 @@ export class Kgz3DMap {
     const point = mesh.userData.point || {};
     const subtitle = point.labelSubtitle || point.short || point.type || '';
     const region = point.region ? `<span>${escapeHtml(point.region)}</span>` : '';
-    const statusText = point.closedReason || (point.status === 'closed' ? '停业/维修' : '');
-    const status = statusText ? `<span>${escapeHtml(statusText)}</span>` : '';
-    const inventory = point.type === 'station'
-      ? `<span>当前库存：${formatNumber(point.inventory || 0, 2)} L</span>`
-      : '';
+    const status = point.type === 'station' || point.status ? `<span>状态：${escapeHtml(stationStatusText(point))}</span>` : '';
+    const inventory = stationInventoryRows(point);
     const timeRows = stationTimeRows(point);
     this.tooltip.innerHTML = `<strong>${escapeHtml(point.label || point.name || '业务点位')}</strong>${subtitle ? `<span>${escapeHtml(subtitle)}</span>` : ''}${region}${status}${inventory}${fuelDetailRows(point)}${timeRows}`;
     this.tooltip.style.transform = `translate(${event.offsetX + 16}px, ${event.offsetY + 16}px)`;
@@ -988,6 +1086,7 @@ export class Kgz3DMap {
 
   animate() {
     this.frame = requestAnimationFrame(() => this.animate());
+    if (this.contextLost) return;
     const elapsed = this.clock.getElapsedTime();
     if (this.starGroup) {
       this.starGroup.rotation.y = elapsed * 0.006;
@@ -1011,6 +1110,8 @@ export class Kgz3DMap {
     this.resizeObserver?.disconnect();
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeave);
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.controls.dispose();
     this.scene.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();

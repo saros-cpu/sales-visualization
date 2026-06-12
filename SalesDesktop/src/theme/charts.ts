@@ -4,10 +4,13 @@ export const CHART_PALETTE = [
 ];
 
 export const CHART_AXIS = {
-  liters: 'L',
-  wan: '万',
-  wanCny: '¥万',
-  tons: 'т',
+  liters: '升',
+  wan: '万索姆',
+  wanLiters: '万升',
+  wanSom: '万索姆',
+  som: '索姆',
+  wanCny: '万元',
+  tons: '吨',
   yi: '亿',
   percent: '%',
 };

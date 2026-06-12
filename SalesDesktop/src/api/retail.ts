@@ -122,6 +122,11 @@ export async function getKpi() {
   return res.data;
 }
 
+export async function getStationMapDetails() {
+  const res = await api.get('/station-map-details');
+  return res.data;
+}
+
 export async function getKpiYearly(year: number) {
   const res = await api.get('/kpi/yearly', { params: { year } });
   return res.data;

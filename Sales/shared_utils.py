@@ -260,14 +260,13 @@ def ensure_station_status_schema(cur):
     row = cur.fetchone()
     if _column_value(row, 0, "COUNT(*)"):
         return
-    default_rows = [
-        (1, "renovation", "装修中", "装修停业，五月中恢复", True, True, False),
-        (2, "normal", "正常营业", "已恢复营业", False, False, False),
-        (11, "road_blocked", "修路占道", "修路占道，无法营业", True, True, False),
-        (12, "road_blocked", "修路占道", "修路占道，无法营业", True, True, False),
-        (29, "renovation", "装修中", "装修停业，五月初开业", True, True, False),
-        (30, "renovation", "等待装修", "停业，等待装修", True, True, False),
-    ]
+        default_rows = [
+            (1, "renovation", "装修中", "装修停业，五月中恢复", True, True, False),
+            (2, "normal", "正常营业", "已恢复营业", False, False, False),
+            (11, "road_blocked", "修路占道", "修路占道，无法营业", True, True, False),
+            (12, "road_blocked", "修路占道", "修路占道，无法营业", True, True, False),
+            (30, "renovation", "等待装修", "停业，等待装修", True, True, False),
+        ]
     cur.executemany(
         """
         INSERT INTO retail_station_status
@@ -497,7 +496,7 @@ STATION_STATUS_TYPES = {
 }
 
 
-def retail_station_catalog():
+def retail_station_constants():
     spec = importlib.util.spec_from_file_location(
         "sales_oilstation_constants",
         OILSTATION_ROOT / "constants.py",
@@ -505,6 +504,11 @@ def retail_station_catalog():
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     spec.loader.exec_module(module)
+    return module
+
+
+def retail_station_catalog():
+    module = retail_station_constants()
     return {
         int(shop_key): {
             "shopKey": int(shop_key),
@@ -513,6 +517,14 @@ def retail_station_catalog():
             "region": info.get("region", ""),
         }
         for shop_key, info in module.SHOP_KEY_MAP.items()
+    }
+
+
+def retail_station_force_normal_keys():
+    module = retail_station_constants()
+    return {
+        int(shop_key)
+        for shop_key in (getattr(module, "FORCE_NORMAL_STATIONS", set()) or set())
     }
 
 
@@ -535,9 +547,12 @@ def active_station_statuses(cur):
         """
     )
     catalog = retail_station_catalog()
+    force_normal = retail_station_force_normal_keys()
     statuses = {}
     for row in cur.fetchall():
         shop_key = int(_column_value(row, 1, "shop_key"))
+        if shop_key in force_normal:
+            continue
         if shop_key in statuses:
             continue
         station = catalog.get(shop_key, {"name": f"Station-{shop_key}", "short": "", "region": ""})

@@ -92,6 +92,7 @@ const connectSrc = Array.from(new Set([
   ...connectOriginsForAllowedHosts(),
   'http://localhost:8900',
   'http://127.0.0.1:8900',
+  'http://10.8.0.1',
   'ws://localhost:5173',
 ])).join(' ');
 const allowedExternalPathPrefixes = ['/api/', '/download/'];

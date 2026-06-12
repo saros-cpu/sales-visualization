@@ -6,12 +6,83 @@
 
 ## 版本更新记录
 
+### 2026-07-29 (v3.10.0)
+
+- **重要版本更新**：合并此前已验证修复，恢复零售、批发等业务页面 KPI 卡片点击跳转，金额、油量、库存、站点、刷卡等指标可进入对应明细页面。
+- **图表下钻恢复**：零售总览区域柱状图可跳转并选中对应区域，站点 Top10 可跳转并选中对应站点；区域页和站点页同步支持 URL 参数定位。
+- **单位和 tooltip 统一**：趋势图、排行图和 KPI 的 tooltip 补齐升、万升、索姆、万索姆、万元、吨、百分比等单位，并隐藏默认 `series0` 名称。
+- **知识库滚动优化**：知识库菜单左右两列支持独立上下滚动，长列表查看更稳。
+- **库存水位口径升级**：库存预警改为按数据库 `warehouseinfo` 实际库容和当前库存计算，黄色表示 30%-50%，红色表示低于 30%。
+- **地图悬停增强**：地图点位颜色继续只表达营业状态，悬停信息按每个油品显示库存、库容、水位百分比和零售价，并用绿色/黄色/红色区分油品库存水位。
+- **预警页同步**：Web 端和客户端零售预警页增加油品库存水位预警表，便于直接查看低水位站点和油品。
+- **壁纸引擎增强**：独立壁纸授权接口返回库存库容、水位百分比、低库存汇总和年/月销量销售额；HUD 自动避让 Windows 任务栏，托盘菜单支持检查并安装更新。
+- **发布校验加强**：新增主程序安装包审计脚本，打包后会解开 NSIS 外层和 `app-64.7z`，对比正常 `3.9.17` 参考包检查 `SalesDesktop.exe`、`resources/app.asar`、入口 JS/CSS、地图资源和 `app-update.yml`。
+
+### 2026-07-29 (SalesLivelyWallpaper 1.1.0)
+
+- **Lively Mixed Content**: Lively serves imported local packages as `https://*.localhost`, so HTTP API calls were blocked. `SalesLivelyWallpaper 1.1.0` now redirects the imported package to `http://198.51.100.10/download/wallpaper-lively/live/wallpaper.html`.
+- **VPN trusted client**: `/api/wallpaper/map` supports `SALES_WALLPAPER_TRUSTED_IPS`; production trusts VPN client `10.8.0.100` when the wallpaper uses `http://10.8.0.1`.
+- **CSP fix**: `SalesLivelyWallpaper 1.1.1` adds `http://10.8.0.1` to the hosted wallpaper CSP and skips `wallpaper-key.json` on the live page because VPN trusted-client mode does not need a local key file.
+- **Independent release**: `/download/wallpaper-lively/latest.json` points to `SalesLivelyWallpaper 1.1.1`; the main desktop client version and installer are unchanged.
+
+### 2026-07-29 (SalesWallpaperEngine 0.1.0-0.1.4)
+
+- **Dedicated rewrite**: added `SalesWallpaperEngine`, a new independent host/player WebView2 wallpaper engine that uses a Lively-style WorkerW/Progman desktop attach path and a separate player process.
+- **Local proxy data path**: the wallpaper page now reads `127.0.0.1` and the engine proxies `/api/wallpaper/map` to the configured API with `wallpaper-key.json` token support, avoiding browser mixed-content/CSP issues.
+- **0.1.1 field fix**: forwards global mouse position into the WebView canvas so station hover works while the wallpaper sits behind desktop icons; hides the in-page settings button in Engine mode.
+- **0.1.2 tray cleanup**: shortens the tray version label and moves diagnostics/log actions under `高级`, keeping the first-level menu small.
+- **0.1.4 sales summary HUD**: the shared wallpaper page can show current year/month retail volume and sales amount in the bottom-right HUD when `/api/wallpaper/map` is authorized.
+- **Independent package**: `/download/wallpaper-engine/latest.json` points to `SalesWallpaperEngine-0.1.4.zip`; this does not update `SalesDesktop` version, installer, or `latest.yml`.
+
+### 2026-07-29 (SalesWallpaperNative retired)
+
+- **Native route removed**: field testing showed `SalesWallpaperNative` caused lag and did not reliably attach to the Windows desktop layer. The source project and generated packages have been removed from the active tree.
+- **Fallback wallpaper route**: keep the already released `SalesLivelyWallpaper 1.1.1` package only as a fallback; the active dedicated route is `SalesWallpaperEngine 0.1.4`.
+- **Update feed disabled**: `/download/wallpaper-native/latest.json` is now a deprecated marker and no longer points to a downloadable Native package.
+
+### 2026-07-29 (SalesWallpaper Native 0.2.0)
+
+- **真实系统壁纸模式**：默认不再以覆盖式窗口承载动态地图，而是后台用 WebView2 渲染地图快照，保存为 `%APPDATA%\sales-wallpaper-native\wallpaper-current.png`，再调用 Windows `SPI_SETDESKWALLPAPER` 设置为系统桌面壁纸，确保桌面图标不会被遮挡。
+- **定时刷新**：新增 `snapshotRefreshSeconds` 配置项，默认 60 秒重新生成一次系统壁纸快照，继续体现站点状态和点位数据更新。
+- **兼容保留**：托盘中保留图标后层、WorkerW、兼容三种覆盖式实验入口；真正交互式网页背景后续建议走 Lively Wallpaper 独立 HTML 包方案。
+- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.2.0`，完整版下载地址为 `http://198.51.100.10/download/wallpaper-native/SalesWallpaperNative-0.2.0-win-x64-self-contained.zip`。
+
+### 2026-07-29 (SalesWallpaper Native 0.1.5)
+
+- **桌面图标后层热修**：默认挂载目标从空 WorkerW 调整为包含 `SHELLDLL_DefView` 的桌面图标父窗口，并在该父窗口内设置到底层，避免动态地图以全屏软件形式覆盖桌面图标和原桌面层。
+- **托盘排查入口**：托盘菜单保留“图标后层 / WorkerW / 兼容”三种重新贴桌面方式，便于不同 Windows 桌面窗口结构现场切换验证。
+- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.1.5`，完整版下载地址为 `http://198.51.100.10/download/wallpaper-native/SalesWallpaperNative-0.1.5-win-x64-self-contained.zip`。
+
+### 2026-07-29 (v3.9.17 后端热修)
+
+- **自用油合计口径修正**：`按加油站统计` 分表的合计列改为“合计吨位(t)”，按同一加油站、同一油品、公司车辆/员工车辆/发电机分别汇总，不再把公司车辆和员工车辆合并。
+- **吨位展示**：合计值按 `Mass / 1000` 计算，四舍五入保留 4 位小数；原有公斤、升数、金额列保持不变。
+- **发布边界**：本次只部署后端报表导出逻辑，不更新 `SalesDesktop` 客户端版本号，也不重新发布主客户端安装包。
+
+### 2026-07-29 (SalesWallpaper Native 0.1.4)
+
+- **JIT 异常热修**：修复显示设置变化或重新贴桌面时 `Form.UpdateLayered()` 抛出 Win32Exception 87 的问题；运行时不再用 `Opacity` 隐藏/显示窗口。
+- **隐藏策略调整**：改为屏幕外 `1x1` 隐藏，挂载成功后再移动到桌面区域，继续避免全屏遮挡桌面。
+- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.1.4`。
+
+### 2026-07-29 (SalesWallpaper Native 0.1.3)
+
+- **防全屏遮挡热修**：动态壁纸只有在确认挂到 Windows 桌面父窗口后才显示；若挂载失败会保持隐藏并提示，不再退化成全屏软件遮挡原桌面背景和桌面图标。
+- **桌面子窗口样式**：挂载到 WorkerW/Progman 后强制切换为 `WS_CHILD` 并校验父窗口，避免仍按普通顶层窗口运行。
+- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.1.3`。
+
+### 2026-07-29 (SalesWallpaper Native 0.1.2)
+
+- **桌面层级热修**：修复 `0.1.1` 在部分 Windows 环境中启动后闪一下、随后退回系统原桌面背景的问题；默认贴桌面不再使用 `HWND_BOTTOM`，避免动态窗口被压到静态壁纸层之后。
+- **现场排错能力**：托盘菜单新增“重新贴到桌面（标准）”和“重新贴到桌面（兼容）”，不同桌面层级可现场切换。
+- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.1.2`，`0.1.1` 已安装机器可通过壁纸托盘“检查更新”升级。
+
 ### 2026-07-29 (v3.9.17)
 
 - **正式发布动态背景能力**：主项目新增 `/api/wallpaper/map` 只读接口、`SalesDesktop` 壁纸静态资源构建，以及独立 `SalesWallpaperNative` WebView2 原生动态背景包。
 - **黑屏防护**：原生壳改为本机 `127.0.0.1` 随机端口加载静态资源，地图 ready 后才贴到桌面；接口失败时使用内置点位兜底，避免纯黑背景。
 - **报表修正**：自用油“按加油站统计”页增加油品/车辆类型维度合计列，便于核对站点明细和合计口径。
-- **发布同步**：客户端、Web 和生产部署版本同步到 `3.9.17`；动态背景 zip 仍通过 `/download/wallpaper-native/` 独立分发，不进入主客户端自动更新链路。
+- **发布同步**：客户端、Web 和生产部署版本同步到 `3.9.17`；动态背景 zip 通过 `/download/wallpaper-native/` 独立分发，并从 `SalesWallpaperNative 0.1.1` 起接入壁纸专用自动更新清单。
 
 ### 2026-07-29 (SalesWallpaper Native)
 
@@ -20,7 +91,7 @@
 - **独立打包边界**：主客户端默认构建仍只输出 `dist/index.html`；动态背景只复用 `SalesDesktop/dist-wallpaper/wallpaper.html` 静态资源，并由 `SalesWallpaperNative` 单独打包，不进入主客户端安装包和自动更新包。
 - **Electron 方案废弃**：早期 `SalesWallpaper` Electron 安装包体积接近主客户端，已从主项目构建脚本和配置中移除；后续只维护 WebView2 原生壳。
 - **黑屏防护**：原生壳在地图页面真正渲染完成并发送 ready 信号后，才贴到 Windows 桌面；仓库调试运行不会自动写入开机启动项，避免接口或资源未就绪时覆盖成黑色背景。
-- **WebView2 轻量版**：框架依赖版 zip 约 `7.6 MB`，自包含版 zip 约 `77.5 MB`，均独立放在 `/download/wallpaper-native/`，不接入主客户端自动更新。
+- **WebView2 轻量版**：框架依赖版 zip 约 `7.6 MB`，自包含版 zip 约 `77.5 MB`，均独立放在 `/download/wallpaper-native/`；`latest.json` 用于壁纸程序自更新，不占用主客户端自动更新链路。
 
 ### 2026-07-28 (v3.9.16)
 
@@ -1113,7 +1184,7 @@ D:\SalesVisualization\backups
 
 ```
 SalesDesktop/
-├── package.json              # 版本 3.9.17（与 version.ts 对齐）
+├── package.json              # 版本 3.10.0（与 version.ts 对齐）
 ├── vite.config.ts            # Vite 构建配置
 ├── electron/
 │   ├── main.cjs              # Electron 主进程（窗口管理 + IPC + 自动更新）

@@ -34,6 +34,36 @@ declare global {
       updateUrl?: string;
       wallpaperToken?: string;
       allowedHosts?: string[];
+      safeArea?: {
+        left?: number;
+        top?: number;
+        right?: number;
+        bottom?: number;
+      };
+      lively?: {
+        packageId?: string;
+        packageVersion?: string;
+        updateManifestUrl?: string;
+        refreshSeconds?: number;
+        vpnApiHost?: string;
+      };
+    };
+    SALES_WALLPAPER_KEY_READY?: Promise<void>;
+	    SALES_WALLPAPER_KEY_STATUS?: {
+	      state?: 'missing' | 'loaded' | 'invalid' | 'vpn';
+	      message?: string;
+	      source?: string;
+	      apiHost?: string;
+	      loadedAt?: string;
+	      tokenLength?: number;
+	      tokenFingerprint?: string;
+	    };
+    SALES_WALLPAPER_AUTH_STATUS?: {
+      method?: 'public' | 'header' | 'query' | 'vpn';
+      checkedAt?: string;
+      sensitiveData?: boolean;
+      fallbackReason?: string;
+      error?: string;
     };
     electronAPI?: {
       platform: string;

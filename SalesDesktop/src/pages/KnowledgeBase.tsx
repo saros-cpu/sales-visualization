@@ -75,6 +75,20 @@ const statusOptions = [
   { value: 'archived', label: '已归档' },
 ];
 
+const knowledgeColumnCardStyle = {
+  height: 'calc(100vh - 250px)',
+  minHeight: 420,
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
+
+const knowledgeColumnBodyStyle = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: 'auto',
+  paddingRight: 16,
+} as const;
+
 function statusColor(status?: string) {
   if (status === 'published') return 'green';
   if (status === 'archived') return 'red';
@@ -370,7 +384,8 @@ export default function KnowledgeBase() {
             size="small"
             title={<Space><BookOutlined />{activeSpace?.spaceName || '知识库'}</Space>}
             loading={loading}
-            style={{ minHeight: 560 }}
+            style={knowledgeColumnCardStyle}
+            styles={{ body: knowledgeColumnBodyStyle }}
           >
             <List
               rowKey="id"
@@ -431,7 +446,8 @@ export default function KnowledgeBase() {
                 )}
               </Space>
             )}
-            style={{ minHeight: 560 }}
+            style={knowledgeColumnCardStyle}
+            styles={{ body: knowledgeColumnBodyStyle }}
           >
             {!selectedArticle ? (
               <Empty description="请选择一篇知识内容" />

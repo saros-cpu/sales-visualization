@@ -63,10 +63,10 @@ RESOURCE_ALIASES = {
 KNOWN_RESOURCE_KEYS = set(RESOURCE_NAMES)
 
 def station_status_for(shop_key, amount):
-    if shop_key in CLOSED_STATIONS:
-        return 'closed'
     if shop_key in FORCE_NORMAL_STATIONS:
         return 'normal'
+    if shop_key in CLOSED_STATIONS:
+        return 'closed'
     return 'normal' if amount > 0 else 'closed'
 
 

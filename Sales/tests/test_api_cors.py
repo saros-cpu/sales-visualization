@@ -40,6 +40,19 @@ class ApiCorsTests(unittest.TestCase):
         self.assert_allows_origin("http://sales.example.com")
         self.assert_allows_origin("http://198.51.100.10")
 
+    def test_wallpaper_token_header_is_allowed(self):
+        response = self.client.options(
+            "/api/wallpaper/map",
+            headers={
+                "Origin": "null",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "X-Wallpaper-Token",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        allowed = response.headers.get("Access-Control-Allow-Headers", "")
+        self.assertIn("X-Wallpaper-Token", allowed)
+
 
 if __name__ == "__main__":
     unittest.main()

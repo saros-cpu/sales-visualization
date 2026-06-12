@@ -26,6 +26,11 @@ SELF_USE_COMPANY_IDS = {
     11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
     35, 40, 43, 44, 45, 46, 55, 56,
 }
+SELF_USE_REMARK_ORDER = {
+    '公司车辆': 0,
+    '员工车辆': 1,
+    '发电机': 2,
+}
 def _self_use_float(value):
     try:
         return float(value or 0)
@@ -81,7 +86,7 @@ def _self_use_vehicle_remark(record):
 def _self_use_station_total_group(item):
     return (
         str(item.get('product') or '-'),
-        '发电机' if item.get('remark') == '发电机' else '车辆',
+        str(item.get('remark') or ''),
     )
 
 
@@ -122,9 +127,9 @@ def _group_self_use_station_blocks(records):
     return [
         ((station_name, station_short), sorted(items, key=lambda item: (
             str(item.get('product') or ''),
-            1 if item.get('remark') == '发电机' else 0,
-            str(item.get('plate') or ''),
+            SELF_USE_REMARK_ORDER.get(item.get('remark'), 99),
             str(item.get('remark') or ''),
+            str(item.get('plate') or ''),
         )))
         for (station_order, station_name, station_short), items in sorted(blocks.items(), key=lambda item: item[0])
     ]
@@ -174,7 +179,7 @@ def _auto_fit_self_use_columns(ws, min_width=8, max_width=60):
 
 def _write_self_use_station_sheet(wb, records, styles):
     ws = wb.create_sheet('按加油站统计')
-    headers = ['加油站', '加油站俄语名称', '车牌号', '油品名称', '加油量公斤(kg)', '加油量升(L)', '合计', '金额(сом)', '备注']
+    headers = ['加油站', '加油站俄语名称', '车牌号', '油品名称', '加油量公斤(kg)', '加油量升(L)', '合计吨位(t)', '金额(сом)', '备注']
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = styles['header_font']
@@ -191,10 +196,10 @@ def _write_self_use_station_sheet(wb, records, styles):
         station_weight = sum(item['weightKg'] for item in items)
         station_volume = sum(item['volume'] for item in items)
         station_amount = sum(item['amount'] for item in items if item['remark'] == '员工车辆')
-        product_totals = {}
+        product_total_tons = {}
         for item in items:
             product_key = _self_use_station_total_group(item)
-            product_totals[product_key] = product_totals.get(product_key, 0.0) + item['volume']
+            product_total_tons[product_key] = product_total_tons.get(product_key, 0.0) + item['weightKg'] / 1000
         product_total_rows = {}
         grand_weight += station_weight
         grand_volume += station_volume
@@ -215,7 +220,7 @@ def _write_self_use_station_sheet(wb, records, styles):
                 item['product'],
                 _round_half_up(item['weightKg'], 2),
                 _round_half_up(item['volume'], 2),
-                _round_half_up(product_totals[product_key], 2) if is_first_product_row else '',
+                _round_half_up(product_total_tons[product_key], 4) if is_first_product_row else '',
                 employee_amount,
                 item['remark'],
             ]
@@ -223,7 +228,9 @@ def _write_self_use_station_sheet(wb, records, styles):
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 cell.alignment = styles['center_align']
                 cell.border = styles['thin_border']
-                if col_idx in (5, 6, 7, 8) and value != '':
+                if col_idx == 7 and value != '':
+                    cell.number_format = '#,##0.0000'
+                elif col_idx in (5, 6, 8) and value != '':
                     cell.number_format = '#,##0.00'
             row_idx += 1
 

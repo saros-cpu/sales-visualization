@@ -1,0 +1,9 @@
+{
+  "apiHost": "http://198.51.100.10",
+  "wallpaperToken": "",
+  "updateManifestUrl": "http://198.51.100.10/download/wallpaper-engine/latest.json",
+  "autoUpdateEnabled": true,
+  "autoInstallUpdates": false,
+  "reattachSeconds": 10,
+  "playerStartupTimeoutSeconds": 15
+}

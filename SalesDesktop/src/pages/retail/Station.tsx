@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Row, Col, Card, Statistic, Select, Typography, Tag, Button, Space, DatePicker, App as AntApp } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { useApiQuery } from '@/hooks/useApi';
 import { getStations, getStationMonthly } from '@/api/retail';
@@ -26,6 +27,8 @@ function defaultWeeklyReportRange() {
 
 export default function Station() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { message } = AntApp.useApp();
   const { can } = useAuth();
   const canExport = can('retail:export');
@@ -35,6 +38,8 @@ export default function Station() {
   const [shopKey, setShopKey] = useState<number | null>(null);
   const [weeklyReportRange, setWeeklyReportRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(defaultWeeklyReportRange);
   const [weeklyReportLoading, setWeeklyReportLoading] = useState(false);
+  const queryShopKey = Number(searchParams.get('shopKey'));
+  const queryName = searchParams.get('name') || '';
 
   const staQ = useApiQuery(['retail', 'stations', ym], () => getStations(ym));
   const detailQ = useApiQuery(
@@ -45,12 +50,22 @@ export default function Station() {
 
   const stations: any[] = (staQ.data as any)?.stations ?? [];
 
-  // 数据加载完成后默认选中第一个站点
   useEffect(() => {
-    if (!shopKey && stations.length > 0) {
+    if (stations.length === 0) return;
+    const requestedShopKey = Number.isFinite(queryShopKey) && queryShopKey > 0 ? queryShopKey : null;
+    const requestedStation = requestedShopKey
+      ? stations.find((s: any) => Number(s.shopKey) === requestedShopKey)
+      : queryName
+        ? stations.find((s: any) => s.name === queryName || s.short === queryName)
+        : null;
+    if (requestedStation && shopKey !== requestedStation.shopKey) {
+      setShopKey(requestedStation.shopKey);
+      return;
+    }
+    if (!shopKey) {
       setShopKey(stations[0].shopKey);
     }
-  }, [stations, shopKey]);
+  }, [stations, shopKey, queryShopKey, queryName]);
   const detail = detailQ.data;
 
   const regionStations = useMemo(() => {
@@ -80,6 +95,20 @@ export default function Station() {
       })),
     }));
   }, [stations, t, region, station]);
+  const selectShopKey = (nextShopKey?: number | null) => {
+    setShopKey(nextShopKey ?? null);
+    const query = new URLSearchParams(searchParams);
+    if (nextShopKey) {
+      const selected = stations.find((s: any) => Number(s.shopKey) === Number(nextShopKey));
+      query.set('shopKey', String(nextShopKey));
+      if (selected?.name) query.set('name', selected.name);
+    } else {
+      query.delete('shopKey');
+      query.delete('name');
+    }
+    const suffix = query.toString();
+    navigate(`/retail/station${suffix ? `?${suffix}` : ''}`, { replace: true });
+  };
 
   const onGenerateWeeklyReport = async () => {
     if (!weeklyReportRange?.[0] || !weeklyReportRange?.[1]) {
@@ -106,7 +135,7 @@ export default function Station() {
           <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
           <Select
             showSearch placeholder={t('retail.stationSelector')}
-            value={shopKey} onChange={setShopKey}
+            value={shopKey} onChange={selectShopKey}
             options={options}
             style={{ width: 300 }}
             allowClear
@@ -136,15 +165,15 @@ export default function Station() {
             </Col>
           </Row>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(((detail.summary as any).amount ?? detail.summary.totalSales ?? 0) / 10000)} suffix={t('common.wan')} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.totalSales')} value={Math.round(((detail.summary as any).amount ?? detail.summary.totalSales ?? 0) / 10000)} suffix={CHART_AXIS.wanSom} /></Card></Col>
             <Col xs={12} lg={6}>
-              <Card size="small">
+              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
                 <Statistic title={t('retail.totalLiters')} value={Math.round((detail.summary as any).volume ?? detail.summary.totalLiters ?? 0)} suffix="L" />
                 <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(detail.summary))} t</Text>
               </Card>
             </Col>
-            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>
-            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters ?? 0)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters ?? 0)} suffix="L" /></Card></Col>
           </Row>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
@@ -155,7 +184,7 @@ export default function Station() {
                     const list = Array.isArray(p) ? p : [p];
                     let html = `<b>${list[0]?.axisValue || ''}</b>`;
                     list.forEach((item: any) => {
-                      const val = item.seriesName === t('retail.volume') ? item.value.toLocaleString() + 'L' : item.value + t('common.wan');
+                      const val = item.seriesName === t('retail.volume') ? `${item.value.toLocaleString()}升` : `${item.value}万索姆`;
                       html += `<br/>${item.marker} ${item.seriesName}: ${val}`;
                     });
                     return html;
@@ -163,8 +192,8 @@ export default function Station() {
                   legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
                   xAxis: { type: 'category', data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
                   yAxis: [
-                    { type: 'value', name: 'L' },
-                    { type: 'value', name: t('common.wan') },
+                    { type: 'value', name: CHART_AXIS.liters },
+                    { type: 'value', name: CHART_AXIS.wanSom },
                   ],
                   series: [
                     { name: t('retail.volume'), type: 'bar', data: (detail.daily ?? []).map((d: any) => d.volume) },
@@ -176,12 +205,16 @@ export default function Station() {
             <Col xs={24} lg={12}>
               <ChartCard title={t('retail.payCompare')} loading={detailQ.isLoading}
                 option={{
-                  tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                  tooltip: { trigger: 'item', formatter: (p: any) => {
+                    const value = Number(p?.value || 0).toLocaleString();
+                    const percent = p?.percent == null ? '-' : `${p.percent}%`;
+                    return `${p?.marker || ''}${p?.name || ''}: ${value}升 (${percent})`;
+                  } },
                   series: [{
                     type: 'pie', radius: ['40%', '70%'],
                     data: [
-                      { name: `${t('retail.cash')} (L)`, value: detail.summary.cashLiters, itemStyle: { color: '#ffa726' } },
-                      { name: `${t('retail.card')} (L)`, value: detail.summary.cardLiters, itemStyle: { color: '#a78bfa' } },
+                      { name: t('retail.cash'), value: detail.summary.cashLiters, itemStyle: { color: '#ffa726' } },
+                      { name: t('retail.card'), value: detail.summary.cardLiters, itemStyle: { color: '#a78bfa' } },
                     ],
                   }],
                 }}
@@ -197,7 +230,7 @@ export default function Station() {
                   grid: { left: 80, right: 20 },
                   xAxis: { type: 'value', name: CHART_AXIS.liters },
                   yAxis: { type: 'category', inverse: true, data: productRows.map((r: any) => r.name), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: productRows.map((r: any) => r.volume) }],
+                  series: [{ name: t('retail.volume'), type: 'bar', data: productRows.map((r: any) => r.volume) }],
                 }}
               />
             </Col>
@@ -209,7 +242,8 @@ export default function Station() {
                     const list = Array.isArray(p) ? p : [p];
                     let html = `<b>${list[0]?.axisValue || ''}</b>`;
                     list.forEach((item: any) => {
-                      html += `<br/>${item.marker} ${item.seriesName || t('retail.cardRatio')}: ${item.value}%`;
+                      const name = /^series\d+$/i.test(String(item.seriesName || '')) ? t('retail.cardRatio') : (item.seriesName || t('retail.cardRatio'));
+                      html += `<br/>${item.marker} ${name}: ${item.value}%`;
                     });
                     return html;
                   } },
@@ -217,6 +251,7 @@ export default function Station() {
                   xAxis: { type: 'category', data: (detail.daily ?? []).map((d: any) => d.date.slice(5)) },
                   yAxis: { type: 'value', max: 100, name: CHART_AXIS.percent },
                   series: [{
+                    name: t('retail.cardRatio'),
                     type: 'line',
                     data: (detail.daily ?? []).map((d: any) => {
                       const sumAmount = (detail.summary as any).amount || 0;
@@ -242,6 +277,7 @@ export default function Station() {
                   grid: { left: 120, right: 20, bottom: 58 },
                   xAxis: {
                     type: 'value',
+                    name: CHART_AXIS.som,
                     axisLabel: {
                       rotate: 35,
                       margin: 16,
@@ -253,8 +289,15 @@ export default function Station() {
                     },
                   },
                   yAxis: { type: 'category', inverse: true, data: regionStations.map((s: any) => station(s)), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: regionStations.map((s: any) => s.amount) }],
+                  series: [{ name: t('retail.amount'), type: 'bar', data: regionStations.map((s: any) => ({
+                    value: s.amount,
+                    shopKey: s.shopKey,
+                  })) }],
                 }}
+                onEvents={{ click: (params: any) => {
+                  const nextShopKey = Number(params?.data?.shopKey);
+                  if (Number.isFinite(nextShopKey) && nextShopKey > 0) selectShopKey(nextShopKey);
+                } }}
               />
             </Col>
           </Row>

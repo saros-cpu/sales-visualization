@@ -16,12 +16,14 @@ Future agents, tools, and maintainers must treat this file as the project memory
 ## Current Baseline
 
 - Current released client version: `3.9.17`.
-- Current release code commit: `a98ed3f feat: add native sales wallpaper`.
+- Current release code commit: `85233ad chore: release 3.9.17`.
 - Production public entry: `http://sales.example.com/`.
 - Production backup entry: `http://198.51.100.10/`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `http://198.51.100.10/download/latest.yml`.
 - Current installer: `SalesDesktop Setup 3.9.17.exe`.
+- Current wallpaper package: `SalesWallpaperNative 0.2.0` via `http://198.51.100.10/download/wallpaper-native/latest.json`.
+- Current Lively wallpaper package: `SalesLivelyWallpaper 1.0.7` via `http://198.51.100.10/download/wallpaper-lively/latest.json`; this is independent from the `SalesDesktop` client version line.
 - HTTPS certificate: pending; keep HTTP active until the public SSL certificate is ready.
 
 ## Report Boundaries

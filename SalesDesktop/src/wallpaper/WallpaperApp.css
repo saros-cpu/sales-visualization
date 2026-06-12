@@ -31,16 +31,24 @@
   backdrop-filter: blur(16px);
 }
 
-.wallpaper-top {
-  top: 28px;
-  left: 32px;
-  right: 32px;
+.wallpaper-center {
+  top: calc(30px + var(--wallpaper-safe-top, 0px));
+  left: 50%;
+  display: grid;
+  gap: 12px;
+  width: min(760px, calc(100vw - 64px));
+  padding: 16px;
+  border-radius: 8px;
+  transform: translateX(-50%);
+}
+
+.wallpaper-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 72px;
-  padding: 0 22px;
-  border-radius: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  text-align: center;
 }
 
 .wallpaper-title {
@@ -76,6 +84,25 @@
   box-shadow: 0 0 14px rgba(70, 211, 125, 0.85);
 }
 
+.wallpaper-data-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 78px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 179, 211, 0.18);
+  border-radius: 8px;
+  color: #b8c9dc;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 14px;
+}
+
+.wallpaper-data-full {
+  color: #c8f7de;
+  border-color: rgba(70, 211, 125, 0.32);
+  background: rgba(70, 211, 125, 0.12);
+}
+
 .wallpaper-live-cached span,
 .wallpaper-live-loading span {
   background: #f5c84c;
@@ -88,14 +115,9 @@
 }
 
 .wallpaper-metrics {
-  top: 116px;
-  left: 32px;
   display: grid;
   grid-template-columns: repeat(5, minmax(98px, 1fr));
   gap: 10px;
-  width: min(760px, calc(100vw - 64px));
-  padding: 12px;
-  border-radius: 8px;
 }
 
 .wallpaper-metrics div {
@@ -122,121 +144,391 @@
   font-size: 12px;
 }
 
-.wallpaper-panel {
-  right: 32px;
-  top: 116px;
-  width: min(340px, calc(100vw - 64px));
-  padding: 16px;
-  border-radius: 8px;
-}
-
-.wallpaper-panel-bottom {
-  top: auto;
-  bottom: 68px;
-}
-
-.wallpaper-panel-title {
-  margin-bottom: 12px;
-  color: #d9ebfa;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.wallpaper-alert-list,
-.wallpaper-rank-list {
-  display: grid;
-  gap: 8px;
-}
-
-.wallpaper-alert-row,
-.wallpaper-rank-row {
-  display: grid;
-  align-items: center;
-  min-height: 32px;
-  column-gap: 9px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.055);
-  font-size: 13px;
-}
-
-.wallpaper-alert-row {
-  grid-template-columns: 10px minmax(0, 1fr);
-  padding: 9px 10px;
-}
-
-.wallpaper-alert-row strong,
-.wallpaper-rank-row strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wallpaper-alert-row em {
-  grid-column: 2;
-  overflow: hidden;
-  color: #a9bfd5;
-  font-style: normal;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wallpaper-rank-row {
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  padding: 8px 10px;
-}
-
-.wallpaper-rank-row span {
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  color: #08111f;
-  background: #9bdcf5;
-  font-weight: 700;
-}
-
-.wallpaper-rank-row em {
-  color: #e9c46a;
-  font-style: normal;
-  white-space: nowrap;
-}
-
-.wallpaper-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-}
-
-.wallpaper-dot-ok {
-  background: #46d37d;
-}
-
-.wallpaper-dot-warn {
-  background: #f5c84c;
-}
-
-.wallpaper-dot-danger {
-  background: #ef6461;
-}
-
-.wallpaper-empty {
-  color: #a9bfd5;
-  font-size: 13px;
-}
-
 .wallpaper-footer {
   position: absolute;
-  left: 32px;
-  bottom: 24px;
+  left: calc(32px + var(--wallpaper-safe-left, 0px));
+  bottom: calc(24px + var(--wallpaper-safe-bottom, 0px));
   z-index: 5;
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
-  max-width: calc(100vw - 400px);
+  max-width: min(620px, calc(100vw - 392px));
   color: #9fb5ca;
   font-size: 12px;
   pointer-events: none;
+}
+
+.wallpaper-sales {
+  position: absolute;
+  right: calc(28px + var(--wallpaper-safe-right, 0px));
+  bottom: calc(24px + var(--wallpaper-safe-bottom, 0px));
+  z-index: 6;
+  display: grid;
+  gap: 10px;
+  width: min(318px, calc(100vw - 56px));
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.wallpaper-sales-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wallpaper-sales-head strong {
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.wallpaper-sales-head span {
+  overflow: hidden;
+  color: #9fb5ca;
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-sales-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wallpaper-sales-grid div {
+  min-width: 0;
+  padding: 8px 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.wallpaper-sales-grid span {
+  display: block;
+  overflow: hidden;
+  color: #a9bfd5;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-sales-grid b {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: #ffffff;
+  font-size: 16px;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-update {
+  position: absolute;
+  right: calc(28px + var(--wallpaper-safe-right, 0px));
+  bottom: calc(154px + var(--wallpaper-safe-bottom, 0px));
+  z-index: 8;
+  display: grid;
+  gap: 2px;
+  min-width: 132px;
+  padding: 10px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 8px;
+  color: #e9f6ff;
+  text-decoration: none;
+  background: rgba(5, 14, 28, 0.76);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(14px);
+}
+
+.wallpaper-update strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.wallpaper-update span {
+  color: #8fd9ff;
+  font-size: 12px;
+}
+
+.wallpaper-config-toggle {
+  position: absolute;
+  right: calc(28px + var(--wallpaper-safe-right, 0px));
+  bottom: calc(92px + var(--wallpaper-safe-bottom, 0px));
+  z-index: 9;
+  min-width: 58px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 179, 211, 0.22);
+  border-radius: 8px;
+  color: #dcecff;
+  background: rgba(5, 14, 28, 0.68);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+}
+
+.wallpaper-config-toggle:hover {
+  border-color: rgba(125, 211, 252, 0.46);
+  color: #ffffff;
+}
+
+.wallpaper-config-panel {
+  position: absolute;
+  right: calc(28px + var(--wallpaper-safe-right, 0px));
+  bottom: calc(132px + var(--wallpaper-safe-bottom, 0px));
+  z-index: 10;
+  display: grid;
+  gap: 12px;
+  width: min(430px, calc(100vw - 56px));
+  max-height: min(620px, calc(100vh - 164px - var(--wallpaper-safe-bottom, 0px)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border: 1px solid rgba(148, 179, 211, 0.22);
+  border-radius: 8px;
+  color: #e9f6ff;
+  background: rgba(5, 14, 28, 0.9);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.wallpaper-config-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.wallpaper-config-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 179, 211, 0.26);
+}
+
+.wallpaper-config-panel label {
+  display: grid;
+  gap: 6px;
+  color: #a9bfd5;
+  font-size: 12px;
+}
+
+.wallpaper-config-panel input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 179, 211, 0.24);
+  border-radius: 6px;
+  color: #eef6ff;
+  outline: none;
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.wallpaper-config-panel input:focus {
+  border-color: rgba(125, 211, 252, 0.62);
+}
+
+.wallpaper-key-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 179, 211, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.wallpaper-key-state span {
+  color: #a9bfd5;
+  font-size: 12px;
+}
+
+.wallpaper-key-state strong {
+  color: #e9f6ff;
+  font-size: 13px;
+}
+
+.wallpaper-key-debug {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(148, 179, 211, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.wallpaper-key-debug-loaded {
+  border-color: rgba(245, 200, 76, 0.3);
+}
+
+.wallpaper-key-debug-invalid {
+  border-color: rgba(239, 100, 97, 0.36);
+  background: rgba(239, 100, 97, 0.1);
+}
+
+.wallpaper-key-debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wallpaper-key-debug-head span,
+.wallpaper-key-debug-grid span {
+  color: #a9bfd5;
+  font-size: 12px;
+}
+
+.wallpaper-key-debug-head strong {
+  color: #e9f6ff;
+  font-size: 13px;
+}
+
+.wallpaper-key-debug-grid {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+.wallpaper-key-debug-grid b {
+  overflow: hidden;
+  color: #e9f6ff;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-key-debug-note {
+  overflow-wrap: anywhere;
+  color: #f8d778;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.wallpaper-update-state {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(148, 179, 211, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.wallpaper-update-state-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wallpaper-update-state-head span,
+.wallpaper-update-state-grid span {
+  color: #a9bfd5;
+  font-size: 12px;
+}
+
+.wallpaper-update-state-head strong {
+  color: #e9f6ff;
+  font-size: 13px;
+}
+
+.wallpaper-update-state-available {
+  border-color: rgba(125, 211, 252, 0.38);
+  background: rgba(14, 165, 233, 0.12);
+}
+
+.wallpaper-update-state-error {
+  border-color: rgba(239, 100, 97, 0.36);
+  background: rgba(239, 100, 97, 0.1);
+}
+
+.wallpaper-update-state-grid {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+.wallpaper-update-state-grid b {
+  overflow: hidden;
+  color: #e9f6ff;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-update-state-note {
+  overflow-wrap: anywhere;
+  color: #8fd9ff;
+  font-size: 12px;
+}
+
+.wallpaper-update-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wallpaper-update-state-actions button,
+.wallpaper-update-state-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 179, 211, 0.24);
+  border-radius: 6px;
+  color: #e9f6ff;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.075);
+  cursor: pointer;
+}
+
+.wallpaper-update-state-actions a {
+  border-color: rgba(125, 211, 252, 0.42);
+  color: #dff6ff;
+  background: rgba(14, 165, 233, 0.18);
+}
+
+.wallpaper-update-state-actions button:hover,
+.wallpaper-update-state-actions a:hover {
+  border-color: rgba(125, 211, 252, 0.5);
+}
+
+.wallpaper-update-state-actions button:disabled {
+  cursor: default;
+  opacity: 0.56;
+}
+
+.wallpaper-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wallpaper-config-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 179, 211, 0.24);
+  border-radius: 6px;
+  color: #e9f6ff;
+  background: rgba(255, 255, 255, 0.075);
+  cursor: pointer;
+}
+
+.wallpaper-config-actions button:hover {
+  border-color: rgba(125, 211, 252, 0.5);
+}
+
+.wallpaper-config-notice {
+  color: #8fd9ff;
+  font-size: 12px;
 }
 
 @media (max-width: 1100px) {
@@ -244,12 +536,18 @@
     grid-template-columns: repeat(3, minmax(92px, 1fr));
   }
 
-  .wallpaper-panel,
-  .wallpaper-panel-bottom {
-    display: none;
+  .wallpaper-heading {
+    flex-direction: column;
+    gap: 10px;
   }
 
   .wallpaper-footer {
     max-width: calc(100vw - 64px);
+  }
+
+  .wallpaper-sales {
+    right: 20px;
+    bottom: calc(58px + var(--wallpaper-safe-bottom, 0px));
+    width: min(318px, calc(100vw - 40px));
   }
 }

@@ -30,6 +30,19 @@ function Invoke-Check {
             Write-Host "FAIL: $message" -ForegroundColor Red
         }
     }
+
+    $auditScript = Join-Path $RepoRoot "scripts/audit-desktop-installer.ps1"
+    $referenceInstaller = Join-Path $RepoRoot "SalesDesktop/release_build/SalesDesktop Setup 3.9.17.exe"
+    if (-not (Test-Path -LiteralPath $referenceInstaller -PathType Leaf)) {
+        $referenceInstaller = Join-Path $RepoRoot "SalesDesktop/download/SalesDesktop Setup 3.9.17.exe"
+    }
+    Invoke-External "powershell" @(
+        "-ExecutionPolicy", "Bypass",
+        "-File", $auditScript,
+        "-Installer", $installer,
+        "-ReferenceInstaller", $referenceInstaller,
+        "-Version", $version
+    ) $RepoRoot
 }
 
 function Invoke-External {
@@ -161,10 +174,10 @@ Invoke-Check "Nginx download route shape" {
         throw "nginx.conf is missing"
     }
     $text = Get-Content $nginxConf -Encoding utf8 -Raw
-    if ($text -notmatch "location\s+/download/") {
+    if ($text -notmatch "location\s+(?:\^~\s+)?/download/") {
         throw "missing /download/ location"
     }
-    if ($text -match 'location\s+/download/[\s\S]*?root\s+__PROJECT_ROOT__/SalesDesktop;[\s\S]*?try_files\s+\$uri\s+=404;') {
+    if ($text -match 'location\s+(?:\^~\s+)?/download/[\s\S]*?root\s+__PROJECT_ROOT__/SalesDesktop;[\s\S]*?try_files\s+\$uri\s+=404;') {
         return
     }
     throw "/download/ should serve only SalesDesktop/download through try_files"

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Row, Col, Tabs, Card, Statistic } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { getRegions, getStations, getDaily } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
@@ -16,8 +17,19 @@ const REGION_COLORS: Record<string, string> = {
   CTY-33: '#ffa726', CTY-31: '#00d4ff', CTY-35: '#66bb6a',
 };
 
+function normalizeRegionKey(value?: string | null) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (REGION_ORDER.includes(raw)) return raw;
+  if (ZH_REGION_KEY[raw]) return ZH_REGION_KEY[raw];
+  const lower = raw.toLowerCase();
+  return REGION_ORDER.find((key) => key.toLowerCase() === lower || (EN_REGION_KEY[key] || '').toLowerCase() === lower) || raw;
+}
+
 export default function Region() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { region, station, product } = useNameI18n();
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
@@ -37,12 +49,18 @@ export default function Region() {
   }, [data]);
 
   const [activeRegion, setActiveRegion] = useState('');
+  const requestedRegion = normalizeRegionKey(searchParams.get('region'));
 
   useEffect(() => {
-    if (regionKeys.length > 0 && !activeRegion) {
+    if (regionKeys.length === 0) return;
+    if (requestedRegion && regionKeys.includes(requestedRegion)) {
+      if (activeRegion !== requestedRegion) setActiveRegion(requestedRegion);
+      return;
+    }
+    if (!activeRegion || !regionKeys.includes(activeRegion)) {
       setActiveRegion(regionKeys[0]);
     }
-  }, [regionKeys]);
+  }, [activeRegion, regionKeys, requestedRegion]);
 
   const regionData = activeRegion && data?.regions ? data.regions[EN_REGION_KEY[activeRegion] ?? activeRegion] : null;
   const stationInRegion = (s: any) => (ZH_REGION_KEY[s.region] || s.region) === activeRegion;
@@ -80,22 +98,25 @@ export default function Region() {
       <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
       <Tabs
         activeKey={activeRegion || (regionKeys[0] ?? '')}
-        onChange={setActiveRegion}
+        onChange={(key) => {
+          setActiveRegion(key);
+          navigate(`/retail/region?region=${encodeURIComponent(key)}`, { replace: true });
+        }}
         items={regionKeys.map((k) => ({ key: k, label: region(k) }))}
         style={{ marginTop: 16 }}
       />
       {regionData && (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.totalSales')} value={Math.round(regionData.amount / 10000)} suffix={t('common.wan')} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.totalSales')} value={Math.round(regionData.amount / 10000)} suffix={CHART_AXIS.wanSom} /></Card></Col>
             <Col xs={12} lg={6}>
-              <Card size="small">
+              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
                 <Statistic title={t('retail.totalLiters')} value={Math.round(regionData.volume)} suffix="L" />
                 <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(regionData))} t</div>
               </Card>
             </Col>
-            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
-            <Col xs={12} lg={6}><Card size="small"><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>
           </Row>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col span={24}>
@@ -106,7 +127,7 @@ export default function Region() {
                     const list = Array.isArray(p) ? p : [p];
                     let html = `<b>${list[0]?.axisValue || ''}</b>`;
                     list.forEach((item: any) => {
-                      const val = item.seriesName === t('retail.volume') ? item.value.toLocaleString() + 'L' : item.value + t('common.wan');
+                      const val = item.seriesName === t('retail.volume') ? `${item.value.toLocaleString()}升` : `${item.value}万索姆`;
                       html += `<br/>${item.marker} ${item.seriesName}: ${val}`;
                     });
                     return html;
@@ -114,8 +135,8 @@ export default function Region() {
                   legend: { data: [t('retail.volume'), t('retail.amount')], bottom: 0 },
                   xAxis: { type: 'category', data: regionDaily.map((d) => d.date.slice(5)) },
                   yAxis: [
-                    { type: 'value', name: 'L' },
-                    { type: 'value', name: t('common.wan') },
+                    { type: 'value', name: CHART_AXIS.liters },
+                    { type: 'value', name: CHART_AXIS.wanSom },
                   ],
                   series: [
                     { name: t('retail.volume'), type: 'bar', data: regionDaily.map((d) => Math.round(d.volume)) },
@@ -134,14 +155,31 @@ export default function Region() {
                   grid: { left: 120, right: 20, top: 10, bottom: 30 },
                   xAxis: { type: 'value', name: CHART_AXIS.wan },
                   yAxis: { type: 'category', inverse: true, data: regionStations.map((s: any) => station(s)), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: regionStations.map((s: any) => Math.round(s.amount / 10000)) }],
+                  series: [{ name: t('retail.amount'), type: 'bar', data: regionStations.map((s: any) => ({
+                    value: Math.round(s.amount / 10000),
+                    shopKey: s.shopKey,
+                    stationName: s.name,
+                  })) }],
                 }}
+                onEvents={{ click: (params: any) => {
+                  const item = params?.data || {};
+                  const query = new URLSearchParams();
+                  if (item.shopKey) query.set('shopKey', String(item.shopKey));
+                  if (item.stationName || params?.name) query.set('name', String(item.stationName || params.name));
+                  query.set('from', 'region');
+                  query.set('region', activeRegion);
+                  navigate(`/retail/station?${query.toString()}`);
+                } }}
               />
             </Col>
             <Col xs={24} lg={12}>
               <ChartCard title={t('retail.paymentDist')} loading={false}
                 option={{
-                  tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                  tooltip: { trigger: 'item', formatter: (p: any) => {
+                    const value = Number(p?.value || 0).toLocaleString();
+                    const percent = p?.percent == null ? '-' : `${p.percent}%`;
+                    return `${p?.marker || ''}${p?.name || ''}: ${value}索姆 (${percent})`;
+                  } },
                   series: [{ type: 'pie', radius: ['40%', '70%'], data: [
                     { name: t('retail.cash'), value: regionData.cash, itemStyle: { color: '#ffa726' } },
                     { name: t('retail.card'), value: regionData.card, itemStyle: { color: '#a78bfa' } },
@@ -159,7 +197,7 @@ export default function Region() {
                   grid: { left: 80, right: 20, top: 10, bottom: 30 },
                   xAxis: { type: 'value', name: CHART_AXIS.liters },
                   yAxis: { type: 'category', inverse: true, data: productRows.map((r: any) => product(r.name)), axisLabel: { fontSize: 11 } },
-                  series: [{ type: 'bar', data: productRows.map((r: any) => r.volume) }],
+                  series: [{ name: t('retail.volume'), type: 'bar', data: productRows.map((r: any) => r.volume) }],
                 }}
               />
             </Col>

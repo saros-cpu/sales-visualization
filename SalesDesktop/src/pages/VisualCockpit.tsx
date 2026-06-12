@@ -99,15 +99,82 @@ function templateTitle(template: CockpitTemplate | undefined, language: string) 
   return language.startsWith('ru') ? template.titleRu || template.titleZh : template.titleZh;
 }
 
+function localizedUnit(unit: string | undefined, language: string) {
+  const value = String(unit || '').trim();
+  if (!value) return '';
+  const compact = value.replace(/\s+/g, '');
+  const ruLabels: Record<string, string> = {
+    '站': 'АЗС',
+    '条': 'стр.',
+    '份': 'шт.',
+    '单': 'заяв.',
+    '次': 'раз',
+    '项': 'п.',
+    L: 'л',
+    l: 'л',
+    t: 'т',
+    '吨': 'т',
+    'сом': 'сом',
+    '万сом': '10 тыс. сом',
+    '万索姆': '10 тыс. сом',
+    '万元': '10 тыс. CNY',
+  };
+  const zhLabels: Record<string, string> = {
+    L: '升',
+    l: '升',
+    t: '吨',
+    'т': '吨',
+    'сом': '索姆',
+    som: '索姆',
+    KGS: '索姆',
+    kgs: '索姆',
+    '万сом': '万索姆',
+    '万som': '万索姆',
+    '万索姆': '万索姆',
+    '¥': '元',
+    '¥万': '万元',
+    '万元': '万元',
+  };
+  return (language.startsWith('ru') ? ruLabels : zhLabels)[compact] || value;
+}
+
 function unitFor(definition: KpiDefinition | undefined, language: string) {
   const unit = definition?.unit;
-  if (!unit || !language.startsWith('ru')) return unit;
-  return ({ '站': 'АЗС', '条': 'стр.', '份': 'шт.', '单': 'заяв.', '次': 'раз', '项': 'п.', '万 сом': '10 тыс. сом' } as Record<string, string>)[unit] || unit;
+  return unit ? localizedUnit(unit, language) : unit;
 }
 
 function labelFor(item: { labelZh?: string; labelRu?: string; name?: string }, language: string) {
   if (language.startsWith('ru')) return item.labelRu || item.labelZh || item.name || '';
   return item.labelZh || item.labelRu || item.name || '';
+}
+
+function chartValueText(value: unknown, unit: string | undefined, language: string) {
+  if (value === null || value === undefined || value === '') return '-';
+  const numeric = Number(value);
+  const text = Number.isFinite(numeric) ? formatCockpitKpiValue(numeric) : String(value);
+  const label = localizedUnit(unit, language);
+  return label ? `${text}${label}` : text;
+}
+
+function isAmountMetric(definition: KpiDefinition | undefined, metricKey?: string) {
+  const key = metricKey || definition?.key || '';
+  const title = `${definition?.titleZh || ''} ${definition?.titleRu || ''}`;
+  return key.includes('amount') || key.includes('sales') || /销售额|金额|выруч|сумм/i.test(title);
+}
+
+function cockpitKpiDisplay(definition: KpiDefinition | undefined, metricKey: string | undefined, value: number | string | null | undefined, language: string) {
+  const unit = definition?.unit || '';
+  const compact = unit.replace(/\s+/g, '');
+  const numeric = Number(value);
+  if (isAmountMetric(definition, metricKey) && Number.isFinite(numeric)) {
+    if (compact === 'сом' || compact.toLowerCase() === 'som' || compact.toUpperCase() === 'KGS') {
+      return { value: numeric / 10000, suffix: localizedUnit('万索姆', language), precision: 0 };
+    }
+    if (compact === '¥' || compact.toUpperCase() === 'CNY') {
+      return { value: numeric / 10000, suffix: localizedUnit('万元', language), precision: 0 };
+    }
+  }
+  return { value, suffix: unitFor(definition, language), precision: definition?.precision };
 }
 
 function toneFor(definition: KpiDefinition | undefined, value: number | string | undefined): KpiTone {
@@ -487,7 +554,7 @@ function MarketWatchPanel({ title, data, style }: { title: string; data: any; st
 function trendOption(data: any, language: string) {
   const rows = data?.rows || [];
   const series = data?.series || [];
-  const legends = series.map((item: any) => labelFor(item, language));
+  const legends = series.map((item: any, index: number) => labelFor(item, language) || `${localizedUnit(item?.unit, language) || (language.startsWith('ru') ? 'Значение' : '数值')}${index + 1}`);
   return {
     color: CHART_PALETTE,
     tooltip: { trigger: 'axis' as const },
@@ -495,11 +562,12 @@ function trendOption(data: any, language: string) {
     grid: { left: 56, right: 56, top: 48, bottom: 68, outerBoundsMode: 'same' as const, outerBoundsContain: 'axisLabel' as const },
     xAxis: { type: 'category' as const, data: rows.map((row: any) => row.label || row.date || '') },
     yAxis: [
-      { type: 'value' as const, name: series[0]?.unit || '' },
-      ...(series.some((item: any) => item.yAxisIndex === 1) ? [{ type: 'value' as const, name: series.find((item: any) => item.yAxisIndex === 1)?.unit || '', position: 'right' as const }] : []),
+      { type: 'value' as const, name: localizedUnit(series[0]?.unit, language) },
+      ...(series.some((item: any) => item.yAxisIndex === 1) ? [{ type: 'value' as const, name: localizedUnit(series.find((item: any) => item.yAxisIndex === 1)?.unit, language), position: 'right' as const }] : []),
     ],
-    series: series.map((item: any) => ({
-      name: labelFor(item, language),
+    series: series.map((item: any, index: number) => ({
+      name: legends[index],
+      tooltipUnit: localizedUnit(item.unit, language),
       type: item.type || 'line',
       yAxisIndex: item.yAxisIndex || 0,
       data: rows.map((row: any) => row[item.key] ?? 0),
@@ -507,23 +575,26 @@ function trendOption(data: any, language: string) {
   };
 }
 
-function rankingOption(data: any) {
+function rankingOption(data: any, language: string) {
   const rows = sortRankingRows(data?.rows || [], (row: any) => row.value, 12);
   return {
     color: CHART_PALETTE,
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
     grid: { left: 16, right: 48, top: 20, bottom: 20, outerBoundsMode: 'same' as const, outerBoundsContain: 'axisLabel' as const },
-    xAxis: { type: 'value' as const, name: data?.unit || '' },
+    xAxis: { type: 'value' as const, name: localizedUnit(data?.unit, language) },
     yAxis: { type: 'category' as const, inverse: true, data: rows.map((row: any) => row.label || '-') },
-    series: [{ type: 'bar' as const, data: rows.map((row: any) => row.value || 0) }],
+    series: [{ name: language.startsWith('ru') ? 'Значение' : '数值', tooltipUnit: localizedUnit(data?.unit, language), type: 'bar' as const, data: rows.map((row: any) => row.value || 0) }],
   };
 }
 
-function structureOption(data: any) {
+function structureOption(data: any, language: string) {
   const rows = (data?.rows || []).filter((row: any) => Number(row.value || 0) > 0);
   return {
     color: CHART_PALETTE,
-    tooltip: { trigger: 'item' as const },
+    tooltip: { trigger: 'item' as const, formatter: (p: any) => {
+      const percent = p?.percent == null ? '-' : `${p.percent}%`;
+      return `${p?.marker || ''}${p?.name || ''}: ${chartValueText(p?.value, data?.unit, language)} (${percent})`;
+    } },
     series: [{
       type: 'pie' as const,
       radius: ['38%', '68%'],
@@ -881,7 +952,7 @@ export default function VisualCockpit() {
       return (
         <Col key={component.id} {...cockpitColProps(widthPercent, height, type, layoutEditing && isAdmin)}>
           {renderLayoutFrame(component, span, widthPercent, height, type, (
-            <ChartCard title={title} option={rankingOption(data)} height={height} />
+            <ChartCard title={title} option={rankingOption(data, i18n.language)} height={height} />
           ))}
         </Col>
       );
@@ -890,7 +961,7 @@ export default function VisualCockpit() {
       return (
         <Col key={component.id} {...cockpitColProps(widthPercent, height, type, layoutEditing && isAdmin)}>
           {renderLayoutFrame(component, span, widthPercent, height, type, (
-            <ChartCard title={title} option={structureOption(data)} height={height} />
+            <ChartCard title={title} option={structureOption(data, i18n.language)} height={height} />
           ))}
         </Col>
       );
@@ -915,14 +986,15 @@ export default function VisualCockpit() {
     }
     const metric = metricKey ? query.data?.metrics?.[metricKey] : undefined;
     const targetRoute = routeForCockpitKpi(definition, metricKey);
+    const kpiDisplay = cockpitKpiDisplay(definition, metricKey, metric?.value ?? 0, i18n.language);
     return (
       <Col key={component.id} {...cockpitColProps(widthPercent, height, type, layoutEditing && isAdmin)}>
         {renderLayoutFrame(component, span, widthPercent, height, type, (
           <CockpitKpiPanel
             title={title}
-            value={metric?.value ?? 0}
-            suffix={unitFor(definition, i18n.language)}
-            precision={definition?.precision}
+            value={kpiDisplay.value}
+            suffix={kpiDisplay.suffix}
+            precision={kpiDisplay.precision}
             secondaryValue={metric?.secondaryValue}
             secondarySuffix={metric?.secondaryUnit}
             secondaryPrecision={metric?.secondaryPrecision}
