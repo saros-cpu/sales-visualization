@@ -35,21 +35,31 @@ Without a token the wallpaper stays in public map mode. With a matching server t
 
 ```powershell
 cd D:\SalesVisualization
-powershell -ExecutionPolicy Bypass -File .\SalesWallpaperEngine\build.ps1 -Version 0.1.4
+powershell -ExecutionPolicy Bypass -File .\SalesWallpaperEngine\build.ps1 -Version 0.1.5 -IncludeKeyPath .\SalesWallpaperEngine\publish\wallpaper-key.json
 ```
 
 Output:
 
 - `SalesWallpaperEngine\publish\SalesWallpaperEngine-{version}.zip`
+- `SalesWallpaperEngine\publish\SalesWallpaperEngine-Setup-{version}.exe`
 - `SalesWallpaperEngine\publish\app\`
 - `SalesDesktop\download\wallpaper-engine\SalesWallpaperEngine-{version}.zip`
+- `SalesDesktop\download\wallpaper-engine\SalesWallpaperEngine-Setup-{version}.exe`
 - `SalesDesktop\download\wallpaper-engine\latest.json`
 
 The package is framework-dependent to keep it light. The target computer needs WebView2 Runtime and .NET 8 Desktop Runtime.
 
+The zip is the self-update package used by the running engine. The setup exe is for first install or manual overwrite install. If `-IncludeKeyPath` is supplied, the setup exe embeds that local key file and deploys it to `%APPDATA%\sales-wallpaper-engine\wallpaper-key.json` during install. The real key file and generated setup exe are local release artifacts and must not be committed.
+
 ## Install
 
-Extract the zip, then run:
+For normal users, run:
+
+```powershell
+.\SalesWallpaperEngine-Setup-0.1.5.exe
+```
+
+For manual folder install, extract the zip, then run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-user.ps1
@@ -59,10 +69,11 @@ The script installs to `%LOCALAPPDATA%\SalesWallpaperEngine`, adds a Startup sho
 
 ## Releases
 
-### Next
+### 0.1.5
 
 - Adds taskbar safe-area injection so the bottom-right sales HUD avoids the Windows taskbar.
-- Adds tray-driven update install: the engine downloads the independent wallpaper zip, verifies SHA256 when present, applies it after the host exits, and restarts itself.
+- Enables true automatic update by default: the engine checks the independent wallpaper manifest, downloads the zip, verifies SHA256 when present, applies it after the host exits, and restarts itself.
+- Keeps the tray `检查并安装更新` command for immediate manual checks or for machines that set `autoInstallUpdates` to `false`.
 - Adds authorized inventory fill data from `/api/wallpaper/map`; map hover keeps station dots as operating status, while each fuel inventory row is colored by fill level.
 
 ### 0.1.4

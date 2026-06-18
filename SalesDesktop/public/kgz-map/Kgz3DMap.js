@@ -163,6 +163,76 @@ function optionNumber(value, fallback) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+const STATION_CLUSTER_DISTANCE = 0.78;
+const STATION_CLUSTER_MAX_RADIUS = 0.86;
+const STATION_CLUSTER_SIZE = 0.18;
+
+function distanceXZ(a, b) {
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+function stationClusterKey(point) {
+  return Number(point.shopKey ?? point.id ?? 9999);
+}
+
+function isDepotPoint(point) {
+  const name = String(point?.name || point?.label || '');
+  return point?.type === 'depot'
+    || point?.type === 'headquarters'
+    || point?.depotType === 'headquarters'
+    || name.includes('油库');
+}
+
+function isHeadquartersPoint(point) {
+  const name = String(point?.name || point?.label || '');
+  return point?.type === 'headquarters'
+    || point?.depotType === 'headquarters'
+    || name.includes('总部')
+    || name.includes('公司总部');
+}
+
+function preparePointEntries(points = []) {
+  const entries = [];
+  for (const point of points) {
+    const lng = Number(point.lng);
+    const lat = Number(point.lat);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+    entries.push({ point, world: geoToWorld(lng, lat), visualX: null, visualZ: null, clustered: false });
+  }
+
+  const groups = [];
+  for (const entry of entries.filter((item) => item.point.type === 'station' && item.point.clusterSpread !== false)) {
+    let target = null;
+    for (const group of groups) {
+      if (group.some((candidate) => distanceXZ(entry.world, candidate.world) <= STATION_CLUSTER_DISTANCE)) {
+        target = group;
+        break;
+      }
+    }
+    if (target) {
+      target.push(entry);
+    } else {
+      groups.push([entry]);
+    }
+  }
+
+  for (const group of groups) {
+    if (group.length < 2) continue;
+    group.sort((a, b) => stationClusterKey(a.point) - stationClusterKey(b.point));
+    const radius = Math.min(STATION_CLUSTER_MAX_RADIUS, 0.24 + group.length * 0.06);
+    group.forEach((entry, index) => {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * index) / group.length;
+      entry.visualX = entry.world.x + Math.cos(angle) * radius;
+      entry.visualZ = entry.world.z + Math.sin(angle) * radius;
+      entry.clustered = true;
+    });
+  }
+
+  return entries;
+}
+
 function stationInventoryRows(point) {
   if (point.type !== 'station') return '';
   const hasInventory = point.inventory !== undefined && point.inventory !== null && Number.isFinite(Number(point.inventory));
@@ -863,12 +933,37 @@ export class Kgz3DMap {
       station: 0x34d399,
       default: 0xf8fafc
     };
-    for (const point of points) {
-      if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) continue;
-      const p = geoToWorld(point.lng, point.lat);
-      const color = point.color || palette[point.type] || palette.default;
-      const pointSize = point.size || 0.08;
+    for (const entry of preparePointEntries(points)) {
+      const point = entry.point;
+      const p = entry.world;
+      const isDepot = isDepotPoint(point);
+      const isHeadquarters = isHeadquartersPoint(point);
+      const color = point.color || (isHeadquarters ? '#38bdf8' : palette[point.type] || palette.default);
+      const requestedSize = point.size || (isDepot ? (isHeadquarters ? 0.26 : 0.22) : 0.08);
+      const pointSize = entry.clustered ? Math.min(requestedSize, STATION_CLUSTER_SIZE) : requestedSize;
       const pointOpacity = point.opacity ?? 0.95;
+      const pointY = point.y ?? (isDepot ? (isHeadquarters ? 3.48 : 3.12) : 0.98);
+      const pointRenderOrder = point.renderOrder ?? (isDepot ? 176 : 130);
+      const visualX = entry.visualX ?? p.x;
+      const visualZ = entry.visualZ ?? p.z;
+      const showAnchorLine = point.anchorLine === true || point.pinLine === true || pointY > 1.45;
+      if (showAnchorLine) {
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(p.x, point.anchorY ?? 0.82, p.z),
+          new THREE.Vector3(visualX, Math.max(point.anchorY ?? 0.82, pointY - pointSize * 0.9), visualZ)
+        ]);
+        const lineMaterial = new THREE.LineBasicMaterial({
+          color: point.anchorColor || color,
+          transparent: true,
+          opacity: point.anchorOpacity ?? 0.72,
+          depthTest: false,
+          depthWrite: false
+        });
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        line.renderOrder = Math.max(101, pointRenderOrder - 1);
+        line.userData = { type: 'business-point-anchor', point };
+        this.pointGroup.add(line);
+      }
       const geometry = new THREE.SphereGeometry(pointSize, 12, 8);
       const material = new THREE.MeshBasicMaterial({
         color,
@@ -878,15 +973,16 @@ export class Kgz3DMap {
         depthWrite: false
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(p.x, point.y ?? 0.98, p.z);
-      mesh.renderOrder = 130;
+      mesh.position.set(visualX, pointY, visualZ);
+      mesh.renderOrder = pointRenderOrder;
       mesh.userData = {
         type: 'business-point',
         point,
         baseColor: new THREE.Color(color),
         baseOpacity: pointOpacity,
         baseScale: pointSize,
-        baseY: point.y ?? 0.98
+        baseY: pointY,
+        baseRenderOrder: pointRenderOrder
       };
       this.pointGroup.add(mesh);
       this.pointMeshes.push(mesh);
@@ -897,7 +993,7 @@ export class Kgz3DMap {
           border: point.labelBorder,
           scale: point.labelScale
         });
-        label.position.set(p.x, point.labelY ?? ((point.y ?? 0.98) + (point.size || 0.08) + 0.36), p.z);
+        label.position.set(visualX, point.labelY ?? (pointY + pointSize + 0.36), visualZ);
         this.pointGroup.add(label);
       }
     }
@@ -1058,7 +1154,7 @@ export class Kgz3DMap {
     mesh.material.opacity = mesh.userData.baseOpacity;
     mesh.scale.setScalar(1);
     mesh.position.y = mesh.userData.baseY;
-    mesh.renderOrder = 130;
+    mesh.renderOrder = mesh.userData.baseRenderOrder ?? 130;
     this.hoveredPoint = null;
   }
 

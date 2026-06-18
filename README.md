@@ -6,16 +6,18 @@
 
 ## 版本更新记录
 
-### 2026-07-29 (v3.10.0)
+### 2026-07-29 (v3.10.1)
 
 - **重要版本更新**：合并此前已验证修复，恢复零售、批发等业务页面 KPI 卡片点击跳转，金额、油量、库存、站点、刷卡等指标可进入对应明细页面。
 - **图表下钻恢复**：零售总览区域柱状图可跳转并选中对应区域，站点 Top10 可跳转并选中对应站点；区域页和站点页同步支持 URL 参数定位。
 - **单位和 tooltip 统一**：趋势图、排行图和 KPI 的 tooltip 补齐升、万升、索姆、万索姆、万元、吨、百分比等单位，并隐藏默认 `series0` 名称。
 - **知识库滚动优化**：知识库菜单左右两列支持独立上下滚动，长列表查看更稳。
-- **库存水位口径升级**：库存预警改为按数据库 `warehouseinfo` 实际库容和当前库存计算，黄色表示 30%-50%，红色表示低于 30%。
+- **库存水位口径升级**：库存预警改为按数据库最新 `fuelbalance.VolumeMaximum` 实际库容和当前库存计算；库容缺失时使用数据库历史观测上限兜底，黄色表示 30%-50%，红色表示低于 30%。
 - **地图悬停增强**：地图点位颜色继续只表达营业状态，悬停信息按每个油品显示库存、库容、水位百分比和零售价，并用绿色/黄色/红色区分油品库存水位。
+- **地图观感优化**：客户端吉尔吉斯地图、Web 零售板块总览地图和壁纸地图恢复总部/北方/南方三处油库标点，但改为高位小标点且不常驻文字；每个油库点位增加到实际坐标的指向线；CTY-22、REG-08、CTY-28等密集加油站自动散开并缩小，提高悬停命中率。
+- **停业站地图口径**：11、12、21 号站在地图和壁纸端按停业红色显示；这三站实际库存已清零，但零售系统数据库仍有旧值，因此地图悬停、壁纸库存和库存预警按清零规则覆盖展示，不回写原始数据库。
 - **预警页同步**：Web 端和客户端零售预警页增加油品库存水位预警表，便于直接查看低水位站点和油品。
-- **壁纸引擎增强**：独立壁纸授权接口返回库存库容、水位百分比、低库存汇总和年/月销量销售额；HUD 自动避让 Windows 任务栏，托盘菜单支持检查并安装更新。
+- **壁纸引擎增强**：独立壁纸授权接口返回库存库容、水位百分比、低库存汇总和年/月销量销售额；HUD 自动避让 Windows 任务栏；`SalesWallpaperEngine 0.1.5` 默认自动检查、下载、校验、替换并重启，壁纸更新仍不混入主客户端安装包。
 - **发布校验加强**：新增主程序安装包审计脚本，打包后会解开 NSIS 外层和 `app-64.7z`，对比正常 `3.9.17` 参考包检查 `SalesDesktop.exe`、`resources/app.asar`、入口 JS/CSS、地图资源和 `app-update.yml`。
 
 ### 2026-07-29 (SalesLivelyWallpaper 1.1.0)
@@ -25,19 +27,20 @@
 - **CSP fix**: `SalesLivelyWallpaper 1.1.1` adds `http://10.8.0.1` to the hosted wallpaper CSP and skips `wallpaper-key.json` on the live page because VPN trusted-client mode does not need a local key file.
 - **Independent release**: `/download/wallpaper-lively/latest.json` points to `SalesLivelyWallpaper 1.1.1`; the main desktop client version and installer are unchanged.
 
-### 2026-07-29 (SalesWallpaperEngine 0.1.0-0.1.4)
+### 2026-07-29 (SalesWallpaperEngine 0.1.0-0.1.5)
 
 - **Dedicated rewrite**: added `SalesWallpaperEngine`, a new independent host/player WebView2 wallpaper engine that uses a Lively-style WorkerW/Progman desktop attach path and a separate player process.
 - **Local proxy data path**: the wallpaper page now reads `127.0.0.1` and the engine proxies `/api/wallpaper/map` to the configured API with `wallpaper-key.json` token support, avoiding browser mixed-content/CSP issues.
 - **0.1.1 field fix**: forwards global mouse position into the WebView canvas so station hover works while the wallpaper sits behind desktop icons; hides the in-page settings button in Engine mode.
 - **0.1.2 tray cleanup**: shortens the tray version label and moves diagnostics/log actions under `高级`, keeping the first-level menu small.
 - **0.1.4 sales summary HUD**: the shared wallpaper page can show current year/month retail volume and sales amount in the bottom-right HUD when `/api/wallpaper/map` is authorized.
-- **Independent package**: `/download/wallpaper-engine/latest.json` points to `SalesWallpaperEngine-0.1.4.zip`; this does not update `SalesDesktop` version, installer, or `latest.yml`.
+- **0.1.5 true auto-update**: defaults to automatic update checks and installs; the engine downloads the independent zip, verifies SHA256, replaces files after exit, and restarts itself.
+- **Independent package**: `/download/wallpaper-engine/latest.json` points to `SalesWallpaperEngine-0.1.5.zip`; this does not update `SalesDesktop` version, installer, or `latest.yml`.
 
 ### 2026-07-29 (SalesWallpaperNative retired)
 
 - **Native route removed**: field testing showed `SalesWallpaperNative` caused lag and did not reliably attach to the Windows desktop layer. The source project and generated packages have been removed from the active tree.
-- **Fallback wallpaper route**: keep the already released `SalesLivelyWallpaper 1.1.1` package only as a fallback; the active dedicated route is `SalesWallpaperEngine 0.1.4`.
+- **Fallback wallpaper route**: keep the already released `SalesLivelyWallpaper 1.1.1` package only as a fallback; the active dedicated route is `SalesWallpaperEngine 0.1.5`.
 - **Update feed disabled**: `/download/wallpaper-native/latest.json` is now a deprecated marker and no longer points to a downloadable Native package.
 
 ### 2026-07-29 (SalesWallpaper Native 0.2.0)

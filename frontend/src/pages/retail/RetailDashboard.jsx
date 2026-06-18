@@ -27,6 +27,81 @@ function formatTons(value) {
   return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
 
+const CORE_DEPOTS = [
+  { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal' },
+  { name: 'DemoDepotNorth', short: 'Север DemoDepot', region: 'REG-08', lng: 0, lat: 0, type: 'depot', status: 'closed', closedReason: '装修停业' },
+  { name: 'DemoDepotSouth', short: 'Юж DemoDepot', region: 'REG-07', lng: 0, lat: 0, type: 'depot', status: 'normal' },
+];
+
+const ZERO_INVENTORY_STATION_KEYS = new Set([11, 12, 21]);
+
+function mapZeroInventoryDetail(detail, shopKey) {
+  if (!ZERO_INVENTORY_STATION_KEYS.has(Number(shopKey))) return detail || {};
+  const rows = (detail?.inventoryByResource || []).map((row) => {
+    const capacity = Number(row?.capacity || 0);
+    return {
+      ...row,
+      inventory: 0,
+      fillPercent: row?.fillPercent !== undefined || capacity > 0 ? 0 : row?.fillPercent,
+      fillStatus: capacity > 0 ? 'critical' : (row?.fillStatus || 'unknown'),
+    };
+  });
+  const capacity = Number(detail?.inventoryCapacity || 0);
+  return {
+    ...(detail || {}),
+    inventory: 0,
+    inventoryByResource: rows,
+    inventoryFillPercent: capacity > 0 ? 0 : detail?.inventoryFillPercent,
+    inventoryFillStatus: capacity > 0 ? 'critical' : (detail?.inventoryFillStatus || 'unknown'),
+    inventoryZeroedByMapRule: true,
+    inventoryZeroReason: detail?.closedReason || '停业，库存清零',
+  };
+}
+
+function depotKey(depot) {
+  const name = String(depot?.name || depot?.label || '');
+  if (depot?.type === 'headquarters' || name.includes('总部') || name.includes('公司总部')) return 'hq';
+  if (name.includes('北方')) return 'north';
+  if (name.includes('南方')) return 'south';
+  return name;
+}
+
+function ensureCoreDepots(depots = []) {
+  const list = Array.isArray(depots) ? [...depots] : [];
+  const keys = new Set(list.map(depotKey));
+  CORE_DEPOTS.forEach((depot) => {
+    if (!keys.has(depotKey(depot))) list.push(depot);
+  });
+  return list;
+}
+
+function normalizeDepotMarker(depot) {
+  const rawName = String(depot?.name || depot?.nameRu || '');
+  const isHeadquarters = depot?.type === 'headquarters' || rawName.includes('总部') || rawName.includes('公司总部');
+  const name = rawName === '公司总部' ? 'STN-61' : rawName;
+  return {
+    ...depot,
+    type: 'depot',
+    depotType: isHeadquarters ? 'headquarters' : 'branch',
+    name,
+    label: name,
+    short: depot?.short || depot?.nameRu || '',
+    status: depot?.status || 'normal',
+    size: isHeadquarters ? 0.26 : 0.22,
+    y: isHeadquarters ? 3.48 : 3.12,
+    renderOrder: 176,
+    color: isHeadquarters ? '#38bdf8' : '#facc15',
+    anchorColor: isHeadquarters ? '#7dd3fc' : '#fde68a',
+    anchorOpacity: 0.78,
+    pinLine: true,
+    opacity: 0.98,
+    hoverScale: 2.25,
+    hoverLift: 0.24,
+    showLabel: false,
+    labelSubtitle: depot?.short || depot?.region || '',
+  };
+}
+
 export default function RetailDashboard() {
   const navigate = useNavigate();
   const [years, setYears] = useState([]);
@@ -119,10 +194,14 @@ export default function RetailDashboard() {
         }
 
         const stationList = (dd.stations || []).map(s => {
-          const detail = detailMap.get(Number(s.shopKey)) || {};
+          const detail = mapZeroInventoryDetail(detailMap.get(Number(s.shopKey)) || {}, s.shopKey);
+          const status = s.status || (ZERO_INVENTORY_STATION_KEYS.has(Number(s.shopKey)) ? 'closed' : 'normal');
+          const closedReason = s.closedReason || detail.closedReason || (ZERO_INVENTORY_STATION_KEYS.has(Number(s.shopKey)) ? '停业，库存清零' : '');
           return {
             ...s,
             type: 'station',
+            status,
+            closedReason,
             volume: s.volume || 0,
             amount: s.amount || 0,
             cash: s.cash || 0,
@@ -137,10 +216,10 @@ export default function RetailDashboard() {
             snapshotGeneratedAt: detail.snapshotGeneratedAt || detailPayload.snapshotGeneratedAt || '',
           };
         });
-        const depotList = (dd.depots || []).map(d => ({
-          ...d, type: 'depot',
-          status: d.status || 'normal',
-        }));
+        const depotSource = Array.isArray(dd.depots) && dd.depots.length
+          ? dd.depots
+          : detailPayload.depots || [];
+        const depotList = ensureCoreDepots(depotSource).map(normalizeDepotMarker);
 
         setStations(stationList);
         setDepots(depotList);
@@ -332,23 +411,18 @@ export default function RetailDashboard() {
     // Map (ECharts fallback)
     updateMapChart();
 
-  }, [dashData, stations, regionMap]);
+  }, [dashData, stations, regionMap, depots]);
 
   // Map chart (ECharts fallback or 3D update)
   const updateMapChart = useCallback(() => {
     // If 3D map is active, update its layers
     if (retailKgzMapActiveRef.current && retailKgzMapRef.current) {
       retailKgzMapRef.current.updateLayers({
-        depots: depots.filter(d => d.lng && d.lat).map(d => ({
-          ...d, type: 'depot',
-          size: 0.55, color: d.status === 'closed' ? '#616161' : '#ffd54f',
-          opacity: 0.95, showLabel: true, label: d.name,
-          labelSubtitle: d.status === 'closed' ? '停业' : '运营',
-        })),
+        depots: ensureCoreDepots(depots).filter(d => d.lng && d.lat).map(normalizeDepotMarker),
         stations: stations.filter(s => s.type === 'station' && s.lng && s.lat).map(s => {
           let color = '#34d399';
           if (s.status === 'closed') {
-            color = (s.closedReason && s.closedReason.indexOf('装修') > -1) ? '#ef5350' : '#9e9e9e';
+            color = '#ef4444';
           }
           return {
             ...s, type: 'station',
@@ -376,18 +450,22 @@ export default function RetailDashboard() {
       .map(s => {
         let color = '#00e5a0';
         if (s.status === 'closed') {
-          if (s.closedReason && s.closedReason.indexOf('装修') > -1) color = '#ff5252';
-          else color = '#9e9e9e';
+          color = '#ef4444';
         }
         return { name: s.name, value: [s.lng, s.lat, s.amount], itemStyle: { color } };
       });
 
-    const depotData = depots
+    const depotData = ensureCoreDepots(depots)
       .filter(d => d.lng && d.lat)
-      .map(d => ({
-        name: d.name, value: [d.lng, d.lat],
-        itemStyle: { color: d.status === 'closed' ? '#616161' : '#ffd54f' },
-      }));
+      .map(d => {
+        const marker = normalizeDepotMarker(d);
+        return {
+          name: marker.name,
+          value: [marker.lng, marker.lat, 0],
+          symbolSize: marker.depotType === 'headquarters' ? 12 : 10,
+          itemStyle: { color: marker.color },
+        };
+      });
 
     mc.setOption({
       series: [
@@ -397,6 +475,11 @@ export default function RetailDashboard() {
     });
   }, [stations, depots]);
 
+  useEffect(() => {
+    if (!dashData || stations.length === 0) return;
+    updateMapChart();
+  }, [dashData, stations, depots, updateMapChart]);
+
   // Init 3D map
   const initRetail3DMap = useCallback(async () => {
     if (retailKgzMapActiveRef.current && retailKgzMapRef.current) return true;
@@ -404,8 +487,8 @@ export default function RetailDashboard() {
     if (window.USE_3D_KGZ_MAP === false) return false;
     try {
       const runtimeImport = (url) => new Function('url', 'return import(url)')(url);
-      const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260722-uniform-region');
-      const map = await mountRetailMap('#mapChart', { depots: [], stations: [] }, {
+      const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260729-depot-cluster');
+      const map = await mountRetailMap('#mapChart', { depots: ensureCoreDepots(depots).map(normalizeDepotMarker), stations: [] }, {
         showRoadPanel: false, showLakeLabels: true, showCities: true,
         showRegionLabels: false, showLegend: false, mode: 'retail',
         initialCamera: { cameraX: -2.35, cameraY: 24.77, cameraZ: 38.2, targetX: -2.35, targetY: 0.33, targetZ: 3.95 },
@@ -459,7 +542,7 @@ export default function RetailDashboard() {
           },
           series: [
             { type: 'effectScatter', coordinateSystem: 'geo', name: '加油站', data: [], symbolSize: 10, zlevel: 10 },
-            { type: 'effectScatter', coordinateSystem: 'geo', name: '油库', data: [], symbol: 'diamond', symbolSize: 18, zlevel: 11 },
+            { type: 'effectScatter', coordinateSystem: 'geo', name: '油库', data: [], symbol: 'diamond', symbolSize: 9, zlevel: 11 },
           ],
           tooltip: {
             trigger: 'item',

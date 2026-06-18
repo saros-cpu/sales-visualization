@@ -1,6 +1,9 @@
 param(
     [string]$InstallDir = "$env:LOCALAPPDATA\SalesWallpaperEngine",
     [string]$ManifestUrl = "",
+    [string]$PackageZip = "",
+    [string]$KeyFile = "",
+    [switch]$DeployBundledKey,
     [switch]$NoStart
 )
 
@@ -8,6 +11,36 @@ $ErrorActionPreference = "Stop"
 
 function Stop-Engine {
     Get-Process SalesWallpaperEngine -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+function Deploy-KeyFile {
+    param(
+        [string]$SourceDir
+    )
+
+    if (-not $DeployBundledKey -and -not $KeyFile) {
+        return
+    }
+
+    $candidates = @()
+    if ($KeyFile) {
+        $candidates += $KeyFile
+    }
+    if ($DeployBundledKey) {
+        $candidates += (Join-Path $SourceDir "wallpaper-key.json")
+        $candidates += (Join-Path $PSScriptRoot "wallpaper-key.json")
+    }
+
+    $sourceKey = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    if (-not $sourceKey) {
+        Write-Warning "Bundled wallpaper-key.json was requested but not found."
+        return
+    }
+
+    $configDir = Join-Path $env:APPDATA "sales-wallpaper-engine"
+    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+    Copy-Item -LiteralPath $sourceKey -Destination (Join-Path $configDir "wallpaper-key.json") -Force
+    Write-Host "Deployed wallpaper key to $configDir"
 }
 
 function Install-FromFolder {
@@ -24,6 +57,7 @@ function Install-FromFolder {
     Stop-Engine
     New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
     Copy-Item -Path (Join-Path $source "*") -Destination $TargetDir -Recurse -Force
+    Deploy-KeyFile -SourceDir $source
 
     $shell = New-Object -ComObject WScript.Shell
     $startup = [Environment]::GetFolderPath("Startup")
@@ -39,6 +73,16 @@ function Install-FromFolder {
     }
 
     Write-Host "Installed SalesWallpaperEngine to $TargetDir"
+}
+
+if ($PackageZip) {
+    $zip = (Resolve-Path $PackageZip).Path
+    $tempRoot = Join-Path $env:TEMP ("SalesWallpaperEngine-" + [Guid]::NewGuid().ToString("N"))
+    $extractDir = Join-Path $tempRoot "extract"
+    New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+    Expand-Archive -LiteralPath $zip -DestinationPath $extractDir -Force
+    Install-FromFolder -SourceDir $extractDir -TargetDir $InstallDir
+    return
 }
 
 if ($ManifestUrl) {

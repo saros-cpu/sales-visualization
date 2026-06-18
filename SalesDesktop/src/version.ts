@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.10.0';
+export const VERSION = '3.10.1';
 export const BUILD_DATE = '2026-07-29';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '3.10.1',
+    date: '2026-07-29',
+    type: 'patch',
+    changes: [
+      '修复：库存水位口径改为按数据库最新 `fuelbalance.VolumeMaximum` 实际库容计算，库容缺失时使用历史观测上限兜底，不再使用固定或推测口径',
+      '修复：11、12、21 号停业站在客户端地图、Web 地图和壁纸地图统一按停业红色显示，并按现场清零规则覆盖库存展示，不回写原始零售数据库',
+      '优化：客户端吉尔吉斯地图、Web 零售总览地图和壁纸地图恢复总部/北方/南方三处油库标点，改为高位小标点并增加到实际坐标的指向线',
+      '优化：CTY-22、REG-08、CTY-28等密集加油站点位自动散开并缩小，提高鼠标悬停命中率和地图观感',
+      '优化：壁纸页面同步共享地图口径，油库高位标点、密集站点散开和停业站清零规则与客户端/Web 保持一致；壁纸引擎版本继续独立维护',
+    ],
+  },
   {
     version: '3.10.0',
     date: '2026-07-29',

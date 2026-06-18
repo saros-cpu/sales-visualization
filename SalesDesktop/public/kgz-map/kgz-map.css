@@ -113,6 +113,12 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  align-items: center;
+  margin-top: 3px;
+  padding: 3px 5px 3px 7px;
+  border-left: 3px solid rgba(148, 163, 184, 0.55);
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.42);
   color: #e2e8f0;
   font-style: normal;
   font-size: 11px;
@@ -127,12 +133,27 @@
   color: #86efac;
 }
 
+.kgz-map-tooltip-section em.kgz-inventory-ok {
+  border-left-color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
 .kgz-map-tooltip-section em.kgz-inventory-warning span:last-child {
   color: #facc15;
 }
 
+.kgz-map-tooltip-section em.kgz-inventory-warning {
+  border-left-color: #eab308;
+  background: rgba(234, 179, 8, 0.16);
+}
+
 .kgz-map-tooltip-section em.kgz-inventory-critical span:last-child {
   color: #f87171;
+}
+
+.kgz-map-tooltip-section em.kgz-inventory-critical {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.16);
 }
 
 .kgz-map-tooltip-section em.kgz-inventory-unknown span:last-child {

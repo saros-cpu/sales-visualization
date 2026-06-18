@@ -195,9 +195,9 @@ function HomeVisualizationPanel({ retail, wholesale, combined }) {
 }
 
 const depotPoints = [
-  { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01 · 示例站', lng: 0, lat: 0, role: 'hq', status: 'normal' },
-  { name: '北方STN-65', short: 'S-66', region: 'REG-04 · REG-08', lng: 0, lat: 0, role: 'branch', status: 'closed', note: '维修中' },
-  { name: '南方STN-63', short: 'S-64', region: 'REG-07', lng: 0, lat: 0, role: 'branch', status: 'normal' }
+  { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01', lng: 0, lat: 0, role: 'hq', status: 'normal' },
+  { name: 'DemoDepotNorth', short: 'Север DemoDepot', region: 'REG-08', lng: 0, lat: 0, role: 'branch', status: 'closed', note: '维修中' },
+  { name: 'DemoDepotSouth', short: 'Юж DemoDepot', region: 'REG-07', lng: 0, lat: 0, role: 'branch', status: 'normal' }
 ];
 
 // Runtime dynamic import — bypass bundler resolution for external assets
@@ -321,9 +321,9 @@ export default function DashboardPage() {
       },
       series: [{
         type: 'effectScatter', coordinateSystem: 'geo', name: '油库', data, symbol: 'diamond',
-        symbolSize: (params) => { const p = mapPoints.find(i => i.name === params.name); return p?.role === 'hq' ? 64 : 54; },
+        symbolSize: (params) => { const p = mapPoints.find(i => i.name === params.name); return p?.role === 'hq' ? 14 : 12; },
         rippleEffect: { scale: 3, period: 3, brushType: 'stroke' }, showEffectOn: 'render',
-        label: { show: true, position: 'top', formatter: p => p.name, color: '#eaf6ff', fontSize: 11, fontWeight: 700, textBorderColor: '#051425', textBorderWidth: 3 },
+        label: { show: false },
         itemStyle: { shadowColor: 'rgba(0,212,255,0.35)', shadowBlur: 10 }, zlevel: 10
       }],
       tooltip: {
@@ -343,17 +343,24 @@ export default function DashboardPage() {
   const initMap = useCallback(async () => {
     if (window.USE_3D_KGZ_MAP !== false) {
       try {
-        const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260722-uniform-region');
+        const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260729-depot-cluster');
         mapShellRef.current?.classList.add('is-3d-map');
         const map = await mountHomeMap('#homeMapChart', {
           depots: depotPoints.map(p => ({
             ...p, type: 'depot',
-            size: p.role === 'hq' ? 0.52 : 0.44,
-            color: p.status === 'closed' ? '#7b8492' : (p.role === 'hq' ? '#00d4ff' : '#ffd54f'),
-            opacity: 0.98, showLabel: true, label: p.name,
+            depotType: p.role === 'hq' ? 'headquarters' : 'branch',
+            size: p.role === 'hq' ? 0.2 : 0.18,
+            y: p.role === 'hq' ? 3.12 : 2.9,
+            renderOrder: 176,
+            color: p.role === 'hq' ? '#38bdf8' : '#facc15',
+            anchorColor: p.role === 'hq' ? '#7dd3fc' : '#fde68a',
+            anchorOpacity: 0.78,
+            pinLine: true,
+            opacity: 0.98, showLabel: false, label: p.name,
             labelSubtitle: p.status === 'closed' ? '维修中' : '运营中',
             labelColor: p.status === 'closed' ? '#d8dee9' : '#f8fafc',
-            labelScale: p.role === 'hq' ? 4.2 : 3.7
+            hoverScale: 2.25,
+            hoverLift: 0.24
           })),
           wholesaleCustomers: []
         }, {

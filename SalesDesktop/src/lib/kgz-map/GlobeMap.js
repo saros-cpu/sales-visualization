@@ -63,7 +63,8 @@ const REGION_RU = {
   'REG-02': 'CTY-03',
   'REG-03': 'CTY-18 область',
   'REG-04': 'CTY-02',
-  'REG-05': 'CTY-16 область'
+  'REG-05': 'CTY-16 область',
+  'REG-08': 'CTY-08'
 };
 
 function latLngToVec3(lng, lat, radius) {

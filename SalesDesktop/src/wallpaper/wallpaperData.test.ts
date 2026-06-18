@@ -29,10 +29,18 @@ describe('wallpaperData', () => {
   it('extracts non-normal stations and map layer sizes', () => {
     const payload = {
       stations: [{ shopKey: 1, name: 'A', short: 'A', region: '', status: 'closed' }],
-      depots: [{ name: 'D', status: 'normal' }],
+      depots: [
+        { name: 'DemoDepotNorth', region: 'REG-08', lng: 0, lat: 0, status: 'normal' },
+        { name: 'DemoDepotSouth', region: 'REG-07', lng: 0, lat: 0, status: 'normal' },
+      ],
     };
     expect(alertStations(payload)).toHaveLength(1);
     expect(mapLayers(payload).stations[0].size).toBeGreaterThan(0.28);
+    expect(mapLayers(payload).depots).toHaveLength(3);
+    expect(mapLayers(payload).depots.map((item) => item.name)).toContain('STN-61');
+    expect(mapLayers(payload).depots.every((item) => item.pinLine)).toBe(true);
+    expect(mapLayers(payload).depots[0].y).toBeGreaterThan(2.5);
+    expect(mapLayers(payload).depots[0].showLabel).toBe(false);
     expect(stationStatusText('closed')).toBe('停业');
   });
 

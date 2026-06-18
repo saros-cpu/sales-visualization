@@ -1,6 +1,8 @@
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.1.5",
+    [string]$IncludeKeyPath = "",
     [switch]$SkipWallpaperAssets,
+    [switch]$NoInstaller,
     [switch]$NoPublishDownload
 )
 
@@ -12,6 +14,8 @@ $wwwroot = Join-Path $PSScriptRoot "wwwroot"
 $publishRoot = Join-Path $PSScriptRoot "publish"
 $appOut = Join-Path $publishRoot "app"
 $zipPath = Join-Path $publishRoot ("SalesWallpaperEngine-{0}.zip" -f $Version)
+$setupPath = Join-Path $publishRoot ("SalesWallpaperEngine-Setup-{0}.exe" -f $Version)
+$installerPayload = Join-Path $publishRoot "installer-payload"
 $downloadDir = Join-Path $desktopDir "download\wallpaper-engine"
 $publicBase = "http://198.51.100.10/download/wallpaper-engine"
 
@@ -112,15 +116,164 @@ Compress-Archive -Path (Join-Path $appOut "*") -DestinationPath $zipPath -Force
 
 $hash = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()
 $size = (Get-Item $zipPath).Length
+$setupHash = ""
+$setupSize = 0
+
+if (-not $NoInstaller) {
+    $iexpress = (Get-Command iexpress.exe -ErrorAction SilentlyContinue).Source
+    if (-not $iexpress) {
+        Write-Warning "iexpress.exe was not found; skipping setup exe generation."
+    } else {
+        if (Test-Path $installerPayload) {
+            $resolvedInstallerPayload = (Resolve-Path $installerPayload).Path
+            if (-not $resolvedInstallerPayload.StartsWith($publishRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Refusing to clear unexpected installer payload: $resolvedInstallerPayload"
+            }
+            Remove-Item -LiteralPath $resolvedInstallerPayload -Recurse -Force
+        }
+        New-Item -ItemType Directory -Force -Path $installerPayload | Out-Null
+
+        $installerAppZip = Join-Path $installerPayload "SalesWallpaperEngine-app.zip"
+        Compress-Archive -Path (Join-Path $appOut "*") -DestinationPath $installerAppZip -Force
+        Copy-Item -Path (Join-Path $PSScriptRoot "install-user.ps1") -Destination (Join-Path $installerPayload "install-user.ps1") -Force
+
+        $keyArgs = ""
+        if ($IncludeKeyPath) {
+            $resolvedKeyPath = (Resolve-Path $IncludeKeyPath).Path
+            Copy-Item -LiteralPath $resolvedKeyPath -Destination (Join-Path $installerPayload "wallpaper-key.json") -Force
+            $keyArgs = ' -KeyFile "%~dp0wallpaper-key.json" -DeployBundledKey'
+        }
+
+        $installCmd = @"
+@echo off
+setlocal
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install-user.ps1" -PackageZip "%~dp0SalesWallpaperEngine-app.zip"$keyArgs
+if errorlevel 1 (
+  echo.
+  echo Sales Wallpaper Engine installation failed.
+  pause
+  exit /b %errorlevel%
+)
+exit /b 0
+"@
+        Set-Content -Path (Join-Path $installerPayload "install-wallpaper.cmd") -Value $installCmd -Encoding ASCII
+
+        $payloadFiles = @(
+            "install-wallpaper.cmd",
+            "install-user.ps1",
+            "SalesWallpaperEngine-app.zip"
+        )
+        if ($IncludeKeyPath) {
+            $payloadFiles += "wallpaper-key.json"
+        }
+
+        $sourceFileLines = for ($i = 0; $i -lt $payloadFiles.Count; $i++) {
+            "%FILE$i%="
+        }
+        $stringFileLines = for ($i = 0; $i -lt $payloadFiles.Count; $i++) {
+            "FILE$i=$($payloadFiles[$i])"
+        }
+        $sedPath = Join-Path $installerPayload "SalesWallpaperEngine-Setup.sed"
+        $sed = @"
+[Version]
+Class=IEXPRESS
+SEDVersion=3
+
+[Options]
+PackagePurpose=InstallApp
+ShowInstallProgramWindow=0
+HideExtractAnimation=1
+UseLongFileName=1
+InsideCompressed=0
+CAB_FixedSize=0
+CAB_ResvCodeSigning=0
+RebootMode=N
+InstallPrompt=%InstallPrompt%
+DisplayLicense=%DisplayLicense%
+FinishMessage=%FinishMessage%
+TargetName=%TargetName%
+FriendlyName=%FriendlyName%
+AppLaunched=%AppLaunched%
+PostInstallCmd=%PostInstallCmd%
+AdminQuietInstCmd=%AppLaunched%
+UserQuietInstCmd=%AppLaunched%
+SourceFiles=SourceFiles
+
+[Strings]
+InstallPrompt=
+DisplayLicense=
+FinishMessage=Sales Wallpaper Engine installed.
+TargetName=$setupPath
+FriendlyName=Sales Wallpaper Engine $Version
+AppLaunched=install-wallpaper.cmd
+PostInstallCmd=<None>
+$($stringFileLines -join "`r`n")
+
+[SourceFiles]
+SourceFiles0=$installerPayload
+
+[SourceFiles0]
+$($sourceFileLines -join "`r`n")
+"@
+        [System.IO.File]::WriteAllText($sedPath, $sed, [System.Text.Encoding]::ASCII)
+
+        if (Test-Path $setupPath) {
+            Remove-Item -LiteralPath $setupPath -Force
+        }
+        & $iexpress /N /Q $sedPath
+        $iexpressExitCode = $LASTEXITCODE
+        $setupDeadline = (Get-Date).AddSeconds(60)
+        $lastSetupSize = -1
+        $stableSetupChecks = 0
+        while ((Get-Date) -lt $setupDeadline) {
+            if (Test-Path $setupPath) {
+                $currentSetupSize = (Get-Item $setupPath).Length
+                if ($currentSetupSize -gt 1048576 -and $currentSetupSize -eq $lastSetupSize) {
+                    $stableSetupChecks++
+                    if ($stableSetupChecks -ge 4) {
+                        break
+                    }
+                } else {
+                    $stableSetupChecks = 0
+                }
+                $lastSetupSize = $currentSetupSize
+            }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not (Test-Path $setupPath)) {
+            throw "iexpress setup generation failed"
+        }
+        if ((Get-Item $setupPath).Length -le 1048576) {
+            throw "iexpress setup generation did not produce a complete setup exe"
+        }
+        if ($iexpressExitCode -ne 0) {
+            Write-Warning "iexpress.exe returned exit code $iexpressExitCode after generating the setup exe."
+        }
+        $setupHash = (Get-FileHash -Algorithm SHA256 -Path $setupPath).Hash.ToLowerInvariant()
+        $setupSize = (Get-Item $setupPath).Length
+    }
+}
 
 if (-not $NoPublishDownload) {
     New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
     Copy-Item -Path $zipPath -Destination (Join-Path $downloadDir (Split-Path $zipPath -Leaf)) -Force
+    $installerUrl = ""
+    if ($setupSize -gt 0) {
+        $downloadSetupPath = Join-Path $downloadDir (Split-Path $setupPath -Leaf)
+        if (Test-Path $downloadSetupPath) {
+            Remove-Item -LiteralPath $downloadSetupPath -Force
+        }
+        Copy-Item -LiteralPath $setupPath -Destination $downloadSetupPath -Force
+        $installerUrl = "$publicBase/$(Split-Path $setupPath -Leaf)"
+    }
     $manifest = [ordered]@{
         version = $Version
         url = "$publicBase/$(Split-Path $zipPath -Leaf)"
         size = $size
         sha256 = $hash
+        installerUrl = $installerUrl
+        installerSize = $setupSize
+        installerSha256 = $setupHash
         package = "SalesWallpaperEngine"
         notes = @(
             "SalesWallpaperNative retired and replaced by a new host/player engine.",
@@ -130,7 +283,8 @@ if (-not $NoPublishDownload) {
             "Compacts the tray menu and shortens the displayed version label.",
             "Adds authorized year/month retail volume and sales amount HUD.",
             "Colors per-fuel inventory rows by capacity fill level without changing station status colors.",
-            "Adds tray-driven package update install and Windows taskbar safe-area placement.",
+            "Enables true auto-update by default: download, SHA256 verify, replace files, and restart the engine.",
+            "Keeps tray-driven manual update install available for computers with autoInstallUpdates disabled.",
             "Wallpaper updates are independent from the main SalesDesktop client version."
         )
     }
@@ -144,3 +298,7 @@ if (-not $NoPublishDownload) {
 
 Write-Host "Built $zipPath"
 Write-Host "SHA256 $hash"
+if ($setupSize -gt 0) {
+    Write-Host "Built $setupPath"
+    Write-Host "Setup SHA256 $setupHash"
+}

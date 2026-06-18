@@ -19,6 +19,7 @@ const REGION_ZH_RU: Record<string, string> = {
   'CTY-20': 'CTY-14 область', 'REG-05': 'CTY-16 область',
   'REG-02': 'CTY-03', 'CTY-19': 'CTY-17 область',
   'REG-04': 'CTY-02', 'REG-06': 'CTY-04', 'REG-07': 'CTY-05',
+  'REG-08': 'CTY-08',
 };
 
 const PRODUCT_ZH_RU: Record<string, string> = {

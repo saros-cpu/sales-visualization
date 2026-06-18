@@ -17,8 +17,8 @@ STATIONS = [
     {'name': 'STN-15', 'short': 'S-16', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 8},
     {'name': 'STN-17', 'short': 'S-18', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 9},
     {'name': 'STN-19', 'short': 'S-20', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 10},
-    {'name': 'STN-21', 'short': 'S-22', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 11},
-    {'name': 'STN-23', 'short': 'S-24', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 12},
+    {'name': 'STN-21', 'short': 'S-22', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 11, 'status': 'closed', 'closedReason': '修路占道，无法营业'},
+    {'name': 'STN-23', 'short': 'S-24', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 12, 'status': 'closed', 'closedReason': '修路占道，无法营业'},
     {'name': 'STN-25', 'short': 'S-26', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 13},
     {'name': 'STN-27', 'short': 'S-28', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 14},
     {'name': 'STN-29', 'short': 'S-30', 'region': 'REG-02', 'lng': 0, 'lat': 0, 'shopKey': 15},
@@ -30,7 +30,7 @@ STATIONS = [
     {'name': 'STN-53', 'short': 'S-54', 'region': 'REG-04', 'lng': 0, 'lat': 0, 'shopKey': 27},
     {'name': 'STN-37', 'short': 'S-38', 'region': 'REG-05', 'lng': 0, 'lat': 0, 'shopKey': 19},
     {'name': 'STN-39', 'short': 'S-40', 'region': 'REG-04', 'lng': 0, 'lat': 0, 'shopKey': 20},
-    {'name': 'STN-41', 'short': 'S-42', 'region': 'REG-04', 'lng': 0, 'lat': 0, 'shopKey': 21},
+    {'name': 'STN-41', 'short': 'S-42', 'region': 'REG-04', 'lng': 0, 'lat': 0, 'shopKey': 21, 'status': 'closed', 'closedReason': '停业，库存清零'},
     {'name': 'STN-43', 'short': 'S-44', 'region': 'REG-04', 'lng': 0, 'lat': 0, 'shopKey': 22},
     {'name': 'STN-45', 'short': 'S-46', 'region': 'REG-04', 'lng': 0, 'lat': 0, 'shopKey': 23},
     {'name': 'STN-47', 'short': 'S-48', 'region': 'REG-04', 'lng': 0, 'lat': 0, 'shopKey': 24},
@@ -38,8 +38,9 @@ STATIONS = [
 ]
 
 DEPOTS = [
-    {'name': 'DemoDepotNorth', 'short': 'Север DemoDepot', 'region': 'REG-06', 'lng': 0, 'lat': 0},
-    {'name': 'DemoDepotSouth', 'short': 'Юж DemoDepot', 'region': 'REG-07', 'lng': 0, 'lat': 0},
+    {'name': 'STN-61', 'short': 'Главная нефтебаза', 'region': 'REG-01', 'lng': 0, 'lat': 0, 'type': 'headquarters', 'status': 'normal', 'closedReason': ''},
+    {'name': 'DemoDepotNorth', 'short': 'Север DemoDepot', 'region': 'REG-08', 'lng': 0, 'lat': 0, 'type': 'depot', 'status': 'closed', 'closedReason': '装修停业'},
+    {'name': 'DemoDepotSouth', 'short': 'Юж DemoDepot', 'region': 'REG-07', 'lng': 0, 'lat': 0, 'type': 'depot', 'status': 'normal', 'closedReason': ''},
 ]
 
 # 角色 → 可见图层

@@ -46,7 +46,7 @@ internal sealed class RuntimeConfig
             WallpaperToken = (Environment.GetEnvironmentVariable("SALES_WALLPAPER_TOKEN") ?? ReadString(fileConfig, "wallpaperToken") ?? "").Trim(),
             UpdateManifestUrl = NormalizeHost(Environment.GetEnvironmentVariable("SALES_WALLPAPER_ENGINE_UPDATE_MANIFEST") ?? ReadString(fileConfig, "updateManifestUrl") ?? $"{apiHost}/download/wallpaper-engine/latest.json"),
             AutoUpdateEnabled = ReadBool(fileConfig, "autoUpdateEnabled") ?? true,
-            AutoInstallUpdates = ReadBool(fileConfig, "autoInstallUpdates") ?? false,
+            AutoInstallUpdates = ReadBool(fileConfig, "autoInstallUpdates") ?? true,
             ReattachSeconds = Math.Clamp(ReadInt(fileConfig, "reattachSeconds") ?? 10, 5, 120),
             PlayerStartupTimeoutSeconds = Math.Clamp(ReadInt(fileConfig, "playerStartupTimeoutSeconds") ?? 15, 5, 60),
             KeySource = keySource ?? "",

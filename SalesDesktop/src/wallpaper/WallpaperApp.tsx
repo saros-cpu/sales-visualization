@@ -179,6 +179,10 @@ function mapDataVersion(payload: WallpaperPayload | null) {
   }).join('|');
   const depotVersion = (payload.depots || []).map((depot) => [
     depot.name,
+    depot.region || '',
+    depot.lng ?? '',
+    depot.lat ?? '',
+    depot.type || '',
     depot.status || '',
     depot.closedReason || '',
   ].join(':')).join('|');
@@ -218,13 +222,13 @@ function fallbackPayloadFromBusinessPoints(): WallpaperPayload {
       : [];
     const depots = Array.isArray(data.depots)
       ? data.depots
-          .filter((item: any) => item?.type !== 'headquarters')
           .map((item: any) => ({
             name: String(item.name || item.nameRu || ''),
             short: String(item.short || item.name || item.nameRu || ''),
             region: String(item.region || ''),
             lng: Number(item.lng),
             lat: Number(item.lat),
+            type: item.type,
             status: item.status || 'normal',
             closedReason: item.closedReason,
           }))

@@ -31,18 +31,6 @@ function Invoke-Check {
         }
     }
 
-    $auditScript = Join-Path $RepoRoot "scripts/audit-desktop-installer.ps1"
-    $referenceInstaller = Join-Path $RepoRoot "SalesDesktop/release_build/SalesDesktop Setup 3.9.17.exe"
-    if (-not (Test-Path -LiteralPath $referenceInstaller -PathType Leaf)) {
-        $referenceInstaller = Join-Path $RepoRoot "SalesDesktop/download/SalesDesktop Setup 3.9.17.exe"
-    }
-    Invoke-External "powershell" @(
-        "-ExecutionPolicy", "Bypass",
-        "-File", $auditScript,
-        "-Installer", $installer,
-        "-ReferenceInstaller", $referenceInstaller,
-        "-Version", $version
-    ) $RepoRoot
 }
 
 function Invoke-External {
@@ -166,6 +154,19 @@ Invoke-Check "Desktop updater package files" {
             }
         }
     }
+
+    $auditScript = Join-Path $RepoRoot "scripts/audit-desktop-installer.ps1"
+    $referenceInstaller = Join-Path $RepoRoot "SalesDesktop/release_build/SalesDesktop Setup 3.9.17.exe"
+    if (-not (Test-Path -LiteralPath $referenceInstaller -PathType Leaf)) {
+        $referenceInstaller = Join-Path $RepoRoot "SalesDesktop/download/SalesDesktop Setup 3.9.17.exe"
+    }
+    Invoke-External "powershell" @(
+        "-ExecutionPolicy", "Bypass",
+        "-File", $auditScript,
+        "-Installer", $installer,
+        "-ReferenceInstaller", $referenceInstaller,
+        "-Version", $version
+    ) $RepoRoot
 }
 
 Invoke-Check "Nginx download route shape" {

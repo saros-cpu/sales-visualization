@@ -30,6 +30,7 @@ from export_excel import (
     SK6_RSK_MAP,
     SK28_RSK_MAP,
     SK29_RSK_MAP,
+    SK30_RSK_MAP,
     STATION_RK_CORRECTIONS,
     _allow_fixed_density_fallback,
     _selling_mass_expr,
@@ -249,8 +250,12 @@ def infer_balance_resource_key(shop_key, resource_key, price=None, resource_shop
         return canonical_resource_key(SK6_RSK_MAP[rsk])
     if sk == 4 and rsk in SK4_RSK_MAP:
         return canonical_resource_key(SK4_RSK_MAP[rsk])
+    if sk == 30 and rsk:
+        return canonical_resource_key(SK30_RSK_MAP.get(rsk, 0))
     if sk == 29 and rsk in SK29_RSK_MAP:
         return canonical_resource_key(SK29_RSK_MAP[rsk])
+    if sk == 30 and rk not in {102, 103}:
+        return 0
     corrected = STATION_RK_CORRECTIONS.get((sk, rk))
     if corrected:
         return canonical_resource_key(corrected)

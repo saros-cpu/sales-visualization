@@ -88,10 +88,28 @@ function Expand-DesktopInstaller {
     New-Item -ItemType Directory -Force -Path $outer, $app | Out-Null
     $TempRoots.Add($tempRoot) | Out-Null
 
+    try {
+        Invoke-SevenZip @("x", $Path, "-o$app", "-y")
+    } catch {
+        Write-Host "  Direct installer extraction failed for ${Label}; trying legacy NSIS inner archive..."
+    }
+    if (Test-Path -LiteralPath (Join-Path $app "resources\app.asar") -PathType Leaf) {
+        return [PSCustomObject]@{
+            Label = $Label
+            Installer = $Path
+            Root = $tempRoot
+            App = $app
+        }
+    }
+
+    if (Test-Path -LiteralPath $app) {
+        Remove-Item -LiteralPath $app -Recurse -Force
+        New-Item -ItemType Directory -Force -Path $app | Out-Null
+    }
     Invoke-SevenZip @("x", $Path, '$PLUGINSDIR\app-64.7z', "-o$outer", "-y")
     $inner = Get-ChildItem -Path $outer -Filter "app-64.7z" -Recurse -File | Select-Object -First 1
     if (-not $inner) {
-        throw "$Label installer does not contain `$PLUGINSDIR\app-64.7z"
+        throw "$Label installer does not contain resources\app.asar or `$PLUGINSDIR\app-64.7z"
     }
     Invoke-SevenZip @("x", $inner.FullName, "-o$app", "-y")
     return [PSCustomObject]@{

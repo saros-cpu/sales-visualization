@@ -24,6 +24,7 @@ FAKE_CONSTANTS = SimpleNamespace(
     },
     CLOSED_STATIONS={2: "停业测试"},
     FORCE_NORMAL_STATIONS=set(),
+    MAP_ZERO_INVENTORY_STATIONS=set(),
     DEPOT_COORDS={
         "DemoDepotNorth": {"lng": 0, "lat": 0, "region": "REG-06", "short": "North Depot", "status": "normal"},
     },
@@ -84,6 +85,8 @@ class WallpaperMapTests(unittest.TestCase):
         self.assertFalse(payload["sensitiveData"])
         self.assertNotIn("inventoryByResource", payload["stations"][0])
         self.assertNotIn("salesSummary", payload)
+        self.assertEqual(payload["summary"]["depotCount"], 1)
+        self.assertEqual(payload["depots"][0]["type"], "depot")
         self.assertIsNone(payload["summary"]["inventoryLiters"])
         self.assertEqual(payload["summary"]["stationCount"], 2)
 
@@ -106,6 +109,28 @@ class WallpaperMapTests(unittest.TestCase):
         self.assertTrue(payload["sensitiveData"])
         self.assertEqual(payload["stations"][0]["inventory"], 1234.5)
         self.assertEqual(payload["summary"]["inventoryLiters"], 1234.5)
+
+    def test_wallpaper_zero_inventory_station_overrides_stale_detail(self):
+        constants = SimpleNamespace(
+            **{
+                **FAKE_CONSTANTS.__dict__,
+                "CLOSED_STATIONS": {1: "停业，库存清零"},
+                "MAP_ZERO_INVENTORY_STATIONS": {1},
+            }
+        )
+        with patch.object(api, "_wallpaper_oilstation_constants", return_value=constants), \
+             patch.object(api, "_wallpaper_active_statuses", return_value={}), \
+             patch.object(api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
+             patch.object(api, "_wallpaper_sales_summary", return_value=SALES_SUMMARY), \
+             patch.object(api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}), \
+             patch.dict(os.environ, {"SALES_WALLPAPER_TOKEN": "secret"}, clear=False):
+            response = self.client.get("/api/wallpaper/map", headers={"X-Wallpaper-Token": "secret"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()["data"]
+        self.assertEqual(payload["stations"][0]["inventory"], 0.0)
+        self.assertEqual(payload["stations"][0]["inventoryByResource"][0]["inventory"], 0.0)
+        self.assertTrue(payload["stations"][0]["inventoryZeroedByMapRule"])
+        self.assertEqual(payload["summary"]["inventoryLiters"], 0.0)
 
     def test_wallpaper_trusted_ip_allows_inventory_details_without_token(self):
         with patch.dict(os.environ, {"SALES_WALLPAPER_TOKEN": "", "SALES_WALLPAPER_TRUSTED_IPS": "10.8.0.100"}, clear=False):

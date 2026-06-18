@@ -15,7 +15,7 @@ internal sealed class EngineApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _watchTimer;
     private readonly System.Windows.Forms.Timer _updateTimer;
     private readonly ToolStripMenuItem _statusItem = new();
-    private readonly ToolStripMenuItem _downloadUpdateItem = new("下载新版本");
+    private readonly ToolStripMenuItem _downloadUpdateItem = new("安装新版本");
     private Process? _playerProcess;
     private IntPtr _playerHandle = IntPtr.Zero;
     private WallpaperUpdateInfo? _pendingUpdate;
@@ -81,7 +81,7 @@ internal sealed class EngineApplicationContext : ApplicationContext
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("重启壁纸", null, async (_, _) => await RestartWallpaperAsync());
-        menu.Items.Add("检查更新", null, async (_, _) => await CheckForUpdatesAsync(true));
+        menu.Items.Add("检查并安装更新", null, async (_, _) => await CheckForUpdatesAsync(true));
         menu.Items.Add(_downloadUpdateItem);
         menu.Items.Add("打开配置目录", null, (_, _) => OpenDirectory(AppPaths.DataDir));
         menu.Items.Add(advancedMenu);
@@ -185,7 +185,7 @@ internal sealed class EngineApplicationContext : ApplicationContext
             {
                 _downloadUpdateItem.Enabled = false;
                 _downloadUpdateItem.Visible = false;
-                _downloadUpdateItem.Text = "下载新版本";
+                _downloadUpdateItem.Text = "安装新版本";
                 if (notifyWhenCurrent)
                 {
                     _trayIcon.ShowBalloonTip(2500, "壁纸引擎", "当前已是最新版本", ToolTipIcon.Info);
@@ -196,7 +196,10 @@ internal sealed class EngineApplicationContext : ApplicationContext
             _downloadUpdateItem.Enabled = true;
             _downloadUpdateItem.Visible = true;
             _downloadUpdateItem.Text = $"安装更新 {update.Version}";
-            _trayIcon.ShowBalloonTip(4000, "壁纸引擎有更新", $"发现 {update.Version}，可在托盘菜单安装。", ToolTipIcon.Info);
+            var updateMessage = _config.AutoInstallUpdates
+                ? $"发现 {update.Version}，将下载、校验并安装。"
+                : $"发现 {update.Version}，可在托盘菜单安装。";
+            _trayIcon.ShowBalloonTip(4000, "壁纸引擎有更新", updateMessage, ToolTipIcon.Info);
             if (_config.AutoInstallUpdates)
             {
                 await InstallUpdateAsync(update);

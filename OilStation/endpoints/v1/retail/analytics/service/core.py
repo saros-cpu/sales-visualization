@@ -19,6 +19,7 @@ from constants import (
     CLOSED_STATIONS,
     DEPOT_COORDS,
     FORCE_NORMAL_STATIONS,
+    MAP_ZERO_INVENTORY_STATIONS,
     SHOP_COORDS,
     SHOP_KEY_MAP,
 )
@@ -26,6 +27,7 @@ from db import get_connection
 from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, SK29_RSK_MAP, STATION_RK_CORRECTIONS
 
 from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, query_month_summary
+from endpoints.v1.retail.analytics.service.shared import _resource_key_from_report_name, _to_float
 from endpoints.v1.retail.analytics.service.shared import *
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -75,6 +77,13 @@ def _attach_region_snapshot_comparisons(year_month: str, payload: dict) -> bool:
 
 STATION_MAP_DETAILS_TTL = 600
 STATION_MAP_DETAILS_CACHE_KEY = "station_map_details:latest"
+FUELBALANCE_WAREHOUSE_RESOURCE_MAP = {
+    6: {1: 106, 2: 102, 3: 103, 4: 104},
+    30: {1: 102, 2: 103},
+}
+STATION_RESOURCE_ALLOWLIST = {
+    30: {102, 103},
+}
 
 
 def _load_env_file(path):
@@ -342,6 +351,8 @@ def _latest_completed_shift_marker_for_map():
 def _station_map_details_cache_current(cached):
     if not isinstance(cached, dict):
         return True
+    if not _station_map_details_has_depots(cached):
+        return False
     if not _station_map_details_has_capacity(cached):
         return False
     _, workbook_path = _latest_report_workbook_for_map()
@@ -374,15 +385,55 @@ def _station_map_details_cache_current(cached):
     )
 
 
+def _station_map_depots():
+    return [
+        {
+            "name": name,
+            "short": data.get("short", ""),
+            "region": data.get("region", ""),
+            "lng": data.get("lng"),
+            "lat": data.get("lat"),
+            "type": data.get("type", "depot"),
+            "status": data.get("status", "normal"),
+            "closedReason": data.get("closedReason", ""),
+        }
+        for name, data in DEPOT_COORDS.items()
+    ]
+
+
+def _station_map_details_has_depots(payload):
+    expected = len(DEPOT_COORDS or {})
+    if expected <= 0:
+        return True
+    depots = payload.get("depots") if isinstance(payload, dict) else []
+    if not isinstance(depots, list) or len(depots) < expected:
+        return False
+    return all(
+        isinstance(item, dict)
+        and item.get("name")
+        and item.get("lng") is not None
+        and item.get("lat") is not None
+        for item in depots
+    )
+
+
 def _station_map_details_has_capacity(payload):
     items = payload.get("items") if isinstance(payload, dict) else []
     if not isinstance(items, list):
         return False
+    has_inventory_row = False
+    has_known_capacity = False
     for item in items:
         rows = item.get("inventoryByResource") if isinstance(item, dict) else []
-        if rows and not all("fillStatus" in row for row in rows if isinstance(row, dict)):
-            return False
-    return True
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            has_inventory_row = True
+            if "fillStatus" not in row:
+                return False
+            if row.get("fillStatus") in {"ok", "warning", "critical"}:
+                has_known_capacity = True
+    return not has_inventory_row or has_known_capacity
 
 
 def _inventory_fill_status(percent):
@@ -395,6 +446,114 @@ def _inventory_fill_status(percent):
     if value < 50:
         return "warning"
     return "ok"
+
+
+def _station_resource_allowed(shop_key, resource_key):
+    allowlist = STATION_RESOURCE_ALLOWLIST.get(int(shop_key or 0))
+    return not allowlist or int(resource_key or 0) in allowlist
+
+
+def _infer_fuelbalance_resource_key(shop_key, resource_code, resource_name, price, warehouse_key=None):
+    # Resource names avoid price-threshold drift after fuel price changes.
+    sk = int(shop_key or 0)
+    name_key = _resource_key_from_report_name(resource_name)
+    if name_key in KNOWN_RESOURCE_KEYS:
+        return canonical_resource_key(name_key)
+    try:
+        wk = int(warehouse_key or 0)
+    except (TypeError, ValueError):
+        wk = 0
+    mapped = FUELBALANCE_WAREHOUSE_RESOURCE_MAP.get(sk, {}).get(wk)
+    if mapped:
+        return canonical_resource_key(mapped)
+    return infer_balance_resource_key(shop_key, resource_code, price, None)
+
+
+def _fuelbalance_observed_capacity_by_tank(rows):
+    values_by_tank = {}
+    for shop_key, warehouse_key, resource_key, resource_name, price, volume in rows:
+        try:
+            sk = int(shop_key)
+            wk = str(warehouse_key)
+            amount = float(volume or 0)
+        except (TypeError, ValueError):
+            continue
+        if amount <= 0:
+            continue
+        rk = _infer_fuelbalance_resource_key(sk, resource_key, resource_name, price, warehouse_key)
+        if rk < 100 or rk not in KNOWN_RESOURCE_KEYS or not _station_resource_allowed(sk, rk):
+            continue
+        values_by_tank.setdefault((sk, wk, rk), []).append(amount)
+
+    observed = {}
+    for key, values in values_by_tank.items():
+        values.sort()
+        percentile_index = int((len(values) - 1) * 0.95)
+        observed[key] = round(values[percentile_index], 2)
+    return observed
+
+
+def _latest_fuelbalance_tank_rows(rows):
+    latest = {}
+    anonymous_index = 0
+    for row in rows:
+        shop_key, warehouse_key, resource_key, resource_name, price, volume, capacity, created_at = row
+        try:
+            sk = int(shop_key)
+        except (TypeError, ValueError):
+            continue
+        if warehouse_key is None:
+            anonymous_index += 1
+            tank_key = (sk, f"row:{anonymous_index}")
+        else:
+            tank_key = (sk, str(warehouse_key))
+        score = (
+            1 if float(capacity or 0) > 0 else 0,
+            float(volume or 0),
+            float(price or 0),
+        )
+        existing = latest.get(tank_key)
+        if existing is None or score > existing[0]:
+            latest[tank_key] = (score, row)
+    return [item[1] for item in latest.values()]
+
+
+def _fuelbalance_capacity_by_resource_from_rows(rows, warehouseinfo_keys=None, observed_by_tank=None):
+    warehouseinfo_keys = warehouseinfo_keys or set()
+    observed_by_tank = observed_by_tank or {}
+    latest_tanks = {}
+    anonymous_index = 0
+    for row in rows:
+        shop_key, warehouse_key, resource_key, resource_name, price, capacity = row[:6]
+        volume = row[6] if len(row) > 6 else None
+        try:
+            sk = int(shop_key)
+            cap = float(capacity or 0)
+        except (TypeError, ValueError):
+            continue
+        if warehouse_key is None:
+            anonymous_index += 1
+            tank_key = (sk, f"row:{anonymous_index}")
+        else:
+            tank_key = (sk, str(warehouse_key))
+        rk = _infer_fuelbalance_resource_key(sk, resource_key, resource_name, price, warehouse_key)
+        if rk < 100 or rk not in KNOWN_RESOURCE_KEYS or not _station_resource_allowed(sk, rk):
+            continue
+        if cap <= 0:
+            cap = max(float(volume or 0), float(observed_by_tank.get((sk, tank_key[1], rk)) or 0))
+        if cap <= 0:
+            continue
+        existing = latest_tanks.get(tank_key)
+        if existing is None or cap > existing[-1]:
+            latest_tanks[tank_key] = (sk, rk, cap)
+
+    result = {}
+    for sk, rk, capacity in latest_tanks.values():
+        key = (sk, rk)
+        if key in warehouseinfo_keys:
+            continue
+        result[key] = round(result.get(key, 0.0) + capacity, 2)
+    return result
 
 
 def _station_inventory_capacity_by_resource():
@@ -423,6 +582,39 @@ def _station_inventory_capacity_by_resource():
                 continue
             key = (sk, rk)
             result[key] = round(result.get(key, 0.0) + float(capacity or 0), 2)
+        warehouseinfo_keys = set(result)
+        cur.execute(
+            f"""
+            SELECT fb.ShopKey, fb.WarehouseKey, fb.ResourceCode, fb.ResourceName,
+                   fb.CurrentPrice, fb.VolumeMaximum, fb.VolumeBalance
+            FROM fuelbalance fb
+            JOIN (
+                SELECT ShopKey, WarehouseKey, MAX(CreateDatetime) AS max_dt
+                FROM fuelbalance
+                WHERE ShopKey IN ({station_key_sql})
+                  AND CreateDatetime >= DATE_SUB(NOW(), INTERVAL 365 DAY)
+                  AND (VolumeMaximum > 0 OR VolumeBalance > 0 OR CurrentPrice > 0)
+                GROUP BY ShopKey, WarehouseKey
+            ) latest
+              ON latest.ShopKey = fb.ShopKey
+             AND latest.WarehouseKey = fb.WarehouseKey
+             AND latest.max_dt = fb.CreateDatetime
+            WHERE fb.ShopKey IN ({station_key_sql})
+              AND (fb.VolumeMaximum > 0 OR fb.VolumeBalance > 0 OR fb.CurrentPrice > 0)
+            """
+        )
+        latest_rows = cur.fetchall()
+        cur.execute(
+            f"""
+            SELECT ShopKey, WarehouseKey, ResourceCode, ResourceName, CurrentPrice, VolumeBalance
+            FROM fuelbalance
+            WHERE ShopKey IN ({station_key_sql})
+              AND VolumeBalance > 0
+              AND CreateDatetime >= DATE_SUB(NOW(), INTERVAL 365 DAY)
+            """
+        )
+        observed = _fuelbalance_observed_capacity_by_tank(cur.fetchall())
+        result.update(_fuelbalance_capacity_by_resource_from_rows(latest_rows, warehouseinfo_keys, observed))
     finally:
         conn.close()
     return result
@@ -460,6 +652,53 @@ def _attach_station_inventory_levels(details):
         else:
             detail["inventoryFillStatus"] = "unknown"
     return details
+
+
+def _apply_station_map_inventory_overrides(details):
+    zero_keys = set(MAP_ZERO_INVENTORY_STATIONS or set())
+    if not zero_keys:
+        return False
+    changed = False
+    iterable = details.values() if isinstance(details, dict) else details
+    for detail in iterable or []:
+        if not isinstance(detail, dict):
+            continue
+        try:
+            shop_key = int(detail.get("shopKey") or 0)
+        except (TypeError, ValueError):
+            continue
+        if shop_key not in zero_keys:
+            continue
+        reason = CLOSED_STATIONS.get(shop_key) or "停业，库存清零"
+        if float(detail.get("inventory") or 0) != 0:
+            changed = True
+        detail["inventory"] = 0.0
+        detail["inventoryZeroedByMapRule"] = True
+        detail["inventoryZeroReason"] = reason
+        total_capacity = 0.0
+        for row in detail.get("inventoryByResource") or []:
+            if not isinstance(row, dict):
+                continue
+            if float(row.get("inventory") or 0) != 0:
+                changed = True
+            row["inventory"] = 0.0
+            capacity = float(row.get("capacity") or 0)
+            if capacity > 0:
+                row["fillPercent"] = 0.0
+                row["fillStatus"] = "critical"
+                total_capacity += capacity
+            elif "fillPercent" in row:
+                row["fillPercent"] = 0.0
+                row["fillStatus"] = "unknown"
+        if total_capacity <= 0:
+            total_capacity = float(detail.get("inventoryCapacity") or 0)
+        if total_capacity > 0:
+            detail["inventoryCapacity"] = round(total_capacity, 2)
+            detail["inventoryFillPercent"] = 0.0
+            detail["inventoryFillStatus"] = "critical"
+        else:
+            detail["inventoryFillStatus"] = "unknown"
+    return changed
 
 
 def _report_sheet_last_nonempty_day(workbook):
@@ -554,8 +793,10 @@ def _station_map_details_from_report_snapshot():
                 if item.get("price") is not None
             ]
         _attach_station_inventory_levels(details)
+        _apply_station_map_inventory_overrides(details)
         return {
             "items": list(details.values()),
+            "depots": _station_map_depots(),
             "updatedAt": datetime.now().isoformat(timespec="seconds"),
             "sourceSheet": sheet_name,
             **snapshot_state,
@@ -570,6 +811,8 @@ def _station_map_details_from_report_snapshot():
 def _station_map_details_payload():
     cached = get_cached(STATION_MAP_DETAILS_CACHE_KEY)
     if cached and cache_allowed() and _station_map_details_cache_current(cached):
+        if _apply_station_map_inventory_overrides(cached.get("items") or []):
+            set_cached(STATION_MAP_DETAILS_CACHE_KEY, cached, ttl=STATION_MAP_DETAILS_TTL)
         return cached
 
     snapshot_payload = _station_map_details_from_report_snapshot()
@@ -595,6 +838,7 @@ def _station_map_details_payload():
     price_dates = {}
     inventory_dates = {}
     latest_shifts = {}
+    latest_inventory_marker = None
 
     conn = get_connection()
     try:
@@ -614,7 +858,45 @@ def _station_map_details_payload():
         for shop_key, shift_key, shift_end in cur.fetchall():
             latest_shifts.setdefault(int(shop_key), (int(shift_key), shift_end))
 
-        if latest_shifts:
+        cur.execute(
+            f"""
+            SELECT fb.ShopKey, fb.WarehouseKey, fb.ResourceCode, fb.ResourceName,
+                   fb.CurrentPrice, fb.VolumeBalance, fb.VolumeMaximum, fb.CreateDatetime
+            FROM fuelbalance fb
+            JOIN (
+                SELECT ShopKey, WarehouseKey, MAX(CreateDatetime) AS max_dt
+                FROM fuelbalance
+                WHERE ShopKey IN ({station_key_sql})
+                  AND CreateDatetime >= DATE_SUB(NOW(), INTERVAL 365 DAY)
+                  AND (VolumeBalance > 0 OR CurrentPrice > 0 OR VolumeMaximum > 0)
+                GROUP BY ShopKey, WarehouseKey
+            ) latest
+              ON latest.ShopKey = fb.ShopKey
+             AND latest.WarehouseKey = fb.WarehouseKey
+             AND latest.max_dt = fb.CreateDatetime
+            WHERE fb.ShopKey IN ({station_key_sql})
+              AND (fb.VolumeBalance > 0 OR fb.CurrentPrice > 0 OR fb.VolumeMaximum > 0)
+            ORDER BY fb.ShopKey, fb.WarehouseKey
+            """
+        )
+        for shop_key, warehouse_key, resource_key, resource_name, price, volume_balance, volume_maximum, created_at in _latest_fuelbalance_tank_rows(cur.fetchall()):
+            sk = int(shop_key)
+            rk = _infer_fuelbalance_resource_key(sk, resource_key, resource_name, price, warehouse_key)
+            if rk < 100 or rk not in KNOWN_RESOURCE_KEYS or not _station_resource_allowed(sk, rk):
+                continue
+            volume = round(float(volume_balance or 0), 2)
+            key = (sk, rk)
+            inventory[key] = round(inventory.get(key, 0.0) + volume, 2)
+            if price:
+                prices[key] = round(float(price), 2)
+                price_dates[key] = created_at
+            previous_dt = inventory_dates.get(sk)
+            if previous_dt is None or (created_at and created_at > previous_dt):
+                inventory_dates[sk] = created_at
+            if latest_inventory_marker is None or (created_at and created_at > latest_inventory_marker):
+                latest_inventory_marker = created_at
+
+        if not inventory and latest_shifts:
             conditions = " OR ".join(["(ShopKey = %s AND ShiftKey = %s)" for _ in latest_shifts])
             params = []
             for shop_key, (shift_key, _) in latest_shifts.items():
@@ -632,7 +914,7 @@ def _station_map_details_payload():
             for shop_key, resource_key, end_balance, end_price, resource_shop_key, shift_key in cur.fetchall():
                 sk = int(shop_key)
                 rk = infer_balance_resource_key(sk, resource_key, end_price, resource_shop_key)
-                if rk < 100 or rk not in KNOWN_RESOURCE_KEYS:
+                if rk < 100 or rk not in KNOWN_RESOURCE_KEYS or not _station_resource_allowed(sk, rk):
                     continue
                 key = (sk, rk)
                 inventory[key] = round(inventory.get(key, 0.0) + float(end_balance or 0), 2)
@@ -677,16 +959,19 @@ def _station_map_details_payload():
         detail["snapshotGeneratedAt"] = detail["inventoryAsOf"] or detail["priceAsOf"]
 
     _attach_station_inventory_levels(details)
+    _apply_station_map_inventory_overrides(details)
     latest_shift_end = max((shift_end for _, shift_end in latest_shifts.values() if shift_end), default=None)
+    latest_marker = latest_inventory_marker or latest_shift_end
     generated_at = (
-        latest_shift_end.isoformat(sep=" ", timespec="minutes")
-        if hasattr(latest_shift_end, "isoformat")
+        latest_marker.isoformat(sep=" ", timespec="minutes")
+        if hasattr(latest_marker, "isoformat")
         else datetime.now().isoformat(timespec="minutes")
     )
-    source_mtime = latest_shift_end.timestamp() if hasattr(latest_shift_end, "timestamp") else None
+    source_mtime = latest_marker.timestamp() if hasattr(latest_marker, "timestamp") else None
 
     payload = {
         "items": list(details.values()),
+        "depots": _station_map_depots(),
         "updatedAt": datetime.now().isoformat(timespec="seconds"),
         "source": "live_database",
         "snapshotGeneratedAt": generated_at,
@@ -876,7 +1161,7 @@ def _dashboard_yearly_from_monthly_snapshots(year):
                 "region": data["region"],
                 "lng": data["lng"],
                 "lat": data["lat"],
-                "type": "depot",
+                "type": data.get("type", "depot"),
                 "status": data.get("status", "normal"),
                 "closedReason": data.get("closedReason", ""),
             }

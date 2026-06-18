@@ -520,8 +520,8 @@ def _wallpaper_default_station_status(shop_key, constants_module):
             "statusLabel": "closed",
             "closedReason": closed_stations.get(shop_key) or "",
             "affectsSales": True,
-            "affectsInventory": False,
-            "suppressAlerts": False,
+            "affectsInventory": shop_key in (getattr(constants_module, "MAP_ZERO_INVENTORY_STATIONS", set()) or set()),
+            "suppressAlerts": shop_key in (getattr(constants_module, "MAP_ZERO_INVENTORY_STATIONS", set()) or set()),
             "statusNote": closed_stations.get(shop_key) or "",
             "expectedResumeAt": None,
         }
@@ -540,6 +540,36 @@ def _wallpaper_normal_station_status():
         "statusNote": "",
         "expectedResumeAt": None,
     }
+
+
+def _wallpaper_zero_inventory_detail(detail, shop_key, constants_module):
+    zero_keys = set(getattr(constants_module, "MAP_ZERO_INVENTORY_STATIONS", set()) or set())
+    if shop_key not in zero_keys:
+        return detail or {}
+    closed_stations = getattr(constants_module, "CLOSED_STATIONS", {}) or {}
+    mapped = dict(detail or {})
+    rows = []
+    for row in mapped.get("inventoryByResource") or []:
+        if not isinstance(row, dict):
+            continue
+        capacity = float(row.get("capacity") or 0)
+        item = dict(row)
+        item["inventory"] = 0.0
+        if "fillPercent" in item or capacity > 0:
+            item["fillPercent"] = 0.0
+            item["fillStatus"] = "critical" if capacity > 0 else "unknown"
+        rows.append(item)
+    capacity = float(mapped.get("inventoryCapacity") or 0)
+    mapped["inventory"] = 0.0
+    mapped["inventoryByResource"] = rows
+    mapped["inventoryZeroedByMapRule"] = True
+    mapped["inventoryZeroReason"] = closed_stations.get(shop_key) or "停业，库存清零"
+    if capacity > 0:
+        mapped["inventoryFillPercent"] = 0.0
+        mapped["inventoryFillStatus"] = "critical"
+    elif "inventoryFillStatus" in mapped:
+        mapped["inventoryFillStatus"] = mapped.get("inventoryFillStatus") or "unknown"
+    return mapped
 
 
 @app.route("/api/wallpaper/map")
@@ -574,7 +604,7 @@ def api_wallpaper_map():
         status = statuses.get(shop_key) or _wallpaper_default_station_status(shop_key, constants_module)
         if shop_key in (getattr(constants_module, "FORCE_NORMAL_STATIONS", set()) or set()):
             status = _wallpaper_normal_station_status()
-        detail = detail_by_shop.get(shop_key) or {}
+        detail = _wallpaper_zero_inventory_detail(detail_by_shop.get(shop_key) or {}, shop_key, constants_module)
         station = {
             "shopKey": shop_key,
             "name": info.get("name", ""),
@@ -602,6 +632,8 @@ def api_wallpaper_map():
                 "inventoryCapacity": detail.get("inventoryCapacity"),
                 "inventoryFillPercent": detail.get("inventoryFillPercent"),
                 "inventoryFillStatus": detail.get("inventoryFillStatus") or "unknown",
+                "inventoryZeroedByMapRule": bool(detail.get("inventoryZeroedByMapRule")),
+                "inventoryZeroReason": detail.get("inventoryZeroReason") or "",
                 "inventoryAsOf": detail.get("inventoryAsOf") or "",
                 "snapshotGeneratedAt": detail.get("snapshotGeneratedAt") or details_payload.get("snapshotGeneratedAt") or "",
             })
@@ -616,8 +648,8 @@ def api_wallpaper_map():
             "region": info.get("region", ""),
             "lng": info.get("lng"),
             "lat": info.get("lat"),
-            "type": "depot",
-            "size": 0.55,
+            "type": info.get("type", "depot"),
+            "size": 0.2,
             "status": status,
             "statusType": status,
             "statusLabel": status,

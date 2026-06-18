@@ -791,7 +791,7 @@ def api_dashboard_yearly():
                     'region': data['region'],
                     'lng': data['lng'],
                     'lat': data['lat'],
-                    'type': 'depot',
+                    'type': data.get('type', 'depot'),
                     'status': data.get('status', 'normal'),
                     'closedReason': data.get('closedReason', ''),
                 }
@@ -1770,7 +1770,7 @@ def api_stations(year_month):
             'stations': stations_list,
             'depots': [
                 {'name': k, 'short': v['short'], 'region': v['region'], 'lng': v['lng'], 'lat': v['lat'],
-                 'type': 'depot', 'status': v.get('status', 'normal'),
+                 'type': v.get('type', 'depot'), 'status': v.get('status', 'normal'),
                  'closedReason': v.get('closedReason', '')}
                 for k, v in DEPOT_COORDS.items()
             ],

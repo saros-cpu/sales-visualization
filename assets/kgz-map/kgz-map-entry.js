@@ -1,4 +1,4 @@
-import { Kgz3DMap } from './Kgz3DMap.js?v=20260722-uniform-region';
+import { Kgz3DMap } from './Kgz3DMap.js?v=20260729-depot-cluster';
 
 const BASE_OPTIONS = {
   basePath: '/assets/kgz-map/data/',

@@ -19,6 +19,7 @@ from constants import (
     CLOSED_STATIONS,
     DEPOT_COORDS,
     FORCE_NORMAL_STATIONS,
+    MAP_ZERO_INVENTORY_STATIONS,
     SHOP_COORDS,
     SHOP_KEY_MAP,
 )
@@ -670,6 +671,42 @@ def _report_sheet_last_nonempty_day(workbook):
     return last_day
 
 
+def _apply_station_map_inventory_overrides(details):
+    zero_keys = set(MAP_ZERO_INVENTORY_STATIONS or set())
+    if not zero_keys:
+        return False
+    changed = False
+    iterable = details.values() if isinstance(details, dict) else details
+    for detail in iterable or []:
+        if not isinstance(detail, dict):
+            continue
+        try:
+            shop_key = int(detail.get("shopKey") or 0)
+        except (TypeError, ValueError):
+            continue
+        if shop_key not in zero_keys:
+            continue
+        reason = CLOSED_STATIONS.get(shop_key) or "停业，库存清零"
+        if float(detail.get("inventory") or 0) != 0:
+            changed = True
+        detail["inventory"] = 0.0
+        detail["inventoryZeroedByMapRule"] = True
+        detail["inventoryZeroReason"] = reason
+        for row in detail.get("inventoryByResource") or []:
+            if not isinstance(row, dict):
+                continue
+            if float(row.get("inventory") or 0) != 0:
+                changed = True
+            row["inventory"] = 0.0
+            if "fillPercent" in row:
+                row["fillPercent"] = 0.0
+                row["fillStatus"] = "critical" if float(row.get("capacity") or 0) > 0 else "unknown"
+        if "inventoryFillPercent" in detail:
+            detail["inventoryFillPercent"] = 0.0
+            detail["inventoryFillStatus"] = "critical" if float(detail.get("inventoryCapacity") or 0) > 0 else "unknown"
+    return changed
+
+
 def _station_map_details_from_report_snapshot():
     ym, workbook_path = _latest_report_workbook_for_map()
     if not workbook_path:
@@ -748,6 +785,7 @@ def _station_map_details_from_report_snapshot():
                 for item in rows
                 if item.get("price") is not None
             ]
+        _apply_station_map_inventory_overrides(details)
         return {
             "items": list(details.values()),
             "updatedAt": datetime.now().isoformat(timespec="seconds"),
@@ -764,6 +802,8 @@ def _station_map_details_from_report_snapshot():
 def _station_map_details_payload():
     cached = get_cached(STATION_MAP_DETAILS_CACHE_KEY)
     if cached and cache_allowed() and _station_map_details_cache_current(cached):
+        if _apply_station_map_inventory_overrides(cached.get("items") or []):
+            set_cached(STATION_MAP_DETAILS_CACHE_KEY, cached, ttl=STATION_MAP_DETAILS_TTL)
         return cached
 
     snapshot_payload = _station_map_details_from_report_snapshot()
@@ -870,6 +910,7 @@ def _station_map_details_payload():
         detail["priceAsOf"] = price_dt.isoformat(sep=" ", timespec="minutes") if hasattr(price_dt, "isoformat") else None
         detail["snapshotGeneratedAt"] = detail["inventoryAsOf"] or detail["priceAsOf"]
 
+    _apply_station_map_inventory_overrides(details)
     latest_shift_end = max((shift_end for _, shift_end in latest_shifts.values() if shift_end), default=None)
     generated_at = (
         latest_shift_end.isoformat(sep=" ", timespec="minutes")

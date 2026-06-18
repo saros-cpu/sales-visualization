@@ -20,6 +20,81 @@ function resolveKgzDataPath() {
   return new URL('/kgz-map/data/', window.location.origin).href;
 }
 
+const CORE_DEPOTS = [
+  { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal' },
+  { name: 'DemoDepotNorth', short: 'Север DemoDepot', region: 'REG-08', lng: 0, lat: 0, type: 'depot', status: 'closed', closedReason: '装修停业' },
+  { name: 'DemoDepotSouth', short: 'Юж DemoDepot', region: 'REG-07', lng: 0, lat: 0, type: 'depot', status: 'normal' },
+];
+
+const ZERO_INVENTORY_STATION_KEYS = new Set([11, 12, 21]);
+
+function mapZeroInventoryDetail(detail: any, shopKey: any) {
+  if (!ZERO_INVENTORY_STATION_KEYS.has(Number(shopKey))) return detail || {};
+  const rows = (detail?.inventoryByResource || []).map((row: any) => {
+    const capacity = Number(row?.capacity || 0);
+    return {
+      ...row,
+      inventory: 0,
+      fillPercent: row?.fillPercent !== undefined || capacity > 0 ? 0 : row?.fillPercent,
+      fillStatus: capacity > 0 ? 'critical' : (row?.fillStatus || 'unknown'),
+    };
+  });
+  const capacity = Number(detail?.inventoryCapacity || 0);
+  return {
+    ...(detail || {}),
+    inventory: 0,
+    inventoryByResource: rows,
+    inventoryFillPercent: capacity > 0 ? 0 : detail?.inventoryFillPercent,
+    inventoryFillStatus: capacity > 0 ? 'critical' : (detail?.inventoryFillStatus || 'unknown'),
+    inventoryZeroedByMapRule: true,
+    inventoryZeroReason: detail?.closedReason || '停业，库存清零',
+  };
+}
+
+function depotKey(depot: any) {
+  const name = String(depot?.name || depot?.label || '');
+  if (depot?.type === 'headquarters' || name.includes('总部') || name.includes('公司总部')) return 'hq';
+  if (name.includes('北方')) return 'north';
+  if (name.includes('南方')) return 'south';
+  return name;
+}
+
+function ensureCoreDepots(depots: any[] = []) {
+  const list = Array.isArray(depots) ? [...depots] : [];
+  const keys = new Set(list.map(depotKey));
+  for (const depot of CORE_DEPOTS) {
+    if (!keys.has(depotKey(depot))) list.push(depot);
+  }
+  return list;
+}
+
+function normalizeDepotMarker(depot: any) {
+  const rawName = String(depot?.name || depot?.nameRu || '');
+  const isHeadquarters = depot?.type === 'headquarters' || rawName.includes('总部') || rawName.includes('公司总部');
+  const name = rawName === '公司总部' ? 'STN-61' : rawName;
+  return {
+    ...depot,
+    type: 'depot',
+    depotType: isHeadquarters ? 'headquarters' : 'branch',
+    name,
+    label: name,
+    short: depot?.short || depot?.nameRu || '',
+    status: depot?.status || 'normal',
+    size: isHeadquarters ? 0.26 : 0.22,
+    y: isHeadquarters ? 3.48 : 3.12,
+    renderOrder: 176,
+    color: isHeadquarters ? '#38bdf8' : '#facc15',
+    anchorColor: isHeadquarters ? '#7dd3fc' : '#fde68a',
+    anchorOpacity: 0.78,
+    pinLine: true,
+    opacity: 0.98,
+    hoverScale: 2.25,
+    hoverLift: 0.24,
+    showLabel: false,
+    labelSubtitle: depot?.short || depot?.region || '',
+  };
+}
+
 export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -87,9 +162,14 @@ export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) 
         const visibleTypes = mapRoleVisibleTypes(user?.role);
 
         const allStations = (data.stations || []).map((s: any) => {
-          const detail: any = detailMap.get(Number(s.shopKey)) || {};
+          const detail: any = mapZeroInventoryDetail(detailMap.get(Number(s.shopKey)) || {}, s.shopKey);
+          const status = s.status || (ZERO_INVENTORY_STATION_KEYS.has(Number(s.shopKey)) ? 'closed' : 'normal');
+          const closedReason = s.closedReason || detail.closedReason || (ZERO_INVENTORY_STATION_KEYS.has(Number(s.shopKey)) ? '停业，库存清零' : '');
           return {
-            ...s, type: 'station', size: 0.28,
+            ...s, type: 'station', size: status === 'closed' ? 0.36 : 0.28,
+            status,
+            closedReason,
+            color: status === 'closed' ? '#ef4444' : s.color,
             inventory: Number(detail.inventory || 0),
             inventoryByResource: detail.inventoryByResource || [],
             inventoryAsOf: detail.inventoryAsOf || '',
@@ -97,7 +177,7 @@ export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) 
           };
         });
         const stations = visibleTypes.includes('station') ? allStations : [];
-        const allDepots = (data.depots || []).map((d: any) => ({ ...d, type: 'depot', size: 0.55 }));
+        const allDepots = ensureCoreDepots(data.depots || []).map(normalizeDepotMarker);
         const depots = visibleTypes.includes('depot') ? allDepots : [];
         const allCustomers = (data.customers || []).map((c: any) => ({ ...c, type: 'wholesale_customer', size: 0.35 }));
         const customers = visibleTypes.includes('customer') ? allCustomers : [];
