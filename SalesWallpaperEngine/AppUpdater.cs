@@ -21,7 +21,7 @@ internal static class AppUpdater
             : document.RootElement;
 
         var version = ReadString(root, "version");
-        var packageUrl = ReadString(root, "url");
+        var packageUrl = RuntimeConfig.UpgradeLegacyPublicUrl(ReadString(root, "url"));
         if (string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(packageUrl)) return null;
         if (CompareVersions(version, AppVersion.Current) <= 0) return null;
 
@@ -49,6 +49,7 @@ internal static class AppUpdater
             await remote.CopyToAsync(local, cancellationToken);
         }
 
+        VerifyFileSize(zipPath, update.Size);
         VerifySha256(zipPath, update.Sha256);
         await File.WriteAllTextAsync(scriptPath, BuildApplyScript(), cancellationToken);
 
@@ -104,12 +105,25 @@ internal static class AppUpdater
 
     private static void VerifySha256(string filePath, string expected)
     {
-        if (string.IsNullOrWhiteSpace(expected)) return;
+        if (string.IsNullOrWhiteSpace(expected))
+        {
+            throw new InvalidOperationException("update manifest is missing sha256");
+        }
         using var stream = File.OpenRead(filePath);
         var actual = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
         if (!actual.Equals(expected.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException($"update package sha256 mismatch: {actual}");
+        }
+    }
+
+    private static void VerifyFileSize(string filePath, long expected)
+    {
+        if (expected <= 0) return;
+        var actual = new FileInfo(filePath).Length;
+        if (actual != expected)
+        {
+            throw new InvalidOperationException($"update package size mismatch: expected {expected}, got {actual}");
         }
     }
 
@@ -124,19 +138,49 @@ internal static class AppUpdater
         )
 
         $ErrorActionPreference = "Stop"
-        try {
-            Wait-Process -Id $ParentPid -Timeout 30
-        } catch {
-            Start-Sleep -Milliseconds 800
+
+        $logDir = Join-Path $env:APPDATA "sales-wallpaper-engine\logs"
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+        $logFile = Join-Path $logDir ("apply-update-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+        function Write-Log($msg) {
+            ("{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $msg) | Out-File -FilePath $logFile -Append -Encoding utf8
         }
 
-        $staging = Join-Path ([System.IO.Path]::GetDirectoryName($ZipPath)) "staging"
-        if (Test-Path -LiteralPath $staging) {
-            Remove-Item -LiteralPath $staging -Recurse -Force
+        Write-Log "start"
+        Write-Log "waiting for parent"
+        Wait-Process -Id $ParentPid -Timeout 30 -ErrorAction SilentlyContinue
+        if (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+            Write-Log "parent still running; abort"
+            exit 1
         }
-        New-Item -ItemType Directory -Force -Path $staging | Out-Null
-        Expand-Archive -LiteralPath $ZipPath -DestinationPath $staging -Force
-        Copy-Item -Path (Join-Path $staging "*") -Destination $TargetDir -Recurse -Force
-        Start-Process -FilePath (Join-Path $TargetDir $ExeName) -WorkingDirectory $TargetDir
+
+        try {
+            Write-Log "staging/extract"
+            $staging = Join-Path ([System.IO.Path]::GetDirectoryName($ZipPath)) "staging"
+            if (Test-Path -LiteralPath $staging) {
+                Remove-Item -LiteralPath $staging -Recurse -Force
+            }
+            New-Item -ItemType Directory -Force -Path $staging | Out-Null
+            Expand-Archive -LiteralPath $ZipPath -DestinationPath $staging -Force
+
+            Write-Log "copy"
+            Copy-Item -Path (Join-Path $staging "*") -Destination $TargetDir -Recurse -Force
+        } catch {
+            Write-Log ("apply failed: " + $_.Exception.Message)
+            exit 1
+        }
+
+        $exeBase = [System.IO.Path]::GetFileNameWithoutExtension($ExeName)
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Log ("restart attempt " + $attempt)
+            Start-Process -FilePath (Join-Path $TargetDir $ExeName) -WorkingDirectory $TargetDir
+            Start-Sleep 3
+            if (Get-Process -Name $exeBase -ErrorAction SilentlyContinue) {
+                Write-Log "restart ok"
+                exit 0
+            }
+        }
+        Write-Log "restart failed after 3 attempts"
+        exit 1
         """;
 }

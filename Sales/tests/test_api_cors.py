@@ -1,6 +1,8 @@
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SALES_ROOT = Path(__file__).resolve().parents[1]
@@ -30,11 +32,25 @@ class ApiCorsTests(unittest.TestCase):
         self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), origin)
         self.assertEqual(response.headers.get("Access-Control-Allow-Credentials"), "true")
 
-    def test_electron_file_origin_is_allowed(self):
-        self.assert_allows_origin("file://")
+    def assert_blocks_origin(self, origin):
+        response = self.preflight(origin)
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
 
-    def test_electron_null_origin_is_allowed(self):
-        self.assert_allows_origin("null")
+    def test_legacy_file_origin_is_blocked_by_default(self):
+        with patch.dict(os.environ, {"SALES_LEGACY_ELECTRON_CORS": ""}, clear=False):
+            self.assert_blocks_origin("file://")
+
+    def test_legacy_null_origin_is_blocked_by_default(self):
+        with patch.dict(os.environ, {"SALES_LEGACY_ELECTRON_CORS": ""}, clear=False):
+            self.assert_blocks_origin("null")
+
+    def test_legacy_electron_origin_can_be_enabled_temporarily(self):
+        with patch.dict(os.environ, {"SALES_LEGACY_ELECTRON_CORS": "1"}, clear=False):
+            self.assert_allows_origin("file://")
+
+    def test_desktop_app_origin_is_allowed(self):
+        self.assert_allows_origin("app://salesdesktop")
 
     def test_public_domain_and_ip_origins_are_allowed(self):
         self.assert_allows_origin("http://sales.example.com")
@@ -44,7 +60,7 @@ class ApiCorsTests(unittest.TestCase):
         response = self.client.options(
             "/api/wallpaper/map",
             headers={
-                "Origin": "null",
+                "Origin": "app://salesdesktop",
                 "Access-Control-Request-Method": "GET",
                 "Access-Control-Request-Headers": "X-Wallpaper-Token",
             },

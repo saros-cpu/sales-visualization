@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sales Wallpaper Settings</title>
+    <link rel="stylesheet" href="./settings.css" />
+  </head>
+  <body>
+    <main class="settings-shell">
+      <header class="settings-header">
+        <div>
+          <h1 data-i18n="title">壁纸设置</h1>
+          <p data-i18n="subtitle">调整显示、刷新和 HUD 布局。</p>
+        </div>
+        <button id="langToggle" class="ghost" type="button">RU</button>
+      </header>
+
+      <section class="settings-status" id="statusText" data-i18n="loading">正在读取配置...</section>
+
+      <section class="panel runtime-panel">
+        <h2 data-i18n="currentStatus">当前状态</h2>
+        <div class="runtime-grid">
+          <div><span data-i18n="statusVersion">当前版本</span><b id="runtimeVersion">--</b></div>
+          <div><span data-i18n="statusApi">API 地址</span><b id="runtimeApi">--</b></div>
+          <div><span data-i18n="statusAuth">授权状态</span><b id="runtimeAuth">--</b></div>
+          <div><span data-i18n="statusData">数据状态</span><b id="runtimeData">--</b></div>
+          <div><span data-i18n="statusRefresh">刷新时间</span><b id="runtimeRefresh">--</b></div>
+          <div><span data-i18n="statusUpdate">自动更新</span><b id="runtimeUpdate">--</b></div>
+        </div>
+      </section>
+
+      <form id="settingsForm" class="settings-grid">
+        <section class="panel">
+          <h2 data-i18n="general">基础</h2>
+          <label>
+            <span data-i18n="language">语言</span>
+            <select name="language">
+              <option value="auto">Auto</option>
+              <option value="zh">中文</option>
+              <option value="ru">Русский</option>
+            </select>
+          </label>
+          <label>
+            <span data-i18n="refreshAt">每日刷新时间</span>
+            <input name="refreshAtLocalTime" type="time" step="60" />
+          </label>
+          <label>
+            <span data-i18n="refreshSeconds">兜底刷新秒数</span>
+            <input name="refreshSeconds" type="number" min="300" max="86400" step="60" />
+          </label>
+          <label class="check">
+            <input name="autoUpdateEnabled" type="checkbox" />
+            <span data-i18n="autoCheck">自动检查更新</span>
+          </label>
+          <label class="check">
+            <input name="autoInstallUpdates" type="checkbox" />
+            <span data-i18n="autoInstall">自动安装更新</span>
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2 data-i18n="hud">HUD 显示</h2>
+          <label class="check"><input name="showSalesSummary" type="checkbox" /><span data-i18n="showSales">销售汇总</span></label>
+          <label class="check"><input name="showExchangeRates" type="checkbox" /><span data-i18n="showRates">汇率</span></label>
+          <label class="check"><input name="showInventoryAlerts" type="checkbox" /><span data-i18n="showInventoryAlerts">库存预警</span></label>
+          <label class="check"><input name="showYearVolume" type="checkbox" /><span data-i18n="yearVolume">年销量</span></label>
+          <label class="check"><input name="showYearTons" type="checkbox" /><span data-i18n="yearTons">年吨位</span></label>
+          <label class="check"><input name="showYearAmount" type="checkbox" /><span data-i18n="yearAmount">年销售额</span></label>
+          <label class="check"><input name="showMonthVolume" type="checkbox" /><span data-i18n="monthVolume">月销量</span></label>
+          <label class="check"><input name="showMonthTons" type="checkbox" /><span data-i18n="monthTons">月吨位</span></label>
+          <label class="check"><input name="showMonthAmount" type="checkbox" /><span data-i18n="monthAmount">月销售额</span></label>
+          <label class="check"><input name="showUsdKgs" type="checkbox" /><span data-i18n="usd">美元/索姆</span></label>
+          <label class="check"><input name="showCnyKgs" type="checkbox" /><span data-i18n="cny">人民币/索姆</span></label>
+        </section>
+
+        <section class="panel">
+          <h2 data-i18n="map">地图视野</h2>
+          <label class="check"><input name="showActiveStations" type="checkbox" /><span data-i18n="showActiveStations">显示在营站</span></label>
+          <label class="check"><input name="showClosedStations" type="checkbox" /><span data-i18n="showClosedStations">显示停业/装修站</span></label>
+          <label class="check"><input name="showDepotMarkers" type="checkbox" /><span data-i18n="showDepotMarkers">显示油库点位</span></label>
+          <label class="check"><input name="showInventoryAlertOnly" type="checkbox" /><span data-i18n="showInventoryAlertOnly">仅显示低库存点位</span></label>
+          <label><span>Center X</span><input name="mapCenterX" type="number" step="0.01" /></label>
+          <label><span>Center Y</span><input name="mapCenterY" type="number" step="0.01" /></label>
+          <label><span>Center Z</span><input name="mapCenterZ" type="number" step="0.01" /></label>
+        </section>
+
+        <section class="panel">
+          <h2 data-i18n="layout">HUD 布局</h2>
+          <label><span data-i18n="topScale">顶部缩放</span><input name="hudTopScale" type="number" min="0.5" max="1.5" step="0.01" data-preview="1" /></label>
+          <label><span data-i18n="topX">顶部 X 偏移</span><input name="hudTopOffsetX" type="number" step="1" data-preview="1" /></label>
+          <label><span data-i18n="topY">顶部 Y 偏移</span><input name="hudTopOffsetY" type="number" step="1" data-preview="1" /></label>
+          <label><span data-i18n="salesScale">销售块缩放</span><input name="hudSalesScale" type="number" min="0.5" max="1.5" step="0.01" data-preview="1" /></label>
+          <label><span data-i18n="salesX">销售块 X 偏移</span><input name="hudSalesOffsetX" type="number" step="1" data-preview="1" /></label>
+          <label><span data-i18n="salesY">销售块 Y 偏移</span><input name="hudSalesOffsetY" type="number" step="1" data-preview="1" /></label>
+          <div class="layout-tools">
+            <button id="dragHudBtn" class="secondary" type="button" data-i18n="dragLayout">拖拽调整</button>
+            <button id="saveDragBtn" class="secondary" type="button" data-i18n="saveDragLayout">保存拖拽布局</button>
+            <button id="cancelDragBtn" class="secondary" type="button" data-i18n="cancelDragLayout">取消拖拽</button>
+          </div>
+        </section>
+      </form>
+
+      <footer class="settings-actions">
+        <button id="saveBtn" type="button" data-i18n="save">保存并应用</button>
+        <button id="refreshBtn" class="secondary" type="button" data-i18n="refresh">立即刷新</button>
+      </footer>
+    </main>
+    <script src="/config.js"></script>
+    <script src="./settings.js"></script>
+  </body>
+</html>

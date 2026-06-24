@@ -1,6 +1,12 @@
 import client from './client';
 
-export type AutomationTaskKey = 'exchange_rates' | 'market_watch' | 'retail_snapshots' | 'retail_accounting_reports' | 'all';
+export type AutomationTaskKey =
+  | 'exchange_rates'
+  | 'market_watch'
+  | 'retail_snapshots'
+  | 'retail_accounting_reports'
+  | 'retail_254_monthly_archive'
+  | 'all';
 
 export async function getSystemHealth() {
   const res = await client.get('/system/health');
@@ -17,8 +23,8 @@ export async function generateAccountingReports(date?: string) {
   return res.data;
 }
 
-export async function runAutomationTask(task: AutomationTaskKey) {
-  const res = await client.post('/system/automation-tasks/run', { task });
+export async function runAutomationTask(task: AutomationTaskKey, options?: { month?: string }) {
+  const res = await client.post('/system/automation-tasks/run', { task, ...options });
   return res.data;
 }
 

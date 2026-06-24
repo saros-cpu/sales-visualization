@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   alertStations,
   formatLiters,
+  formatRate,
   formatSom,
+  formatCny,
+  formatTons,
   mapLayers,
+  normalizeStatusLabel,
   normalizeWallpaperPayload,
   stationStatusText,
   topInventoryStations,
@@ -42,6 +46,27 @@ describe('wallpaperData', () => {
     expect(mapLayers(payload).depots[0].y).toBeGreaterThan(2.5);
     expect(mapLayers(payload).depots[0].showLabel).toBe(false);
     expect(stationStatusText('closed')).toBe('停业');
+    expect(stationStatusText('normal', 'normal')).toBe('在营');
+    expect(normalizeStatusLabel('closed', '装修中', '装修停业')).toBe('装修');
+    expect(mapLayers({
+      stations: [{ shopKey: 3, name: 'C', short: 'C', region: '', status: 'normal', statusLabel: 'normal' }],
+      depots: [],
+    }).stations[0].statusLabel).toBe('在营');
+  });
+
+  it('filters wallpaper map markers by display settings', () => {
+    const payload = {
+      sensitiveData: true,
+      stations: [
+        { shopKey: 1, name: 'A', short: 'A', region: '', status: 'normal' },
+        { shopKey: 2, name: 'B', short: 'B', region: '', status: 'closed' },
+        { shopKey: 3, name: 'C', short: 'C', region: '', status: 'normal', inventoryAlerts: [{}] },
+      ],
+      depots: [{ name: 'STN-61', region: 'REG-01', status: 'normal' }],
+    };
+    expect(mapLayers(payload, { showClosedStations: false }).stations.map((item) => item.shopKey)).toEqual([1, 3]);
+    expect(mapLayers(payload, { showInventoryAlertOnly: true }).stations.map((item) => item.shopKey)).toEqual([3]);
+    expect(mapLayers(payload, { showDepotMarkers: false }).depots).toHaveLength(0);
   });
 
   it('formats large liter values compactly', () => {
@@ -50,5 +75,19 @@ describe('wallpaperData', () => {
 
   it('formats som values compactly', () => {
     expect(formatSom(12345678)).toBe('1,234.6 万索姆');
+  });
+
+  it('formats tons values', () => {
+    expect(formatTons(123.456)).toBe('123.5 吨');
+  });
+
+  it('formats cny values compactly', () => {
+    expect(formatCny(12345678)).toBe('1,234.6 万元');
+    expect(formatCny(null)).toBe('--');
+  });
+
+  it('formats exchange rates with four decimals', () => {
+    expect(formatRate(89.12345)).toBe('89.1235');
+    expect(formatRate(null)).toBe('--');
   });
 });

@@ -1,5 +1,5 @@
-param(
-    [string]$Version = "0.1.5",
+﻿param(
+    [string]$Version = "0.2.0",
     [string]$IncludeKeyPath = "",
     [switch]$NoInstaller,
     [switch]$SkipWallpaperAssets

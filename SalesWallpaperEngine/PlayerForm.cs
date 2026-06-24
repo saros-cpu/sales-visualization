@@ -13,6 +13,7 @@ internal sealed class PlayerForm : Form
     private readonly System.Windows.Forms.Timer _pointerTimer = new() { Interval = 50 };
     private Point _lastPointer = new(int.MinValue, int.MinValue);
     private bool _lastPointerInside;
+    private bool _lastLeftDown;
     private bool _pointerScriptBusy;
 
     public PlayerForm(string url, string userDataDir)
@@ -25,8 +26,16 @@ internal sealed class PlayerForm : Form
         ShowInTaskbar = false;
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
-        Bounds = new Rectangle(-32000, -32000, 1280, 720);
         BackColor = Color.Black;
+        var screenBounds = Screen.PrimaryScreen?.Bounds;
+        if (screenBounds.HasValue && screenBounds.Value.Width > 0 && screenBounds.Value.Height > 0)
+        {
+            Bounds = screenBounds.Value;
+        }
+        else
+        {
+            Bounds = new Rectangle(-32000, -32000, 1280, 720);
+        }
 
         _webView.Dock = DockStyle.Fill;
         Controls.Add(_webView);
@@ -73,6 +82,21 @@ internal sealed class PlayerForm : Form
             _webView.CoreWebView2.ProcessFailed += (_, args) =>
             {
                 AppLogger.Warn($"webview process failed kind={args.ProcessFailedKind} reason={args.Reason}");
+                try
+                {
+                    if (!IsDisposed && IsHandleCreated)
+                    {
+                        BeginInvoke(new Action(Close));
+                    }
+                    else
+                    {
+                        Close();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Warn($"close player after webview failure failed: {ex.Message}");
+                }
             };
             _webView.Source = new Uri(_url);
             AppLogger.Info($"player loaded {_url}");
@@ -90,15 +114,17 @@ internal sealed class PlayerForm : Form
 
         var point = _webView.PointToClient(Cursor.Position);
         var inside = _webView.ClientRectangle.Contains(point);
-        if (inside == _lastPointerInside && point == _lastPointer) return;
+        var leftDown = (Control.MouseButtons & MouseButtons.Left) == MouseButtons.Left;
+        if (inside == _lastPointerInside && point == _lastPointer && leftDown == _lastLeftDown) return;
 
         _lastPointer = point;
         _lastPointerInside = inside;
+        _lastLeftDown = leftDown;
         _pointerScriptBusy = true;
         try
         {
             var script = inside
-                ? $"window.__salesWallpaperPointerMove && window.__salesWallpaperPointerMove({point.X}, {point.Y});"
+                ? $"window.__salesWallpaperPointer && window.__salesWallpaperPointer({point.X}, {point.Y}, {(leftDown ? "true" : "false")});"
                 : "window.__salesWallpaperPointerLeave && window.__salesWallpaperPointerLeave();";
             await _webView.CoreWebView2.ExecuteScriptAsync(script);
         }
@@ -122,10 +148,18 @@ internal sealed class PlayerForm : Form
 
     private const string SyntheticPointerScript = """
         (() => {
-          if (window.__salesWallpaperPointerMove) return;
+          if (window.__salesWallpaperPointer) return;
+          let activeTarget = null;
+          let lastDown = false;
 
           function canvas() {
             return document.querySelector('.kgz-map-canvas canvas') || document.querySelector('canvas');
+          }
+
+          function targetAt(x, y) {
+            const target = document.elementFromPoint(x, y);
+            if (target && target !== document.documentElement && target !== document.body) return target;
+            return canvas();
           }
 
           function applyOffsets(event, x, y, rect) {
@@ -136,7 +170,7 @@ internal sealed class PlayerForm : Form
             return event;
           }
 
-          function dispatch(target, type, x, y, rect) {
+          function dispatch(target, type, x, y, rect, buttons) {
             const init = {
               bubbles: true,
               cancelable: true,
@@ -148,7 +182,7 @@ internal sealed class PlayerForm : Form
               pageX: x + window.scrollX,
               pageY: y + window.scrollY,
               button: 0,
-              buttons: 0,
+              buttons: buttons || 0,
               pointerId: 1,
               pointerType: 'mouse',
               isPrimary: true
@@ -160,16 +194,38 @@ internal sealed class PlayerForm : Form
             }
           }
 
-          window.__salesWallpaperPointerMove = (x, y) => {
-            const target = canvas();
+          window.__salesWallpaperPointer = (x, y, leftDown) => {
+            const dpr = window.devicePixelRatio || 1;
+            const cssX = x / dpr;
+            const cssY = y / dpr;
+            const target = activeTarget || targetAt(cssX, cssY);
             if (!target) return false;
             const rect = target.getBoundingClientRect();
-            if (x < rect.left || y < rect.top || x > rect.right || y > rect.bottom) {
+            if (!(activeTarget && lastDown) && (cssX < rect.left || cssY < rect.top || cssX > rect.right || cssY > rect.bottom)) {
+              if (!lastDown) {
+                activeTarget = null;
+              }
               window.__salesWallpaperPointerLeave();
               return false;
             }
-            dispatch(target, 'pointermove', x, y, rect);
-            dispatch(target, 'mousemove', x, y, rect);
+            const buttons = leftDown ? 1 : 0;
+            if (leftDown && !lastDown) {
+              activeTarget = targetAt(cssX, cssY) || target;
+              const activeRect = activeTarget.getBoundingClientRect();
+              dispatch(activeTarget, 'pointerdown', cssX, cssY, activeRect, 1);
+              dispatch(activeTarget, 'mousedown', cssX, cssY, activeRect, 1);
+            }
+            dispatch(activeTarget || target, 'pointermove', cssX, cssY, rect, buttons);
+            dispatch(activeTarget || target, 'mousemove', cssX, cssY, rect, buttons);
+            if (!leftDown && lastDown) {
+              const upTarget = activeTarget || target;
+              const upRect = upTarget.getBoundingClientRect();
+              dispatch(upTarget, 'pointerup', cssX, cssY, upRect, 0);
+              dispatch(upTarget, 'mouseup', cssX, cssY, upRect, 0);
+              dispatch(upTarget, 'click', cssX, cssY, upRect, 0);
+              activeTarget = null;
+            }
+            lastDown = leftDown;
             return true;
           };
 
@@ -177,8 +233,14 @@ internal sealed class PlayerForm : Form
             const target = canvas();
             if (!target) return false;
             const rect = target.getBoundingClientRect();
-            dispatch(target, 'pointerleave', -1, -1, rect);
-            dispatch(target, 'mouseleave', -1, -1, rect);
+            if (lastDown && activeTarget) {
+              dispatch(activeTarget, 'pointerup', -1, -1, activeTarget.getBoundingClientRect(), 0);
+              dispatch(activeTarget, 'mouseup', -1, -1, activeTarget.getBoundingClientRect(), 0);
+            }
+            activeTarget = null;
+            lastDown = false;
+            dispatch(target, 'pointerleave', -1, -1, rect, 0);
+            dispatch(target, 'mouseleave', -1, -1, rect, 0);
             return true;
           };
         })();

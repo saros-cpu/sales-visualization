@@ -4,7 +4,8 @@ param(
     [string]$PackageZip = "",
     [string]$KeyFile = "",
     [switch]$DeployBundledKey,
-    [switch]$NoStart
+    [switch]$NoStart,
+    [switch]$Quiet
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +44,72 @@ function Deploy-KeyFile {
     Write-Host "Deployed wallpaper key to $configDir"
 }
 
+function Assert-PackageIntegrity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [long]$ExpectedSize = 0,
+        [string]$ExpectedSha256 = ""
+    )
+
+    if ($ExpectedSize -gt 0) {
+        $actualSize = (Get-Item -LiteralPath $Path).Length
+        if ($actualSize -ne $ExpectedSize) {
+            throw "Package size mismatch. Expected $ExpectedSize, got $actualSize"
+        }
+    }
+
+    if ($ExpectedSha256) {
+        $actualHash = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+        $expectedHash = $ExpectedSha256.Trim().ToLowerInvariant()
+        if ($actualHash -ne $expectedHash) {
+            throw "Package SHA256 mismatch. Expected $expectedHash, got $actualHash"
+        }
+    }
+}
+
+function Show-InstallSummary {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetDir,
+        [Parameter(Mandatory = $true)][string]$ShortcutPath
+    )
+
+    $configDir = Join-Path $env:APPDATA "sales-wallpaper-engine"
+    $keyPath = Join-Path $configDir "wallpaper-key.json"
+    $message = @"
+Sales Wallpaper Engine installed.
+
+Program directory:
+$TargetDir
+
+Config directory:
+$configDir
+
+Key file:
+$keyPath
+
+Startup shortcut:
+$ShortcutPath
+
+Wallpaper has started. Use the tray icon to open config, restart wallpaper, or check updates.
+"@
+    Write-Host $message
+    if ($Quiet) {
+        return
+    }
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        [System.Windows.Forms.MessageBox]::Show(
+            $message,
+            "Sales Wallpaper Engine",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+    } catch {
+        Write-Warning "Could not show install summary window: $($_.Exception.Message)"
+    }
+}
+
 function Install-FromFolder {
     param(
         [Parameter(Mandatory = $true)][string]$SourceDir,
@@ -56,23 +123,24 @@ function Install-FromFolder {
 
     Stop-Engine
     New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
-    Copy-Item -Path (Join-Path $source "*") -Destination $TargetDir -Recurse -Force
+    $target = (Resolve-Path $TargetDir).Path
+    Copy-Item -Path (Join-Path $source "*") -Destination $target -Recurse -Force
     Deploy-KeyFile -SourceDir $source
 
     $shell = New-Object -ComObject WScript.Shell
     $startup = [Environment]::GetFolderPath("Startup")
     $shortcutPath = Join-Path $startup "Sales Wallpaper Engine.lnk"
     $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = Join-Path $TargetDir "SalesWallpaperEngine.exe"
-    $shortcut.WorkingDirectory = $TargetDir
-    $shortcut.IconLocation = Join-Path $TargetDir "SalesWallpaperEngine.exe"
+    $shortcut.TargetPath = Join-Path $target "SalesWallpaperEngine.exe"
+    $shortcut.WorkingDirectory = $target
+    $shortcut.IconLocation = Join-Path $target "SalesWallpaperEngine.exe"
     $shortcut.Save()
 
     if (-not $NoStart) {
-        Start-Process -FilePath (Join-Path $TargetDir "SalesWallpaperEngine.exe") -WorkingDirectory $TargetDir -WindowStyle Hidden
+        Start-Process -FilePath (Join-Path $target "SalesWallpaperEngine.exe") -WorkingDirectory $target -WindowStyle Hidden
     }
 
-    Write-Host "Installed SalesWallpaperEngine to $TargetDir"
+    Show-InstallSummary -TargetDir $target -ShortcutPath $shortcutPath
 }
 
 if ($PackageZip) {
@@ -96,6 +164,15 @@ if ($ManifestUrl) {
     $extractDir = Join-Path $tempRoot "extract"
     New-Item -ItemType Directory -Force -Path $tempRoot, $extractDir | Out-Null
     Invoke-WebRequest -UseBasicParsing -Uri $data.url -OutFile $zipPath
+    $expectedSize = 0
+    if ($data.size) {
+        $expectedSize = [long]$data.size
+    }
+    $expectedSha256 = ""
+    if ($data.sha256) {
+        $expectedSha256 = [string]$data.sha256
+    }
+    Assert-PackageIntegrity -Path $zipPath -ExpectedSize $expectedSize -ExpectedSha256 $expectedSha256
     Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
     Install-FromFolder -SourceDir $extractDir -TargetDir $InstallDir
     return

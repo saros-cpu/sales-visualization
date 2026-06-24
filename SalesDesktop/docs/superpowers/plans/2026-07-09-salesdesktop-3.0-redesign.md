@@ -6,11 +6,11 @@
 
 **Architecture:** 单一 Axios 工厂实例取代三个重复实例；`@tanstack/react-query` 统一数据获取与缓存；共享 UI 组件库（ChartCard/KpiCard/PeriodPicker/TableCard/ErrorBoundary）被所有新页面复用；菜单配置外置并支持角色过滤；路由全量 `React.lazy` 懒加载 + 顶层/页面级错误边界。
 
-**Tech Stack:** React 18 + TypeScript 5 + Vite 6 + Ant Design 5 + ECharts 6 + echarts-for-react 3 + @tanstack/react-query 5 + react-data-grid + react-router-dom 6 + i18next 24. Electron 33 壳，目标服务器 `http://198.51.100.10`。
+**Tech Stack:** React 18 + TypeScript 5 + Vite 6 + Ant Design 5 + ECharts 6 + echarts-for-react 3 + @tanstack/react-query 5 + react-data-grid + react-router-dom 6 + i18next 24. Electron 33 壳，目标服务器 `https://sales.example.com`。
 
 ## Global Constraints
 
-- 所有 API 基础地址用 `http://198.51.100.10`；零售/汇率走 `/api`，其他资源走 `/api/v2`（源自规格 §1.1）
+- 所有 API 基础地址用 `https://sales.example.com`；零售/汇率走 `/api`，其他资源走 `/api/v2`（源自规格 §1.1）
 - i18n 仅 zh + ru，所有用户可见文案必须进 `zh.json` + `ru.json`，禁止硬编码中文（源自规格 §3.3/§4.3）
 - 版本号规则：MAJOR 用于架构重构/不兼容变更 → 本次升 `3.0.0`（源自 AGENTS.md §15 + 规格 §7.3）
 - 每次对客户端代码改动后发包前必须升版本号（同步 `src/version.ts` + `package.json`）（源自 AGENTS.md §15）
@@ -88,7 +88,7 @@
 // src/api/http.ts
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
-const API_HOST = 'http://198.51.100.10';
+const API_HOST = 'https://sales.example.com';
 
 export function createApi(basePath: string): AxiosInstance {
   const instance = axios.create({

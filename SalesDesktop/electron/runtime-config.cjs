@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_API_HOST = process.env.SALES_API_HOST || 'http://sales.example.com';
-const DEFAULT_UPDATE_URL = 'http://198.51.100.10/download';
+const DEFAULT_API_HOST = process.env.SALES_API_HOST || 'https://sales.example.com';
+const DEFAULT_UPDATE_URL = 'https://sales.example.com/download';
 
 function normalizeHost(value) {
   return String(value || '').replace(/\/+$/, '');
@@ -15,6 +15,20 @@ function isLoopbackHost(value) {
   } catch {
     return false;
   }
+}
+
+function upgradeLegacyPublicUrl(value) {
+  const normalized = normalizeHost(value);
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol === 'http:' && ['sales.example.com', '198.51.100.10'].includes(parsed.hostname)) {
+      parsed.protocol = 'https:';
+      parsed.hostname = 'sales.example.com';
+      parsed.port = '';
+      return normalizeHost(parsed.toString());
+    }
+  } catch {}
+  return normalized;
 }
 
 function readJson(filePath) {
@@ -43,14 +57,13 @@ function configPaths(appRef) {
 function loadRuntimeConfig(appRef) {
   const fileConfig = configPaths(appRef).reduce((acc, filePath) => ({ ...acc, ...readJson(filePath) }), {});
   const configuredApiHost = normalizeHost(process.env.SALES_API_HOST || fileConfig.apiHost || DEFAULT_API_HOST);
-  const apiHost = appRef?.isPackaged && !process.env.SALES_API_HOST && isLoopbackHost(configuredApiHost)
-    ? normalizeHost(DEFAULT_API_HOST)
+  const apiHost = appRef?.isPackaged && !process.env.SALES_API_HOST
+    ? (isLoopbackHost(configuredApiHost) ? normalizeHost(DEFAULT_API_HOST) : upgradeLegacyPublicUrl(configuredApiHost))
     : configuredApiHost;
-  const updateUrl = normalizeHost(
-    process.env.SALES_UPDATE_URL
-      || fileConfig.updateUrl
-      || DEFAULT_UPDATE_URL,
-  );
+  const configuredUpdateUrl = process.env.SALES_UPDATE_URL || fileConfig.updateUrl || DEFAULT_UPDATE_URL;
+  const updateUrl = process.env.SALES_UPDATE_URL
+    ? normalizeHost(configuredUpdateUrl)
+    : upgradeLegacyPublicUrl(configuredUpdateUrl);
   return {
     apiHost,
     updateUrl,

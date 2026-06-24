@@ -208,12 +208,23 @@ export default function RetailDashboard() {
             card: s.card || 0,
             bonus: s.bonus || 0,
             pts: s.bonus || 0,
+            inventory: Number(detail.inventory || 0),
             currentInventory: Number(detail.inventory || 0),
+            inventoryCapacity: Number(detail.inventoryCapacity || 0),
+            inventoryFillPercent: detail.inventoryFillPercent,
+            inventoryFillStatus: detail.inventoryFillStatus,
+            inventoryAlert: detail.inventoryAlert,
+            inventoryAlerts: detail.inventoryAlerts || [],
             inventoryByResource: detail.inventoryByResource || [],
             currentPrices: detail.prices || [],
             inventoryAsOf: detail.inventoryAsOf || '',
             priceAsOf: detail.priceAsOf || '',
+            statusLabel: detail.statusLabel || (status === 'closed' ? '停业' : '在营'),
+            statusType: detail.statusType || status,
+            statusNote: detail.statusNote || '',
             snapshotGeneratedAt: detail.snapshotGeneratedAt || detailPayload.snapshotGeneratedAt || '',
+            inventoryZeroedByMapRule: Boolean(detail.inventoryZeroedByMapRule),
+            inventoryZeroReason: detail.inventoryZeroReason || '',
           };
         });
         const depotSource = Array.isArray(dd.depots) && dd.depots.length
@@ -486,8 +497,8 @@ export default function RetailDashboard() {
     retailKgzMapActiveRef.current = false;
     if (window.USE_3D_KGZ_MAP === false) return false;
     try {
-      const runtimeImport = (url) => new Function('url', 'return import(url)')(url);
-      const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260729-depot-cluster');
+      const runtimeImport = (url) => import(/* @vite-ignore */ url);
+      const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260801-hover-hit');
       const map = await mountRetailMap('#mapChart', { depots: ensureCoreDepots(depots).map(normalizeDepotMarker), stations: [] }, {
         showRoadPanel: false, showLakeLabels: true, showCities: true,
         showRegionLabels: false, showLegend: false, mode: 'retail',

@@ -1115,6 +1115,7 @@ def _resource_js_rows(resources):
             "name": item.get("name") or "--",
             "volume": _round_half_up(float(item.get("volume") or 0), 2),
             "amount": _round_half_up(float(item.get("amount") or 0), 2),
+            "amountCnyAvg": _round_half_up(float(item.get("amountCnyAvg") or 0), 2),
             "color": item.get("color") or "#2e6da4",
         })
     return rows
@@ -1190,11 +1191,26 @@ def _render_html_report(data):
     end_inventory = float(summary.get("endInventory") or 0)
     end_inventory_tons = float(summary.get("endInventoryTons") or 0)
     contract_volume = float(summary.get("contractVolume") or 0)
+    cny_conversion = data.get("cnyConversion") or {}
+    has_cny_conversion = bool(cny_conversion.get("available"))
+    avg_cny_kgs = cny_conversion.get("avgCnyKgs")
+    total_sales_cny = summary.get("totalSalesCnyAvg")
+    cny_amount_phrase = (
+        f"，按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 折算人民币 {_fmt(total_sales_cny, 2)} 元"
+        if has_cny_conversion else ""
+    )
+    sales_kpi_sub = f"精确：{_fmt(summary['totalSales'], 2)} 索姆"
+    if has_cny_conversion:
+        sales_kpi_sub += f"<br>折人民币：{_fmt(total_sales_cny, 2)} 元"
+    cny_conclusion = (
+        f"人民币金额按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，便于中国管理口径复核。"
+        if has_cny_conversion else "后续可继续补充汇率折人民币口径。"
+    )
     top_station = _top_name(active_stations)
     top_region = _top_name(regions)
     top_resource = _top_name(resources, "volume")
     analysis = [
-        f"统计期内销售总量为 {_fmt(summary['totalLiters'], 2)} 升，折算 {_fmt(summary['totalTons'], 3)} 吨；销售金额为 {_fmt(summary['totalSales'], 2)} 索姆。",
+        f"统计期内销售总量为 {_fmt(summary['totalLiters'], 2)} 升，折算 {_fmt(summary['totalTons'], 3)} 吨；销售金额为 {_fmt(summary['totalSales'], 2)} 索姆{cny_amount_phrase}。",
         f"当前有销售记录站点 {len(active_stations)} 个，系统登记站点 {len(stations)} 个；销售金额最高站点为 {top_station}，销售贡献最高区域为 {top_region}。",
         f"油品结构中销量最高为 {top_resource}；现金支付占 {_percent(cash_sales, total_sales)}，刷卡支付占 {_percent(card_sales, total_sales)}。",
     ]
@@ -1227,6 +1243,11 @@ def _render_html_report(data):
         f"平均 USD/KGS：{_fmt(exchange_info.get('avgUsd'), 4) if exchange_info.get('avgUsd') is not None else '--'}，"
         f"平均 CNY/KGS：{_fmt(exchange_info.get('avgCny'), 4) if exchange_info.get('avgCny') is not None else '--'}。"
     )
+    if has_cny_conversion:
+        exchange_summary += (
+            f"本报告人民币金额按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
+            f"公式为索姆金额 ÷ 月平均汇率；本期销售额折算人民币 {_fmt(total_sales_cny, 2)} 元。"
+        )
     if exchange_info.get("missingCount"):
         exchange_summary += f"缺少 {exchange_info.get('missingCount')} 天快照，请在后台财务维护补齐。"
     if exchange_info.get("error"):
@@ -1325,7 +1346,16 @@ def _render_html_report(data):
         "name": "合计",
         "volume": _sum_key(resource_rows, "volume"),
         "amount": _sum_key(resource_rows, "amount"),
+        "amountCnyAvg": _sum_key(resource_rows, "amountCnyAvg"),
     }
+    resource_columns = [
+        ("油品", lambda x: x.get("name", "")),
+        ("销量(L)", lambda x: _fmt(x.get("volume"), 2)),
+        ("销售金额(索姆)", lambda x: _fmt(x.get("amount"), 2)),
+    ]
+    if has_cny_conversion:
+        resource_columns.append(("折算人民币(元)", lambda x: _fmt(x.get("amountCnyAvg"), 2)))
+    resource_columns.append(("销量占比", lambda x: _percent(x.get("volume"), summary.get("totalLiters"))))
     region_table = _table_rows(region_rows, [
         ("区域", lambda x: x.get("region", "")),
         ("销量(L)", lambda x: _fmt(x.get("volume"), 2)),
@@ -1333,12 +1363,7 @@ def _render_html_report(data):
         ("金额占比", lambda x: _percent(x.get("amount"), total_sales)),
         ("站点数", lambda x: x.get("stationCount", 0)),
     ], "data-table region-table", total_row=region_total)
-    resource_table = _table_rows(resource_rows, [
-        ("油品", lambda x: x.get("name", "")),
-        ("销量(L)", lambda x: _fmt(x.get("volume"), 2)),
-        ("销售金额(索姆)", lambda x: _fmt(x.get("amount"), 2)),
-        ("销量占比", lambda x: _percent(x.get("volume"), summary.get("totalLiters"))),
-    ], "data-table resource-table", total_row=resource_total)
+    resource_table = _table_rows(resource_rows, resource_columns, "data-table resource-table", total_row=resource_total)
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -1405,7 +1430,7 @@ def _render_html_report(data):
   <div class="container">
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">销售总量</div><div class="kpi-value">{_volume_short(summary['totalLiters'])}升</div><div class="kpi-sub">折算：{_fmt(summary['totalTons'], 3)} 吨</div></div>
-      <div class="kpi-card"><div class="kpi-label">销售金额</div><div class="kpi-value">{_money_short(summary['totalSales'])}</div><div class="kpi-sub">精确：{_fmt(summary['totalSales'], 2)} 索姆</div></div>
+      <div class="kpi-card"><div class="kpi-label">销售金额</div><div class="kpi-value">{_money_short(summary['totalSales'])}</div><div class="kpi-sub">{sales_kpi_sub}</div></div>
       <div class="kpi-card"><div class="kpi-label">期末库存</div><div class="kpi-value">{_volume_short(end_inventory)}升</div><div class="kpi-sub">精确：{_fmt(end_inventory, 2)} 升 ≈ {_fmt(end_inventory_tons, 3)} 吨</div></div>
       <div class="kpi-card"><div class="kpi-label">活跃站点</div><div class="kpi-value">{len(active_stations)} / {len(stations)}</div><div class="kpi-sub">以本期实际销售记录统计</div></div>
     </div>
@@ -1447,7 +1472,7 @@ def _render_html_report(data):
     <div class="three-col">
       <div class="insight-card"><h4>✅ 经营亮点</h4>本期销售最高站点为 {html.escape(top_station)}；销售最高区域为 {html.escape(top_region)}；主力油品为 {html.escape(top_resource)}。</div>
       <div class="insight-card" style="border-left-color:#e67e22"><h4>⚠️ 关注事项</h4>低销量或无销量站点已保留在完整明细中，建议结合后台站点状态、库存和班组完成情况复核。</div>
-      <div class="insight-card" style="border-left-color:#27ae60"><h4>📊 综合评价</h4>报告仅统计已结束班组数据，油品折吨按系统密度快照计算；后续可继续补充汇率折人民币口径。</div>
+      <div class="insight-card" style="border-left-color:#27ae60"><h4>📊 综合评价</h4>报告仅统计已结束班组数据，油品折吨按系统密度快照计算；{html.escape(cny_conclusion)}</div>
     </div>
   </div>
   <script>

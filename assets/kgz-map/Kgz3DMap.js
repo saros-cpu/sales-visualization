@@ -126,10 +126,15 @@ function stationTimeRows(point) {
 }
 
 function stationStatusText(point) {
-  if (point.closedReason) return point.closedReason;
-  if (point.status === 'closed') return '停业/维修';
-  if (point.status && point.status !== 'normal') return point.statusLabel || point.statusNote || '异常/关注';
-  return point.statusLabel || '在营';
+  const label = String(point.statusLabel || '').trim();
+  const reason = String(point.closedReason || point.statusNote || '').trim();
+  if (label && !['normal', 'closed', 'warning', 'warn'].includes(label.toLowerCase())) return label;
+  if (reason.includes('装修')) return '装修';
+  if (reason.includes('停业')) return '停业';
+  if (point.status === 'closed') return '停业';
+  if (point.status === 'warning') return '关注';
+  if (point.status && point.status !== 'normal') return '异常';
+  return '在营';
 }
 
 function disposeMaterial(material) {
@@ -193,6 +198,13 @@ function isHeadquartersPoint(point) {
     || name.includes('公司总部');
 }
 
+function pointHitRadius(point, visualRadius, isDepot) {
+  const configured = Number(point?.hitRadius);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  const hitScale = Number.isFinite(Number(point?.hitScale)) ? Number(point.hitScale) : 1.85;
+  return Math.max(visualRadius * hitScale, isDepot ? 0.42 : 0.34);
+}
+
 function preparePointEntries(points = []) {
   const entries = [];
   for (const point of points) {
@@ -235,10 +247,11 @@ function preparePointEntries(points = []) {
 
 function stationInventoryRows(point) {
   if (point.type !== 'station') return '';
-  const hasInventory = point.inventory !== undefined && point.inventory !== null && Number.isFinite(Number(point.inventory));
+  const inventoryValue = point.inventory ?? point.currentInventory;
+  const hasInventory = inventoryValue !== undefined && inventoryValue !== null && Number.isFinite(Number(inventoryValue));
   if (hasInventory) {
     const percent = formatOptionalPercent(point.inventoryFillPercent);
-    return `<span>当前库存：${formatNumber(point.inventory, 2)} L${percent ? ` · ${percent}` : ''}</span>`;
+    return `<span>当前库存：${formatNumber(inventoryValue, 2)} L${percent ? ` · ${percent}` : ''}</span>`;
   }
   return '<span class="kgz-map-tooltip-muted">库存未返回：公开模式或未配置授权 token</span>';
 }
@@ -985,7 +998,21 @@ export class Kgz3DMap {
         baseRenderOrder: pointRenderOrder
       };
       this.pointGroup.add(mesh);
-      this.pointMeshes.push(mesh);
+      const hitRadius = pointHitRadius(point, pointSize, isDepot);
+      const hitGeometry = new THREE.SphereGeometry(hitRadius, 12, 8);
+      const hitMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false
+      });
+      const hitMesh = new THREE.Mesh(hitGeometry, hitMaterial);
+      hitMesh.position.copy(mesh.position);
+      hitMesh.renderOrder = pointRenderOrder + 1;
+      hitMesh.userData = { type: 'business-point-hit', point, targetMesh: mesh };
+      this.pointGroup.add(hitMesh);
+      this.pointMeshes.push(hitMesh);
       if (point.showLabel !== false) {
         const label = makePointLabelSprite(point.label || point.name, point.labelSubtitle || '', {
           color: point.labelColor || '#f8fafc',
@@ -1089,7 +1116,7 @@ export class Kgz3DMap {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const pointHit = this.raycaster.intersectObjects(this.pointMeshes, false)[0];
     if (pointHit) {
-      this.setPointHover(pointHit.object, event);
+      this.setPointHover(pointHit.object.userData.targetMesh || pointHit.object, event);
       return;
     }
     this.clearPointHover();

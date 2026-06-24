@@ -5,6 +5,20 @@ import { downloadWithAuth } from './download';
 const BASE_URL = API_HOST;
 const API_BASE = `${BASE_URL}/api`;
 
+type ReportKind = 'analysisMonthly' | 'analysisYearly' | 'retailDaily';
+
+type ReportRequest =
+  | { kind: 'analysisMonthly'; yearMonth: string }
+  | { kind: 'analysisYearly'; year: number }
+  | { kind: 'retailDaily'; yearMonth: string };
+
+type GeneratedReportResult = {
+  kind: ReportKind;
+  response: any;
+  downloaded: Array<{ url: string; filename: string }>;
+  opened?: string;
+};
+
 async function getToken() {
   return await refreshAccessToken() || localStorage.getItem('accessToken') || '';
 }
@@ -46,16 +60,65 @@ async function downloadBlob(url: string, filename: string) {
   await downloadWithAuth(url, filename);
 }
 
+function absoluteUrl(path?: string) {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+function ensureGenerated(json: any, fallbackMessage: string) {
+  if (json?.status === 'ok' || json?.code === 0 || json?.ok === true) return;
+  throw new Error(json?.message || json?.error || fallbackMessage);
+}
+
+async function downloadAnalysisFiles(json: any, fallbackBaseName: string) {
+  const downloaded: GeneratedReportResult['downloaded'] = [];
+  if (json.docxDownloadUrl) {
+    const url = absoluteUrl(json.docxDownloadUrl);
+    const filename = json.docxFile || `${fallbackBaseName}.docx`;
+    await downloadBlob(url, filename);
+    downloaded.push({ url, filename });
+  }
+  if (json.htmlDownloadUrl) {
+    const url = absoluteUrl(json.htmlDownloadUrl);
+    const filename = json.htmlFile || `${fallbackBaseName}.html`;
+    await downloadBlob(url, filename);
+    downloaded.push({ url, filename });
+  }
+  return downloaded;
+}
+
+export async function generateAndDownloadReport(request: ReportRequest): Promise<GeneratedReportResult> {
+  if (request.kind === 'analysisMonthly') {
+    const json = await fetchJsonWithAuth(`${API_BASE}/export/analysis/monthly/${encodeURIComponent(request.yearMonth)}`);
+    ensureGenerated(json, '生成月度分析报告失败');
+    const downloaded = await downloadAnalysisFiles(json, `月度分析报告_${request.yearMonth}`);
+    const opened = absoluteUrl(json.htmlViewUrl);
+    if (opened) (window as any).electronAPI?.openExternal(opened);
+    return { kind: request.kind, response: json, downloaded, opened: opened || undefined };
+  }
+
+  if (request.kind === 'analysisYearly') {
+    const json = await fetchJsonWithAuth(`${API_BASE}/export/analysis/yearly/${encodeURIComponent(String(request.year))}`);
+    ensureGenerated(json, '生成年度分析报告失败');
+    const downloaded = await downloadAnalysisFiles(json, `年度分析报告_${request.year}`);
+    const opened = absoluteUrl(json.htmlViewUrl);
+    if (opened) (window as any).electronAPI?.openExternal(opened);
+    return { kind: request.kind, response: json, downloaded, opened: opened || undefined };
+  }
+
+  const json = await fetchJsonWithAuth(`${API_BASE}/export/monthly/${encodeURIComponent(request.yearMonth)}`);
+  ensureGenerated(json, '生成零售日报失败');
+  const filename = json.file || `零售日销表_${request.yearMonth}.xlsx`;
+  const url = `${API_BASE}/export/monthly/${encodeURIComponent(request.yearMonth)}/download`;
+  await downloadBlob(url, filename);
+  return { kind: request.kind, response: json, downloaded: [{ url, filename }] };
+}
+
 export async function exportExcel(yearMonth: string) {
   try {
-    const json = await fetchJsonWithAuth(`${API_BASE}/export/monthly/${yearMonth}`);
-    if (json.status === 'ok' || json.code === 0) {
-      const filename = json.file || `零售日销表_${yearMonth}.xlsx`;
-      await downloadBlob(`${API_BASE}/export/monthly/${yearMonth}/download`, filename);
-      message.success('导出成功');
-    } else {
-      message.error(json.message || '导出失败');
-    }
+    await generateAndDownloadReport({ kind: 'retailDaily', yearMonth });
+    message.success('导出成功');
   } catch (err: any) {
     message.error('导出失败: ' + (err.message || ''));
   }
@@ -78,38 +141,19 @@ export async function downloadRetailRangeReport(dateFrom: string, dateTo: string
 
 export async function exportAnalysis(yearMonth: string) {
   try {
-    const json = await fetchJsonWithAuth(`${API_BASE}/export/analysis/monthly/${yearMonth}`);
-    if (json.status === 'ok' || json.code === 0) {
-      if (json.docxDownloadUrl) {
-        await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'report.docx');
-      }
-      if (json.htmlDownloadUrl) {
-        await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'report.html');
-      }
-      if (json.htmlViewUrl) {
-        (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);
-      }
-      message.success('分析报告已生成');
-    } else {
-      message.error(json.message || '生成分析报告失败');
-    }
+    await generateAndDownloadReport({ kind: 'analysisMonthly', yearMonth });
+    message.success('分析报告已生成');
   } catch (err: any) {
     message.error('生成分析报告失败: ' + (err.message || ''));
   }
 }
 
 export async function downloadMonthlyReport(ym: string) {
-  const json = await fetchJsonWithAuth(`${BASE_URL}/api/export/analysis/monthly/${ym}`);
-  if (json.docxDownloadUrl) await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'report.docx');
-  if (json.htmlDownloadUrl) await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'report.html');
-  if (json.htmlViewUrl) (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);
+  await generateAndDownloadReport({ kind: 'analysisMonthly', yearMonth: ym });
 }
 
 export async function downloadYearlyReport(year: number) {
-  const json = await fetchJsonWithAuth(`${BASE_URL}/api/export/analysis/yearly/${year}`);
-  if (json.docxDownloadUrl) await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'report.docx');
-  if (json.htmlDownloadUrl) await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'report.html');
-  if (json.htmlViewUrl) (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);
+  await generateAndDownloadReport({ kind: 'analysisYearly', year });
 }
 
 export async function downloadWholesaleReport(params: { year: number; month?: number }) {

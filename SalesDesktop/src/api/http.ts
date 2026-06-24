@@ -1,11 +1,27 @@
 import axios, { AxiosInstance, AxiosError, AxiCTY-30eaders } from 'axios';
 
-const DEFAULT_PUBLIC_API_HOST = import.meta.env.VITE_DEFAULT_API_HOST || 'http://198.51.100.10';
+const DEFAULT_PUBLIC_API_HOST = import.meta.env.VITE_DEFAULT_API_HOST || 'https://sales.example.com';
 const PUBLIC_FALLBACK_API_HOSTS = ['http://198.51.100.10'];
 export const PASSWORD_CHANGE_REQUIRED_MESSAGE = '首次登录或密码重置后，请先修改密码';
 
 function normalizeHost(host: string) {
   return host.replace(/\/+$/, '');
+}
+
+function upgradeLegacyPublicUrl(host: string) {
+  const normalizedHost = normalizeHost(host);
+  try {
+    const parsed = new URL(normalizedHost);
+    if (parsed.protocol === 'http:' && ['sales.example.com', '198.51.100.10'].includes(parsed.hostname)) {
+      parsed.protocol = 'https:';
+      parsed.hostname = 'sales.example.com';
+      parsed.port = '';
+      return normalizeHost(parsed.toString());
+    }
+  } catch {
+    return normalizedHost;
+  }
+  return normalizedHost;
 }
 
 function defaultAllowedApiHosts() {
@@ -46,7 +62,7 @@ export function resolveApiHost() {
     window.SALES_RUNTIME_CONFIG?.apiHost,
     localStorage.getItem('sales_api_host'),
     import.meta.env.VITE_API_HOST,
-  ].filter(Boolean).map((value) => normalizeHost(String(value)));
+  ].filter(Boolean).map((value) => upgradeLegacyPublicUrl(String(value)));
   const normalizedConfigured = configuredHosts.find(isAllowedApiHost) || '';
   const isDevHost = import.meta.env.DEV || window.location.port === '5173';
   if (normalizedConfigured && !(isDevHost && normalizedConfigured === window.location.origin)) {

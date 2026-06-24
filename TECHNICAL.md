@@ -905,7 +905,7 @@ if (e.key === 'Delete' && isAdmin) {
 2. **tsc + vite build 验证** — `npx tsc --noEmit && npx vite build`，确保编译和构建通过
 3. **提交** — `git add` + `git commit`，提交信息写明版本号与改动摘要
 4. **打包客户端** — `npm run electron:build` 生成安装包、`.blockmap` 和 `latest.yml`
-5. **部署到服务器** — 将 `release_build/SalesDesktop Setup {version}.exe`、对应 `.blockmap` 和 `latest.yml` 同步到 `SalesDesktop/download/` 专用发布目录，供 Nginx `/download/` 服务（公网 `http://198.51.100.10/download/`）
+5. **部署到服务器** — 将 `release_build/SalesDesktop Setup {version}.exe`、对应 `.blockmap` 和 `latest.yml` 同步到 `SalesDesktop/download/` 专用发布目录，供 Nginx `/download/` 服务（公网 `https://sales.example.com/download/`）
 
 > ⚠️ 如果用户要求先不部署（如仍在开发中），则第 4-5 步暂缓，但第 1-3 步不能跳过。
 

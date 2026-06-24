@@ -105,6 +105,7 @@ export default function SystemHealth() {
     { task: 'market_watch', label: t('systemHealth.runMarketWatch') },
     { task: 'retail_snapshots', label: t('systemHealth.runRetailSnapshots') },
     { task: 'retail_accounting_reports', label: t('systemHealth.runRetailAccountingReports') },
+    { task: 'retail_254_monthly_archive', label: t('systemHealth.runRetail254MonthlyArchive') },
     { task: 'all', label: t('systemHealth.runAllTasks') },
   ];
 
@@ -113,12 +114,18 @@ export default function SystemHealth() {
     try {
       const result = await runAutomationTask(task);
       const retailStatus = result?.results?.retailSnapshots?.status;
+      const retail254Summary = result?.results?.retail254MonthlyArchive?.summary;
       const failedItems = Object.values(result?.results || {}).flatMap((item: any) => asArray<any>(item?.failedItems));
       const hasFailed = Object.values(result?.results || {}).some((item: any) => item?.status === 'failed');
       if (failedItems.length > 0) {
         message.warning(`${t('systemHealth.runWarning')}：${failedItems.slice(0, 3).map(accountingFailedItemText).join('；')}`);
       } else if (hasFailed) {
         message.warning(t('systemHealth.runWarning'));
+      } else if (task === 'retail_254_monthly_archive' && retail254Summary) {
+        message.success(t('systemHealth.runRetail254MonthlyArchiveSuccess', {
+          month: retail254Summary.month || '-',
+          count: retail254Summary.appliedCount ?? retail254Summary.generatedCount ?? 0,
+        }));
       } else {
         message.success(retailStatus === 'queued' || retailStatus === 'running' ? t('systemHealth.runQueued') : t('systemHealth.runSuccess'));
       }

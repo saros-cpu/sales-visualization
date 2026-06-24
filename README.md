@@ -2,9 +2,50 @@
 
 项目根目录：`D:\SalesVisualization`
 
-本项目是公司销售数据可视化总平台，用于统一展示零售、批发与合并统计数据。当前系统由 Nginx 对外提供 HTTP 入口，Flask 后端仅监听本机 `127.0.0.1:8900`；HTTPS 等正式 SSL 证书签发后再启用。
+本项目是公司销售数据可视化总平台，用于统一展示零售、批发与合并统计数据。当前系统由 Nginx 对外提供 HTTPS 域名入口，Flask 后端仅监听本机 `127.0.0.1:8900`；HTTP 域名入口跳转 HTTPS，备用入口细节见配置文档。
 
 ## 版本更新记录
+
+### 2026-08-01 (SalesWallpaperEngine 0.2.0, 待发布)
+
+- **托盘检查更新**：手动检查更新移到壁纸托盘一级菜单，设置页只保留自动检查/自动安装更新开关，日常操作不再需要先打开设置窗口。
+- **HUD 编辑退出优化**：退出 HUD 编辑模式时不再整页刷新，直接应用保存后的 HUD 布局，降低壁纸闪屏或短暂露出系统背景的概率。
+- **更新包校验增强**：自动更新和按清单手动安装都会校验包大小和 SHA256，防止下载不完整或清单异常时继续覆盖程序目录。
+- **进程自恢复与状态区**：播放器 WebView2 进程失败或播放器异常退出后由主进程自动拉起；设置页新增当前版本、API、授权、刷新/更新状态和实时数据可达性。
+- **托盘菜单精简**：配置目录、日志目录等排查入口收进“高级”，一级菜单保留设置、HUD 编辑、重启、检查更新、安装更新和退出等日常动作。
+
+### 2026-08-01 (SalesWallpaperEngine 0.1.18)
+
+- **销售 HUD 合并展示**：右下角年销量与年吨位合并为一个 KPI 格上下显示，月销量与月吨位同样合并，减少 HUD 占用面积。
+- **人民币金额口径**：年/月销售额格增加人民币金额，按月度分析报告同口径使用统计期间平均 CNY/KGS 折算。
+- **报表保存统一**：客户端年度分析报告、月度分析报告和零售日报统一复用 Web 端 `/api/export` 生成接口，先由服务端生成文件，再按返回地址保存。
+- **顶部 HUD 压缩**：站点库存已按万L显示，库存 KPI 不再占双列，顶部 HUD 宽度同步收窄。
+
+### 2026-08-01 (SalesWallpaperEngine 0.1.17)
+
+- **HUD 手动拖拽完善**：壁纸引擎播放器补齐全局鼠标按下/松开事件转发，托盘和设置页均可进入 HUD 编辑模式，直接拖动顶部 KPI HUD 和右下角销售/汇率 HUD，拖完可从托盘或设置页保存布局。
+- **轻量数据增强**：授权销售 HUD 增加年/月吨位；顶部运营概览增加库存预警红黄计数，不增加趋势或运营异常提示。
+- **地图显示筛选**：设置页增加在营站、停业/装修站、油库点位、仅低库存点位开关；托盘更新入口去重，检查更新保留在设置页，托盘仅在发现新版时显示安装项，并增加运行状态写日志动作。
+
+### 2026-08-01 (SalesWallpaperEngine 0.1.16)
+
+- **壁纸托盘设置页**：独立壁纸引擎新增托盘「设置...」窗口，可配置语言、每日刷新、自动更新、HUD 显示项、地图视野和 HUD 布局；保存后写入 `%APPDATA%\sales-wallpaper-engine\app-config.json` 并重启壁纸应用。
+- **HUD 拖拽缩放**：设置窗口打开期间，顶部 KPI HUD 和右下角销售/汇率 HUD 可在壁纸上直接拖动位置和调整大小，实时预览，未保存关闭会恢复已保存布局。
+- **标题与悬停优化**：壁纸标题改为「Example Petroleum零售版图」/「Карта розничной торговли example」，删除副标题；点位悬停 tooltip 自动避让 HUD 区块，主客户端和 Web 地图不启用该选项，行为不变。
+
+### 2026-08-01 (SalesWallpaperEngine 0.1.15)
+
+- **HUD 独立 KPI 开关**：壁纸右下角 HUD 的 6 个 KPI 格（年销量/年金额/月销量/月金额/美元汇率/人民币汇率）支持按机器在 `app-config.json` 中独立开关，缺省默认全开，字段缺失按开启处理，老机器零影响。
+
+### 2026-08-01 (SalesWallpaperEngine 0.1.14)
+
+- **壁纸地图左右居中修复**：调整地图相机水平偏移（`fitCenterX`），1920×1080 下地图画面中心与屏幕中心的偏差从约 -31px 收敛到 -0.1px，窄屏（1536×864 / 1366×768）偏差均小于 4px，画面不再明显偏左。
+
+### 2026-07-31 (SalesWallpaperEngine 0.1.13)
+
+- **HUD 整块开关**：壁纸右下角 HUD 的销售汇总块和汇率块支持按机器独立开关，`app-config.json` 配置 `showSalesSummary` / `showExchangeRates`（默认都显示，字段缺失按开启处理），老机器零影响。
+- **自动更新重启修复**：更新应用脚本改为带日志、父进程超时仍存活时安全中止不再覆盖运行中的 exe、重启失败自动重试 3 次，修复自动更新后壁纸不自动重启的问题。
+- **KPI 自适应**：顶部 KPI 指标栅格改为 6 轨自适应布局，库存卡片加宽为其他卡片的两倍。
 
 ### 2026-07-29 (v3.10.1)
 
@@ -17,84 +58,46 @@
 - **地图观感优化**：客户端吉尔吉斯地图、Web 零售板块总览地图和壁纸地图恢复总部/北方/南方三处油库标点，但改为高位小标点且不常驻文字；每个油库点位增加到实际坐标的指向线；CTY-22、REG-08、CTY-28等密集加油站自动散开并缩小，提高悬停命中率。
 - **停业站地图口径**：11、12、21 号站在地图和壁纸端按停业红色显示；这三站实际库存已清零，但零售系统数据库仍有旧值，因此地图悬停、壁纸库存和库存预警按清零规则覆盖展示，不回写原始数据库。
 - **预警页同步**：Web 端和客户端零售预警页增加油品库存水位预警表，便于直接查看低水位站点和油品。
-- **壁纸引擎增强**：独立壁纸授权接口返回库存库容、水位百分比、低库存汇总和年/月销量销售额；HUD 自动避让 Windows 任务栏；`SalesWallpaperEngine 0.1.5` 默认自动检查、下载、校验、替换并重启，壁纸更新仍不混入主客户端安装包。
-- **发布校验加强**：新增主程序安装包审计脚本，打包后会解开 NSIS 外层和 `app-64.7z`，对比正常 `3.9.17` 参考包检查 `SalesDesktop.exe`、`resources/app.asar`、入口 JS/CSS、地图资源和 `app-update.yml`。
+- **壁纸引擎增强**：独立壁纸授权接口返回库存库容、水位百分比、低库存汇总、年/月销量销售额和汇率；HUD 自动避让 Windows 任务栏；`SalesWallpaperEngine` 独立版本线默认自动检查、下载、校验、替换并重启，壁纸更新仍不混入主客户端安装包；壁纸数据启动时刷新，之后每天 09:00 自动刷新一次。
+- **发布校验加强**：新增主程序安装包审计脚本，打包后会解开 NSIS 外层和 `app-64.7z`，对比已验证参考包检查 `SalesDesktop.exe`、`resources/app.asar`、入口 JS/CSS、地图资源和 `app-update.yml`。
 
-### 2026-07-29 (SalesLivelyWallpaper 1.1.0)
+### 2026-07-31 (SalesWallpaperEngine 0.1.12)
 
-- **Lively Mixed Content**: Lively serves imported local packages as `https://*.localhost`, so HTTP API calls were blocked. `SalesLivelyWallpaper 1.1.0` now redirects the imported package to `http://198.51.100.10/download/wallpaper-lively/live/wallpaper.html`.
-- **VPN trusted client**: `/api/wallpaper/map` supports `SALES_WALLPAPER_TRUSTED_IPS`; production trusts VPN client `10.8.0.100` when the wallpaper uses `http://10.8.0.1`.
-- **CSP fix**: `SalesLivelyWallpaper 1.1.1` adds `http://10.8.0.1` to the hosted wallpaper CSP and skips `wallpaper-key.json` on the live page because VPN trusted-client mode does not need a local key file.
-- **Independent release**: `/download/wallpaper-lively/latest.json` points to `SalesLivelyWallpaper 1.1.1`; the main desktop client version and installer are unchanged.
+- **壁纸地图视野回归修复**：壁纸地图改为任意分辨率下水平可视宽度恒为约 72.7 世界单位（等价 0.1.9 固定相机在 1920×1080 的视野）。相机距离按视口宽高比推导（`fitWorldWidth` 选项），16:9 屏保持与 0.1.9 完全一致的画面，窄屏自动拉远不再溢出，修正 0.1.11 自适应在窄屏/小屏可能溢出的回归；`fitCenterX/Y/Z` 偏移保证国家居中。
+- **壁纸设置面板移除**：删除壁纸页内设置按钮/面板、配置持久化和更新诊断显示；更新横幅与自动更新检查保留，由引擎托盘菜单和配置文件管理。
+- **客户端/Web 零影响**：`fitWorldWidth` 默认关闭，客户端地图和 Web 地图不启用，行为不变。
 
-### 2026-07-29 (SalesWallpaperEngine 0.1.0-0.1.5)
+### 2026-07-30 (SalesWallpaperEngine 0.1.11)
 
-- **Dedicated rewrite**: added `SalesWallpaperEngine`, a new independent host/player WebView2 wallpaper engine that uses a Lively-style WorkerW/Progman desktop attach path and a separate player process.
+- **Screen-adaptive wallpaper map**: the wallpaper map no longer uses a fixed camera. The Kyrgyzstan map now auto-fits any screen resolution on init and re-fits on resolution/DPI/window changes (`fitOnResize` option), fixing the map overflowing the screen on small or narrow-aspect displays.
+- **Hover tooltip occlusion fix**: the station hover tooltip flips left/up when it would cross the right/bottom edge of the screen (`flipTooltip` option) and renders above the bottom-right sales summary HUD (tooltip z-index raised to 60 in the wallpaper stylesheet).
+- **Client/web zero impact**: the shared `Kgz3DMap.js` gains `fitOnResize` and `flipTooltip` options, both default OFF; the desktop client and web map do not pass them, so their behavior is unchanged.
+
+### 2026-07-30 (SalesWallpaperEngine 0.1.10)
+
+- **Language auto-detection**: the wallpaper page reads `SALES_RUNTIME_CONFIG.wallpaper.language` set by C# `CultureInfo.CurrentUICulture`; auto-detects Chinese or Russian and renders full UI in that language without manual switching.
+- **High-DPI adaptation**: `PlayerForm` initial `Bounds` uses `Screen.PrimaryScreen.Bounds` instead of off-screen `(-32000,-32000)`, so WebView2 captures the correct DPI context on first render. Pointer coordinates are divided by `devicePixelRatio` inside the synthetic script, fixing station hover on HiDPI (e.g. Huawei touchscreen laptops).
+- **Touch handling**: added `touch-action: none` and `user-scalable=no` viewport to prevent mobile/tablet browser zoom from interfering with the desktop wallpaper.
+- **DPI change resilience**: the wallpaper map re-resizes on `devicePixelRatio` changes via `matchMedia('resolution: 1dppx')` listener, with multiple deferred resize calls during boot to catch late font/metric settle.
+
+### 2026-07-29/30 (SalesWallpaperEngine 0.1.0-0.1.9)
+
+- **Dedicated rewrite**: added `SalesWallpaperEngine`, a new independent host/player WebView2 wallpaper engine that uses WorkerW/Progman desktop attach and a separate player process.
 - **Local proxy data path**: the wallpaper page now reads `127.0.0.1` and the engine proxies `/api/wallpaper/map` to the configured API with `wallpaper-key.json` token support, avoiding browser mixed-content/CSP issues.
 - **0.1.1 field fix**: forwards global mouse position into the WebView canvas so station hover works while the wallpaper sits behind desktop icons; hides the in-page settings button in Engine mode.
 - **0.1.2 tray cleanup**: shortens the tray version label and moves diagnostics/log actions under `高级`, keeping the first-level menu small.
 - **0.1.4 sales summary HUD**: the shared wallpaper page can show current year/month retail volume and sales amount in the bottom-right HUD when `/api/wallpaper/map` is authorized.
 - **0.1.5 true auto-update**: defaults to automatic update checks and installs; the engine downloads the independent zip, verifies SHA256, replaces files after exit, and restarts itself.
-- **Independent package**: `/download/wallpaper-engine/latest.json` points to `SalesWallpaperEngine-0.1.5.zip`; this does not update `SalesDesktop` version, installer, or `latest.yml`.
-
-### 2026-07-29 (SalesWallpaperNative retired)
-
-- **Native route removed**: field testing showed `SalesWallpaperNative` caused lag and did not reliably attach to the Windows desktop layer. The source project and generated packages have been removed from the active tree.
-- **Fallback wallpaper route**: keep the already released `SalesLivelyWallpaper 1.1.1` package only as a fallback; the active dedicated route is `SalesWallpaperEngine 0.1.5`.
-- **Update feed disabled**: `/download/wallpaper-native/latest.json` is now a deprecated marker and no longer points to a downloadable Native package.
-
-### 2026-07-29 (SalesWallpaper Native 0.2.0)
-
-- **真实系统壁纸模式**：默认不再以覆盖式窗口承载动态地图，而是后台用 WebView2 渲染地图快照，保存为 `%APPDATA%\sales-wallpaper-native\wallpaper-current.png`，再调用 Windows `SPI_SETDESKWALLPAPER` 设置为系统桌面壁纸，确保桌面图标不会被遮挡。
-- **定时刷新**：新增 `snapshotRefreshSeconds` 配置项，默认 60 秒重新生成一次系统壁纸快照，继续体现站点状态和点位数据更新。
-- **兼容保留**：托盘中保留图标后层、WorkerW、兼容三种覆盖式实验入口；真正交互式网页背景后续建议走 Lively Wallpaper 独立 HTML 包方案。
-- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.2.0`，完整版下载地址为 `http://198.51.100.10/download/wallpaper-native/SalesWallpaperNative-0.2.0-win-x64-self-contained.zip`。
-
-### 2026-07-29 (SalesWallpaper Native 0.1.5)
-
-- **桌面图标后层热修**：默认挂载目标从空 WorkerW 调整为包含 `SHELLDLL_DefView` 的桌面图标父窗口，并在该父窗口内设置到底层，避免动态地图以全屏软件形式覆盖桌面图标和原桌面层。
-- **托盘排查入口**：托盘菜单保留“图标后层 / WorkerW / 兼容”三种重新贴桌面方式，便于不同 Windows 桌面窗口结构现场切换验证。
-- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.1.5`，完整版下载地址为 `http://198.51.100.10/download/wallpaper-native/SalesWallpaperNative-0.1.5-win-x64-self-contained.zip`。
+- **0.1.7 exchange HUD**: the bottom-right wallpaper HUD shows authorized USD/KGS and CNY/KGS exchange rates from the project exchange-rate snapshot.
+- **0.1.8 display cleanup**: removes the bottom-left data timestamp and refresh timestamp from the wallpaper canvas.
+- **0.1.9 daily data refresh**: refreshes wallpaper data immediately on startup, then once daily at 09:00 after the morning automation tasks; `refreshAtLocalTime` can override this.
+- **Independent package**: `/download/wallpaper-engine/latest.json` currently serves the published `SalesWallpaperEngine 0.1.19` line; this does not update `SalesDesktop` version, installer, or `latest.yml`.
 
 ### 2026-07-29 (v3.9.17 后端热修)
 
 - **自用油合计口径修正**：`按加油站统计` 分表的合计列改为“合计吨位(t)”，按同一加油站、同一油品、公司车辆/员工车辆/发电机分别汇总，不再把公司车辆和员工车辆合并。
 - **吨位展示**：合计值按 `Mass / 1000` 计算，四舍五入保留 4 位小数；原有公斤、升数、金额列保持不变。
 - **发布边界**：本次只部署后端报表导出逻辑，不更新 `SalesDesktop` 客户端版本号，也不重新发布主客户端安装包。
-
-### 2026-07-29 (SalesWallpaper Native 0.1.4)
-
-- **JIT 异常热修**：修复显示设置变化或重新贴桌面时 `Form.UpdateLayered()` 抛出 Win32Exception 87 的问题；运行时不再用 `Opacity` 隐藏/显示窗口。
-- **隐藏策略调整**：改为屏幕外 `1x1` 隐藏，挂载成功后再移动到桌面区域，继续避免全屏遮挡桌面。
-- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.1.4`。
-
-### 2026-07-29 (SalesWallpaper Native 0.1.3)
-
-- **防全屏遮挡热修**：动态壁纸只有在确认挂到 Windows 桌面父窗口后才显示；若挂载失败会保持隐藏并提示，不再退化成全屏软件遮挡原桌面背景和桌面图标。
-- **桌面子窗口样式**：挂载到 WorkerW/Progman 后强制切换为 `WS_CHILD` 并校验父窗口，避免仍按普通顶层窗口运行。
-- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.1.3`。
-
-### 2026-07-29 (SalesWallpaper Native 0.1.2)
-
-- **桌面层级热修**：修复 `0.1.1` 在部分 Windows 环境中启动后闪一下、随后退回系统原桌面背景的问题；默认贴桌面不再使用 `HWND_BOTTOM`，避免动态窗口被压到静态壁纸层之后。
-- **现场排错能力**：托盘菜单新增“重新贴到桌面（标准）”和“重新贴到桌面（兼容）”，不同桌面层级可现场切换。
-- **发布同步**：`/download/wallpaper-native/latest.json` 已指向 `SalesWallpaperNative 0.1.2`，`0.1.1` 已安装机器可通过壁纸托盘“检查更新”升级。
-
-### 2026-07-29 (v3.9.17)
-
-- **正式发布动态背景能力**：主项目新增 `/api/wallpaper/map` 只读接口、`SalesDesktop` 壁纸静态资源构建，以及独立 `SalesWallpaperNative` WebView2 原生动态背景包。
-- **黑屏防护**：原生壳改为本机 `127.0.0.1` 随机端口加载静态资源，地图 ready 后才贴到桌面；接口失败时使用内置点位兜底，避免纯黑背景。
-- **报表修正**：自用油“按加油站统计”页增加油品/车辆类型维度合计列，便于核对站点明细和合计口径。
-- **发布同步**：客户端、Web 和生产部署版本同步到 `3.9.17`；动态背景 zip 通过 `/download/wallpaper-native/` 独立分发，并从 `SalesWallpaperNative 0.1.1` 起接入壁纸专用自动更新清单。
-
-### 2026-07-29 (SalesWallpaper Native)
-
-- **独立动态背景**：新增 `SalesWallpaperNative` Windows 动态背景客户端，面向外网客户端电脑安装运行；本地服务器只提供轻量 JSON 接口，不运行壁纸进程。
-- **壁纸数据接口**：新增 `GET /api/wallpaper/map`。无 token 时只返回站点/油库/状态/汇总数量；配置 `SALES_WALLPAPER_TOKEN` 并在客户端 `wallpaperToken` 中写入相同 token 后，才返回库存、价格等敏感数据。
-- **独立打包边界**：主客户端默认构建仍只输出 `dist/index.html`；动态背景只复用 `SalesDesktop/dist-wallpaper/wallpaper.html` 静态资源，并由 `SalesWallpaperNative` 单独打包，不进入主客户端安装包和自动更新包。
-- **Electron 方案废弃**：早期 `SalesWallpaper` Electron 安装包体积接近主客户端，已从主项目构建脚本和配置中移除；后续只维护 WebView2 原生壳。
-- **黑屏防护**：原生壳在地图页面真正渲染完成并发送 ready 信号后，才贴到 Windows 桌面；仓库调试运行不会自动写入开机启动项，避免接口或资源未就绪时覆盖成黑色背景。
-- **WebView2 轻量版**：框架依赖版 zip 约 `7.6 MB`，自包含版 zip 约 `77.5 MB`，均独立放在 `/download/wallpaper-native/`；`latest.json` 用于壁纸程序自更新，不占用主客户端自动更新链路。
 
 ### 2026-07-28 (v3.9.16)
 
@@ -105,24 +108,24 @@
 
 ### 2026-07-28 (v3.9.15)
 
-- **更新源兜底**：客户端自动更新检查增加公网 IP 更新源 `http://198.51.100.10/download` 兜底；`sales.example.com` 因付款、DNS 或运营商缓存异常不可用时，仍可通过 IP 获取新版本。
-- **阶段策略**：新版客户端默认更新源暂时固定为公网 IP，API 主入口继续保留 `http://sales.example.com` 并支持 IP 回退；正式 SSL 证书和域名状态稳定后再统一切 HTTPS。
+- **更新源兜底**：客户端自动更新检查增加备用发布源兜底；`sales.example.com` 因付款、DNS 或运营商缓存异常不可用时，仍可通过备用发布入口获取新版本。
+- **阶段策略（历史）**：当时新版客户端默认更新源暂时固定为备用发布入口，API 主入口使用生产域名并支持备用入口回退；2026-08-01 起正式域名已统一切到 HTTPS。
 
 ### 2026-07-28 (v3.9.14)
 
-- **Network Error 二次热修复**：打包客户端的 Electron CSP 连接白名单同步放行生产域名 `http://sales.example.com` 与备用公网 IP `http://198.51.100.10`，确保 3.9.13 的 IP 回退请求不会被客户端安全策略拦截。
-- **CORS 修复**：后端正确识别 `file://`、`null`、`app://` 来源，并显式允许生产域名/IP，覆盖桌面客户端本地页面和 Web 端跨源回退请求。
+- **Network Error 二次热修复**：打包客户端的 Electron CSP 连接白名单同步放行生产域名与备用入口，确保 3.9.13 的回退请求不会被客户端安全策略拦截。
+- **CORS 修复**：后端正确识别 `file://`、`null`、`app://` 来源，并显式允许生产域名入口，覆盖桌面客户端本地页面和 Web 端跨源回退请求。
 
 ### 2026-07-28 (v3.9.13)
 
-- **Network Error 热修复**：客户端访问 `http://sales.example.com` 出现网络错误时，自动使用公网 IP `http://198.51.100.10` 重试 API 请求，避免 DNS 或域名网络未稳定时无法登录。
-- **验证**：域名和 IP 健康接口、登录接口、CORS 预检、桌面 typecheck/test 均通过。
+- **Network Error 热修复**：客户端访问生产域名出现网络错误时，自动使用备用入口重试 API 请求，避免 DNS 或域名网络未稳定时无法登录。
+- **验证**：域名和备用入口健康接口、登录接口、CORS 预检、桌面 typecheck/test 均通过。
 
 ### 2026-07-28 (v3.9.12)
 
-- **登录热修复**：打包后的客户端若本机旧 `app-config.json` 仍指向 `127.0.0.1/localhost`，自动回退到正式域名 `http://sales.example.com`，避免远端客户端误连本机导致登录失败。
+- **登录热修复**：打包后的客户端若本机旧 `app-config.json` 仍指向 `127.0.0.1/localhost`，自动回退到正式域名，避免远端客户端误连本机导致登录失败。
 - **错误提示修复**：登录页显示后端或网络层真实错误信息，不再把 API 地址、网络连接、服务异常统一误报为“账号密码错误”。
-- **验证**：`admin` 登录接口已在 `http://sales.example.com/api/v2/auth/login`、IP 入口和兼容入口返回 200；桌面 typecheck/test 通过。
+- **验证**：`admin` 登录接口已在正式域名、备用入口和兼容入口返回 200；桌面 typecheck/test 通过。
 
 ### 2026-07-28 (v3.9.11)
 
@@ -131,7 +134,7 @@
 - **迟到数据审计与补跑**：新增 `scripts/audit-late-retail-data.ps1` / `scripts/late_retail_data_maintenance.py`，可按业务日期识别日快照、月快照、自用油、年度快照和吉方财务交接报表是否晚于数据上传时间，并可显式补跑。
 - **历史快照重跑能力**：`OilStation/scripts/refresh_current_snapshots.py` 支持 `--date/--month/--start/--end`，用于停电、延迟上传、跨日班次等场景的历史月份快照重建。
 - **真实密度/吨位审计**：新增 `audit-retail-density-mass`，并升级 `compare_retail_snapshot_db.py`，按数据库真实质量/密度字段对照快照升数、kg、吨和销售额。
-- **HTTP 域名默认入口**：桌面客户端默认 API 和更新源切换到 `http://sales.example.com`，保留 `http://198.51.100.10` 兜底；Nginx 取消证书未就绪前的 HTTP→HTTPS 跳转。
+- **生产域名默认入口（历史）**：桌面客户端默认 API 和更新源切换到生产域名，保留备用入口兜底；当时为临时过渡阶段保留 HTTP。2026-08-01 起正式域名已统一切到 HTTPS。
 - **发布维护工具**：新增旧安装包安全清理、桌面更新源回滚、HTTP 域名连通性检查脚本；本次清理旧公开安装包释放约 `248.63 MB`。
 - **发布同步**：客户端、Web、后端和自动更新包版本同步到 `3.9.11`。
 
@@ -576,7 +579,7 @@
 
 - 完成 React + Vite 前端迁移，所有页面从内联 HTML/JS 改为 React SPA 构建。
 - 部署 Nginx 1.26.3 作为反向代理：静态文件服务 + API 转发到 Flask :8900。
-- 访问地址新增 `http://localhost`（Nginx :80），原 `http://127.0.0.1:8900`（Flask）保留兼容；2026-07-28 起生产默认入口切换为 `http://sales.example.com`。
+- 访问地址新增 `http://localhost`（Nginx :80），原 `http://127.0.0.1:8900`（Flask）保留兼容；2026-08-01 起生产推荐入口为 `https://sales.example.com`。
 - 新增前端项目目录 `frontend/`，包含 React 源码、Vite 构建配置和部署脚本。
 - 首页 3D 地图尺寸固定为 650px，国家模型水平偏移 `viewOffsetX: -4.0` 避免道路面板遮挡。
 - 新增运维脚本：`deploy-production.ps1`（一键构建部署）、`nginx-ctl.ps1`（Nginx 控制）、`register-nginx-task.ps1`（开机自启）。
@@ -590,13 +593,13 @@
 
 ## 访问地址
 
-- **生产访问（Nginx）**：`http://sales.example.com`（推荐，HTTP 域名入口）
-- 备用外网访问：`http://198.51.100.10/`（经 Nginx 反向代理）
+- **生产访问（Nginx）**：`https://sales.example.com`（推荐，HTTPS 域名入口）
+- HTTP 域名入口：访问后 308 跳转到 `https://sales.example.com/`
 - 本机访问：`http://localhost`
 - Flask 直连：`http://127.0.0.1:8900/`（兼容保留）
-- 零售总览：`http://sales.example.com/retail`
-- 后台管理：`http://sales.example.com/admin`
-- HTTPS：等待正式 SSL 证书签发后启用。
+- 零售总览：`https://sales.example.com/retail`
+- 后台管理：`https://sales.example.com/admin`
+- HTTPS：已启用，生产推荐入口为 `https://sales.example.com/`。
 
 所有业务页面均需要登录。普通用户可查看主页、批发、零售等数据页面；管理员可进入后台维护系统。
 
@@ -803,7 +806,7 @@ Windows Server (物理机)
 - 领导层以查看数据为主，普通员工以录入和修改业务数据为主；具体菜单和数据范围由部门、角色、人员权限共同决定。
 - 桌面端开发者控制台快捷键 `Ctrl+Shift+I` 仅管理员登录后生效，非管理员无响应。
 - 401 未登录自动跳转 `/login`
-- 未上 HTTPS；账号、密钥、Cookie 时效等隐私配置统一登记于 `docs/配置文档.md`
+- 已启用 HTTPS；账号、密钥、Cookie 时效等隐私配置统一登记于 `docs/配置文档.md`
 
 ## 运行方式
 
@@ -1215,7 +1218,7 @@ SalesDesktop/
 ```
 
 **架构特点**：
-- **双端统一**：客户端默认直连生产域名入口（`http://sales.example.com`，由 Nginx 转发到本机后端 `127.0.0.1:8900`），IP 入口保留兜底，不走本地服务器
+- **双端统一**：客户端默认直连生产 HTTPS 域名入口（由 Nginx 转发到本机后端 `127.0.0.1:8900`），备用入口保留兜底，不走本地服务器
 - **双认证**：JWT Token（客户端）+ Session Cookie（Web 端），后端统一校验
 - **响应解包**：`http.ts` 自动解 `res.data.data → res.data`，API 封装层无感
 - **自动更新**：electron-updater + `latest.yml`，设置页触发检查更新
@@ -1223,7 +1226,7 @@ SalesDesktop/
 
 ## 后续优化方向
 
-- HTTPS 正式证书完成后启用安全 Cookie 和 HTTP→HTTPS 跳转。
+- HTTPS 正式证书已启用；4.0.0 源码线默认 Secure Cookie，HTTP 域名入口跳转 HTTPS。
 - 继续扩展异常销量、异常价格、汇率缺失、快照滞后的主动提醒。
 - 建立月度归档和自动备份策略。
 - 对首页、批发、零售和后台继续做小步视觉精修，避免大规模重构影响稳定。
@@ -1353,3 +1356,10 @@ D:\SalesVisualization\ops-refresh-retail-snapshots.bat
 - `07:30`：补齐汇率。
 - `07:30`：获取并整理市场观察。
 - `08:30`：生成零售日快照、当前月/年度汇总快照、区域同比环比数据，并同步生成零售预警趋势异常和运营建议；Excel 日销报表按需生成并复用已有索引。
+## 2026-08-01 Current Deployment Status
+
+- Production HTTPS is enabled: `https://sales.example.com/`.
+- HTTP domain traffic redirects to HTTPS; backup endpoint and certificate paths are kept only in `docs/配置文档.md`.
+- SalesDesktop source version is now `4.0.0`; new packaged builds default to the HTTPS API and update feed, upgrade legacy public HTTP config to HTTPS, and keep manual fallback details only in configuration.
+- System Health now includes a manual task for generating the previous completed month's original-software 254 monthly archive on the server; it saves in place and does not download a package to the client.
+- SalesWallpaperEngine source version is now `0.2.0`; new wallpaper builds default to the HTTPS API/update manifest and upgrade legacy public HTTP config to HTTPS.

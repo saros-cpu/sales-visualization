@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '3.10.1';
-export const BUILD_DATE = '2026-07-29';
+export const VERSION = '4.0.0';
+export const BUILD_DATE = '2026-08-01';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,21 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '4.0.0',
+    date: '2026-08-01',
+    type: 'major',
+    changes: [
+      '重要更新：域名和 SSL 证书已正式就位，客户端默认 API 入口和自动更新源切换为 https://sales.example.com',
+      '优化：旧公共 HTTP 文件配置会自动升级到 HTTPS 域名，环境变量仍可显式指定备用入口作为运维兜底',
+      '修复：客户端、Web 端和壁纸端吉尔吉斯地图悬停命中区域增强，恢复点位 hover 数据展示',
+      '新增：系统健康手动任务支持生成上月原软件 254 月报归档，服务端按年/月目录保存覆盖，不触发客户端下载',
+      '优化：客户端年度分析报告、月度分析报告和零售日报保存逻辑统一复用 Web 端 /api/export 生成接口，先生成服务端文件再按返回地址下载',
+      '安全：桌面端打包源改为 app://salesdesktop，后端 CORS 收紧，登出时撤销 JWT access/refresh token',
+      '安全：后端默认启用 Secure Cookie，HTTP 域名入口跳转 HTTPS，Nginx 使用长期 HSTS',
+      '安全：壁纸完整数据默认使用 X-Wallpaper-Token 请求头，本地设置写接口增加 nonce 校验，0.2.0 壁纸引擎同步迁移旧公共 HTTP 配置',
+    ],
+  },
   {
     version: '3.10.1',
     date: '2026-07-29',
@@ -68,8 +83,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-07-28',
     type: 'patch',
     changes: [
-      '紧急修复：客户端自动更新源增加公网 IP 兜底，域名 sales.example.com 因付款、DNS 或运营商缓存异常不可用时，检查更新会自动改用 http://198.51.100.10/download',
-      '优化：新版客户端默认更新源暂时固定为公网 IP，API 主入口仍保留正式域名，并继续支持 IP 回退；正式 SSL 证书和域名状态稳定后再统一切 HTTPS',
+      '紧急修复：客户端自动更新源增加备用发布入口兜底，域名 sales.example.com 因付款、DNS 或运营商缓存异常不可用时，检查更新会自动改用备用入口',
+      '优化：新版客户端默认更新源暂时固定为备用发布入口，API 主入口仍保留正式域名，并继续支持备用入口回退；正式 SSL 证书和域名状态稳定后再统一切 HTTPS',
     ],
   },
   {
@@ -77,7 +92,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-07-28',
     type: 'patch',
     changes: [
-      '紧急修复：客户端外网 API 回退到公网 IP 时，Electron CSP 连接白名单同步放行 sales.example.com 与 198.51.100.10，避免回退请求被客户端安全策略拦截后仍显示 Network Error',
+      '紧急修复：客户端外网 API 回退到备用入口时，Electron CSP 连接白名单同步放行正式域名与备用入口，避免回退请求被客户端安全策略拦截后仍显示 Network Error',
       '紧急修复：后端 CORS 正确识别 Electron file://、null、app:// 来源，并显式允许生产域名/IP，保证打包客户端和 Web 端跨源回退请求可通过预检',
     ],
   },
@@ -86,7 +101,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-07-28',
     type: 'patch',
     changes: [
-      '紧急修复：客户端访问正式域名出现 Network Error 时，自动使用公网 IP http://198.51.100.10 重试 API 请求，避免 DNS 或域名网络未稳定时无法登录',
+      '紧急修复：客户端访问正式域名出现 Network Error 时，自动使用备用入口重试 API 请求，避免 DNS 或域名网络未稳定时无法登录',
       '验证：域名和 IP 健康接口、登录接口、CORS 预检、桌面 typecheck/test 均通过',
     ],
   },
@@ -109,7 +124,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       '新增：迟到数据审计/补跑脚本，可按业务日期识别日快照、月快照、自用油、年度快照和吉方财务交接报表是否需要重跑',
       '新增：零售快照刷新脚本支持按历史日期或月份补跑，便于处理停电、延迟上传和跨日班次数据',
       '新增：密度/吨位快照审计和数据库验数脚本升级，发布前检查会验证当前月快照升数、kg、吨和密度口径一致',
-      '优化：客户端默认生产入口和自动更新源切换为 HTTP 域名 http://sales.example.com，保留 IP 入口兜底；HTTPS 等正式 SSL 证书后启用',
+      '优化：客户端默认生产入口和自动更新源切换为 HTTP 域名 http://sales.example.com，保留备用入口兜底；HTTPS 等正式 SSL 证书后启用',
       '新增：发布维护脚本支持旧安装包安全清理、桌面更新源回滚和 HTTP 域名连通性检查',
     ],
   },

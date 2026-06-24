@@ -1,7 +1,10 @@
 import json
 import os
+import zipfile
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import quote
+from xml.sax.saxutils import escape
 from endpoints.v1.retail.analysis_report.service.common import (
     _calc_prev_month, _pct, _fmt, _fmt_pct, _date_label, _period_label,
     _docx_report_title, _resource_tons, _month_after, _is_completed_ym, _is_snapshot_writable_ym,
@@ -11,12 +14,43 @@ from endpoints.v1.retail.analysis_report.service.common import (
     _merge_period_dataset, _finalize_period_dataset, _period_dataset_from_month_slices,
     _attach_report_extras, _query_period_dataset, _same_period_previous_year, _comparison_payload,
     _ensure_report_comparison, _month_exclusive_end, _month_dataset, _year_dataset,
+    _round_half_up,
     _table_rows, _sum_key, _complete_station_rows, _top_name, _money_short, _volume_short,
     _percent, _rank_class, _resource_js_rows, _region_js_rows, _station_js_rows, _render_html_report,
     _empty_report_extras, _sales_db_config, _exchange_rates_for_period,
     EXPORT_DIR, PROJECT_ROOT, REPORT_EXTRAS_DIR,
 )
 from export_excel import RESOURCE_DENSITY
+
+
+def _safe_float(value):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _attach_average_rate_cny(data):
+    if data.get("kind") != "monthly":
+        return data
+    exchange_info = data.get("exchangeRates") or {}
+    avg_cny = _safe_float(exchange_info.get("avgCny"))
+    conversion = {
+        "method": "monthly_average_cny_kgs",
+        "available": avg_cny > 0,
+        "avgCnyKgs": avg_cny if avg_cny > 0 else None,
+    }
+    data["cnyConversion"] = conversion
+    if avg_cny <= 0:
+        return data
+
+    summary = data.setdefault("summary", {})
+    summary["totalSalesCnyAvg"] = _round_half_up(_safe_float(summary.get("totalSales")) / avg_cny, 2)
+    for item in data.get("resources") or []:
+        item["amountCnyAvg"] = _round_half_up(_safe_float(item.get("amount")) / avg_cny, 2)
+    conversion["resourceAmountCnyTotal"] = _round_half_up(_sum_key(data.get("resources") or [], "amountCnyAvg"), 2)
+    return data
+
 
 def _docx_document_xml(data):
     summary = data["summary"]
@@ -59,6 +93,10 @@ def _docx_document_xml_v2(data):
     resources = sorted(data.get("resources") or [], key=lambda item: item.get("volume", 0), reverse=True)
     active_stations = [item for item in stations if item["amount"] > 0 or item["volume"] > 0]
     exchange_info = data.get("exchangeRates") or {}
+    cny_conversion = data.get("cnyConversion") or {}
+    has_cny_conversion = bool(cny_conversion.get("available"))
+    avg_cny_kgs = cny_conversion.get("avgCnyKgs") or exchange_info.get("avgCny")
+    total_sales_cny = summary.get("totalSalesCnyAvg")
     period_label = _period_label(data)
 
     def para(text="", bold=False, size=21, align=None, color="333333", spacing=120):
@@ -128,6 +166,66 @@ def _docx_document_xml_v2(data):
     card_sales = float(summary.get("cardSales") or 0)
     end_inventory = float(summary.get("endInventory") or 0)
     end_inventory_tons = float(summary.get("endInventoryTons") or 0)
+    cny_note_parts = []
+    if has_cny_conversion:
+        cny_note_parts = [
+            para(
+                f"• 人民币金额按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
+                "公式为索姆金额 ÷ 月平均汇率。",
+                spacing=60,
+            )
+        ]
+    overview_rows = [
+        ["销售量（升）", _fmt(summary.get("totalLiters"), 2), "折算吨数", _fmt(summary.get("totalTons"), 3)],
+    ]
+    if has_cny_conversion:
+        overview_rows.extend([
+            ["销售金额（索姆）", _fmt(summary.get("totalSales"), 2), "折算人民币（元）", _fmt(total_sales_cny, 2)],
+            ["期末库存（升）", _fmt(end_inventory, 2), "期末库存（吨）", _fmt(end_inventory_tons, 3)],
+        ])
+    else:
+        overview_rows.extend([
+            ["销售金额（索姆）", _fmt(summary.get("totalSales"), 2), "期末库存（升）", _fmt(end_inventory, 2)],
+            ["期末库存（吨）", _fmt(end_inventory_tons, 3), "活跃站点", f"{len(active_stations)} / {len(stations)}"],
+        ])
+    overview_rows.append(["现金占比", _percent(cash_sales, total_sales), "刷卡占比", _percent(card_sales, total_sales)])
+
+    resource_headers = ["油品", "销量（升）", "销售金额（索姆）"]
+    if has_cny_conversion:
+        resource_headers.append("折算人民币（元）")
+    resource_headers.append("销量占比")
+    resource_rows = []
+    for item in resources:
+        row = [
+            item.get("name") or "--",
+            _fmt(item.get("volume"), 2),
+            _fmt(item.get("amount"), 2),
+        ]
+        if has_cny_conversion:
+            row.append(_fmt(item.get("amountCnyAvg"), 2))
+        row.append(_percent(item.get("volume"), summary.get("totalLiters")))
+        resource_rows.append(row)
+    if resources:
+        total_row = [
+            "合计",
+            _fmt(_sum_key(resources, "volume"), 2),
+            _fmt(_sum_key(resources, "amount"), 2),
+        ]
+        if has_cny_conversion:
+            total_row.append(_fmt(_sum_key(resources, "amountCnyAvg"), 2))
+        total_row.append(_percent(_sum_key(resources, "volume"), summary.get("totalLiters")))
+        resource_rows.append(total_row)
+
+    exchange_text = (
+        f"本统计周期已获取 {exchange_info.get('count', 0)} / {exchange_info.get('totalDays', 0)} 天汇率快照。"
+        f"平均 USD/KGS：{_fmt(exchange_info.get('avgUsd'), 4) if exchange_info.get('avgUsd') is not None else '--'}；"
+        f"平均 CNY/KGS：{_fmt(exchange_info.get('avgCny'), 4) if exchange_info.get('avgCny') is not None else '--'}。"
+    )
+    if has_cny_conversion:
+        exchange_text += (
+            f"本报告人民币金额按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
+            f"本期销售额折算人民币 {_fmt(total_sales_cny, 2)} 元。"
+        )
     month_compare_parts = []
     yearly_trend_parts = []
     if data["kind"] == "monthly":
@@ -203,15 +301,11 @@ def _docx_document_xml_v2(data):
         para("• 总销量包含普通销售、刷卡销售及合同销售。", spacing=60),
         para("• 总销售额按销售现金、刷卡金额及合同金额统计。", spacing=60),
         para("• 吨数按系统密度快照折算。", spacing=140),
+        *cny_note_parts,
         heading("二、全网经营总览"),
         table(
             ["指标", "数值", "指标", "数值"],
-            [
-                ["销售量（升）", _fmt(summary.get("totalLiters"), 2), "折算吨数", _fmt(summary.get("totalTons"), 3)],
-                ["销售金额（索姆）", _fmt(summary.get("totalSales"), 2), "期末库存（升）", _fmt(end_inventory, 2)],
-                ["期末库存（吨）", _fmt(end_inventory_tons, 3), "活跃站点", f"{len(active_stations)} / {len(stations)}"],
-                ["现金占比", _percent(cash_sales, total_sales), "刷卡占比", _percent(card_sales, total_sales)],
-            ],
+            overview_rows,
         ),
         *month_compare_parts,
         *yearly_compare_parts,
@@ -219,24 +313,16 @@ def _docx_document_xml_v2(data):
         heading(overview_heading),
         para(
             f"本期销售总量为 {_fmt(summary.get('totalLiters'), 2)} 升，折算 {_fmt(summary.get('totalTons'), 3)} 吨，"
-            f"销售金额 {_fmt(summary.get('totalSales'), 2)} 索姆。销售金额最高站点为 {_top_name(active_stations)}，"
+            f"销售金额 {_fmt(summary.get('totalSales'), 2)} 索姆"
+            f"{'，折算人民币 ' + _fmt(total_sales_cny, 2) + ' 元' if has_cny_conversion else ''}。"
+            f"销售金额最高站点为 {_top_name(active_stations)}，"
             f"贡献最高区域为 {_top_name(regions)}，主力油品为 {_top_name(resources, 'volume')}。"
         ),
         para("本报告按零售报表口径生成，只统计已结束班组数据；吨数按系统密度快照折算。"),
         heading(resource_heading),
         table(
-            ["油品", "销量（升）", "销售金额（索姆）", "销量占比"],
-            [[
-                item.get("name") or "--",
-                _fmt(item.get("volume"), 2),
-                _fmt(item.get("amount"), 2),
-                _percent(item.get("volume"), summary.get("totalLiters")),
-            ] for item in resources] + ([[
-                "合计",
-                _fmt(_sum_key(resources, "volume"), 2),
-                _fmt(_sum_key(resources, "amount"), 2),
-                _percent(_sum_key(resources, "volume"), summary.get("totalLiters")),
-            ]] if resources else []),
+            resource_headers,
+            resource_rows,
         ),
         heading(region_heading),
         table(
@@ -291,11 +377,7 @@ def _docx_document_xml_v2(data):
             ]],
         ),
         heading(exchange_heading),
-        para(
-            f"本统计周期已获取 {exchange_info.get('count', 0)} / {exchange_info.get('totalDays', 0)} 天汇率快照。"
-            f"平均 USD/KGS：{_fmt(exchange_info.get('avgUsd'), 4) if exchange_info.get('avgUsd') is not None else '--'}；"
-            f"平均 CNY/KGS：{_fmt(exchange_info.get('avgCny'), 4) if exchange_info.get('avgCny') is not None else '--'}。"
-        ),
+        para(exchange_text),
     ]
     body = "".join(body_parts)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -322,6 +404,7 @@ def _write_docx(path, data):
 def _write_reports(data):
     data = _ensure_report_comparison(data)
     data["exchangeRates"] = _exchange_rates_for_period(data.get("queryStart"), data.get("queryEndExclusive"))
+    data = _attach_average_rate_cny(data)
     data = _attach_report_extras(data)
     base_name = data["title"]
     html_name = f"{base_name}.html"

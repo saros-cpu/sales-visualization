@@ -39,11 +39,25 @@
 <div id="mapChart"></div>
 
 <script type="module">
-import { mountHomeMap } from '/assets/kgz-map/kgz-map-entry.js?v=20260729-depot-cluster';
+import { mountHomeMap } from '/assets/kgz-map/kgz-map-entry.js?v=20260801-hover-hit';
 
 function getToken() {
   const p = new URLSearchParams(window.location.search);
   return p.get('token') || '';
+}
+
+function showMapError(container, err) {
+  container.textContent = '';
+  const box = document.createElement('div');
+  box.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff4d4f;text-align:center';
+  const title = document.createElement('h3');
+  title.textContent = '地图加载失败';
+  const detail = document.createElement('p');
+  detail.style.cssText = 'margin-top:8px;font-size:13px;color:#999';
+  detail.textContent = (err && err.message) || '未知错误';
+  box.appendChild(title);
+  box.appendChild(detail);
+  container.appendChild(box);
 }
 
 async function init() {
@@ -59,7 +73,7 @@ async function init() {
     data = d;
     role = d.role || 'viewer';
   } catch (err) {
-    document.getElementById('mapChart').innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff4d4f;text-align:center"><h3>地图加载失败</h3><p style="margin-top:8px;font-size:13px;color:#999">' + err.message + '</p></div>';
+    showMapError(document.getElementById('mapChart'), err);
     return;
   }
 
@@ -114,7 +128,7 @@ function renderMap(data, visible) {
     showRegionLabels: false, showLegend: false,
     initialCamera: { cameraX: -2.35, cameraY: 24.77, cameraZ: 38.2, targetX: -2.35, targetY: 0.33, targetZ: 3.95 },
   }).catch(err => {
-    el.innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff4d4f;text-align:center"><h3>地图加载失败</h3><p style="margin-top:8px;font-size:13px;color:#999">' + err.message + '</p></div>';
+    showMapError(el, err);
   });
 }
 

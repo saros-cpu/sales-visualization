@@ -200,8 +200,8 @@ const depotPoints = [
   { name: 'DemoDepotSouth', short: 'Юж DemoDepot', region: 'REG-07', lng: 0, lat: 0, role: 'branch', status: 'normal' }
 ];
 
-// Runtime dynamic import — bypass bundler resolution for external assets
-const runtimeImport = (url) => new Function('url', 'return import(url)')(url);
+// Runtime dynamic import: keep external map assets out of the Vite graph.
+const runtimeImport = (url) => import(/* @vite-ignore */ url);
 
 // ── 主页组件 ──
 export default function DashboardPage() {
@@ -343,7 +343,7 @@ export default function DashboardPage() {
   const initMap = useCallback(async () => {
     if (window.USE_3D_KGZ_MAP !== false) {
       try {
-        const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260729-depot-cluster');
+        const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260801-hover-hit');
         mapShellRef.current?.classList.add('is-3d-map');
         const map = await mountHomeMap('#homeMapChart', {
           depots: depotPoints.map(p => ({

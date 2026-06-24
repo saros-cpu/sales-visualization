@@ -1,5 +1,5 @@
-param(
-    [string]$Version = "0.1.5",
+﻿param(
+    [string]$Version = "0.2.0",
     [string]$IncludeKeyPath = "",
     [switch]$SkipWallpaperAssets,
     [switch]$NoInstaller,
@@ -17,7 +17,7 @@ $zipPath = Join-Path $publishRoot ("SalesWallpaperEngine-{0}.zip" -f $Version)
 $setupPath = Join-Path $publishRoot ("SalesWallpaperEngine-Setup-{0}.exe" -f $Version)
 $installerPayload = Join-Path $publishRoot "installer-payload"
 $downloadDir = Join-Path $desktopDir "download\wallpaper-engine"
-$publicBase = "http://198.51.100.10/download/wallpaper-engine"
+$publicBase = "https://sales.example.com/download/wallpaper-engine"
 
 if (-not $SkipWallpaperAssets) {
     Push-Location $desktopDir
@@ -41,6 +41,10 @@ if (Test-Path $wwwroot) {
 }
 New-Item -ItemType Directory -Force -Path $wwwroot | Out-Null
 Copy-Item -Path (Join-Path $distWallpaper "*") -Destination $wwwroot -Recurse -Force
+$settingsWeb = Join-Path $PSScriptRoot "settings-web"
+if (Test-Path $settingsWeb) {
+    Copy-Item -Path (Join-Path $settingsWeb "*") -Destination $wwwroot -Recurse -Force
+}
 
 $htmlPath = Join-Path $wwwroot "wallpaper.html"
 $html = Get-Content -Raw -Path $htmlPath
@@ -62,11 +66,37 @@ $fallbackConfig = @"
     apiHost: origin,
     wallpaperToken: "",
     safeArea: { left: 0, top: 0, right: 0, bottom: 0 },
-    lively: {
+    wallpaper: {
       packageId: "kg.example.sales.wallpaper.engine",
       packageVersion: "$Version",
       updateManifestUrl: origin + "/download/wallpaper-engine/latest.json",
-      refreshSeconds: 1800
+      language: "auto",
+      refreshAtLocalTime: "09:00",
+      refreshSeconds: 86400,
+      map: { fitCenterX: -1.16, fitCenterY: -0.45, fitCenterZ: 2.48 },
+      hud: {
+        showSalesSummary: true,
+        showExchangeRates: true,
+        showYearVolume: true,
+        showYearTons: true,
+        showYearAmount: true,
+        showMonthVolume: true,
+        showMonthTons: true,
+        showMonthAmount: true,
+        showUsdKgs: true,
+        showCnyKgs: true,
+        showInventoryAlerts: true,
+        showActiveStations: true,
+        showClosedStations: true,
+        showDepotMarkers: true,
+        showInventoryAlertOnly: false,
+        hudTopScale: 1,
+        hudTopOffsetX: 0,
+        hudTopOffsetY: 0,
+        hudSalesScale: 1,
+        hudSalesOffsetX: 0,
+        hudSalesOffsetY: 0
+      }
     }
   };
   Object.defineProperty(window, "__SALES_API_HOST__", {
@@ -277,15 +307,37 @@ if (-not $NoPublishDownload) {
         package = "SalesWallpaperEngine"
         notes = @(
             "SalesWallpaperNative retired and replaced by a new host/player engine.",
-            "Uses a local loopback proxy for wallpaper map data and a Lively-style desktop attach path.",
+            "Uses a local loopback proxy for wallpaper map data and a dedicated desktop attach path.",
             "Forwards global mouse position into the WebView canvas so station hover works behind desktop icons.",
             "Hides the in-page wallpaper settings button when running in SalesWallpaperEngine.",
             "Compacts the tray menu and shortens the displayed version label.",
             "Adds authorized year/month retail volume and sales amount HUD.",
+            "Adds authorized USD/KGS and CNY/KGS exchange rates to the bottom-right HUD.",
+            "Removes the bottom-left data timestamp and refresh timestamp from the wallpaper view.",
+            "Refreshes wallpaper map data once every morning at 09:00 by default, after daily retail snapshot tasks, while still refreshing immediately on startup.",
             "Colors per-fuel inventory rows by capacity fill level without changing station status colors.",
+            "Shows Chinese business status labels on map hover instead of internal values such as normal.",
+            "Displays install, config, key, and Startup shortcut paths after setup finishes.",
             "Enables true auto-update by default: download, SHA256 verify, replace files, and restart the engine.",
             "Keeps tray-driven manual update install available for computers with autoInstallUpdates disabled.",
-            "Wallpaper updates are independent from the main SalesDesktop client version."
+            "Wallpaper updates are independent from the main SalesDesktop client version.",
+            "Adds a tray settings window for language, refresh, update, map center, HUD visibility, and HUD layout.",
+            "Allows top and sales HUD blocks to be dragged and resized during settings edit mode with preview before save.",
+            "Lets the Settings window enter HUD edit mode, save dragged HUD layout, or cancel unsaved HUD drag changes.",
+            "Keeps station hover tooltips away from the configured HUD blocks.",
+            "Adds authorized year/month retail tons to the sales HUD.",
+            "Adds a lightweight inventory alert HUD counter using critical/warning counts.",
+            "Adds map marker filters for active stations, closed stations, depot markers, and low-inventory-only view.",
+            "Moves manual update checking to the first-level tray menu while Settings keeps the automatic update options.",
+            "Adds a runtime snapshot log action for later troubleshooting.",
+            "Merges year volume/tons and month volume/tons into compact stacked sales HUD cells.",
+            "Adds CNY sales amounts converted by the period-average CNY/KGS method used by the monthly analysis report.",
+            "Compacts the top inventory KPI now that inventory is shown in ten-thousand-liter units.",
+            "Avoids a full page reload when leaving HUD edit mode to reduce wallpaper flicker.",
+            "Requires update package size and SHA256 verification before applying an engine update.",
+            "Automatically restarts the wallpaper player after a WebView2 process failure or unexpected player exit.",
+            "Adds a Settings status panel for version, API host, token state, refresh/update state, and live data reachability.",
+            "Moves config and log folder shortcuts under the Advanced tray menu to keep first-level tray actions focused."
         )
     }
     $manifestJson = $manifest | ConvertTo-Json -Depth 5

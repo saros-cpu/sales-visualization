@@ -16,7 +16,9 @@ from api_v2.system import (
     _accounting_report_status,
     _accounting_station_statuses_for_day,
     _normalize_accounting_text,
+    _previous_completed_month,
     _run_retail_accounting_reports_task,
+    _run_retail_254_monthly_archive_task,
 )
 
 
@@ -361,6 +363,106 @@ class SystemHealthActionCenterTests(unittest.TestCase):
         self.assertEqual(records[0]["status"], "failed")
         self.assertEqual(records[0]["summary"]["failedCount"], 1)
         self.assertEqual(records[0]["summary"]["failedItems"][0]["message"], "script crashed")
+
+    def test_previous_completed_month_uses_fully_closed_month(self):
+        self.assertEqual(_previous_completed_month(date(2026, 8, 1)), "2026-07")
+        self.assertEqual(_previous_completed_month(date(2026, 8, 15)), "2026-07")
+        self.assertEqual(_previous_completed_month(date(2026, 1, 1)), "2025-12")
+
+    def test_retail_254_monthly_archive_task_records_success(self):
+        records = []
+        calls = []
+        if str(system.OILSTATION_ROOT) not in sys.path:
+            sys.path.insert(0, str(system.OILSTATION_ROOT))
+        from endpoints.v1.retail.export.service import report254_monthly
+
+        def fake_generator(month, apply=True):
+            calls.append({"month": month, "apply": apply})
+            return {
+                "status": "ok",
+                "month": month,
+                "sourceDir": r"D:\archive\2026г\По Месяц\Июль",
+                "generatedCount": 27,
+                "appliedCount": 27,
+                "items": [],
+            }
+
+        original_generator = report254_monthly.generate_monthly_254_archive
+        original_recorder = system.record_automation_task
+        report254_monthly.generate_monthly_254_archive = fake_generator
+        system.record_automation_task = lambda cur, task, status, summary, error: records.append({
+            "task": task,
+            "status": status,
+            "summary": summary,
+            "error": error,
+        })
+        try:
+            result = _run_retail_254_monthly_archive_task(object(), year_month="2026-07")
+        finally:
+            report254_monthly.generate_monthly_254_archive = original_generator
+            system.record_automation_task = original_recorder
+
+        self.assertEqual(calls, [{"month": "2026-07", "apply": True}])
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["summary"]["month"], "2026-07")
+        self.assertEqual(result["summary"]["appliedCount"], 27)
+        self.assertEqual(records[0]["task"], "retail_254_monthly_archive")
+        self.assertEqual(records[0]["status"], "success")
+
+    def test_retail_254_monthly_archive_paths_are_year_and_month_nested(self):
+        if str(system.OILSTATION_ROOT) not in sys.path:
+            sys.path.insert(0, str(system.OILSTATION_ROOT))
+        from endpoints.v1.retail.export.service import report254_monthly
+
+        root = Path(r"D:\archive")
+        self.assertEqual(
+            report254_monthly.archive_year_dir(2026, archive_root=root),
+            root / "2026г",
+        )
+        self.assertEqual(
+            report254_monthly.archive_yearly_root(2026, archive_root=root),
+            root / "2026г" / "По Год",
+        )
+        self.assertEqual(
+            report254_monthly.archive_monthly_root(2026, archive_root=root),
+            root / "2026г" / "По Месяц",
+        )
+        self.assertEqual(
+            report254_monthly.month_dir("2026-07", archive_root=root),
+            root / "2026г" / "По Месяц" / "Июль",
+        )
+
+    def test_retail_254_monthly_archive_task_fails_when_nothing_applied(self):
+        records = []
+        if str(system.OILSTATION_ROOT) not in sys.path:
+            sys.path.insert(0, str(system.OILSTATION_ROOT))
+        from endpoints.v1.retail.export.service import report254_monthly
+
+        original_generator = report254_monthly.generate_monthly_254_archive
+        original_recorder = system.record_automation_task
+        report254_monthly.generate_monthly_254_archive = lambda month, apply=True: {
+            "status": "ok",
+            "month": month,
+            "generatedCount": 0,
+            "appliedCount": 0,
+        }
+        system.record_automation_task = lambda cur, task, status, summary, error: records.append({
+            "task": task,
+            "status": status,
+            "summary": summary,
+            "error": error,
+        })
+        try:
+            result = _run_retail_254_monthly_archive_task(object(), year_month="2026-07")
+        finally:
+            report254_monthly.generate_monthly_254_archive = original_generator
+            system.record_automation_task = original_recorder
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["failedCount"], 1)
+        self.assertIn("未生成任何 254 月报归档文件", result["failedItems"][0]["message"])
+        self.assertEqual(records[0]["task"], "retail_254_monthly_archive")
+        self.assertEqual(records[0]["status"], "failed")
 
     def test_daily_accounting_task_failed_items_include_skipped_and_warnings(self):
         items = daily_maintenance.accounting_failed_items_from_summary({

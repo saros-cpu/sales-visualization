@@ -1,5 +1,5 @@
 param(
-    [string]$BaseUrl = "http://sales.example.com"
+    [string]$BaseUrl = "https://sales.example.com"
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,10 +11,14 @@ $targets = @(
 )
 
 $results = @()
+$hstsHeader = ""
 foreach ($target in $targets) {
     $started = Get-Date
     try {
         $response = Invoke-WebRequest -Uri $target.Url -UseBasicParsing -TimeoutSec 20
+        if ($target.Name -eq "home") {
+            $hstsHeader = [string]$response.Headers["Strict-Transport-Security"]
+        }
         $results += [PSCustomObject]@{
             Name = $target.Name
             Url = $target.Url
@@ -38,14 +42,17 @@ foreach ($target in $targets) {
     }
 }
 
+$isHttps = $base.StartsWith("https://", [StringComparison]::OrdinalIgnoreCase)
+$hstsOk = -not $isHttps -or ($hstsHeader -match "max-age=31536000" -and $hstsHeader -match "includeSubDomains")
 $failed = @($results | Where-Object { $_.Status -ne "ok" })
 [PSCustomObject]@{
-    Status = if ($failed.Count) { "failed" } else { "ok" }
+    Status = if ($failed.Count -or -not $hstsOk) { "failed" } else { "ok" }
     BaseUrl = $base
-    SslCheck = "skipped_until_certificate_is_ready"
+    SslCheck = if ($isHttps) { "enabled" } else { "http_compatibility" }
+    Hsts = if ($isHttps) { $hstsHeader } else { "not_required_for_http_compatibility" }
     Results = $results
 } | ConvertTo-Json -Depth 4
 
-if ($failed.Count) {
+if ($failed.Count -or -not $hstsOk) {
     exit 1
 }

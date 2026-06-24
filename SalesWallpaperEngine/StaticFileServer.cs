@@ -4,16 +4,63 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 
 namespace SalesWallpaperEngine;
 
 internal sealed class StaticFileServer : IDisposable
 {
-    private readonly RuntimeConfig _config;
+    private RuntimeConfig _config;
+    private readonly object _configLock = new();
+    private readonly Dictionary<string, double?> _previewOverrides = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _rootDir;
+    private readonly string _localApiNonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private readonly HttpClient _httpClient = new();
     private readonly CancellationTokenSource _cts = new();
     private HttpListener? _listener;
+
+    private static readonly HashSet<string> SettingsWhitelist = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "language",
+        "refreshAtLocalTime",
+        "refreshSeconds",
+        "autoUpdateEnabled",
+        "autoInstallUpdates",
+        "showSalesSummary",
+        "showExchangeRates",
+        "showYearVolume",
+        "showYearTons",
+        "showYearAmount",
+        "showMonthVolume",
+        "showMonthTons",
+        "showMonthAmount",
+        "showUsdKgs",
+        "showCnyKgs",
+        "showInventoryAlerts",
+        "showActiveStations",
+        "showClosedStations",
+        "showDepotMarkers",
+        "showInventoryAlertOnly",
+        "mapCenterX",
+        "mapCenterY",
+        "mapCenterZ",
+        "hudTopScale",
+        "hudTopOffsetX",
+        "hudTopOffsetY",
+        "hudSalesScale",
+        "hudSalesOffsetX",
+        "hudSalesOffsetY",
+    };
+
+    private static readonly HashSet<string> HudLayoutKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "hudTopScale",
+        "hudTopOffsetX",
+        "hudTopOffsetY",
+        "hudSalesScale",
+        "hudSalesOffsetX",
+        "hudSalesOffsetY",
+    };
 
     public StaticFileServer(RuntimeConfig config)
     {
@@ -24,6 +71,71 @@ internal sealed class StaticFileServer : IDisposable
     public int Port { get; private set; }
 
     public string BaseUrl => $"http://127.0.0.1:{Port}";
+
+    public RuntimeConfig Config
+    {
+        get
+        {
+            lock (_configLock) return _config;
+        }
+    }
+
+    public bool EditMode
+    {
+        get
+        {
+            lock (_configLock) return _editMode;
+        }
+    }
+
+    private bool _editMode;
+
+    public event Func<Dictionary<string, object?>, Task>? OnSettingsSave;
+
+    public event Func<bool, bool, Task>? OnEditModeChange;
+
+    public event Func<Task>? OnPreviewCommit;
+
+    public event Action? OnRefreshRequested;
+
+    public event Action? OnCheckUpdateRequested;
+
+    public void UpdateConfig(RuntimeConfig config)
+    {
+        lock (_configLock)
+        {
+            _config = config;
+        }
+    }
+
+    public void SetEditMode(bool on)
+    {
+        lock (_configLock)
+        {
+            _editMode = on;
+        }
+    }
+
+    public void ClearPreview()
+    {
+        lock (_configLock)
+        {
+            _previewOverrides.Clear();
+        }
+    }
+
+    public Dictionary<string, object?> GetPreviewSettings()
+    {
+        lock (_configLock)
+        {
+            return _previewOverrides
+                .Where(item => item.Value.HasValue)
+                .ToDictionary(
+                    item => item.Key,
+                    item => (object?)item.Value!.Value,
+                    StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
     public void Start()
     {
@@ -79,6 +191,10 @@ internal sealed class StaticFileServer : IDisposable
                 await WriteText(context.Response, "forbidden", "text/plain", 403);
                 return;
             }
+            if (!await AuthorizeLocalMutation(context, path))
+            {
+                return;
+            }
 
             if (path == "/" || path.Equals("/index.html", StringComparison.OrdinalIgnoreCase))
             {
@@ -89,7 +205,75 @@ internal sealed class StaticFileServer : IDisposable
 
             if (path.Equals("/config.js", StringComparison.OrdinalIgnoreCase))
             {
-                await WriteText(context.Response, _config.BuildClientConfigScript(Port), "application/javascript; charset=utf-8");
+                RuntimeConfig config;
+                Dictionary<string, double?> preview;
+                lock (_configLock)
+                {
+                    config = _config;
+                    preview = new Dictionary<string, double?>(_previewOverrides, StringComparer.OrdinalIgnoreCase);
+                }
+                await WriteText(context.Response, config.BuildClientConfigScript(Port, preview, _localApiNonce), "application/javascript; charset=utf-8");
+                return;
+            }
+
+            if (path.Equals("/api/wallpaper/settings", StringComparison.OrdinalIgnoreCase))
+            {
+                if (context.Request.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteJson(context.Response, BuildSettingsSnapshot());
+                    return;
+                }
+                if (context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    await HandleSettingsSave(context);
+                    return;
+                }
+                else
+                {
+                    await WriteText(context.Response, "method not allowed", "text/plain", 405);
+                    return;
+                }
+            }
+
+            if (path.Equals("/api/wallpaper/settings/preview", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleSettingsPreview(context);
+                return;
+            }
+
+            if (path.Equals("/api/wallpaper/settings/preview/commit", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleSettingsPreviewCommit(context);
+                return;
+            }
+
+            if (path.Equals("/api/wallpaper/edit-mode", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleEditMode(context);
+                return;
+            }
+
+            if (path.Equals("/api/wallpaper/refresh", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteText(context.Response, "method not allowed", "text/plain", 405);
+                    return;
+                }
+                OnRefreshRequested?.Invoke();
+                await WriteJson(context.Response, new { ok = true });
+                return;
+            }
+
+            if (path.Equals("/api/wallpaper/check-update", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteText(context.Response, "method not allowed", "text/plain", 405);
+                    return;
+                }
+                OnCheckUpdateRequested?.Invoke();
+                await WriteJson(context.Response, new { ok = true });
                 return;
             }
 
@@ -119,11 +303,12 @@ internal sealed class StaticFileServer : IDisposable
 
     private async Task ProxyWallpaperMap(HttpListenerContext context)
     {
-        var target = BuildProxyUri($"{_config.ApiHost}/api/wallpaper/map", context.Request.Url?.Query ?? "", _config.WallpaperToken);
+        var config = Config;
+        var target = BuildProxyUri($"{config.ApiHost}/api/wallpaper/map", context.Request.Url?.Query ?? "");
         using var request = new HttpRequestMessage(HttpMethod.Get, target);
-        if (_config.HasWallpaperToken)
+        if (config.HasWallpaperToken)
         {
-            request.Headers.TryAddWithoutValidation("X-Wallpaper-Token", _config.WallpaperToken);
+            request.Headers.TryAddWithoutValidation("X-Wallpaper-Token", config.WallpaperToken);
         }
 
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, _cts.Token);
@@ -132,9 +317,195 @@ internal sealed class StaticFileServer : IDisposable
 
     private async Task ProxyLatestManifest(HttpListenerContext context)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, AddCacheBust(_config.UpdateManifestUrl));
+        var config = Config;
+        using var request = new HttpRequestMessage(HttpMethod.Get, AddCacheBust(config.UpdateManifestUrl));
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, _cts.Token);
         await CopyProxyResponse(context.Response, response);
+    }
+
+    private async Task<bool> AuthorizeLocalMutation(HttpListenerContext context, string path)
+    {
+        if (!IsLocalMutation(context.Request.HttpMethod, path)) return true;
+        if (IsValidLocalApiNonce(context.Request.Headers["X-Sales-Wallpaper-Nonce"])) return true;
+        await WriteText(context.Response, "forbidden", "text/plain", 403);
+        return false;
+    }
+
+    private static bool IsLocalMutation(string method, string path)
+    {
+        if (!method.Equals("POST", StringComparison.OrdinalIgnoreCase)) return false;
+        return path.Equals("/api/wallpaper/settings", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/api/wallpaper/settings/preview", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/api/wallpaper/settings/preview/commit", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/api/wallpaper/edit-mode", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/api/wallpaper/refresh", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/api/wallpaper/check-update", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsValidLocalApiNonce(string? provided)
+    {
+        if (string.IsNullOrWhiteSpace(provided)) return false;
+        var expectedBytes = Encoding.UTF8.GetBytes(_localApiNonce);
+        var actualBytes = Encoding.UTF8.GetBytes(provided.Trim());
+        return expectedBytes.Length == actualBytes.Length
+            && CryptographicOperations.FixedTimeEquals(actualBytes, expectedBytes);
+    }
+
+    private object BuildSettingsSnapshot()
+    {
+        lock (_configLock)
+        {
+            double HudValue(string key, double fallback) =>
+                _previewOverrides.TryGetValue(key, out var value) && value.HasValue ? value.Value : fallback;
+
+            return new
+            {
+                language = _config.LanguageMode,
+                refreshAtLocalTime = _config.RefreshAtLocalTime,
+                refreshSeconds = _config.RefreshSeconds,
+                autoUpdateEnabled = _config.AutoUpdateEnabled,
+                autoInstallUpdates = _config.AutoInstallUpdates,
+                showSalesSummary = _config.ShowSalesSummary,
+                showExchangeRates = _config.ShowExchangeRates,
+                showYearVolume = _config.ShowYearVolume,
+                showYearTons = _config.ShowYearTons,
+                showYearAmount = _config.ShowYearAmount,
+                showMonthVolume = _config.ShowMonthVolume,
+                showMonthTons = _config.ShowMonthTons,
+                showMonthAmount = _config.ShowMonthAmount,
+                showUsdKgs = _config.ShowUsdKgs,
+                showCnyKgs = _config.ShowCnyKgs,
+                showInventoryAlerts = _config.ShowInventoryAlerts,
+                showActiveStations = _config.ShowActiveStations,
+                showClosedStations = _config.ShowClosedStations,
+                showDepotMarkers = _config.ShowDepotMarkers,
+                showInventoryAlertOnly = _config.ShowInventoryAlertOnly,
+                mapCenterX = _config.MapCenterX,
+                mapCenterY = _config.MapCenterY,
+                mapCenterZ = _config.MapCenterZ,
+                hudTopScale = HudValue("hudTopScale", _config.HudTopScale),
+                hudTopOffsetX = HudValue("hudTopOffsetX", _config.HudTopOffsetX),
+                hudTopOffsetY = HudValue("hudTopOffsetY", _config.HudTopOffsetY),
+                hudSalesScale = HudValue("hudSalesScale", _config.HudSalesScale),
+                hudSalesOffsetX = HudValue("hudSalesOffsetX", _config.HudSalesOffsetX),
+                hudSalesOffsetY = HudValue("hudSalesOffsetY", _config.HudSalesOffsetY),
+                editMode = _editMode,
+                runtimeStatus = new
+                {
+                    version = AppVersion.Current,
+                    apiHost = _config.ApiHost,
+                    hasToken = _config.HasWallpaperToken,
+                    keySource = string.IsNullOrWhiteSpace(_config.KeySource) ? "" : Path.GetFileName(_config.KeySource),
+                    autoUpdateEnabled = _config.AutoUpdateEnabled,
+                    autoInstallUpdates = _config.AutoInstallUpdates,
+                    refreshAtLocalTime = _config.RefreshAtLocalTime,
+                    refreshSeconds = _config.RefreshSeconds,
+                    localPort = Port,
+                    configDir = AppPaths.DataDir,
+                    logDir = AppPaths.LogDir,
+                },
+            };
+        }
+    }
+
+    private async Task HandleSettingsSave(HttpListenerContext context)
+    {
+        if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteText(context.Response, "method not allowed", "text/plain", 405);
+            return;
+        }
+        var body = await ReadJsonBody(context);
+        if (body == null) return;
+
+        var filtered = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in body)
+        {
+            if (!SettingsWhitelist.Contains(key)) continue;
+            var converted = ConvertSettingValue(key, value);
+            if (converted.include)
+            {
+                filtered[key] = converted.value;
+            }
+        }
+
+        if (OnSettingsSave != null)
+        {
+            await OnSettingsSave(filtered);
+        }
+        await WriteJson(context.Response, new { ok = true, saved = filtered.Count });
+    }
+
+    private async Task HandleSettingsPreview(HttpListenerContext context)
+    {
+        if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteText(context.Response, "method not allowed", "text/plain", 405);
+            return;
+        }
+        var body = await ReadJsonBody(context);
+        if (body == null) return;
+
+        lock (_configLock)
+        {
+            foreach (var (key, value) in body)
+            {
+                if (!HudLayoutKeys.Contains(key)) continue;
+                var number = ReadDouble(value);
+                if (number.HasValue)
+                {
+                    _previewOverrides[key] = number.Value;
+                }
+            }
+        }
+
+        await WriteJson(context.Response, new { ok = true });
+    }
+
+    private async Task HandleSettingsPreviewCommit(HttpListenerContext context)
+    {
+        if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteText(context.Response, "method not allowed", "text/plain", 405);
+            return;
+        }
+
+        var count = GetPreviewSettings().Count;
+        if (OnPreviewCommit != null)
+        {
+            await OnPreviewCommit();
+        }
+
+        await WriteJson(context.Response, new { ok = true, saved = count });
+    }
+
+    private async Task HandleEditMode(HttpListenerContext context)
+    {
+        if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteText(context.Response, "method not allowed", "text/plain", 405);
+            return;
+        }
+
+        var body = await ReadJsonBody(context);
+        if (body == null) return;
+
+        var enabled = body.TryGetValue("enabled", out var enabledValue)
+            && (ReadBool(enabledValue) ?? false);
+        var clearPreview = body.TryGetValue("clearPreview", out var clearValue)
+            && (ReadBool(clearValue) ?? false);
+
+        if (OnEditModeChange != null)
+        {
+            await OnEditModeChange(enabled, clearPreview);
+        }
+        else
+        {
+            if (clearPreview) ClearPreview();
+            SetEditMode(enabled);
+        }
+
+        await WriteJson(context.Response, new { ok = true, editMode = EditMode });
     }
 
     private async Task CopyProxyResponse(HttpListenerResponse localResponse, HttpResponseMessage upstream)
@@ -192,6 +563,93 @@ internal sealed class StaticFileServer : IDisposable
         response.Close();
     }
 
+    private static Task WriteJson(HttpListenerResponse response, object value, int statusCode = 200)
+    {
+        var json = JsonSerializer.Serialize(value);
+        return WriteText(response, json, "application/json; charset=utf-8", statusCode);
+    }
+
+    private static async Task<Dictionary<string, JsonElement>?> ReadJsonBody(HttpListenerContext context)
+    {
+        var body = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding ?? Encoding.UTF8);
+            var text = await reader.ReadToEndAsync();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                await WriteText(context.Response, "empty request body", "text/plain", 400);
+                return null;
+            }
+            using var document = JsonDocument.Parse(text);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                await WriteText(context.Response, "json body must be an object", "text/plain", 400);
+                return null;
+            }
+            foreach (var prop in document.RootElement.EnumerateObject())
+            {
+                body[prop.Name] = prop.Value.Clone();
+            }
+            return body;
+        }
+        catch (JsonException)
+        {
+            await WriteText(context.Response, "invalid json", "text/plain", 400);
+            return null;
+        }
+    }
+
+    private static (bool include, object? value) ConvertSettingValue(string key, JsonElement value)
+    {
+        if (key.Equals("language", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("refreshAtLocalTime", StringComparison.OrdinalIgnoreCase))
+        {
+            return value.ValueKind == JsonValueKind.String
+                ? (true, value.GetString())
+                : (false, null);
+        }
+
+        if (key.Equals("refreshSeconds", StringComparison.OrdinalIgnoreCase))
+        {
+            var number = ReadInt(value);
+            return number.HasValue ? (true, number.Value) : (false, null);
+        }
+
+        if (key.StartsWith("show", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("autoUpdateEnabled", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("autoInstallUpdates", StringComparison.OrdinalIgnoreCase))
+        {
+            var boolean = ReadBool(value);
+            return boolean.HasValue ? (true, boolean.Value) : (false, null);
+        }
+
+        var doubleValue = ReadDouble(value);
+        return doubleValue.HasValue ? (true, doubleValue.Value) : (false, null);
+    }
+
+    private static bool? ReadBool(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.True) return true;
+        if (value.ValueKind == JsonValueKind.False) return false;
+        return value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed) ? parsed : null;
+    }
+
+    private static int? ReadInt(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
+        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsed) ? parsed : null;
+    }
+
+    private static double? ReadDouble(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number)) return number;
+        return value.ValueKind == JsonValueKind.String
+            && double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
     private static string ResolveRootDir()
     {
         var publishedRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
@@ -220,15 +678,9 @@ internal sealed class StaticFileServer : IDisposable
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
-    private static string BuildProxyUri(string baseUrl, string currentQuery, string token)
+    private static string BuildProxyUri(string baseUrl, string currentQuery)
     {
-        var query = currentQuery.TrimStart('?');
-        if (!string.IsNullOrWhiteSpace(token) && !ContainsQueryKey(query, "token"))
-        {
-            query = string.IsNullOrWhiteSpace(query)
-                ? $"token={Uri.EscapeDataString(token)}"
-                : $"{query}&token={Uri.EscapeDataString(token)}";
-        }
+        var query = RemoveQueryKey(currentQuery.TrimStart('?'), "token");
         var separator = baseUrl.Contains('?') ? "&" : "?";
         return string.IsNullOrWhiteSpace(query) ? baseUrl : $"{baseUrl}{separator}{query}";
     }
@@ -239,11 +691,11 @@ internal sealed class StaticFileServer : IDisposable
         return $"{url}{separator}t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
     }
 
-    private static bool ContainsQueryKey(string query, string key)
+    private static string RemoveQueryKey(string query, string key)
     {
-        return query
+        return string.Join("&", query
             .Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Any(part => part.Split('=', 2)[0].Equals(key, StringComparison.OrdinalIgnoreCase));
+            .Where(part => !part.Split('=', 2)[0].Equals(key, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static string ResolveContentType(string filePath) =>

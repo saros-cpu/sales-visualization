@@ -43,6 +43,7 @@ AUTOMATION_TASK_KEYS = {
     "market_watch",
     "retail_snapshots",
     "retail_accounting_reports",
+    "retail_254_monthly_archive",
 }
 API_HEALTH_FAILURE_CONDITION = "success = 0 AND status_code NOT IN (401, 403)"
 
@@ -1243,6 +1244,35 @@ def _run_retail_accounting_reports_task(cur, target_day: date | None = None, for
         return payload
 
 
+def _previous_completed_month(today: date | None = None) -> str:
+    current = today or date.today()
+    first_of_month = current.replace(day=1)
+    previous = first_of_month - timedelta(days=1)
+    return f"{previous.year}-{previous.month:02d}"
+
+
+def _run_retail_254_monthly_archive_task(cur, year_month: str | None = None) -> dict[str, Any]:
+    month = year_month or _previous_completed_month()
+    try:
+        if str(OILSTATION_ROOT) not in sys.path:
+            sys.path.insert(0, str(OILSTATION_ROOT))
+        from endpoints.v1.retail.export.service.report254_monthly import generate_monthly_254_archive
+
+        result = generate_monthly_254_archive(month, apply=True)
+        if int(result.get("appliedCount") or 0) <= 0:
+            raise RuntimeError(f"{month} 未生成任何 254 月报归档文件")
+        status = "success"
+        error = None
+        record_automation_task(cur, "retail_254_monthly_archive", status, result, error)
+        return {"status": status, "summary": result, "error": error}
+    except Exception as exc:
+        payload = {"month": month, "failedItems": [{"type": "exception", "reason": str(exc), "message": str(exc)}]}
+        record_automation_task(cur, "retail_254_monthly_archive", "failed", payload, str(exc))
+        failed = _automation_error_payload(exc)
+        failed.update({"summary": payload, "failedItems": payload["failedItems"], "failedCount": 1})
+        return failed
+
+
 def _retail_snapshot_worker():
     status = "success"
     error = None
@@ -1427,6 +1457,9 @@ def run_automation_task():
                 results["marketWatch"] = _run_market_watch_task(cur)
             if task in {"retail_accounting_reports", "all"}:
                 results["retailAccountingReports"] = _run_retail_accounting_reports_task(cur, force=True)
+            if task == "retail_254_monthly_archive":
+                month = (payload.get("month") or "").strip() or None
+                results["retail254MonthlyArchive"] = _run_retail_254_monthly_archive_task(cur, year_month=month)
             conn.commit()
     except Exception as exc:
         conn.rollback()

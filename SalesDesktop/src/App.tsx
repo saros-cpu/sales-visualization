@@ -350,7 +350,7 @@ export default function App() {
       },
     }}>
       <AntApp>
-        <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <HashRouter>
           <AuthProvider>
             <AppCloseGuard />
             <AppUpdateInstallGuard />

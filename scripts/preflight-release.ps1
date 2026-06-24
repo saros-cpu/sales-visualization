@@ -156,15 +156,28 @@ Invoke-Check "Desktop updater package files" {
     }
 
     $auditScript = Join-Path $RepoRoot "scripts/audit-desktop-installer.ps1"
-    $referenceInstaller = Join-Path $RepoRoot "SalesDesktop/release_build/SalesDesktop Setup 3.9.17.exe"
-    if (-not (Test-Path -LiteralPath $referenceInstaller -PathType Leaf)) {
-        $referenceInstaller = Join-Path $RepoRoot "SalesDesktop/download/SalesDesktop Setup 3.9.17.exe"
+    $referenceInstaller = @($releaseBuildRoot, $downloadRoot) | Where-Object {
+        Test-Path -LiteralPath $_ -PathType Container
+    } | ForEach-Object {
+        Get-ChildItem -Path $_ -Filter "SalesDesktop Setup *.exe" -File
+    } | ForEach-Object {
+        if ($_.BaseName -match "^SalesDesktop Setup (?<version>\d+(?:\.\d+){1,3})$") {
+            [PSCustomObject]@{
+                Path = $_.FullName
+                Version = [version]$Matches.version
+            }
+        }
+    } | Where-Object {
+        $_.Version -lt ([version]$version)
+    } | Sort-Object Version -Descending | Select-Object -First 1
+    if (-not $referenceInstaller) {
+        throw "reference desktop installer older than $version was not found"
     }
     Invoke-External "powershell" @(
         "-ExecutionPolicy", "Bypass",
         "-File", $auditScript,
         "-Installer", $installer,
-        "-ReferenceInstaller", $referenceInstaller,
+        "-ReferenceInstaller", $referenceInstaller.Path,
         "-Version", $version
     ) $RepoRoot
 }
@@ -184,13 +197,14 @@ Invoke-Check "Nginx download route shape" {
     throw "/download/ should serve only SalesDesktop/download through try_files"
 }
 
-Invoke-Check "HTTP domain defaults" {
-    $domain = "http://sales.example.com"
-    $updateBase = "http://198.51.100.10"
+Invoke-Check "HTTPS domain defaults" {
+    $domain = "https://sales.example.com"
+    $updateBase = "https://sales.example.com"
     $runtimeConfig = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron/runtime-config.cjs") -Encoding utf8 -Raw
     $preload = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron/preload.cjs") -Encoding utf8 -Raw
     $builder = Get-Content (Join-Path $RepoRoot "SalesDesktop/electron-builder.yml") -Encoding utf8 -Raw
     $nginxConf = Get-Content (Join-Path $RepoRoot "nginx.conf") -Encoding utf8 -Raw
+    $backendApi = Get-Content (Join-Path $RepoRoot "Sales/api.py") -Encoding utf8 -Raw
     if ($runtimeConfig -notmatch [regex]::Escape("const DEFAULT_API_HOST = process.env.SALES_API_HOST || '$domain'")) {
         throw "desktop runtime default API host is not $domain"
     }
@@ -206,8 +220,20 @@ Invoke-Check "HTTP domain defaults" {
     if ($builder -notmatch [regex]::Escape("url: $updateBase/download")) {
         throw "electron updater publish URL is not $updateBase/download"
     }
-    if ($nginxConf -match "return\s+301\s+https://") {
-        throw "nginx still redirects HTTP domain traffic to HTTPS before SSL is ready"
+    if ($nginxConf -notmatch "listen\s+443\s+ssl;") {
+        throw "nginx HTTPS listener is missing"
+    }
+    if ($nginxConf -notmatch [regex]::Escape("ssl_certificate      D:/nginx/example.com/fullchain.pem;")) {
+        throw "nginx HTTPS certificate path is not configured"
+    }
+    if ($nginxConf -notmatch 'return\s+308\s+https://sales\.example\.kg\$request_uri;') {
+        throw "nginx should redirect HTTP domain traffic to HTTPS with 308"
+    }
+    if ($nginxConf -notmatch [regex]::Escape('Strict-Transport-Security "max-age=31536000; includeSubDomains"')) {
+        throw "nginx HSTS should use one-year max-age with includeSubDomains"
+    }
+    if ($backendApi -notmatch [regex]::Escape('SESSION_COOKIE_SECURE=_env_bool("SALES_COOKIE_SECURE", default=True)')) {
+        throw "backend session cookies should default to Secure"
     }
 }
 

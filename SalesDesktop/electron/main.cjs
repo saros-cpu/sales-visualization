@@ -1,8 +1,21 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, Tray, Menu, net, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const { autoUpdater } = require('electron-updater');
 const { loadRuntimeConfig } = require('./runtime-config.cjs');
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
 
 let mainWindow = null;
 let tray = null;
@@ -17,6 +30,7 @@ let updateCheckInFlight = false;
 
 const runtimeConfig = loadRuntimeConfig(app);
 const appIcon = path.join(__dirname, '..', 'build', 'icon.ico');
+const appProtocolHost = 'salesdesktop';
 const allowedExternalHosts = new Set(runtimeConfig.allowedHosts);
 const fallbackUpdateUrls = ['http://198.51.100.10/download'];
 if (process.platform === 'win32') {
@@ -108,19 +122,55 @@ function isAllowedExternalUrl(value) {
   }
 }
 
+function registerAppProtocol() {
+  const distRoot = path.resolve(__dirname, '..', 'dist');
+  protocol.handle('app', (request) => {
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== appProtocolHost) {
+        return new Response('not found', { status: 404 });
+      }
+
+      const rawPath = decodeURIComponent(url.pathname || '/');
+      const requestedPath = rawPath === '/' ? '/index.html' : rawPath;
+      const filePath = path.resolve(distRoot, `.${requestedPath}`);
+      const relativePath = path.relative(distRoot, filePath);
+      const isSafePath = relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+      if (!isSafePath) {
+        return new Response('bad request', { status: 400 });
+      }
+
+      if (!fs.existsSync(filePath)) {
+        const hasExtension = Boolean(path.extname(filePath));
+        if (hasExtension) return new Response('not found', { status: 404 });
+        return net.fetch(pathToFileURL(path.join(distRoot, 'index.html')).toString());
+      }
+
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return new Response('bad request', { status: 400 });
+    }
+  });
+}
+
 async function clearRendererAuth() {
   const logoutUrl = JSON.stringify(`${runtimeConfig.apiHost.replace(/\/+$/, '')}/api/v2/auth/logout`);
   const clearScript = `
     (() => {
       try {
         const token = localStorage.getItem('accessToken');
+        const refreshToken = localStorage.getItem('refreshToken') || '';
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         sessionStorage.clear();
         if (token) {
           fetch(${logoutUrl}, {
             method: 'POST',
-            headers: { Authorization: 'Bearer ' + token },
+            headers: {
+              Authorization: 'Bearer ' + token,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(refreshToken ? { refreshToken } : {}),
             keepalive: true,
           }).catch(() => {});
         }
@@ -231,7 +281,7 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    mainWindow.loadURL(`app://${appProtocolHost}/index.html`);
   }
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -578,7 +628,8 @@ function setupDevToolsAccess() {
 }
 
 app.whenReady().then(() => {
-  const csp = `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src ${connectSrc}; img-src 'self' data: blob:; font-src 'self' data:`;
+  registerAppProtocol();
+  const csp = `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src ${connectSrc}; img-src 'self' data: blob:; font-src 'self' data:`;
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } });
   });

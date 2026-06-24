@@ -37,6 +37,7 @@ export interface WallpaperDepot {
   type?: string;
   depotType?: string;
   status?: string;
+  statusLabel?: string;
   closedReason?: string;
 }
 
@@ -65,16 +66,38 @@ export interface WallpaperPayload {
     yearEnd?: string;
     yearEndExclusive?: string;
     yearVolumeLiters?: number;
+    yearTons?: number;
     yearAmount?: number;
+    yearAmountCny?: number | null;
+    yearAvgCnyKgs?: number | null;
     month?: string;
     monthStart?: string;
     monthEnd?: string;
     monthEndExclusive?: string;
     monthVolumeLiters?: number;
+    monthTons?: number;
     monthAmount?: number;
+    monthAmountCny?: number | null;
+    monthAvgCnyKgs?: number | null;
+  };
+  exchangeSummary?: {
+    available?: boolean;
+    date?: string | null;
+    usdKgs?: number | null;
+    cnyKgs?: number | null;
+    source?: string;
+    isManual?: boolean;
+    isToday?: boolean;
   };
   inventoryAlerts?: Array<Record<string, unknown>>;
   inventoryAlertSummary?: Record<string, unknown>;
+}
+
+export interface WallpaperLayerOptions {
+  showActiveStations?: boolean;
+  showClosedStations?: boolean;
+  showDepotMarkers?: boolean;
+  showInventoryAlertOnly?: boolean;
 }
 
 export function normalizeWallpaperPayload(value: any): WallpaperPayload {
@@ -90,11 +113,32 @@ export function normalizeWallpaperPayload(value: any): WallpaperPayload {
   };
 }
 
-export function stationStatusText(status?: string) {
-  if (status === 'closed') return '停业';
-  if (status === 'warning') return '关注';
-  if (status && status !== 'normal') return '异常';
+export function normalizeStatusLabel(status?: string, statusLabel?: string, closedReason?: string) {
+  const rawLabel = String(statusLabel || '').trim();
+  const statusText = String(status || '').trim();
+  const reason = String(closedReason || '').trim();
+  const combined = `${rawLabel} ${statusText} ${reason}`.toLowerCase();
+
+  if (rawLabel.includes('装修') || reason.includes('装修') || /(renovation|maintenance|construction|decorat)/.test(combined)) {
+    return '装修';
+  }
+  if (rawLabel.includes('停业') || reason.includes('停业') || /(closed|stopped|suspended|inactive)/.test(combined)) {
+    return '停业';
+  }
+  if (['在营', '正常', '正常营业'].includes(rawLabel)) return '在营';
+  if (['关注', '预警'].includes(rawLabel)) return '关注';
+  if (rawLabel === '异常') return '异常';
+
+  const key = statusText.toLowerCase() || rawLabel.toLowerCase();
+  if (['normal', 'open', 'active', 'operating', 'online'].includes(key)) return '在营';
+  if (['warning', 'warn', 'attention'].includes(key)) return '关注';
+  if (rawLabel && !['normal', 'closed', 'warning', 'warn'].includes(rawLabel.toLowerCase())) return rawLabel;
+  if (key && key !== 'normal') return '异常';
   return '在营';
+}
+
+export function stationStatusText(status?: string, statusLabel?: string, closedReason?: string) {
+  return normalizeStatusLabel(status, statusLabel, closedReason);
 }
 
 export function stationStatusTone(status?: string) {
@@ -118,9 +162,9 @@ export function topInventoryStations(payload: WallpaperPayload, limit = 6) {
 }
 
 const CORE_DEPOTS: WallpaperDepot[] = [
-  { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal' },
-  { name: 'DemoDepotNorth', short: 'Север DemoDepot', region: 'REG-08', lng: 0, lat: 0, type: 'depot', status: 'closed', closedReason: '装修停业' },
-  { name: 'DemoDepotSouth', short: 'Юж DemoDepot', region: 'REG-07', lng: 0, lat: 0, type: 'depot', status: 'normal' },
+  { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal', statusLabel: '在营' },
+  { name: 'DemoDepotNorth', short: 'Север DemoDepot', region: 'REG-08', lng: 0, lat: 0, type: 'depot', status: 'closed', statusLabel: '装修', closedReason: '装修停业' },
+  { name: 'DemoDepotSouth', short: 'Юж DemoDepot', region: 'REG-07', lng: 0, lat: 0, type: 'depot', status: 'normal', statusLabel: '在营' },
 ];
 
 const ZERO_INVENTORY_STATION_KEYS = new Set([11, 12, 21]);
@@ -169,18 +213,37 @@ function ensureCoreDepots(depots: WallpaperDepot[] = []) {
   return list;
 }
 
-export function mapLayers(payload: WallpaperPayload) {
+function hasInventoryAlert(station: WallpaperStation) {
+  if (station.inventoryAlert) return true;
+  if (Array.isArray(station.inventoryAlerts) && station.inventoryAlerts.length > 0) return true;
+  return (station.inventoryByResource || []).some((item) => (
+    item.fillStatus === 'critical' || item.fillStatus === 'warning'
+  ));
+}
+
+export function mapLayers(payload: WallpaperPayload, options: WallpaperLayerOptions = {}) {
+  const showActiveStations = options.showActiveStations !== false;
+  const showClosedStations = options.showClosedStations !== false;
+  const showDepotMarkers = options.showDepotMarkers !== false;
+  const inventoryAlertOnly = Boolean(options.showInventoryAlertOnly && payload.sensitiveData);
   return {
-    stations: (payload.stations || []).map((station) => {
-      const mappedStation = mapZeroInventoryStation(station);
-      return {
+    stations: (payload.stations || [])
+      .map((station) => mapZeroInventoryStation(station))
+      .filter((station) => {
+        const isClosed = station.status === 'closed';
+        if (isClosed && !showClosedStations) return false;
+        if (!isClosed && !showActiveStations) return false;
+        if (inventoryAlertOnly && !hasInventoryAlert(station)) return false;
+        return true;
+      })
+      .map((mappedStation) => ({
         ...mappedStation,
         type: 'station',
+        statusLabel: normalizeStatusLabel(mappedStation.status, mappedStation.statusLabel, mappedStation.closedReason || mappedStation.statusNote),
         size: mappedStation.status && mappedStation.status !== 'normal' ? 0.36 : 0.28,
         color: mappedStation.status === 'closed' ? '#ef4444' : undefined,
-      };
-    }),
-    depots: ensureCoreDepots(payload.depots || []).map((depot) => {
+      })),
+    depots: showDepotMarkers ? ensureCoreDepots(payload.depots || []).map((depot) => {
       const rawName = String(depot.name || depot.short || '');
       const isHeadquarters = depot.type === 'headquarters' || rawName.includes('总部') || rawName.includes('公司总部');
       const name = rawName === '公司总部' ? 'STN-61' : rawName;
@@ -191,6 +254,7 @@ export function mapLayers(payload: WallpaperPayload) {
         name,
         label: name,
         status: depot.status || 'normal',
+        statusLabel: normalizeStatusLabel(depot.status || 'normal', depot.statusLabel, depot.closedReason),
         size: isHeadquarters ? 0.26 : 0.22,
         y: isHeadquarters ? 3.48 : 3.12,
         renderOrder: 176,
@@ -204,23 +268,45 @@ export function mapLayers(payload: WallpaperPayload) {
         showLabel: false,
         labelSubtitle: depot.short || depot.region || '',
       };
-    }),
+    }) : [],
     customers: [],
   };
 }
 
-export function formatLiters(value?: number) {
+function resolveLocale(locale?: string): string {
+  if (locale === 'ru') return 'ru-RU';
+  return 'zh-CN';
+}
+
+export function formatLiters(value?: number, locale?: string) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) return '0 L';
+  const loc = resolveLocale(locale);
+  if (loc === 'ru-RU') {
+    if (Math.abs(numeric) >= 1000) {
+      return `${(numeric / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} тыс. л`;
+    }
+    return `${numeric.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} л`;
+  }
   if (Math.abs(numeric) >= 10000) {
     return `${(numeric / 10000).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 万L`;
   }
   return `${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} L`;
 }
 
-export function formatSom(value?: number) {
+export function formatSom(value?: number, locale?: string) {
   const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric)) return '0 索姆';
+  if (!Number.isFinite(numeric)) return '0 сом';
+  const loc = resolveLocale(locale);
+  if (loc === 'ru-RU') {
+    if (Math.abs(numeric) >= 100000000) {
+      return `${(numeric / 100000000).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} млрд сом`;
+    }
+    if (Math.abs(numeric) >= 1000000) {
+      return `${(numeric / 1000000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млн сом`;
+    }
+    return `${numeric.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} сом`;
+  }
   if (Math.abs(numeric) >= 100000000) {
     return `${(numeric / 100000000).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 亿索姆`;
   }
@@ -230,7 +316,47 @@ export function formatSom(value?: number) {
   return `${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} 索姆`;
 }
 
-export function formatClock(value?: string) {
+export function formatCny(value?: number | null, locale?: string) {
+  if (value == null) return '--';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '--';
+  const loc = resolveLocale(locale);
+  if (loc === 'ru-RU') {
+    if (Math.abs(numeric) >= 1000000) {
+      return `${(numeric / 1000000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млн ¥`;
+    }
+    return `${numeric.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ¥`;
+  }
+  if (Math.abs(numeric) >= 100000000) {
+    return `${(numeric / 100000000).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 亿元`;
+  }
+  if (Math.abs(numeric) >= 10000) {
+    return `${(numeric / 10000).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 万元`;
+  }
+  return `${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} 元`;
+}
+
+export function formatTons(value?: number, locale?: string) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return '0 t';
+  const loc = resolveLocale(locale);
+  if (loc === 'ru-RU') {
+    return `${numeric.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} т`;
+  }
+  return `${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 吨`;
+}
+
+export function formatRate(value?: number | null, locale?: string) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '--';
+  const loc = resolveLocale(locale);
+  return numeric.toLocaleString(loc, {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+}
+
+export function formatClock(value?: string, _locale?: string) {
   const text = String(value || '').trim();
   if (!text) return '--';
   return text.replace('T', ' ').replace(/\.\d+/, '').replace(/([+-]\d{2}:?\d{2}|Z)$/i, '').slice(0, 16);

@@ -17,7 +17,8 @@ const DEFAULTS = {
   enableCameraControls: true,
   maxPixelRatio: 2,
   pointerIgnoreBottom: 0,
-  starDensity: 1
+  starDensity: 1,
+  tooltipAvoidSelectors: []
 };
 
 const ROAD_STYLE = {
@@ -126,10 +127,15 @@ function stationTimeRows(point) {
 }
 
 function stationStatusText(point) {
-  if (point.closedReason) return point.closedReason;
-  if (point.status === 'closed') return '停业/维修';
-  if (point.status && point.status !== 'normal') return point.statusLabel || point.statusNote || '异常/关注';
-  return point.statusLabel || '在营';
+  const label = String(point.statusLabel || '').trim();
+  const reason = String(point.closedReason || point.statusNote || '').trim();
+  if (label && !['normal', 'closed', 'warning', 'warn'].includes(label.toLowerCase())) return label;
+  if (reason.includes('装修')) return '装修';
+  if (reason.includes('停业')) return '停业';
+  if (point.status === 'closed') return '停业';
+  if (point.status === 'warning') return '关注';
+  if (point.status && point.status !== 'normal') return '异常';
+  return '在营';
 }
 
 function disposeMaterial(material) {
@@ -193,6 +199,13 @@ function isHeadquartersPoint(point) {
     || name.includes('公司总部');
 }
 
+function pointHitRadius(point, visualRadius, isDepot) {
+  const configured = Number(point?.hitRadius);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  const hitScale = Number.isFinite(Number(point?.hitScale)) ? Number(point.hitScale) : 1.85;
+  return Math.max(visualRadius * hitScale, isDepot ? 0.42 : 0.34);
+}
+
 function preparePointEntries(points = []) {
   const entries = [];
   for (const point of points) {
@@ -235,10 +248,11 @@ function preparePointEntries(points = []) {
 
 function stationInventoryRows(point) {
   if (point.type !== 'station') return '';
-  const hasInventory = point.inventory !== undefined && point.inventory !== null && Number.isFinite(Number(point.inventory));
+  const inventoryValue = point.inventory ?? point.currentInventory;
+  const hasInventory = inventoryValue !== undefined && inventoryValue !== null && Number.isFinite(Number(inventoryValue));
   if (hasInventory) {
     const percent = formatOptionalPercent(point.inventoryFillPercent);
-    return `<span>当前库存：${formatNumber(point.inventory, 2)} L${percent ? ` · ${percent}` : ''}</span>`;
+    return `<span>当前库存：${formatNumber(inventoryValue, 2)} L${percent ? ` · ${percent}` : ''}</span>`;
   }
   return '<span class="kgz-map-tooltip-muted">库存未返回：公开模式或未配置授权 token</span>';
 }
@@ -985,7 +999,21 @@ export class Kgz3DMap {
         baseRenderOrder: pointRenderOrder
       };
       this.pointGroup.add(mesh);
-      this.pointMeshes.push(mesh);
+      const hitRadius = pointHitRadius(point, pointSize, isDepot);
+      const hitGeometry = new THREE.SphereGeometry(hitRadius, 12, 8);
+      const hitMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false
+      });
+      const hitMesh = new THREE.Mesh(hitGeometry, hitMaterial);
+      hitMesh.position.copy(mesh.position);
+      hitMesh.renderOrder = pointRenderOrder + 1;
+      hitMesh.userData = { type: 'business-point-hit', point, targetMesh: mesh };
+      this.pointGroup.add(hitMesh);
+      this.pointMeshes.push(hitMesh);
       if (point.showLabel !== false) {
         const label = makePointLabelSprite(point.label || point.name, point.labelSubtitle || '', {
           color: point.labelColor || '#f8fafc',
@@ -1047,21 +1075,112 @@ export class Kgz3DMap {
   }
 
   fitCamera() {
+    const fitWidth = Number(this.options.fitWorldWidth) || 0;
+    if (fitWidth > 0) {
+      // 固定视野宽度模式：任意分辨率下水平可视范围恒定，等价于 0.1.9 固定相机在 1920x1080 的视野
+      const vw = Math.max(1, this.container?.clientWidth || this.renderer.domElement.clientWidth || 1);
+      const vh = Math.max(1, this.container?.clientHeight || this.renderer.domElement.clientHeight || 1);
+      const aspect = Math.max(0.1, vw / vh);
+      const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+      const distance = fitWidth / 2 / Math.tan(fovRad / 2) / aspect;
+      const pitch = 30.99 / 53.27;
+      const depthRatio = 43.33 / 53.27;
+      const cx = Number(this.options.fitCenterX) || 0;
+      const cy = Number(this.options.fitCenterY) || 0;
+      const cz = Number(this.options.fitCenterZ) || 0;
+      this.controls.target.set(cx, cy, cz);
+      this.camera.position.set(cx, cy + distance * pitch, cz + distance * depthRatio);
+      this.controls.update();
+      this.requestRender();
+      return;
+    }
     const box = new THREE.Box3().setFromObject(this.regionGroup);
     const center = box.getCenter(new THREE.Vector3());
     center.x += this.options.viewOffsetX || 0;
     center.z += this.options.viewOffsetZ || 0;
     const size = box.getSize(new THREE.Vector3());
-    const aspect = Math.max(0.1, this.camera.aspect || 1);
+    const vw = Math.max(1, this.container?.clientWidth || this.renderer.domElement.clientWidth || 1);
+    const vh = Math.max(1, this.container?.clientHeight || this.renderer.domElement.clientHeight || 1);
+    const aspect = Math.max(0.1, vw / vh);
     const mapSpan = Math.max(size.z, size.x / aspect);
     const distanceFactor = aspect < 0.75 ? 2 : 1.65;
     const distanceScale = Number(this.options.fitDistanceScale || 1);
-    const distance = THREE.MathUtils.clamp(mapSpan * distanceFactor * distanceScale, 46 * distanceScale, 160);
+    const distance = THREE.MathUtils.clamp(mapSpan * distanceFactor * distanceScale, 46 * distanceScale, 160 * distanceScale);
     const height = THREE.MathUtils.clamp(distance * (aspect < 0.75 ? 1 : 0.72), 30, 72);
+    const pad = this.options.fitPadding || {};
+    const padLeft = Number(pad.left) || 0;
+    const padRight = Number(pad.right) || 0;
+    const padTop = Number(pad.top) || 0;
+    const padBottom = Number(pad.bottom) || 0;
+    const availW = vw - padLeft - padRight;
+    const availH = vh - padTop - padBottom;
+    if (availW >= 120) {
+      const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+      const depth = Math.sqrt(distance * distance + height * height);
+      const worldPerPx = (2 * depth * Math.tan(fovRad / 2)) / vh;
+      // z 轴平移在屏幕的投影收缩为 height/depth，补偿后 fitPadding 按真实像素语义生效
+      const padProjection = depth / Math.max(1, height);
+      center.x -= ((padLeft + availW / 2) - vw / 2) * worldPerPx;
+      center.z -= ((padTop + availH / 2) - vh / 2) * worldPerPx * padProjection;
+    }
     this.controls.target.copy(center);
     this.camera.position.set(center.x, height, center.z + distance);
     this.controls.update();
     this.requestRender();
+  }
+
+  positionTooltip(offsetX, offsetY) {
+    if (!this.options.flipTooltip) {
+      this.tooltip.style.transform = `translate(${offsetX + 16}px, ${offsetY + 16}px)`;
+      return;
+    }
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    let tx = offsetX + 16;
+    let ty = offsetY + 16;
+    this.tooltip.style.transform = `translate(${tx}px, ${ty}px)`;
+    const width = this.tooltip.offsetWidth || 0;
+    const height = this.tooltip.offsetHeight || 0;
+    if (tx + width > rect.width && offsetX - width - 12 >= 4) {
+      tx = offsetX - width - 12;
+    }
+    if (ty + height > rect.height && offsetY - height - 12 >= 4) {
+      ty = offsetY - height - 12;
+    }
+    this.tooltip.style.transform = `translate(${tx}px, ${ty}px)`;
+
+    if (!this.options.tooltipAvoidSelectors?.length) return;
+    const hudRects = [];
+    for (const selector of this.options.tooltipAvoidSelectors) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      hudRects.push({
+        left: r.left - rect.left,
+        top: r.top - rect.top,
+        right: r.right - rect.left,
+        bottom: r.bottom - rect.top
+      });
+    }
+    if (!hudRects.length) return;
+    const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    const fits = (x, y) => x >= 0 && y >= 0 && x + width <= rect.width && y + height <= rect.height;
+    const candidates = [
+      { x: tx, y: ty },
+      { x: offsetX + 16, y: offsetY - height - 8 },
+      { x: offsetX - width - 8, y: offsetY + 16 },
+      { x: offsetX + 16, y: offsetY + 16 }
+    ];
+    let chosen = null;
+    for (const candidate of candidates) {
+      if (!fits(candidate.x, candidate.y)) continue;
+      const tooltipRect = { left: candidate.x, top: candidate.y, right: candidate.x + width, bottom: candidate.y + height };
+      if (hudRects.some((hud) => overlaps(tooltipRect, hud))) continue;
+      chosen = candidate;
+      break;
+    }
+    if (chosen) {
+      this.tooltip.style.transform = `translate(${chosen.x}px, ${chosen.y}px)`;
+    }
   }
 
   bindEvents() {
@@ -1089,7 +1208,7 @@ export class Kgz3DMap {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const pointHit = this.raycaster.intersectObjects(this.pointMeshes, false)[0];
     if (pointHit) {
-      this.setPointHover(pointHit.object, event);
+      this.setPointHover(pointHit.object.userData.targetMesh || pointHit.object, event);
       return;
     }
     this.clearPointHover();
@@ -1108,7 +1227,7 @@ export class Kgz3DMap {
     }
     const props = hit.object.userData.feature.properties;
     this.tooltip.innerHTML = `<strong>${escapeHtml(props.name_zh || props.name_en)}</strong><span>${escapeHtml(props.name_ru || props.name_en)}</span>`;
-    this.tooltip.style.transform = `translate(${event.offsetX + 16}px, ${event.offsetY + 16}px)`;
+    this.positionTooltip(event.offsetX, event.offsetY);
     this.tooltip.classList.add('visible');
     this.renderer.domElement.style.cursor = 'default';
     this.requestRender();
@@ -1141,7 +1260,7 @@ export class Kgz3DMap {
     const inventory = stationInventoryRows(point);
     const timeRows = stationTimeRows(point);
     this.tooltip.innerHTML = `<strong>${escapeHtml(point.label || point.name || '业务点位')}</strong>${subtitle ? `<span>${escapeHtml(subtitle)}</span>` : ''}${region}${status}${inventory}${fuelDetailRows(point)}${timeRows}`;
-    this.tooltip.style.transform = `translate(${event.offsetX + 16}px, ${event.offsetY + 16}px)`;
+    this.positionTooltip(event.offsetX, event.offsetY);
     this.tooltip.classList.add('visible');
     this.renderer.domElement.style.cursor = 'pointer';
     this.requestRender();
@@ -1173,6 +1292,7 @@ export class Kgz3DMap {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
+    if (this.options.fitOnResize) this.fitCamera();
     this.requestRender();
   }
 

@@ -33,6 +33,7 @@ declare global {
       apiHost?: string;
       updateUrl?: string;
       wallpaperToken?: string;
+      localApiNonce?: string;
       allowedHosts?: string[];
       safeArea?: {
         left?: number;
@@ -40,26 +41,56 @@ declare global {
         right?: number;
         bottom?: number;
       };
-      lively?: {
+      wallpaper?: {
         packageId?: string;
         packageVersion?: string;
+        language?: 'auto' | 'zh' | 'ru';
         updateManifestUrl?: string;
+        refreshAtLocalTime?: string;
         refreshSeconds?: number;
         vpnApiHost?: string;
+        map?: {
+          fitCenterX?: number;
+          fitCenterY?: number;
+          fitCenterZ?: number;
+        };
+        hud?: {
+          showSalesSummary?: boolean;
+          showExchangeRates?: boolean;
+          showYearVolume?: boolean;
+          showYearTons?: boolean;
+          showYearAmount?: boolean;
+          showMonthVolume?: boolean;
+          showMonthTons?: boolean;
+          showMonthAmount?: boolean;
+          showUsdKgs?: boolean;
+          showCnyKgs?: boolean;
+          showInventoryAlerts?: boolean;
+          showActiveStations?: boolean;
+          showClosedStations?: boolean;
+          showDepotMarkers?: boolean;
+          showInventoryAlertOnly?: boolean;
+          hudTopScale?: number;
+          hudTopOffsetX?: number;
+          hudTopOffsetY?: number;
+          hudSalesScale?: number;
+          hudSalesOffsetX?: number;
+          hudSalesOffsetY?: number;
+        };
       };
     };
     SALES_WALLPAPER_KEY_READY?: Promise<void>;
-	    SALES_WALLPAPER_KEY_STATUS?: {
-	      state?: 'missing' | 'loaded' | 'invalid' | 'vpn';
-	      message?: string;
-	      source?: string;
-	      apiHost?: string;
-	      loadedAt?: string;
-	      tokenLength?: number;
-	      tokenFingerprint?: string;
-	    };
+    SALES_WALLPAPER_KEY_STATUS?: {
+      state?: 'missing' | 'loaded' | 'invalid' | 'vpn';
+      message?: string;
+      source?: string;
+      apiHost?: string;
+      loadedAt?: string;
+      tokenLength?: number;
+      tokenFingerprint?: string;
+    };
     SALES_WALLPAPER_AUTH_STATUS?: {
-      method?: 'public' | 'header' | 'query' | 'vpn';
+      method?: 'public' | 'header' | 'vpn';
       checkedAt?: string;
       sensitiveData?: boolean;
       fallbackReason?: string;
@@ -91,5 +122,6 @@ declare global {
       reload: () => Promise<boolean>;
       ready?: () => Promise<boolean>;
     };
+    __wallpaperSetEditMode?: (enabled: boolean) => void;
   }
 }

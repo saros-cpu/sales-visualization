@@ -8,9 +8,9 @@ describe('desktop api host resolution', () => {
 
   it('accepts runtime allowed hostnames for full API URLs', async () => {
     vi.stubGlobal('window', {
-      __SALES_API_HOST__: 'http://sales.example.com',
+      __SALES_API_HOST__: 'https://sales.example.com',
       SALES_RUNTIME_CONFIG: {
-        apiHost: 'http://sales.example.com',
+        apiHost: 'https://sales.example.com',
         allowedHosts: ['198.51.100.10', 'sales.example.com'],
       },
       location: {
@@ -29,6 +29,32 @@ describe('desktop api host resolution', () => {
 
     const { resolveApiHost } = await import('./http');
 
-    expect(resolveApiHost()).toBe('http://sales.example.com');
+    expect(resolveApiHost()).toBe('https://sales.example.com');
+  });
+
+  it('upgrades legacy public HTTP hosts before resolving the API host', async () => {
+    vi.stubGlobal('window', {
+      __SALES_API_HOST__: '',
+      SALES_RUNTIME_CONFIG: {
+        apiHost: '',
+        allowedHosts: ['198.51.100.10', 'sales.example.com'],
+      },
+      location: {
+        protocol: 'file:',
+        port: '',
+        origin: 'file://',
+        hostname: '',
+        hash: '',
+      },
+    });
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => (key === 'sales_api_host' ? 'http://198.51.100.10' : null),
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+
+    const { resolveApiHost } = await import('./http');
+
+    expect(resolveApiHost()).toBe('https://sales.example.com');
   });
 });

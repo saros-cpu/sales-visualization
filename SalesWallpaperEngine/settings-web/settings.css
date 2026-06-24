@@ -1,0 +1,238 @@
+:root {
+  color-scheme: dark;
+  font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+  background: #081321;
+  color: #edf7ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #081321;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.settings-shell {
+  display: grid;
+  gap: 16px;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 22px;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+h2 {
+  color: #d7eafe;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+p {
+  margin-top: 6px;
+  color: #8ea8c1;
+  font-size: 13px;
+}
+
+.settings-status {
+  min-height: 34px;
+  padding: 9px 12px;
+  border: 1px solid rgba(142, 168, 193, 0.22);
+  border-radius: 8px;
+  color: #b8cbe0;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 13px;
+}
+
+.settings-status.ok {
+  color: #c6f7df;
+  border-color: rgba(70, 211, 125, 0.32);
+  background: rgba(70, 211, 125, 0.12);
+}
+
+.settings-status.error {
+  color: #ffd3d0;
+  border-color: rgba(239, 100, 97, 0.38);
+  background: rgba(239, 100, 97, 0.12);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(142, 168, 193, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.runtime-panel {
+  gap: 10px;
+}
+
+.runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.runtime-grid div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(142, 168, 193, 0.14);
+  border-radius: 7px;
+  background: rgba(5, 12, 24, 0.42);
+}
+
+.runtime-grid span,
+.runtime-grid b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-grid span {
+  color: #8ea8c1;
+  font-size: 12px;
+}
+
+.runtime-grid b {
+  margin-top: 4px;
+  color: #edf7ff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+label {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(120px, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: #b9cadb;
+  font-size: 13px;
+}
+
+label.check {
+  grid-template-columns: 18px 1fr;
+}
+
+.layout-tools {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.layout-tools button {
+  flex: 1 1 130px;
+  min-width: 0;
+}
+
+.layout-tools button.is-active {
+  color: #052010;
+  border-color: rgba(70, 211, 125, 0.7);
+  background: #86efac;
+}
+
+input,
+select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(142, 168, 193, 0.25);
+  border-radius: 6px;
+  color: #edf7ff;
+  background: rgba(5, 12, 24, 0.78);
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: rgba(125, 211, 252, 0.65);
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #38bdf8;
+}
+
+.settings-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 0 2px;
+  background: linear-gradient(180deg, rgba(8, 19, 33, 0), #081321 28%);
+}
+
+button {
+  min-width: 104px;
+  padding: 9px 14px;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  border-radius: 7px;
+  color: #04111f;
+  background: #7dd3fc;
+  cursor: pointer;
+}
+
+button.secondary,
+button.ghost {
+  color: #d7eafe;
+  background: rgba(255, 255, 255, 0.065);
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+@media (max-width: 760px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-actions {
+    flex-wrap: wrap;
+  }
+
+  .settings-actions button {
+    flex: 1 1 150px;
+  }
+}

@@ -56,12 +56,27 @@ SALES_SUMMARY = {
     "yearEndExclusive": "2026-07-29",
     "yearVolumeLiters": 1234567.89,
     "yearAmount": 7654321.12,
+    "yearAmountCny": 621000.09,
+    "yearAvgCnyKgs": 12.3266,
     "month": "2026-07",
     "monthStart": "2026-07-01",
     "monthEnd": "2026-07-28",
     "monthEndExclusive": "2026-07-29",
     "monthVolumeLiters": 234567.89,
     "monthAmount": 1234567.12,
+    "monthAmountCny": 100123.45,
+    "monthAvgCnyKgs": 12.3312,
+}
+
+
+EXCHANGE_SUMMARY = {
+    "available": True,
+    "date": "2026-07-29",
+    "usdKgs": 87.4567,
+    "cnyKgs": 12.3456,
+    "source": "NBKR",
+    "isManual": False,
+    "isToday": True,
 }
 
 
@@ -74,6 +89,7 @@ class WallpaperMapTests(unittest.TestCase):
              patch.object(api, "_wallpaper_active_statuses", return_value={}), \
              patch.object(api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
              patch.object(api, "_wallpaper_sales_summary", return_value=SALES_SUMMARY), \
+             patch.object(api, "_wallpaper_exchange_summary", return_value=EXCHANGE_SUMMARY), \
              patch.object(api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}):
             response = self.client.get("/api/wallpaper/map", headers=headers or {}, query_string=query_string or {})
         self.assertEqual(response.status_code, 200)
@@ -85,8 +101,12 @@ class WallpaperMapTests(unittest.TestCase):
         self.assertFalse(payload["sensitiveData"])
         self.assertNotIn("inventoryByResource", payload["stations"][0])
         self.assertNotIn("salesSummary", payload)
+        self.assertNotIn("exchangeSummary", payload)
         self.assertEqual(payload["summary"]["depotCount"], 1)
         self.assertEqual(payload["depots"][0]["type"], "depot")
+        self.assertEqual(payload["depots"][0]["statusLabel"], "在营")
+        self.assertEqual(payload["stations"][0]["statusLabel"], "在营")
+        self.assertEqual(payload["stations"][1]["statusLabel"], "停业")
         self.assertIsNone(payload["summary"]["inventoryLiters"])
         self.assertEqual(payload["summary"]["stationCount"], 2)
 
@@ -101,14 +121,43 @@ class WallpaperMapTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["inventoryLiters"], 1234.5)
         self.assertEqual(payload["summary"]["inventoryCriticalCount"], 0)
         self.assertEqual(payload["salesSummary"]["yearVolumeLiters"], 1234567.89)
+        self.assertEqual(payload["salesSummary"]["yearAmountCny"], 621000.09)
         self.assertEqual(payload["salesSummary"]["monthAmount"], 1234567.12)
+        self.assertEqual(payload["salesSummary"]["monthAmountCny"], 100123.45)
+        self.assertEqual(payload["exchangeSummary"]["usdKgs"], 87.4567)
+        self.assertEqual(payload["exchangeSummary"]["cnyKgs"], 12.3456)
+        self.assertEqual(payload["exchangeSummary"]["source"], "NBKR")
 
-    def test_wallpaper_query_token_allows_inventory_details(self):
+    def test_wallpaper_cny_conversion_uses_period_average_rate(self):
+        class FakeCursor:
+            def execute(self, *_args, **_kwargs):
+                return None
+
+            def fetchall(self):
+                return [(12.1,), (12.3,)]
+
+        class FakeConnection:
+            def cursor(self):
+                return FakeCursor()
+
+            def close(self):
+                return None
+
+        with patch.object(api, "get_connection", return_value=FakeConnection()):
+            amount_cny, avg_cny = api._wallpaper_amount_cny_by_average(
+                123000,
+                "2026-07-01",
+                "2026-07-03",
+            )
+        self.assertEqual(avg_cny, 12.2)
+        self.assertEqual(amount_cny, 10081.97)
+
+    def test_wallpaper_query_token_is_ignored_by_default(self):
         with patch.dict(os.environ, {"SALES_WALLPAPER_TOKEN": "secret"}, clear=False):
             payload = self.request_payload(query_string={"token": "secret"})
-        self.assertTrue(payload["sensitiveData"])
-        self.assertEqual(payload["stations"][0]["inventory"], 1234.5)
-        self.assertEqual(payload["summary"]["inventoryLiters"], 1234.5)
+        self.assertFalse(payload["sensitiveData"])
+        self.assertNotIn("inventory", payload["stations"][0])
+        self.assertIsNone(payload["summary"]["inventoryLiters"])
 
     def test_wallpaper_zero_inventory_station_overrides_stale_detail(self):
         constants = SimpleNamespace(
@@ -122,6 +171,7 @@ class WallpaperMapTests(unittest.TestCase):
              patch.object(api, "_wallpaper_active_statuses", return_value={}), \
              patch.object(api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
              patch.object(api, "_wallpaper_sales_summary", return_value=SALES_SUMMARY), \
+             patch.object(api, "_wallpaper_exchange_summary", return_value=EXCHANGE_SUMMARY), \
              patch.object(api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}), \
              patch.dict(os.environ, {"SALES_WALLPAPER_TOKEN": "secret"}, clear=False):
             response = self.client.get("/api/wallpaper/map", headers={"X-Wallpaper-Token": "secret"})
@@ -169,7 +219,13 @@ class WallpaperMapTests(unittest.TestCase):
         station = response.get_json()["data"]["stations"][1]
         self.assertEqual(station["shopKey"], 2)
         self.assertEqual(station["status"], "normal")
+        self.assertEqual(station["statusLabel"], "在营")
         self.assertEqual(station["closedReason"], "")
+
+    def test_wallpaper_status_label_normalizes_business_terms(self):
+        self.assertEqual(api._wallpaper_status_label("normal", status_label="normal"), "在营")
+        self.assertEqual(api._wallpaper_status_label("closed", closed_reason="装修停业"), "装修")
+        self.assertEqual(api._wallpaper_status_label("closed", closed_reason="修路占道，无法营业"), "停业")
 
 
 if __name__ == "__main__":

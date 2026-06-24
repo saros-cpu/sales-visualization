@@ -15,16 +15,16 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `3.9.17`.
-- Current release code commit: `85233ad chore: release 3.9.17`.
-- Production public entry: `http://sales.example.com/`.
-- Production backup entry: `http://198.51.100.10/`.
+- Current released client version: `4.0.0`.
+- Current release code commit: the latest `chore: prepare 4.0.0 release and wallpaper 0.2.0` commit in `git log`.
+- Production public entry: `https://sales.example.com/`.
+- Production backup entry details are kept only in `docs/配置文档.md`.
 - Backend listens only on `127.0.0.1:8900`.
-- Desktop update feed: `http://198.51.100.10/download/latest.yml`.
-- Current installer: `SalesDesktop Setup 3.9.17.exe`.
-- Current wallpaper package: `SalesWallpaperNative 0.2.0` via `http://198.51.100.10/download/wallpaper-native/latest.json`.
-- Current Lively wallpaper package: `SalesLivelyWallpaper 1.0.7` via `http://198.51.100.10/download/wallpaper-lively/latest.json`; this is independent from the `SalesDesktop` client version line.
-- HTTPS certificate: pending; keep HTTP active until the public SSL certificate is ready.
+- Desktop update feed: `https://sales.example.com/download/latest.yml`; fallback endpoint details are kept only in `docs/配置文档.md`.
+- Current installer: `SalesDesktop Setup 4.0.0.exe`.
+- Current wallpaper package: `SalesWallpaperEngine 0.2.0` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
+- The old web wallpaper package is retired and removed. Future wallpaper work must use `SalesWallpaperEngine`.
+- HTTPS certificate: enabled; certificate paths are kept only in `docs/配置文档.md`. HTTP remains active for compatibility.
 
 ## Report Boundaries
 
@@ -119,10 +119,10 @@ powershell -ExecutionPolicy Bypass -File .\Sales\restart_production_task.ps1
 For desktop auto-update verification:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.17.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.17.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "http://198.51.100.10/download/SalesDesktop%20Setup%203.9.17.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/latest.yml"
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.0.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.0.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%204.0.0.exe"
 ```
 
 ## CodeGraph Memory

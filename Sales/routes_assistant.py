@@ -5358,9 +5358,9 @@ def register_assistant_routes(app):
     def _assistant_settings_data():
         root = Path(__file__).resolve().parents[1]
         data = {
-            "publicEntry": "http://198.51.100.10/",
+            "publicEntry": "https://sales.example.com/",
             "backendListen": "127.0.0.1:8900",
-            "updateFeed": "http://198.51.100.10/download/latest.yml",
+            "updateFeed": "https://sales.example.com/download/latest.yml",
             "clientVersion": "",
             "packageVersion": "",
             "buildDate": "",

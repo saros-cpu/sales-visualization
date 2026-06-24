@@ -61,23 +61,35 @@ function Resolve-Installer {
 }
 
 function Resolve-ReferenceInstaller {
-    param([string]$Requested)
+    param([string]$Requested, [string]$CurrentVersion)
     if ($Requested) {
         if (-not (Test-Path -LiteralPath $Requested -PathType Leaf)) {
             throw "reference installer not found: $Requested"
         }
         return (Resolve-Path -LiteralPath $Requested).Path
     }
-    $candidates = @(
-        (Join-Path $DesktopDir "release_build\SalesDesktop Setup 3.9.17.exe"),
-        (Join-Path $DesktopDir "download\SalesDesktop Setup 3.9.17.exe")
-    )
-    foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            return (Resolve-Path -LiteralPath $candidate).Path
+    $current = if ($CurrentVersion) { [version]$CurrentVersion } else { $null }
+    $candidate = @(
+        (Join-Path $DesktopDir "release_build"),
+        (Join-Path $DesktopDir "download")
+    ) | Where-Object {
+        Test-Path -LiteralPath $_ -PathType Container
+    } | ForEach-Object {
+        Get-ChildItem -Path $_ -Filter "SalesDesktop Setup *.exe" -File
+    } | ForEach-Object {
+        if ($_.BaseName -match "^SalesDesktop Setup (?<version>\d+(?:\.\d+){1,3})$") {
+            [PSCustomObject]@{
+                Path = $_.FullName
+                Version = [version]$Matches.version
+            }
         }
+    } | Where-Object {
+        -not $current -or $_.Version -lt $current
+    } | Sort-Object Version -Descending | Select-Object -First 1
+    if ($candidate) {
+        return (Resolve-Path -LiteralPath $candidate.Path).Path
     }
-    throw "reference installer SalesDesktop Setup 3.9.17.exe not found"
+    throw "reference installer older than $CurrentVersion not found"
 }
 
 function Expand-DesktopInstaller {
@@ -298,7 +310,7 @@ try {
         $Version = [string]((Get-Content (Join-Path $DesktopDir "package.json") -Encoding utf8 | ConvertFrom-Json).version)
     }
     $installerPath = Resolve-Installer $Installer $Version
-    $referencePath = Resolve-ReferenceInstaller $ReferenceInstaller
+    $referencePath = Resolve-ReferenceInstaller $ReferenceInstaller $Version
     Write-Host "Auditing desktop installer: $installerPath"
     Write-Host "Reference installer: $referencePath"
 

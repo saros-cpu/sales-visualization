@@ -6,6 +6,7 @@ import axios from 'axios';
 import client from '@/api/client';
 import { API_HOST } from '@/api/http';
 import { mountHomeMap } from '@/lib/kgz-map/kgz-map-entry';
+import '@/lib/kgz-map/kgz-map.css';
 import { useAuth } from '@/contexts/AuthContext';
 import { mapRoleVisibleTypes } from '@/config/mapRoles';
 
@@ -171,9 +172,20 @@ export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) 
             closedReason,
             color: status === 'closed' ? '#ef4444' : s.color,
             inventory: Number(detail.inventory || 0),
+            inventoryCapacity: Number(detail.inventoryCapacity || 0),
+            inventoryFillPercent: detail.inventoryFillPercent,
+            inventoryFillStatus: detail.inventoryFillStatus,
+            inventoryAlert: detail.inventoryAlert,
+            inventoryAlerts: detail.inventoryAlerts || [],
             inventoryByResource: detail.inventoryByResource || [],
             inventoryAsOf: detail.inventoryAsOf || '',
+            priceAsOf: detail.priceAsOf || '',
+            statusLabel: detail.statusLabel || (status === 'closed' ? '停业' : '在营'),
+            statusType: detail.statusType || status,
+            statusNote: detail.statusNote || '',
             snapshotGeneratedAt: detail.snapshotGeneratedAt || detailPayload.snapshotGeneratedAt || '',
+            inventoryZeroedByMapRule: Boolean(detail.inventoryZeroedByMapRule),
+            inventoryZeroReason: detail.inventoryZeroReason || '',
           };
         });
         const stations = visibleTypes.includes('station') ? allStations : [];

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import axios from 'axios';
 import { API_HOST, resolveApiHost } from '@/api/http';
 import { mountHomeMap } from '@/lib/kgz-map/kgz-map-entry';
@@ -7,27 +7,84 @@ import './WallpaperApp.css';
 import businessPointsRaw from '../../public/kgz-map/data/business_points.json?raw';
 import {
   formatClock,
+  formatCny,
   formatLiters,
+  formatRate,
   formatSom,
+  formatTons,
   mapLayers,
   normalizeWallpaperPayload,
   type WallpaperPayload,
 } from './wallpaperData';
 
 const CACHE_KEY = 'sales-wallpaper-map-cache-v1';
-const LIVELY_API_HOST_KEY = 'sales_lively_api_host';
-const DEFAULT_REFRESH_INTERVAL_MS = 30 * 60_000;
+const WALLPAPER_API_HOST_KEY = 'sales_wallpaper_api_host';
+const DEFAULT_REFRESH_INTERVAL_MS = 24 * 60 * 60_000;
+const MIN_REFRESH_INTERVAL_MS = 5 * 60_000;
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60_000;
+const WALLPAPER_BASE_W = 1920;
+const WALLPAPER_BASE_H = 1080;
+const WALLPAPER_SCALE_MIN = 0.5;
+const WALLPAPER_SCALE_MAX = 1.5;
 
-type WallpaperAuthMethod = 'public' | 'header' | 'query' | 'vpn';
+// i18n
+type WallLang = 'zh' | 'ru';
+const wallI18n: Record<string, Record<WallLang, string>> = {
+  appTitle: { zh: 'Example Petroleum零售版图', ru: 'Карта розничной торговли example' },
+  statusLive: { zh: '实时', ru: 'Онлайн' },
+  statusCached: { zh: '缓存', ru: 'Кэш' },
+  statusLoading: { zh: '加载中', ru: 'Загрузка' },
+  statusError: { zh: '异常', ru: 'CTY-05ибка' },
+  dataFull: { zh: '完整数据', ru: 'Полные данные' },
+  dataUnauthorized: { zh: '授权未通过', ru: 'Нет доступа' },
+  dataInvalidKey: { zh: '密钥无效', ru: 'Неверный ключ' },
+  dataNoKey: { zh: '未配置密钥', ru: 'Ключ не настроен' },
+  totalStations: { zh: '站点总数', ru: 'Всего АЗС' },
+  activeStations: { zh: '正常营业', ru: 'Работают' },
+  closedStations: { zh: '暂停运营', ru: 'Закрыты' },
+  depots: { zh: '油库', ru: 'Нефтебазы' },
+  stationInventory: { zh: '站点库存', ru: 'Запасы на АЗС' },
+  inventoryAlert: { zh: '库存预警', ru: 'Предупр. запасов' },
+  salesTitle: { zh: '销售汇总', ru: 'Продажи' },
+  yearVolumeLabel: { zh: '年销量/吨位', ru: 'Годовой объём/вес' },
+  yearTonsLabel: { zh: '年吨位', ru: 'Годовой вес' },
+  yearAmount: { zh: '年销售额', ru: 'Годовая сумма' },
+  monthVolumeLabel: { zh: '月销量/吨位', ru: 'Месячный объём/вес' },
+  monthTonsLabel: { zh: '月吨位', ru: 'Месячный вес' },
+  monthAmount: { zh: '月销售额', ru: 'Месячная сумма' },
+  actualOperation: { zh: '实际运营', ru: 'Факт' },
+  exchangeUsdKgs: { zh: '美元/索姆', ru: 'USD/KGS' },
+  exchangeCnyKgs: { zh: '人民币/索姆', ru: 'CNY/KGS' },
+  updateBanner: { zh: '壁纸有更新', ru: 'Доступно обновление' },
+  updateDownload: { zh: '下载', ru: 'Скачать' },
+};
 
-interface LivelyUpdateInfo {
+function resolveWallpaperLang(): WallLang {
+  const cfg = window.SALES_RUNTIME_CONFIG?.wallpaper?.language;
+  if (cfg === 'ru') return 'ru';
+  if (cfg === 'zh') return 'zh';
+  if (typeof navigator !== 'undefined') {
+    const nav = (navigator.language || '').toLowerCase();
+    if (nav.startsWith('ru')) return 'ru';
+  }
+  return 'zh';
+}
+
+function t(key: string): string {
+  const lang = resolveWallpaperLang();
+  const entry = wallI18n[key];
+  return entry ? entry[lang] : key;
+}
+
+type WallpaperAuthMethod = 'public' | 'header' | 'vpn';
+
+interface WallpaperUpdateInfo {
   version: string;
   url: string;
   size?: number;
 }
 
-interface LivelyUpdateCheck {
+interface WallpaperUpdateCheck {
   currentVersion: string;
   latestVersion?: string;
   url?: string;
@@ -74,38 +131,26 @@ function normalizeHost(host: string) {
 function resolveWallpaperApiHost() {
   const configuredHost = normalizeHost(String(
     window.SALES_RUNTIME_CONFIG?.apiHost
-    || localStorage.getItem(LIVELY_API_HOST_KEY)
+    || localStorage.getItem(WALLPAPER_API_HOST_KEY)
     || '',
   ));
   return configuredHost || resolveApiHost();
 }
 
 function resolveWallpaperVpnApiHost() {
-  return normalizeHost(String(window.SALES_RUNTIME_CONFIG?.lively?.vpnApiHost || ''));
+  return normalizeHost(String(window.SALES_RUNTIME_CONFIG?.wallpaper?.vpnApiHost || ''));
 }
 
 function readWallpaperToken() {
   return String(window.SALES_RUNTIME_CONFIG?.wallpaperToken || '').trim();
 }
 
-function applyWallpaperRuntimeConfig(apiHost: string) {
-  const normalizedHost = normalizeHost(apiHost);
-  if (normalizedHost) {
-    localStorage.setItem(LIVELY_API_HOST_KEY, normalizedHost);
-    localStorage.setItem('sales_api_host', normalizedHost);
-    Object.defineProperty(window, '__SALES_API_HOST__', {
-      value: normalizedHost,
-      configurable: true,
-    });
-  } else {
-    localStorage.removeItem(LIVELY_API_HOST_KEY);
-    localStorage.removeItem('sales_api_host');
-  }
-
-  window.SALES_RUNTIME_CONFIG = {
-    ...(window.SALES_RUNTIME_CONFIG || {}),
-    apiHost: normalizedHost || resolveApiHost(),
-  };
+function localApiHeaders(json = false) {
+  const headers: Record<string, string> = {};
+  const nonce = String(window.SALES_RUNTIME_CONFIG?.localApiNonce || '').trim();
+  if (json) headers['Content-Type'] = 'application/json';
+  if (nonce) headers['X-Sales-Wallpaper-Nonce'] = nonce;
+  return headers;
 }
 
 async function waitForWallpaperKeyFile() {
@@ -115,9 +160,33 @@ async function waitForWallpaperKeyFile() {
 }
 
 function resolveRefreshIntervalMs() {
-  const seconds = Number(window.SALES_RUNTIME_CONFIG?.lively?.refreshSeconds);
-  if (!Number.isFinite(seconds) || seconds < 300) return DEFAULT_REFRESH_INTERVAL_MS;
+  const seconds = Number(window.SALES_RUNTIME_CONFIG?.wallpaper?.refreshSeconds);
+  if (!Number.isFinite(seconds) || seconds < MIN_REFRESH_INTERVAL_MS / 1000) return DEFAULT_REFRESH_INTERVAL_MS;
   return seconds * 1000;
+}
+
+function resolveRefreshAtLocalTime() {
+  const text = String(window.SALES_RUNTIME_CONFIG?.wallpaper?.refreshAtLocalTime || '').trim();
+  const match = /^(\d{1,2}):(\d{2})$/.exec(text);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function nextRefreshDelayMs() {
+  const daily = resolveRefreshAtLocalTime();
+  if (!daily) return resolveRefreshIntervalMs();
+
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(daily.hour, daily.minute, 0, 0);
+  if (next.getTime() <= now.getTime() + 5000) {
+    next.setDate(next.getDate() + 1);
+  }
+  return Math.max(MIN_REFRESH_INTERVAL_MS, next.getTime() - now.getTime());
 }
 
 function runtimeSafeArea() {
@@ -141,6 +210,74 @@ function applyRuntimeSafeArea() {
 
 function pointerIgnoreBottom() {
   return Math.max(88, runtimeSafeArea().bottom + 24);
+}
+
+function computeWallpaperScale() {
+  const scale = Math.min(window.innerWidth / WALLPAPER_BASE_W, window.innerHeight / WALLPAPER_BASE_H);
+  return Math.min(WALLPAPER_SCALE_MAX, Math.max(WALLPAPER_SCALE_MIN, scale));
+}
+
+interface HudLayout {
+  hudTopScale: number;
+  hudTopOffsetX: number;
+  hudTopOffsetY: number;
+  hudSalesScale: number;
+  hudSalesOffsetX: number;
+  hudSalesOffsetY: number;
+}
+
+type HudTarget = 'top' | 'sales';
+type HudDragKind = 'move' | 'scale';
+
+const DEFAULT_HUD_LAYOUT: HudLayout = {
+  hudTopScale: 1,
+  hudTopOffsetX: 0,
+  hudTopOffsetY: 0,
+  hudSalesScale: 1,
+  hudSalesOffsetX: 0,
+  hudSalesOffsetY: 0,
+};
+
+function numericConfig(value: unknown, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function clampScale(value: number) {
+  return Math.min(1.5, Math.max(0.5, value));
+}
+
+function roundLayoutNumber(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function readHudLayout(hud?: Partial<HudLayout>): HudLayout {
+  return {
+    hudTopScale: clampScale(numericConfig(hud?.hudTopScale, DEFAULT_HUD_LAYOUT.hudTopScale)),
+    hudTopOffsetX: numericConfig(hud?.hudTopOffsetX, DEFAULT_HUD_LAYOUT.hudTopOffsetX),
+    hudTopOffsetY: numericConfig(hud?.hudTopOffsetY, DEFAULT_HUD_LAYOUT.hudTopOffsetY),
+    hudSalesScale: clampScale(numericConfig(hud?.hudSalesScale, DEFAULT_HUD_LAYOUT.hudSalesScale)),
+    hudSalesOffsetX: numericConfig(hud?.hudSalesOffsetX, DEFAULT_HUD_LAYOUT.hudSalesOffsetX),
+    hudSalesOffsetY: numericConfig(hud?.hudSalesOffsetY, DEFAULT_HUD_LAYOUT.hudSalesOffsetY),
+  };
+}
+
+function hudTransform(target: HudTarget, layout: HudLayout) {
+  if (target === 'top') {
+    return `translateX(-50%) translate(${layout.hudTopOffsetX}px, ${layout.hudTopOffsetY}px) scale(${layout.hudTopScale})`;
+  }
+  return `translate(${layout.hudSalesOffsetX}px, ${layout.hudSalesOffsetY}px) scale(${layout.hudSalesScale})`;
+}
+
+function hudLayoutPayload(layout: HudLayout) {
+  return {
+    hudTopScale: roundLayoutNumber(layout.hudTopScale),
+    hudTopOffsetX: roundLayoutNumber(layout.hudTopOffsetX),
+    hudTopOffsetY: roundLayoutNumber(layout.hudTopOffsetY),
+    hudSalesScale: roundLayoutNumber(layout.hudSalesScale),
+    hudSalesOffsetX: roundLayoutNumber(layout.hudSalesOffsetX),
+    hudSalesOffsetY: roundLayoutNumber(layout.hudSalesOffsetY),
+  };
 }
 
 function mapDataVersion(payload: WallpaperPayload | null) {
@@ -184,6 +321,7 @@ function mapDataVersion(payload: WallpaperPayload | null) {
     depot.lat ?? '',
     depot.type || '',
     depot.status || '',
+    depot.statusLabel || '',
     depot.closedReason || '',
   ].join(':')).join('|');
   return [
@@ -194,12 +332,25 @@ function mapDataVersion(payload: WallpaperPayload | null) {
     summary.closedStationCount ?? '',
     summary.depotCount ?? '',
     summary.inventoryLiters ?? '',
+    summary.inventoryAlertCount ?? '',
+    summary.inventoryCriticalCount ?? '',
+    summary.inventoryWarningCount ?? '',
     payload.salesSummary?.yearVolumeLiters ?? '',
+    payload.salesSummary?.yearTons ?? '',
     payload.salesSummary?.yearAmount ?? '',
+    payload.salesSummary?.yearAmountCny ?? '',
+    payload.salesSummary?.yearAvgCnyKgs ?? '',
     payload.salesSummary?.monthVolumeLiters ?? '',
+    payload.salesSummary?.monthTons ?? '',
     payload.salesSummary?.monthAmount ?? '',
+    payload.salesSummary?.monthAmountCny ?? '',
+    payload.salesSummary?.monthAvgCnyKgs ?? '',
     payload.salesSummary?.yearEnd ?? '',
     payload.salesSummary?.monthEnd ?? '',
+    payload.exchangeSummary?.date ?? '',
+    payload.exchangeSummary?.usdKgs ?? '',
+    payload.exchangeSummary?.cnyKgs ?? '',
+    payload.exchangeSummary?.source ?? '',
     stationVersion,
     depotVersion,
   ].join('|');
@@ -217,6 +368,7 @@ function fallbackPayloadFromBusinessPoints(): WallpaperPayload {
           lng: Number(item.lng),
           lat: Number(item.lat),
           status: item.status || 'normal',
+          statusLabel: item.statusLabel,
           closedReason: item.closedReason,
         }))
       : [];
@@ -230,6 +382,7 @@ function fallbackPayloadFromBusinessPoints(): WallpaperPayload {
             lat: Number(item.lat),
             type: item.type,
             status: item.status || 'normal',
+            statusLabel: item.statusLabel,
             closedReason: item.closedReason,
           }))
       : [];
@@ -254,12 +407,9 @@ function fallbackPayloadFromBusinessPoints(): WallpaperPayload {
 
 async function requestWallpaperPayload(wallpaperToken: string, method: WallpaperAuthMethod, apiHost = resolveWallpaperApiHost()) {
   const params: Record<string, string | number> = { t: Date.now() };
-  const headers = method === 'header' && wallpaperToken
+  const headers = (method === 'header' || method === 'vpn') && wallpaperToken
     ? { 'X-Wallpaper-Token': wallpaperToken }
     : undefined;
-  if ((method === 'query' || method === 'vpn') && wallpaperToken) {
-    params.token = wallpaperToken;
-  }
   const response = await axios.get(`${apiHost}/api/wallpaper/map`, {
     params,
     headers,
@@ -269,7 +419,7 @@ async function requestWallpaperPayload(wallpaperToken: string, method: Wallpaper
   updateWallpaperAuthStatus({
     method,
     sensitiveData: Boolean(payload.sensitiveData),
-    fallbackReason: method === 'query' ? window.SALES_WALLPAPER_AUTH_STATUS?.fallbackReason : '',
+    fallbackReason: '',
     error: '',
   });
   return payload;
@@ -290,10 +440,10 @@ async function fetchWallpaperPayload() {
     const headerPayload = await requestWallpaperPayload(wallpaperToken, 'header', currentApiHost);
     if (headerPayload.sensitiveData) return headerPayload;
     updateWallpaperAuthStatus({ fallbackReason: 'header_returned_public' });
-    const queryPayload = await requestWallpaperPayload(wallpaperToken, 'query', currentApiHost);
-    if (queryPayload.sensitiveData || !vpnApiHost || vpnApiHost === currentApiHost) return queryPayload;
-    updateWallpaperAuthStatus({ fallbackReason: 'query_returned_public' });
-    return requestWallpaperPayload(wallpaperToken, 'vpn', vpnApiHost);
+    if (vpnApiHost && vpnApiHost !== currentApiHost) {
+      return requestWallpaperPayload(wallpaperToken, 'vpn', vpnApiHost);
+    }
+    return headerPayload;
   } catch (error: any) {
     updateWallpaperAuthStatus({
       method: 'header',
@@ -301,10 +451,10 @@ async function fetchWallpaperPayload() {
       fallbackReason: error?.message || 'header_failed',
       error: error?.message || 'header_failed',
     });
-    const queryPayload = await requestWallpaperPayload(wallpaperToken, 'query', currentApiHost);
-    if (queryPayload.sensitiveData || !vpnApiHost || vpnApiHost === currentApiHost) return queryPayload;
-    updateWallpaperAuthStatus({ fallbackReason: 'query_returned_public' });
-    return requestWallpaperPayload(wallpaperToken, 'vpn', vpnApiHost);
+    if (vpnApiHost && vpnApiHost !== currentApiHost) {
+      return requestWallpaperPayload(wallpaperToken, 'vpn', vpnApiHost);
+    }
+    return requestWallpaperPayload('', 'public', currentApiHost);
   }
 }
 
@@ -319,31 +469,19 @@ function compareVersions(left?: string, right?: string) {
   return 0;
 }
 
-function resolveLivelyCurrentVersion() {
-  return String(window.SALES_RUNTIME_CONFIG?.lively?.packageVersion || '0.0.0').trim() || '0.0.0';
+function resolveWallpaperCurrentVersion() {
+  return String(window.SALES_RUNTIME_CONFIG?.wallpaper?.packageVersion || '0.0.0').trim() || '0.0.0';
 }
 
 function isWallpaperEngineRuntime() {
-  return window.SALES_RUNTIME_CONFIG?.lively?.packageId === 'kg.example.sales.wallpaper.engine';
+  return window.SALES_RUNTIME_CONFIG?.wallpaper?.packageId === 'kg.example.sales.wallpaper.engine';
 }
 
-function formatBytes(value?: number) {
-  const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric) || numeric <= 0) return '';
-  if (numeric >= 1024 * 1024) {
-    return `${(numeric / 1024 / 1024).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} MB`;
-  }
-  if (numeric >= 1024) {
-    return `${(numeric / 1024).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} KB`;
-  }
-  return `${numeric.toLocaleString('zh-CN')} B`;
-}
-
-async function fetchLivelyUpdateCheck(): Promise<LivelyUpdateCheck> {
+async function fetchWallpaperUpdateCheck(): Promise<WallpaperUpdateCheck> {
   await waitForWallpaperKeyFile();
-  const livelyConfig = window.SALES_RUNTIME_CONFIG?.lively || {};
-  const currentVersion = resolveLivelyCurrentVersion();
-  const manifestUrl = livelyConfig.updateManifestUrl || `${resolveWallpaperApiHost() || API_HOST}/download/wallpaper-lively/latest.json`;
+  const wallpaperConfig = window.SALES_RUNTIME_CONFIG?.wallpaper || {};
+  const currentVersion = resolveWallpaperCurrentVersion();
+  const manifestUrl = wallpaperConfig.updateManifestUrl || `${resolveWallpaperApiHost() || API_HOST}/download/wallpaper-engine/latest.json`;
   const response = await axios.get(manifestUrl, { params: { t: Date.now() }, timeout: 15000 });
   const manifest = response.data?.data || response.data || {};
   const nextVersion = String(manifest.version || '').trim();
@@ -365,22 +503,168 @@ export default function WallpaperApp() {
   const mapRef = useRef<any>(null);
   const latestPayloadRef = useRef<WallpaperPayload | null>(null);
   const mapVersionRef = useRef('');
+  const centerHudRef = useRef<HTMLElement>(null);
+  const salesHudRef = useRef<HTMLElement>(null);
+  const hudLayoutRef = useRef<HudLayout>(DEFAULT_HUD_LAYOUT);
+  const editModeRef = useRef(false);
+  const dragActiveRef = useRef(false);
+  const previewTimerRef = useRef<number | undefined>(undefined);
   const [payload, setPayload] = useState<WallpaperPayload | null>(() => readCache());
   const [mode, setMode] = useState<'loading' | 'live' | 'cached' | 'error'>(() => (readCache() ? 'cached' : 'loading'));
-  const [lastError, setLastError] = useState('');
-  const [updateInfo, setUpdateInfo] = useState<LivelyUpdateInfo | null>(null);
-  const [updateCheck, setUpdateCheck] = useState<LivelyUpdateCheck>(() => ({
-    currentVersion: resolveLivelyCurrentVersion(),
-    status: 'checking',
-  }));
-  const [configOpen, setConfigOpen] = useState(false);
-  const [configApiHost, setConfigApiHost] = useState(() => resolveWallpaperApiHost());
-  const [configNotice, setConfigNotice] = useState('');
+  const [updateInfo, setUpdateInfo] = useState<WallpaperUpdateInfo | null>(null);
   const engineRuntime = isWallpaperEngineRuntime();
+  const lang = resolveWallpaperLang();
+  const wallpaperConfig = window.SALES_RUNTIME_CONFIG?.wallpaper || {};
+  const hud = wallpaperConfig.hud || {};
+  const mapConfig = wallpaperConfig.map || {};
+  const [hudLayout, setHudLayout] = useState<HudLayout>(() => readHudLayout(hud));
+  const [editMode, setEditMode] = useState(false);
+  const showSalesSummary = hud.showSalesSummary !== false;
+  const showExchangeRates = hud.showExchangeRates !== false;
+  const showYearVolume = hud.showYearVolume !== false;
+  const showYearTons = hud.showYearTons !== false;
+  const showYearAmount = hud.showYearAmount !== false;
+  const showMonthVolume = hud.showMonthVolume !== false;
+  const showMonthTons = hud.showMonthTons !== false;
+  const showMonthAmount = hud.showMonthAmount !== false;
+  const showUsdKgs = hud.showUsdKgs !== false;
+  const showCnyKgs = hud.showCnyKgs !== false;
+  const showInventoryAlerts = hud.showInventoryAlerts !== false;
+  const layerOptions = {
+    showActiveStations: hud.showActiveStations !== false,
+    showClosedStations: hud.showClosedStations !== false,
+    showDepotMarkers: hud.showDepotMarkers !== false,
+    showInventoryAlertOnly: Boolean(hud.showInventoryAlertOnly),
+  };
+  const fitCenterX = numericConfig(mapConfig.fitCenterX, -1.16);
+  const fitCenterY = numericConfig(mapConfig.fitCenterY, -0.45);
+  const fitCenterZ = numericConfig(mapConfig.fitCenterZ, 2.48);
+
+  useEffect(() => {
+    hudLayoutRef.current = hudLayout;
+  }, [hudLayout]);
+
+  useEffect(() => {
+    editModeRef.current = editMode;
+  }, [editMode]);
+
+  const postHudPreview = useCallback((layout: HudLayout) => {
+    if (!engineRuntime) return;
+    if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = window.setTimeout(() => {
+      void fetch('/api/wallpaper/settings/preview', {
+        method: 'POST',
+        headers: localApiHeaders(true),
+        body: JSON.stringify(hudLayoutPayload(layout)),
+      }).catch(() => {});
+    }, 300);
+  }, [engineRuntime]);
+
+  const applyEditMode = useCallback((enabled: boolean) => {
+    editModeRef.current = enabled;
+    setEditMode(enabled);
+  }, []);
+
+  const startHudDrag = useCallback((event: React.PointerEvent<HTMLElement>, target: HudTarget, kind: HudDragKind) => {
+    if (!editModeRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragActiveRef.current = true;
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startLayout = hudLayoutRef.current;
+    const source = event.currentTarget;
+    try {
+      source.setPointerCapture(event.pointerId);
+    } catch {}
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      const next: HudLayout = { ...startLayout };
+      if (kind === 'move') {
+        if (target === 'top') {
+          next.hudTopOffsetX = roundLayoutNumber(startLayout.hudTopOffsetX + dx);
+          next.hudTopOffsetY = roundLayoutNumber(startLayout.hudTopOffsetY + dy);
+        } else {
+          next.hudSalesOffsetX = roundLayoutNumber(startLayout.hudSalesOffsetX + dx);
+          next.hudSalesOffsetY = roundLayoutNumber(startLayout.hudSalesOffsetY + dy);
+        }
+      } else {
+        const delta = (dx + dy) / 400;
+        if (target === 'top') {
+          next.hudTopScale = roundLayoutNumber(clampScale(startLayout.hudTopScale + delta));
+        } else {
+          next.hudSalesScale = roundLayoutNumber(clampScale(startLayout.hudSalesScale + delta));
+        }
+      }
+      hudLayoutRef.current = next;
+      setHudLayout(next);
+      window.setTimeout(() => mapRef.current?.resize?.(), 0);
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      dragActiveRef.current = false;
+      postHudPreview(hudLayoutRef.current);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [postHudPreview]);
 
   useEffect(() => {
     applyRuntimeSafeArea();
   }, []);
+
+  useEffect(() => () => {
+    if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    window.__wallpaperSetEditMode = applyEditMode;
+    return () => {
+      delete window.__wallpaperSetEditMode;
+    };
+  }, [applyEditMode]);
+
+  useEffect(() => {
+    if (!engineRuntime) return undefined;
+    let cancelled = false;
+    const syncSettings = async () => {
+      try {
+        const response = await fetch('/api/wallpaper/settings', { cache: 'no-store' });
+        if (!response.ok) return;
+        const settings = await response.json();
+        if (cancelled) return;
+        const nextEditMode = Boolean(settings.editMode);
+        const wasEditing = editModeRef.current;
+        const nextLayout = readHudLayout(settings);
+        if (nextEditMode !== wasEditing) {
+          applyEditMode(nextEditMode);
+          if (!nextEditMode && wasEditing) {
+            hudLayoutRef.current = nextLayout;
+            setHudLayout(nextLayout);
+            window.setTimeout(() => mapRef.current?.resize?.(), 80);
+            return;
+          }
+        }
+        if (nextEditMode && !dragActiveRef.current) {
+          hudLayoutRef.current = nextLayout;
+          setHudLayout(nextLayout);
+        }
+      } catch {}
+    };
+
+    void syncSettings();
+    const timer = window.setInterval(syncSettings, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [applyEditMode, engineRuntime]);
 
   const refresh = useCallback(async () => {
     try {
@@ -392,8 +676,7 @@ export default function WallpaperApp() {
       }
       writeCache(next);
       setMode('live');
-      setLastError('');
-    } catch (error: any) {
+    } catch {
       const cached = readCache();
       if (cached) {
         setPayload(cached);
@@ -402,7 +685,6 @@ export default function WallpaperApp() {
         setPayload(fallbackPayloadFromBusinessPoints());
         setMode('cached');
       }
-      setLastError(error?.message || '数据更新失败');
     }
   }, []);
 
@@ -410,36 +692,30 @@ export default function WallpaperApp() {
     const handleRefresh = () => {
       void refresh();
     };
+    let timer: number | undefined;
+    const scheduleNextRefresh = () => {
+      timer = window.setTimeout(() => {
+        void refresh().finally(scheduleNextRefresh);
+      }, nextRefreshDelayMs());
+    };
+
     refresh();
     window.addEventListener('sales-wallpaper-refresh', handleRefresh);
-    const timer = window.setInterval(refresh, resolveRefreshIntervalMs());
+    scheduleNextRefresh();
     return () => {
-      window.clearInterval(timer);
+      if (timer) window.clearTimeout(timer);
       window.removeEventListener('sales-wallpaper-refresh', handleRefresh);
     };
   }, [refresh]);
 
   const checkForUpdates = useCallback(async () => {
-    setUpdateCheck((prev) => ({
-      ...prev,
-      currentVersion: resolveLivelyCurrentVersion(),
-      status: 'checking',
-      error: '',
-    }));
     try {
-      const next = await fetchLivelyUpdateCheck();
-      setUpdateCheck(next);
+      const next = await fetchWallpaperUpdateCheck();
       setUpdateInfo(next.status === 'available' && next.url
         ? { version: next.latestVersion || '', url: next.url, size: next.size }
         : null);
-    } catch (error: any) {
+    } catch {
       setUpdateInfo(null);
-      setUpdateCheck({
-        currentVersion: resolveLivelyCurrentVersion(),
-        checkedAt: new Date().toISOString(),
-        status: 'error',
-        error: error?.message || '检查更新失败',
-      });
     }
   }, []);
 
@@ -450,10 +726,42 @@ export default function WallpaperApp() {
     return () => window.clearInterval(timer);
   }, [checkForUpdates, engineRuntime]);
 
+  const applyWallpaperLayout = useCallback(() => {
+    const center = centerHudRef.current;
+    const sales = salesHudRef.current;
+    const scale = computeWallpaperScale();
+    if (center) center.style.zoom = String(scale);
+    if (sales) sales.style.zoom = String(scale);
+    const map = mapRef.current;
+    if (!map) return;
+    if (sales) {
+      const sr = sales.getBoundingClientRect();
+      map.options.pointerIgnoreBottom = Math.max(88, Math.round(window.innerHeight - sr.top + 4));
+    } else {
+      map.options.pointerIgnoreBottom = pointerIgnoreBottom();
+    }
+    map.resize();
+  }, []);
+
+  useEffect(() => {
+    applyWallpaperLayout();
+    const onResize = () => window.setTimeout(applyWallpaperLayout, 60);
+    window.addEventListener('resize', onResize);
+    const ro = new ResizeObserver(() => applyWallpaperLayout());
+    if (containerRef.current) ro.observe(containerRef.current);
+    if (centerHudRef.current) ro.observe(centerHudRef.current);
+    if (salesHudRef.current) ro.observe(salesHudRef.current);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      ro.disconnect();
+    };
+  }, [applyWallpaperLayout]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
+    applyWallpaperLayout();
     let cancelled = false;
     mountHomeMap(el, { stations: [], depots: [], customers: [] }, {
       basePath: resolveKgzDataPath(),
@@ -467,103 +775,100 @@ export default function WallpaperApp() {
       maxPixelRatio: 1.25,
       pointerIgnoreBottom: pointerIgnoreBottom(),
       starDensity: 0.45,
-      initialCamera: {
-        cameraX: -0.08,
-        cameraY: 30.54,
-        cameraZ: 45.81,
-        targetX: -0.08,
-        targetY: -0.45,
-        targetZ: 2.48,
-      },
+      fitOnResize: true,
+      fitWorldWidth: 72.7,
+      fitCenterX,
+      fitCenterY,
+      fitCenterZ,
+      flipTooltip: true,
+      tooltipAvoidSelectors: ['.wallpaper-center', '.wallpaper-sales'],
     }).then((instance) => {
       if (cancelled) {
         instance?.destroy?.();
         return;
       }
       mapRef.current = instance;
+      applyWallpaperLayout();
       if (latestPayloadRef.current) {
         mapVersionRef.current = mapDataVersion(latestPayloadRef.current);
-        mapRef.current?.updateLayers?.(mapLayers(latestPayloadRef.current));
+        mapRef.current?.updateLayers?.(mapLayers(latestPayloadRef.current, layerOptions));
       }
       window.wallpaperAPI?.ready?.();
-      window.setTimeout(() => mapRef.current?.resize?.(), 120);
-      window.setTimeout(() => mapRef.current?.resize?.(), 600);
-    }).catch((error) => {
+
+      // Resize after mount, DPI settle, and fonts load
+      const scheduleResize = (delay: number) => window.setTimeout(() => mapRef.current?.resize?.(), delay);
+      scheduleResize(120);
+      scheduleResize(600);
+      scheduleResize(1200);
+
+      // Listen for resolution / DPI changes
+      const dprMq = window.matchMedia('(resolution: 1dppx)');
+      const onDprChange = () => scheduleResize(400);
+      dprMq.addEventListener('change', onDprChange);
+
+      if (!cancelled) {
+        (mapRef as any).__dprCleanup = () => dprMq.removeEventListener('change', onDprChange);
+      }
+    }).catch(() => {
       setMode('error');
-      setLastError(error?.message || '地图加载失败');
     });
 
     return () => {
       cancelled = true;
+      (mapRef as any).__dprCleanup?.();
       mapRef.current?.destroy?.();
       mapRef.current = null;
     };
-  }, []);
+  }, [applyWallpaperLayout, fitCenterX, fitCenterY, fitCenterZ]);
 
   useEffect(() => {
     latestPayloadRef.current = payload;
     const nextVersion = mapDataVersion(payload);
     if (!payload || !mapRef.current || nextVersion === mapVersionRef.current) return;
     mapVersionRef.current = nextVersion;
-    mapRef.current.updateLayers?.(mapLayers(payload));
+    mapRef.current.updateLayers?.(mapLayers(payload, layerOptions));
     window.setTimeout(() => mapRef.current?.resize?.(), 80);
   }, [payload]);
 
-	  const summary = payload?.summary || {};
-	  const statusText = mode === 'live' ? '实时' : mode === 'cached' ? '缓存' : mode === 'loading' ? '加载中' : '异常';
-	  const keyStatus = window.SALES_WALLPAPER_KEY_STATUS || {};
-	  const authStatus = window.SALES_WALLPAPER_AUTH_STATUS || {};
-	  const salesSummary = payload?.salesSummary || {};
-	  const hasSalesSummary = Boolean(payload?.sensitiveData && payload?.salesSummary);
-	  const keyState = keyStatus.state || 'missing';
-	  const dataModeText = payload?.sensitiveData
-	    ? '完整数据'
-	    : keyState === 'loaded'
-      ? '授权未通过'
+  const summary = payload?.summary || {};
+  const statusText = mode === 'live' ? t('statusLive') : mode === 'cached' ? t('statusCached') : mode === 'loading' ? t('statusLoading') : t('statusError');
+  const keyStatus = window.SALES_WALLPAPER_KEY_STATUS || {};
+  const salesSummary = payload?.salesSummary || {};
+  const hasSalesSummary = Boolean(payload?.sensitiveData && payload?.salesSummary);
+  const exchangeSummary = payload?.exchangeSummary || {};
+  const hasExchangeSummary = Boolean(payload?.sensitiveData && exchangeSummary.available);
+  const keyState = keyStatus.state || 'missing';
+  const criticalAlerts = Number(summary.inventoryCriticalCount ?? 0);
+  const warningAlerts = Number(summary.inventoryWarningCount ?? 0);
+  const totalAlerts = Number(summary.inventoryAlertCount ?? criticalAlerts + warningAlerts);
+  const dataModeText = payload?.sensitiveData
+    ? t('dataFull')
+    : keyState === 'loaded'
+      ? t('dataUnauthorized')
       : keyState === 'invalid'
-        ? '密钥无效'
-        : '未配置密钥';
-  const updateStatusText = updateCheck.status === 'checking'
-    ? '正在检查'
-    : updateCheck.status === 'available'
-      ? `发现新版 ${updateCheck.latestVersion}`
-      : updateCheck.status === 'error'
-        ? '检查失败'
-        : '已是最新';
-  const updateDetailText = updateCheck.status === 'error'
-    ? updateCheck.error
-	    : updateCheck.size
-	      ? `大小 ${formatBytes(updateCheck.size)}`
-	      : '';
-	  const keyDetailText = keyState === 'loaded' && !payload?.sensitiveData
-	    ? '已读取密钥，但服务端未授权。请核对 API 地址、长度和指纹。'
-	    : keyStatus.message || '';
-
-  const saveConfig = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    applyWallpaperRuntimeConfig(configApiHost);
-    setConfigApiHost(resolveWallpaperApiHost());
-    setConfigNotice('已保存，正在刷新');
-    void refresh();
-    window.setTimeout(() => setConfigNotice(''), 2400);
+        ? t('dataInvalidKey')
+        : t('dataNoKey');
+  const shellClassName = `wallpaper-shell${editMode ? ' wallpaper-edit-mode' : ''}`;
+  const topHudStyle: CSSProperties = {
+    transform: hudTransform('top', hudLayout),
   };
-
-  const clearConfig = () => {
-    setConfigApiHost('');
-    applyWallpaperRuntimeConfig('');
-    setConfigNotice('已恢复默认 API');
-    void refresh();
-    window.setTimeout(() => setConfigNotice(''), 2400);
+  const salesHudStyle: CSSProperties = {
+    transform: hudTransform('sales', hudLayout),
   };
 
   return (
-    <main className="wallpaper-shell">
+    <main className={shellClassName}>
       <div className="wallpaper-map" ref={containerRef} />
-      <section className="wallpaper-hud wallpaper-center" aria-label="运营概览">
+      <section
+        className="wallpaper-hud wallpaper-center"
+        ref={centerHudRef}
+        aria-label="运营概览"
+        style={topHudStyle}
+        onPointerDown={(event) => startHudDrag(event, 'top', 'move')}
+      >
         <div className="wallpaper-heading">
           <div>
-            <div className="wallpaper-title">Example销售运营地图</div>
-            <div className="wallpaper-subtitle">Kyrgyzstan retail network</div>
+            <div className="wallpaper-title">{t('appTitle')}</div>
           </div>
           <div className={`wallpaper-live wallpaper-live-${mode}`}>
             <span />
@@ -576,151 +881,122 @@ export default function WallpaperApp() {
         <div className="wallpaper-metrics">
           <div>
             <b>{summary.stationCount ?? payload?.stations?.length ?? 0}</b>
-            <span>站点总数</span>
+            <span>{t('totalStations')}</span>
           </div>
           <div>
             <b>{summary.activeStationCount ?? 0}</b>
-            <span>正常营业</span>
+            <span>{t('activeStations')}</span>
           </div>
           <div>
             <b>{summary.closedStationCount ?? 0}</b>
-            <span>暂停运营</span>
+            <span>{t('closedStations')}</span>
           </div>
           <div>
             <b>{summary.depotCount ?? 0}</b>
-            <span>油库</span>
+            <span>{t('depots')}</span>
           </div>
-          <div>
-            <b>{summary.inventoryLiters == null ? '--' : formatLiters(summary.inventoryLiters)}</b>
-            <span>站点库存</span>
+          <div className="wallpaper-metric-inventory">
+            <b>{summary.inventoryLiters == null ? '--' : formatLiters(summary.inventoryLiters, lang)}</b>
+            <span>{t('stationInventory')}</span>
           </div>
+          {showInventoryAlerts && (
+            <div className={`wallpaper-metric-alert${criticalAlerts > 0 ? ' is-critical' : totalAlerts > 0 ? ' is-warning' : ''}`}>
+              <b>{summary.inventoryAlertCount == null ? '--' : `${criticalAlerts}/${warningAlerts}`}</b>
+              <span>{t('inventoryAlert')}</span>
+            </div>
+          )}
         </div>
+        {editMode && (
+          <div
+            className="wallpaper-hud-grip"
+            onPointerDown={(event) => startHudDrag(event, 'top', 'scale')}
+          />
+        )}
       </section>
 
-      <footer className="wallpaper-footer">
-        <span>数据：{formatClock(payload?.snapshotGeneratedAt || payload?.updatedAt)}</span>
-        <span>刷新：{formatClock(new Date().toISOString())}</span>
-        {lastError && <span>{lastError}</span>}
-      </footer>
-
-      <section className="wallpaper-sales wallpaper-hud" aria-label="销售汇总">
-        <div className="wallpaper-sales-head">
-          <strong>销售汇总</strong>
-          <span>{hasSalesSummary ? salesSummary.monthEnd || salesSummary.yearEnd || '实际运营' : dataModeText}</span>
-        </div>
-        <div className="wallpaper-sales-grid">
-          <div>
-            <span>{salesSummary.year ? `${salesSummary.year}年销量` : '年销量'}</span>
-            <b>{hasSalesSummary ? formatLiters(salesSummary.yearVolumeLiters) : '--'}</b>
-          </div>
-          <div>
-            <span>年销售额</span>
-            <b>{hasSalesSummary ? formatSom(salesSummary.yearAmount) : '--'}</b>
-          </div>
-          <div>
-            <span>{salesSummary.month ? `${salesSummary.month}销量` : '月销量'}</span>
-            <b>{hasSalesSummary ? formatLiters(salesSummary.monthVolumeLiters) : '--'}</b>
-          </div>
-          <div>
-            <span>月销售额</span>
-            <b>{hasSalesSummary ? formatSom(salesSummary.monthAmount) : '--'}</b>
-          </div>
-        </div>
-      </section>
+      {showSalesSummary || showExchangeRates ? (
+        <section
+          className="wallpaper-sales wallpaper-hud"
+          ref={salesHudRef}
+          aria-label="销售汇总"
+          style={salesHudStyle}
+          onPointerDown={(event) => startHudDrag(event, 'sales', 'move')}
+        >
+          {showSalesSummary && (
+            <>
+              <div className="wallpaper-sales-head">
+                <strong>{t('salesTitle')}</strong>
+                <span>{hasSalesSummary ? salesSummary.monthEnd || salesSummary.yearEnd || t('actualOperation') : dataModeText}</span>
+              </div>
+              <div className="wallpaper-sales-grid">
+                {(showYearVolume || showYearTons) && (
+                  <div className="wallpaper-sales-combo">
+                    <span>{t('yearVolumeLabel')}</span>
+                    {showYearVolume && <b>{hasSalesSummary ? formatLiters(salesSummary.yearVolumeLiters, lang) : '--'}</b>}
+                    {showYearTons && <small>{hasSalesSummary ? formatTons(salesSummary.yearTons, lang) : '--'}</small>}
+                  </div>
+                )}
+                {showYearAmount && (
+                  <div className="wallpaper-sales-combo">
+                    <span>{t('yearAmount')}</span>
+                    <b>{hasSalesSummary ? formatSom(salesSummary.yearAmount, lang) : '--'}</b>
+                    <small>{hasSalesSummary ? formatCny(salesSummary.yearAmountCny, lang) : '--'}</small>
+                  </div>
+                )}
+                {(showMonthVolume || showMonthTons) && (
+                  <div className="wallpaper-sales-combo">
+                    <span>{t('monthVolumeLabel')}</span>
+                    {showMonthVolume && <b>{hasSalesSummary ? formatLiters(salesSummary.monthVolumeLiters, lang) : '--'}</b>}
+                    {showMonthTons && <small>{hasSalesSummary ? formatTons(salesSummary.monthTons, lang) : '--'}</small>}
+                  </div>
+                )}
+                {showMonthAmount && (
+                  <div className="wallpaper-sales-combo">
+                    <span>{t('monthAmount')}</span>
+                    <b>{hasSalesSummary ? formatSom(salesSummary.monthAmount, lang) : '--'}</b>
+                    <small>{hasSalesSummary ? formatCny(salesSummary.monthAmountCny, lang) : '--'}</small>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+          {showExchangeRates && (
+            <>
+              <div className="wallpaper-exchange-grid">
+                {showUsdKgs && (
+                  <div>
+                    <span>{t('exchangeUsdKgs')}</span>
+                    <b>{hasExchangeSummary ? formatRate(exchangeSummary.usdKgs, lang) : '--'}</b>
+                  </div>
+                )}
+                {showCnyKgs && (
+                  <div>
+                    <span>{t('exchangeCnyKgs')}</span>
+                    <b>{hasExchangeSummary ? formatRate(exchangeSummary.cnyKgs, lang) : '--'}</b>
+                  </div>
+                )}
+              </div>
+              <div className="wallpaper-exchange-meta">
+                {hasExchangeSummary
+                  ? `${formatClock(exchangeSummary.date || '', lang)}${exchangeSummary.source ? ` · ${exchangeSummary.source}` : ''}`
+                  : dataModeText}
+              </div>
+            </>
+          )}
+          {editMode && (
+            <div
+              className="wallpaper-hud-grip"
+              onPointerDown={(event) => startHudDrag(event, 'sales', 'scale')}
+            />
+          )}
+        </section>
+      ) : null}
 
       {!engineRuntime && updateInfo && (
         <a className="wallpaper-update" href={updateInfo.url} target="_blank" rel="noreferrer">
-          <strong>壁纸有更新</strong>
-          <span>下载 {updateInfo.version}</span>
+          <strong>{t('updateBanner')}</strong>
+          <span>{t('updateDownload')} {updateInfo.version}</span>
         </a>
-      )}
-
-      {!engineRuntime && (
-        <button
-          className="wallpaper-config-toggle"
-          type="button"
-          title="壁纸设置"
-          aria-label="壁纸设置"
-          onClick={() => {
-            setConfigApiHost(resolveWallpaperApiHost());
-            setConfigOpen((open) => !open);
-          }}
-        >
-          设置
-        </button>
-      )}
-
-      {!engineRuntime && configOpen && (
-        <form className="wallpaper-config-panel" onSubmit={saveConfig}>
-          <label>
-            <span>API 地址</span>
-            <input
-              value={configApiHost}
-              onChange={(event) => setConfigApiHost(event.target.value)}
-              placeholder="http://198.51.100.10"
-            />
-          </label>
-	          <div className="wallpaper-key-state">
-	            <span>密钥文件</span>
-	            <strong>{dataModeText}</strong>
-	          </div>
-	          <div className={`wallpaper-key-debug wallpaper-key-debug-${keyState}`}>
-	            <div className="wallpaper-key-debug-head">
-	              <span>密钥诊断</span>
-	              <strong>{keyStatus.source || 'wallpaper-key.json'}</strong>
-	            </div>
-	            <div className="wallpaper-key-debug-grid">
-	              <span>读取状态</span>
-	              <b>{keyState}</b>
-	              <span>API 地址</span>
-	              <b title={keyStatus.apiHost || resolveWallpaperApiHost()}>{keyStatus.apiHost || resolveWallpaperApiHost()}</b>
-	              <span>Token 长度</span>
-	              <b>{keyStatus.tokenLength ?? '--'}</b>
-	              <span>Token 指纹</span>
-	              <b>{keyStatus.tokenFingerprint || '--'}</b>
-	              <span>授权通道</span>
-	              <b>{authStatus.method || '--'}</b>
-	              <span>服务端模式</span>
-	              <b>{payload?.sensitiveData ? '完整数据' : authStatus.sensitiveData === false ? '公开数据' : '--'}</b>
-	              <span>读取时间</span>
-	              <b>{formatClock(keyStatus.loadedAt)}</b>
-	            </div>
-	            {keyDetailText && <div className="wallpaper-key-debug-note">{keyDetailText}</div>}
-	          </div>
-	          <div className={`wallpaper-update-state wallpaper-update-state-${updateCheck.status}`}>
-            <div className="wallpaper-update-state-head">
-              <span>壁纸更新</span>
-              <strong>{updateStatusText}</strong>
-            </div>
-            <div className="wallpaper-update-state-grid">
-              <span>当前版本</span>
-              <b>{updateCheck.currentVersion}</b>
-              <span>服务器版本</span>
-              <b>{updateCheck.latestVersion || '--'}</b>
-              <span>上次检查</span>
-              <b>{formatClock(updateCheck.checkedAt)}</b>
-            </div>
-            {updateDetailText && <div className="wallpaper-update-state-note">{updateDetailText}</div>}
-            <div className="wallpaper-update-state-actions">
-              <button
-                type="button"
-                onClick={() => void checkForUpdates()}
-                disabled={updateCheck.status === 'checking'}
-              >
-                手动检查更新
-              </button>
-              {updateCheck.status === 'available' && updateCheck.url && (
-                <a href={updateCheck.url} target="_blank" rel="noreferrer">下载新版</a>
-              )}
-            </div>
-          </div>
-          <div className="wallpaper-config-actions">
-            <button type="submit">保存并刷新</button>
-            <button type="button" onClick={clearConfig}>恢复默认</button>
-            <button type="button" onClick={() => setConfigOpen(false)}>关闭</button>
-          </div>
-          {configNotice && <div className="wallpaper-config-notice">{configNotice}</div>}
-        </form>
       )}
     </main>
   );

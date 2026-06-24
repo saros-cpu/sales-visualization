@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from email.utils import parsedate_to_datetime
 from functools import wraps
 import hmac
@@ -60,12 +61,20 @@ from routes_assistant import register_assistant_routes
 from routes_data import register_data_routes
 from routes_admin import register_admin_routes
 
+
+def _env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 app = Flask(__name__, static_folder=".", static_url_path="")
 app.secret_key = SECRET_KEY
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.getenv("SALES_COOKIE_SECURE", "").lower() in {"1", "true", "yes"},
+    SESSION_COOKIE_SECURE=_env_bool("SALES_COOKIE_SECURE", default=True),
     PERMANENT_SESSION_LIFETIME=timedelta(days=LOGIN_REMEMBER_DAYS),
 )
 # --- V2 API 配置（桌面端 JWT） ---
@@ -76,13 +85,24 @@ app.config['JWT_TOKEN_LOCATION'] = ['headers']
 app.config['JWT_HEADER_NAME'] = 'Authorization'
 app.config['JWT_HEADER_TYPE'] = 'Bearer'
 jwt = JWTManager(app)
+from api_v2.token_revocation import is_token_revoked_payload
+
+
+@jwt.token_in_blocklist_loader
+def is_jwt_revoked(_jwt_header, jwt_payload):
+    return is_token_revoked_payload(jwt_payload)
 
 # CORS：手动处理跨域请求（Electron 加载本地文件时 origin 为 null 或 file://）
-_CORS_ORIGIN_RE = re.compile(r'^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^file://|^app://|^null$')
+def _env_flag(name):
+    return _env_bool(name)
+
+
+_CORS_LOOPBACK_ORIGIN_RE = re.compile(r'^https?://(localhost|127\.0\.0\.1)(:\d+)?$')
 _DEFAULT_CORS_ALLOWED_ORIGINS = {
     "http://198.51.100.10",
     "http://sales.example.com",
     "https://sales.example.com",
+    "app://salesdesktop",
 }
 _CORS_ALLOWED_ORIGINS = _DEFAULT_CORS_ALLOWED_ORIGINS | {
     item.strip().rstrip("/")
@@ -98,10 +118,21 @@ def _normalize_cors_origin(value):
         return origin
     return origin.rstrip("/")
 
+
+def _legacy_electron_cors_origin(origin):
+    return _env_flag("SALES_LEGACY_ELECTRON_CORS") and (
+        origin == "null" or origin.startswith("file://") or origin.startswith("app://")
+    )
+
+
 @app.after_request
 def add_cors_headers(response):
     origin = _normalize_cors_origin(request.headers.get('Origin'))
-    if origin and (origin in _CORS_ALLOWED_ORIGINS or _CORS_ORIGIN_RE.match(origin)):
+    if origin and (
+        origin in _CORS_ALLOWED_ORIGINS
+        or _CORS_LOOPBACK_ORIGIN_RE.match(origin)
+        or _legacy_electron_cors_origin(origin)
+    ):
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, X-Wallpaper-Token'
@@ -428,6 +459,24 @@ def _wallpaper_float(value):
         return 0.0
 
 
+def _wallpaper_round_half_up(value, places=2):
+    try:
+        decimal_value = Decimal(str(value or 0))
+        quantizer = Decimal("1").scaleb(-places)
+        return float(decimal_value.quantize(quantizer, rounding=ROUND_HALF_UP))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0.0
+
+
+def _wallpaper_rate_float(value):
+    try:
+        if value is None:
+            return None
+        return round(float(value), 4)
+    except (TypeError, ValueError):
+        return None
+
+
 def _wallpaper_display_end(start_value, exclusive_end_value):
     start_text = str(start_value or "").strip()[:10]
     end_text = str(exclusive_end_value or "").strip()[:10]
@@ -441,6 +490,52 @@ def _wallpaper_display_end(start_value, exclusive_end_value):
     if start_day and end_day > start_day:
         return (end_day - timedelta(days=1)).isoformat()
     return end_day.isoformat()
+
+
+def _wallpaper_avg_cny_rate(start_value, exclusive_end_value):
+    try:
+        start_day = date.fromisoformat(str(start_value or "")[:10])
+        end_day = date.fromisoformat(str(exclusive_end_value or "")[:10])
+    except ValueError:
+        return None
+    if end_day <= start_day:
+        return None
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT cny_kgs
+            FROM exchange_rates
+            WHERE rate_date >= %s AND rate_date < %s
+              AND cny_kgs IS NOT NULL
+            """,
+            (start_day, end_day),
+        )
+        values = []
+        for (cny_kgs,) in cur.fetchall():
+            try:
+                value = Decimal(str(cny_kgs))
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+            if value > 0:
+                values.append(value)
+    finally:
+        conn.close()
+
+    if not values:
+        return None
+    avg = (sum(values) / Decimal(len(values))).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    return float(avg)
+
+
+def _wallpaper_amount_cny_by_average(amount, start_value, exclusive_end_value):
+    avg_cny = _wallpaper_avg_cny_rate(start_value, exclusive_end_value)
+    if not avg_cny:
+        return None, None
+    amount_cny = _wallpaper_round_half_up(Decimal(str(amount or 0)) / Decimal(str(avg_cny)), 2)
+    return amount_cny, avg_cny
 
 
 def _wallpaper_sales_summary():
@@ -468,20 +563,62 @@ def _wallpaper_sales_summary():
         or ""
     )[:10]
 
+    year_amount = _wallpaper_float(year_summary.get("totalSales") or year_summary.get("totalAmount"))
+    month_amount = _wallpaper_float(month_summary.get("totalSales") or month_summary.get("totalAmount"))
+    year_amount_cny, year_avg_cny = _wallpaper_amount_cny_by_average(year_amount, year_start, year_end_exclusive)
+    month_amount_cny, month_avg_cny = _wallpaper_amount_cny_by_average(month_amount, month_start, month_end_exclusive)
+
     return {
         "year": int(year_payload.get("year") or year),
         "yearStart": year_start,
         "yearEnd": _wallpaper_display_end(year_start, year_end_exclusive),
         "yearEndExclusive": year_end_exclusive,
         "yearVolumeLiters": _wallpaper_float(year_summary.get("totalLiters") or year_summary.get("totalVolume")),
-        "yearAmount": _wallpaper_float(year_summary.get("totalSales") or year_summary.get("totalAmount")),
+        "yearTons": _wallpaper_float(year_summary.get("totalTons") or year_summary.get("tons")),
+        "yearAmount": year_amount,
+        "yearAmountCny": year_amount_cny,
+        "yearAvgCnyKgs": year_avg_cny,
         "month": month_label,
         "monthStart": month_start,
         "monthEnd": _wallpaper_display_end(month_start, month_end_exclusive),
         "monthEndExclusive": month_end_exclusive,
         "monthVolumeLiters": _wallpaper_float(month_summary.get("totalLiters") or month_summary.get("totalVolume")),
-        "monthAmount": _wallpaper_float(month_summary.get("totalSales") or month_summary.get("totalAmount")),
+        "monthTons": _wallpaper_float(month_summary.get("totalTons") or month_summary.get("tons")),
+        "monthAmount": month_amount,
+        "monthAmountCny": month_amount_cny,
+        "monthAvgCnyKgs": month_avg_cny,
     }
+
+
+def _wallpaper_exchange_summary():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT rate_date, usd_kgs, cny_kgs, source, is_manual
+            FROM exchange_rates
+            WHERE rate_date <= CURDATE()
+              AND (usd_kgs IS NOT NULL OR cny_kgs IS NOT NULL)
+            ORDER BY rate_date DESC
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+        if not row:
+            return {"available": False}
+        rate_date, usd_kgs, cny_kgs, source, is_manual = row
+        return {
+            "available": True,
+            "date": rate_date.isoformat() if rate_date else None,
+            "usdKgs": _wallpaper_rate_float(usd_kgs),
+            "cnyKgs": _wallpaper_rate_float(cny_kgs),
+            "source": source or "",
+            "isManual": bool(is_manual),
+            "isToday": rate_date == date.today() if rate_date else False,
+        }
+    finally:
+        conn.close()
 
 
 def _wallpaper_full_access():
@@ -502,27 +639,60 @@ def _wallpaper_full_access():
     expected = os.getenv("SALES_WALLPAPER_TOKEN", "").strip()
     if not expected:
         return False
-    provided = (
-        request.headers.get("X-Wallpaper-Token")
-        or request.args.get("token")
-        or ""
-    ).strip()
+    provided = (request.headers.get("X-Wallpaper-Token") or "").strip()
+    if not provided and _env_flag("SALES_WALLPAPER_ALLOW_QUERY_TOKEN"):
+        provided = (request.args.get("token") or "").strip()
     return hmac.compare_digest(provided, expected)
+
+
+def _wallpaper_status_label(status="", status_type="", status_label="", closed_reason="", status_note=""):
+    raw_label = str(status_label or "").strip()
+    status_text = str(status or "").strip()
+    type_text = str(status_type or "").strip()
+    reason = str(closed_reason or status_note or "").strip()
+    combined = f"{raw_label} {status_text} {type_text} {reason}".lower()
+
+    if "装修" in raw_label or "装修" in reason or any(
+        word in combined for word in ("renovation", "maintenance", "construction", "decorat")
+    ):
+        return "装修"
+    if "停业" in raw_label or "停业" in reason or any(
+        word in combined for word in ("closed", "stopped", "suspended", "inactive")
+    ):
+        return "停业"
+    if raw_label in {"在营", "正常", "正常营业"}:
+        return "在营"
+    if raw_label in {"关注", "预警"}:
+        return "关注"
+    if raw_label == "异常":
+        return "异常"
+
+    key = (type_text or status_text or raw_label).lower()
+    if key in {"normal", "open", "active", "operating", "online"}:
+        return "在营"
+    if key in {"warning", "warn", "attention"}:
+        return "关注"
+    if raw_label and raw_label.lower() not in {"normal", "closed", "warning", "warn"}:
+        return raw_label
+    if key and key != "normal":
+        return "异常"
+    return "在营"
 
 
 def _wallpaper_default_station_status(shop_key, constants_module):
     closed_stations = getattr(constants_module, "CLOSED_STATIONS", {}) or {}
     force_normal = getattr(constants_module, "FORCE_NORMAL_STATIONS", set()) or set()
     if shop_key in closed_stations and shop_key not in force_normal:
+        closed_reason = closed_stations.get(shop_key) or ""
         return {
             "status": "closed",
             "statusType": "closed",
-            "statusLabel": "closed",
-            "closedReason": closed_stations.get(shop_key) or "",
+            "statusLabel": _wallpaper_status_label("closed", "closed", closed_reason=closed_reason),
+            "closedReason": closed_reason,
             "affectsSales": True,
             "affectsInventory": shop_key in (getattr(constants_module, "MAP_ZERO_INVENTORY_STATIONS", set()) or set()),
             "suppressAlerts": shop_key in (getattr(constants_module, "MAP_ZERO_INVENTORY_STATIONS", set()) or set()),
-            "statusNote": closed_stations.get(shop_key) or "",
+            "statusNote": closed_reason,
             "expectedResumeAt": None,
         }
     return _wallpaper_normal_station_status()
@@ -532,7 +702,7 @@ def _wallpaper_normal_station_status():
     return {
         "status": "normal",
         "statusType": "normal",
-        "statusLabel": "normal",
+        "statusLabel": "在营",
         "closedReason": "",
         "affectsSales": False,
         "affectsInventory": False,
@@ -578,11 +748,16 @@ def api_wallpaper_map():
     include_sensitive = _wallpaper_full_access()
     details_payload = _wallpaper_station_details() if include_sensitive else {}
     sales_summary = None
+    exchange_summary = None
     if include_sensitive:
         try:
             sales_summary = _wallpaper_sales_summary()
         except Exception:
             logging.exception("wallpaper sales summary unavailable")
+        try:
+            exchange_summary = _wallpaper_exchange_summary()
+        except Exception:
+            logging.exception("wallpaper exchange summary unavailable")
     detail_items = details_payload.get("items") if isinstance(details_payload, dict) else []
     detail_by_shop = {
         int(item.get("shopKey")): item
@@ -605,6 +780,13 @@ def api_wallpaper_map():
         if shop_key in (getattr(constants_module, "FORCE_NORMAL_STATIONS", set()) or set()):
             status = _wallpaper_normal_station_status()
         detail = _wallpaper_zero_inventory_detail(detail_by_shop.get(shop_key) or {}, shop_key, constants_module)
+        status_label = _wallpaper_status_label(
+            status.get("status", "normal"),
+            status.get("statusType", "normal"),
+            status.get("statusLabel", ""),
+            status.get("closedReason", ""),
+            status.get("statusNote", ""),
+        )
         station = {
             "shopKey": shop_key,
             "name": info.get("name", ""),
@@ -616,7 +798,7 @@ def api_wallpaper_map():
             "size": 0.28,
             "status": status.get("status", "normal"),
             "statusType": status.get("statusType", "normal"),
-            "statusLabel": status.get("statusLabel", ""),
+            "statusLabel": status_label,
             "closedReason": status.get("closedReason", ""),
             "statusNote": status.get("statusNote", ""),
             "expectedResumeAt": status.get("expectedResumeAt"),
@@ -642,6 +824,8 @@ def api_wallpaper_map():
     depots = []
     for name, info in sorted((getattr(constants_module, "DEPOT_COORDS", {}) or {}).items()):
         status = info.get("status") or "normal"
+        status_type = info.get("statusType") or status
+        closed_reason = info.get("closedReason", "")
         depots.append({
             "name": name,
             "short": info.get("short", ""),
@@ -651,9 +835,14 @@ def api_wallpaper_map():
             "type": info.get("type", "depot"),
             "size": 0.2,
             "status": status,
-            "statusType": status,
-            "statusLabel": status,
-            "closedReason": info.get("closedReason", ""),
+            "statusType": status_type,
+            "statusLabel": _wallpaper_status_label(
+                status,
+                status_type,
+                info.get("statusLabel", ""),
+                closed_reason,
+            ),
+            "closedReason": closed_reason,
         })
 
     active_station_count = sum(1 for item in stations if item.get("status") == "normal")
@@ -698,6 +887,8 @@ def api_wallpaper_map():
     }
     if include_sensitive and sales_summary:
         payload["salesSummary"] = sales_summary
+    if include_sensitive and exchange_summary:
+        payload["exchangeSummary"] = exchange_summary
     if include_sensitive:
         payload["inventoryAlerts"] = inventory_alerts.get("items", [])
         payload["inventoryAlertSummary"] = inventory_alerts.get("summary", {})

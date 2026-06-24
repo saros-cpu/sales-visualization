@@ -135,7 +135,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    client.post('/auth/logout').catch(() => {});
+    const refreshToken = localStorage.getItem('refreshToken') || '';
+    client.post('/auth/logout', refreshToken ? { refreshToken } : {}).catch(() => {});
     clearAuthTokens();
     syncDevToolsAccess(null);
     setUser(null);

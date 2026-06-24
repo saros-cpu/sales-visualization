@@ -2,13 +2,14 @@
 from flask import request, jsonify
 from flask_jwt_extended import (
     create_access_token, create_refresh_token,
-    jwt_required, get_jwt_identity
+    decode_token, get_jwt, jwt_required, get_jwt_identity
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from api_v2 import bp_v2
 from db import get_connection
 from shared_utils import ensure_auth_schema
 from .permission_service import get_effective_auth
+from .token_revocation import revoke_jwt_payload
 import pymysql
 from datetime import timedelta
 
@@ -232,8 +233,17 @@ def refresh():
 
 
 @bp_v2.route('/auth/logout', methods=['POST'])
+@jwt_required()
 def logout():
-    return jsonify({'code': 0, 'message': 'success', 'data': None})
+    data = request.get_json(silent=True) or {}
+    revoked_count = revoke_jwt_payload(get_jwt())
+    refresh_token = (data.get('refreshToken') or '').strip()
+    if refresh_token:
+        try:
+            revoked_count += revoke_jwt_payload(decode_token(refresh_token))
+        except Exception:
+            pass
+    return jsonify({'code': 0, 'message': 'success', 'data': {'revoked': revoked_count}})
 
 
 @bp_v2.route('/auth/me', methods=['GET'])
@@ -276,13 +286,10 @@ def change_password():
     data = request.get_json() or {}
     old_password = data.get('oldPassword', '')
     new_password = data.get('newPassword', '')
-    if len(new_password) < 8:
-        return jsonify({'code': 4221, 'message': '新密码长度不能少于8位', 'data': None}), 422
-
     if not old_password or not new_password:
         return jsonify({'code': 4221, 'message': '旧密码和新密码不能为空', 'data': None}), 422
-    if len(new_password) < 6:
-        return jsonify({'code': 4221, 'message': '新密码长度不能少于6位', 'data': None}), 422
+    if len(new_password) < 8:
+        return jsonify({'code': 4221, 'message': '新密码长度不能少于8位', 'data': None}), 422
 
     conn = get_connection()
     try:

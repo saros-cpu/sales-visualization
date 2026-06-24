@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing;
+using System.Text.Json;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
@@ -7,7 +8,7 @@ namespace SalesWallpaperEngine;
 
 internal sealed class EngineApplicationContext : ApplicationContext
 {
-    private readonly RuntimeConfig _config;
+    private RuntimeConfig _config;
     private readonly DesktopHost _desktopHost = new();
     private readonly StaticFileServer _server;
     private readonly NotifyIcon _trayIcon;
@@ -15,8 +16,13 @@ internal sealed class EngineApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _watchTimer;
     private readonly System.Windows.Forms.Timer _updateTimer;
     private readonly ToolStripMenuItem _statusItem = new();
+    private readonly ToolStripMenuItem _checkUpdateItem = new("检查更新");
     private readonly ToolStripMenuItem _downloadUpdateItem = new("安装新版本");
+    private readonly ToolStripMenuItem _hudEditItem = new("HUD 编辑模式");
+    private readonly ToolStripMenuItem _saveHudLayoutItem = new("保存 HUD 布局");
+    private readonly ToolStripMenuItem _cancelHudEditItem = new("取消 HUD 编辑");
     private Process? _playerProcess;
+    private SettingsForm? _settingsForm;
     private IntPtr _playerHandle = IntPtr.Zero;
     private WallpaperUpdateInfo? _pendingUpdate;
     private bool _starting;
@@ -28,6 +34,15 @@ internal sealed class EngineApplicationContext : ApplicationContext
         _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         _config = RuntimeConfig.Load();
         _server = new StaticFileServer(_config);
+        _server.OnSettingsSave += settings => PostToUiAsync(() => SaveSettingsAsync(settings));
+        _server.OnEditModeChange += (enabled, clearPreview) => PostToUiAsync(() =>
+        {
+            SetHudEditMode(enabled, clearPreview, fromSettingsWindow: true);
+            return Task.CompletedTask;
+        });
+        _server.OnPreviewCommit += () => PostToUiAsync(SaveHudLayoutPreviewAsync);
+        _server.OnRefreshRequested += () => PostToUi(RestartWallpaperAsync);
+        _server.OnCheckUpdateRequested += () => PostToUi(() => CheckForUpdatesAsync(true));
         _server.Start();
 
         _trayIcon = CreateTrayIcon();
@@ -65,6 +80,8 @@ internal sealed class EngineApplicationContext : ApplicationContext
         _statusItem.Enabled = false;
         _statusItem.Text = $"Sales Wallpaper v{AppVersion.Current}";
 
+        _checkUpdateItem.Click += async (_, _) => await CheckForUpdatesAsync(true);
+
         _downloadUpdateItem.Enabled = false;
         _downloadUpdateItem.Visible = false;
         _downloadUpdateItem.Click += async (_, _) =>
@@ -72,18 +89,35 @@ internal sealed class EngineApplicationContext : ApplicationContext
             if (_pendingUpdate != null) await InstallUpdateAsync(_pendingUpdate);
         };
 
+        _hudEditItem.CheckOnClick = true;
+        _hudEditItem.Click += (_, _) => SetHudEditMode(_hudEditItem.Checked);
+
+        _saveHudLayoutItem.Enabled = false;
+        _saveHudLayoutItem.Visible = false;
+        _saveHudLayoutItem.Click += async (_, _) => await SaveHudLayoutPreviewAsync();
+
+        _cancelHudEditItem.Enabled = false;
+        _cancelHudEditItem.Visible = false;
+        _cancelHudEditItem.Click += (_, _) => SetHudEditMode(false, clearPreview: true);
+
         var advancedMenu = new ToolStripMenuItem("高级");
-        advancedMenu.DropDownItems.Add("重新贴到桌面", null, async (_, _) => await EnsureWallpaperAsync(forceAttach: true));
+        advancedMenu.DropDownItems.Add("打开配置目录", null, (_, _) => OpenDirectory(AppPaths.DataDir));
         advancedMenu.DropDownItems.Add("打开日志目录", null, (_, _) => OpenDirectory(AppPaths.LogDir));
+        advancedMenu.DropDownItems.Add(new ToolStripSeparator());
+        advancedMenu.DropDownItems.Add("重新贴到桌面", null, async (_, _) => await EnsureWallpaperAsync(forceAttach: true));
+        advancedMenu.DropDownItems.Add("写入运行状态日志", null, (_, _) => WriteRuntimeSnapshot());
         advancedMenu.DropDownItems.Add("写入桌面诊断", null, (_, _) => WriteDesktopDiagnostics());
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("设置...", null, (_, _) => OpenSettingsWindow());
+        menu.Items.Add(_hudEditItem);
+        menu.Items.Add(_saveHudLayoutItem);
+        menu.Items.Add(_cancelHudEditItem);
         menu.Items.Add("重启壁纸", null, async (_, _) => await RestartWallpaperAsync());
-        menu.Items.Add("检查并安装更新", null, async (_, _) => await CheckForUpdatesAsync(true));
+        menu.Items.Add(_checkUpdateItem);
         menu.Items.Add(_downloadUpdateItem);
-        menu.Items.Add("打开配置目录", null, (_, _) => OpenDirectory(AppPaths.DataDir));
         menu.Items.Add(advancedMenu);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
@@ -94,6 +128,58 @@ internal sealed class EngineApplicationContext : ApplicationContext
             Text = "Sales Wallpaper Engine",
             ContextMenuStrip = menu,
         };
+    }
+
+    private void OpenSettingsWindow()
+    {
+        if (_settingsForm is { IsDisposed: false })
+        {
+            _settingsForm.WindowState = FormWindowState.Normal;
+            _settingsForm.Activate();
+            return;
+        }
+
+        SetHudEditMode(true, fromSettingsWindow: true);
+        _settingsForm = new SettingsForm(_server);
+        _settingsForm.FormClosed += (_, _) =>
+        {
+            _server.ClearPreview();
+            SetHudEditMode(false, fromSettingsWindow: true);
+            _settingsForm = null;
+            AppLogger.Info("settings window closed");
+        };
+        _settingsForm.Show();
+    }
+
+    private void SetHudEditMode(bool enabled, bool clearPreview = false, bool fromSettingsWindow = false)
+    {
+        if (clearPreview)
+        {
+            _server.ClearPreview();
+        }
+        _server.SetEditMode(enabled);
+        _hudEditItem.Checked = enabled;
+        _saveHudLayoutItem.Enabled = enabled;
+        _saveHudLayoutItem.Visible = enabled;
+        _cancelHudEditItem.Enabled = enabled;
+        _cancelHudEditItem.Visible = enabled;
+        _statusItem.Text = enabled ? "HUD 编辑中，拖动后保存" : $"Sales Wallpaper v{AppVersion.Current}";
+        if (enabled && !fromSettingsWindow)
+        {
+            _trayIcon.ShowBalloonTip(2600, "HUD 编辑模式", "可直接拖动顶部和右下角 HUD，完成后点“保存 HUD 布局”。", ToolTipIcon.Info);
+        }
+    }
+
+    private async Task SaveHudLayoutPreviewAsync()
+    {
+        var preview = _server.GetPreviewSettings();
+        if (preview.Count == 0)
+        {
+            _trayIcon.ShowBalloonTip(2200, "HUD 布局", "还没有检测到拖动调整。", ToolTipIcon.Info);
+            return;
+        }
+        await SaveSettingsAsync(preview, keepEditModeWithSettingsWindow: false);
+        SetHudEditMode(false);
     }
 
     private async Task StartWallpaperAsync()
@@ -120,6 +206,18 @@ internal sealed class EngineApplicationContext : ApplicationContext
             }
 
             _playerProcess = process;
+            var playerPid = process.Id;
+            process.EnableRaisingEvents = true;
+            process.Exited += (_, _) =>
+            {
+                AppLogger.Warn($"player process exited pid={playerPid}");
+                if (_disposed || _installingUpdate) return;
+                PostToUi(async () =>
+                {
+                    await Task.Delay(1200);
+                    await EnsureWallpaperAsync();
+                });
+            };
             _playerHandle = await WaitForPlayerHandle(process, TimeSpan.FromSeconds(_config.PlayerStartupTimeoutSeconds));
             if (_playerHandle == IntPtr.Zero)
             {
@@ -175,8 +273,79 @@ internal sealed class EngineApplicationContext : ApplicationContext
         await StartWallpaperAsync();
     }
 
+    private async Task SaveSettingsAsync(Dictionary<string, object?> settings, bool keepEditModeWithSettingsWindow = true)
+    {
+        try
+        {
+            WriteUserSettings(settings);
+            _config = RuntimeConfig.Load();
+            _server.UpdateConfig(_config);
+            _server.ClearPreview();
+            _server.SetEditMode(keepEditModeWithSettingsWindow && _settingsForm is { IsDisposed: false });
+            _hudEditItem.Checked = _server.EditMode;
+            _saveHudLayoutItem.Enabled = _server.EditMode;
+            _saveHudLayoutItem.Visible = _server.EditMode;
+            _cancelHudEditItem.Enabled = _server.EditMode;
+            _cancelHudEditItem.Visible = _server.EditMode;
+            _watchTimer.Interval = _config.ReattachSeconds * 1000;
+            if (_config.AutoUpdateEnabled)
+            {
+                _updateTimer.Start();
+            }
+            else
+            {
+                _updateTimer.Stop();
+            }
+            await RestartWallpaperAsync();
+            _trayIcon.ShowBalloonTip(2200, "壁纸设置", "设置已保存并应用。", ToolTipIcon.Info);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("save settings failed", ex);
+            _trayIcon.ShowBalloonTip(3000, "壁纸设置保存失败", "请查看日志目录。", ToolTipIcon.Warning);
+        }
+    }
+
+    private static void WriteUserSettings(Dictionary<string, object?> settings)
+    {
+        Directory.CreateDirectory(AppPaths.DataDir);
+        var merged = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (File.Exists(AppPaths.UserConfigPath))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(AppPaths.UserConfigPath));
+                if (document.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var prop in document.RootElement.EnumerateObject())
+                    {
+                        merged[prop.Name] = prop.Value.Clone();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Warn($"failed to merge existing user config: {ex.Message}");
+            }
+        }
+
+        foreach (var (key, value) in settings)
+        {
+            merged[key] = value;
+        }
+
+        var json = JsonSerializer.Serialize(merged, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(AppPaths.UserConfigPath, json);
+        AppLogger.Info($"settings saved path={AppPaths.UserConfigPath} keys={settings.Count}");
+    }
+
     private async Task CheckForUpdatesAsync(bool notifyWhenCurrent)
     {
+        if (notifyWhenCurrent)
+        {
+            _checkUpdateItem.Enabled = false;
+            _checkUpdateItem.Text = "正在检查更新";
+        }
         try
         {
             var update = await AppUpdater.CheckAsync(_config, CancellationToken.None);
@@ -213,6 +382,14 @@ internal sealed class EngineApplicationContext : ApplicationContext
                 _trayIcon.ShowBalloonTip(3000, "壁纸引擎", "检查更新失败，查看日志。", ToolTipIcon.Warning);
             }
         }
+        finally
+        {
+            if (notifyWhenCurrent && !_disposed)
+            {
+                _checkUpdateItem.Enabled = true;
+                _checkUpdateItem.Text = "检查更新";
+            }
+        }
     }
 
     private async Task InstallUpdateAsync(WallpaperUpdateInfo update)
@@ -224,7 +401,9 @@ internal sealed class EngineApplicationContext : ApplicationContext
         try
         {
             _trayIcon.ShowBalloonTip(2500, "壁纸引擎更新", $"正在下载并安装 {update.Version}，稍后会自动重启。", ToolTipIcon.Info);
+            AppLogger.Info($"applying update {update.Version}");
             await AppUpdater.DownloadAndInstallAsync(update, CancellationToken.None);
+            AppLogger.Info("update applied; exiting for restart");
             StopPlayer();
             ExitThread();
         }
@@ -273,6 +452,33 @@ internal sealed class EngineApplicationContext : ApplicationContext
         }
     }
 
+    private void WriteRuntimeSnapshot()
+    {
+        try
+        {
+            var player = _playerProcess == null
+                ? "none"
+                : $"pid={_playerProcess.Id} exited={_playerProcess.HasExited}";
+            AppLogger.Info(
+                "runtime snapshot "
+                + $"version={AppVersion.Current} "
+                + $"apiHost={_config.ApiHost} "
+                + $"hasToken={_config.HasWallpaperToken} "
+                + $"language={_config.LanguageMode} "
+                + $"refreshAt={_config.RefreshAtLocalTime} "
+                + $"autoUpdate={_config.AutoUpdateEnabled} "
+                + $"autoInstall={_config.AutoInstallUpdates} "
+                + $"player={player} "
+                + $"handle=0x{_playerHandle.ToInt64():x}");
+            _trayIcon.ShowBalloonTip(2200, "运行状态已写入日志", AppPaths.LogDir, ToolTipIcon.Info);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("write runtime snapshot failed", ex);
+            _trayIcon.ShowBalloonTip(3000, "写入运行状态失败", "请查看日志目录。", ToolTipIcon.Warning);
+        }
+    }
+
     private static void OpenDirectory(string path)
     {
         Directory.CreateDirectory(path);
@@ -294,17 +500,26 @@ internal sealed class EngineApplicationContext : ApplicationContext
 
     private void PostToUi(Func<Task> action)
     {
+        _ = PostToUiAsync(action);
+    }
+
+    private Task PostToUiAsync(Func<Task> action)
+    {
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _uiContext.Post(async _ =>
         {
             try
             {
                 await action();
+                tcs.SetResult();
             }
             catch (Exception ex)
             {
                 AppLogger.Error("ui callback failed", ex);
+                tcs.SetException(ex);
             }
         }, null);
+        return tcs.Task;
     }
 
     private void StopPlayer()
@@ -336,6 +551,10 @@ internal sealed class EngineApplicationContext : ApplicationContext
         SystemEvents.SessionSwitch -= SystemEvents_SessionSwitch;
         _watchTimer.Stop();
         _updateTimer.Stop();
+        if (_settingsForm is { IsDisposed: false })
+        {
+            _settingsForm.Close();
+        }
         StopPlayer();
         _server.Dispose();
         _trayIcon.Visible = false;
