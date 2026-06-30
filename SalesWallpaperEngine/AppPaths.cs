@@ -16,5 +16,9 @@ internal static class AppPaths
 
     public static string UserKeyPath { get; } = Path.Combine(DataDir, "wallpaper-key.json");
 
+    public static string UserProtectedKeyPath { get; } = Path.Combine(DataDir, "wallpaper-key.protected.json");
+
     public static string AppKeyPath { get; } = Path.Combine(AppContext.BaseDirectory, "wallpaper-key.json");
+
+    public static string AppProtectedKeyPath { get; } = Path.Combine(AppContext.BaseDirectory, "wallpaper-key.protected.json");
 }

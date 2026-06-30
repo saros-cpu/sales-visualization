@@ -7,9 +7,17 @@ import { getRegions, getStations, getDaily } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n, EN_REGION_KEY, ZH_REGION_KEY } from '@/utils/i18nNames';
-import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
+import {
+  formatRetailCnyKpi,
+  formatRetailLitersKpi,
+  formatRetailSomKpi,
+  formatRetailTonsKpi,
+  retailCnyAmountOf,
+  retailTonsOf,
+} from '@/utils/retailMetrics';
 import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
+import { defaultRetailMonth } from '@/utils/retailPeriod';
 
 const REGION_ORDER = ['CTY-31', 'chu', 'CTY-30', 'CTY-29', 'CTY-33', 'CTY-35'];
 const REGION_COLORS: Record<string, string> = {
@@ -26,13 +34,17 @@ function normalizeRegionKey(value?: string | null) {
   return REGION_ORDER.find((key) => key.toLowerCase() === lower || (EN_REGION_KEY[key] || '').toLowerCase() === lower) || raw;
 }
 
+function numeric(value: unknown) {
+  const next = Number(value ?? 0);
+  return Number.isFinite(next) ? next : 0;
+}
+
 export default function Region() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { region, station, product } = useNameI18n();
-  const now = new Date();
-  const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  const [ym, setYm] = useState(defaultRetailMonth);
 
   const regQ = useApiQuery(['retail', 'regions', ym], () => getRegions(ym));
   const staQ = useApiQuery(['retail', 'stations', ym], () => getStations(ym));
@@ -73,21 +85,24 @@ export default function Region() {
     (row: any) => row.volume,
   );
   const topPaymentStations = regionStations.slice(0, 8);
+  const language = i18n.language;
+  const regionSalesCny = retailCnyAmountOf(
+    regionData ? { ...(regionData as any), avgCnyKgs: (regionData as any).avgCnyKgs ?? (data as any)?.avgCnyKgs } : null,
+  );
 
   // 当月日销趋势：按区域内站点聚合每日 volume/amount
   const regionDaily = useMemo(() => {
     const dd = dailyQ.data as any;
-    if (!dd?.daily || !activeRegion) return [];
+    if (!dd || !activeRegion) return [];
     const shopKeys = stations.filter(stationInRegion).map((s: any) => String(s.shopKey));
     const dayMap: Record<string, { date: string; volume: number; amount: number }> = {};
-    for (const d of dd.daily) dayMap[d.date] = { date: d.date, volume: 0, amount: 0 };
+    for (const d of dd.daily ?? []) dayMap[d.date] = { date: d.date, volume: 0, amount: 0 };
     for (const sk of shopKeys) {
       const sDaily = dd.stations?.[sk] ?? [];
       for (const d of sDaily) {
-        if (dayMap[d.date]) {
-          dayMap[d.date].volume += d.volume || 0;
-          dayMap[d.date].amount += d.amount || 0;
-        }
+        if (!dayMap[d.date]) dayMap[d.date] = { date: d.date, volume: 0, amount: 0 };
+        dayMap[d.date].volume += numeric(d.volume);
+        dayMap[d.date].amount += numeric(d.amount);
       }
     }
     return Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
@@ -108,11 +123,16 @@ export default function Region() {
       {regionData && (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.totalSales')} value={Math.round(regionData.amount / 10000)} suffix={CHART_AXIS.wanSom} /></Card></Col>
+            <Col xs={12} lg={6}>
+              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}>
+                <Statistic title={t('retail.totalSales')} value={formatRetailSomKpi(regionData.amount, language)} />
+                <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>人民币 {formatRetailCnyKpi(regionSalesCny, language)}</div>
+              </Card>
+            </Col>
             <Col xs={12} lg={6}>
               <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
-                <Statistic title={t('retail.totalLiters')} value={Math.round(regionData.volume)} suffix="L" />
-                <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(regionData))} t</div>
+                <Statistic title={t('retail.totalLiters')} value={formatRetailLitersKpi(regionData.volume, language)} />
+                <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(retailTonsOf(regionData), language)}</div>
               </Card>
             </Col>
             <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>

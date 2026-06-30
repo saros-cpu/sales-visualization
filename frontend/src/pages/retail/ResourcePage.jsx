@@ -2,7 +2,17 @@
 import { useState, useEffect } from 'react';
 import { useChart } from '../../hooks/useChart';
 import { getYears, getMonths, getResourcesYearly } from '../../api/retail';
-import { numberFormat, volumeFormat, pctColor, sortRankingRows } from '../../utils/retail-helpers';
+import {
+  amountCnyOf,
+  formatCnyKpi,
+  formatLitersKpiParts,
+  formatSomKpiParts,
+  formatTonsKpi,
+  numberFormat,
+  volumeFormat,
+  pctColor,
+  sortRankingRows,
+} from '../../utils/retail-helpers';
 import { useRetailHeader } from '../../components/layout/RetailHeaderContext';
 
 const RESOURCE_ORDER = [102, 103, 104, 106, 110, 108];
@@ -34,13 +44,14 @@ function normalizeResources(rows) {
     const rawKey = Number(row.resourceKey ?? row.key ?? 0);
     const key = RESOURCE_ALIASES[rawKey] || rawKey;
     if (!RESOURCE_NAMES[key]) return;
-    const cur = buckets.get(key) || { resourceKey: key, key, name: RESOURCE_NAMES[key], volume: 0, tons: 0, mass: 0, amount: 0, color: RESOURCE_COLORS[key], yoyVolumeParts: [], yoySalesParts: [], momVolumeParts: [], momSalesParts: [], latestMonthVolume: 0, latestMonthAmount: 0 };
+    const cur = buckets.get(key) || { resourceKey: key, key, name: RESOURCE_NAMES[key], volume: 0, tons: 0, mass: 0, amount: 0, amountCnyAvg: 0, color: RESOURCE_COLORS[key], yoyVolumeParts: [], yoySalesParts: [], momVolumeParts: [], momSalesParts: [], latestMonthVolume: 0, latestMonthAmount: 0 };
     const rowTons = tonsOf(row);
     const rowMass = numeric(row.mass ?? row.latestMonthMass) || rowTons * 1000;
     cur.volume += Number(row.volume || 0);
     cur.mass += rowMass;
     cur.tons += rowTons || rowMass / 1000;
     cur.amount += Number(row.amount || 0);
+    cur.amountCnyAvg += Number(row.amountCnyAvg || 0);
     cur.latestMonthVolume += Number(row.latestMonthVolume || 0);
     cur.latestMonthAmount += Number(row.latestMonthAmount || 0);
     ['yoyVolume', 'yoySales', 'momVolume', 'momSales'].forEach(f => { if (row[f] != null) cur[f + 'Parts'].push(Number(row[f])); });
@@ -57,6 +68,7 @@ function normalizeResources(rows) {
     item.mass = Number(item.mass.toFixed(3));
     item.tons = Number(item.tons.toFixed(3));
     item.amount = Number(item.amount.toFixed(2));
+    item.amountCnyAvg = Number(item.amountCnyAvg.toFixed(2));
     return item;
   });
 }
@@ -74,6 +86,7 @@ export default function ResourcePage() {
   const [resources, setResources] = useState([]);
   const [periodLabel, setPeriodLabel] = useState('--');
   const [totalAmount, setTotalAmount] = useState(0);
+  const [totalAmountCny, setTotalAmountCny] = useState(null);
   const [totalVolume, setTotalVolume] = useState(0);
   const [totalTons, setTotalTons] = useState(0);
 
@@ -124,8 +137,11 @@ export default function ResourcePage() {
       try {
         const data = await getResourcesYearly(year, month || null);
         const res = normalizeResources(data.resources || []);
+        const summary = data.summary || {};
+        const amount = res.reduce((s, r) => s + (r.amount || 0), 0);
         setResources(res);
-        setTotalAmount(res.reduce((s, r) => s + (r.amount || 0), 0));
+        setTotalAmount(amount);
+        setTotalAmountCny(amountCnyOf({ ...summary, totalAmount: summary.totalAmount ?? amount, amount }));
         setTotalVolume(res.reduce((s, r) => s + (r.volume || 0), 0));
         setTotalTons(tonsOf(data.summary) || res.reduce((s, r) => s + tonsOf(r), 0));
         setPeriodLabel(data.periodLabel || data.latestMonth || '--');
@@ -167,13 +183,16 @@ export default function ResourcePage() {
     }, true);
   }, [resources, periodLabel]);
 
+  const totalAmountKpi = formatSomKpiParts(totalAmount);
+  const totalVolumeKpi = formatLitersKpiParts(totalVolume);
+
   return (
     <div className="retail-page-wrap">
       <div className="retail-resource-grid">
         {/* KPI Row */}
         <div className="retail-kpi-row">
-          <div className="retail-kpi-card c1"><div className="kpi-label">销售金额</div><div className="kpi-value">{(totalAmount / 10000).toFixed(2)}</div><div className="kpi-unit">万索姆</div></div>
-          <div className="retail-kpi-card c2"><div className="kpi-label">销售量</div><div className="kpi-value">{(totalVolume / 10000).toFixed(2)}</div><div className="kpi-unit">万升</div><div className="kpi-change">吨位 {formatTons(totalTons)} 吨</div></div>
+          <div className="retail-kpi-card c1"><div className="kpi-label">销售金额</div><div className="kpi-value">{totalAmountKpi.value}</div><div className="kpi-unit">{totalAmountKpi.unit}</div><div className="kpi-change">人民币 {formatCnyKpi(totalAmountCny)}</div></div>
+          <div className="retail-kpi-card c2"><div className="kpi-label">销售量</div><div className="kpi-value">{totalVolumeKpi.value}</div><div className="kpi-unit">{totalVolumeKpi.unit}</div><div className="kpi-change">吨位 {formatTonsKpi(totalTons)}</div></div>
           <div className="retail-kpi-card c3"><div className="kpi-label">在售油品</div><div className="kpi-value">{resources.length}</div><div className="kpi-unit">类</div></div>
           <div className="retail-kpi-card c4"><div className="kpi-label">统计口径</div><div className="kpi-value">{periodLabel}</div><div className="kpi-unit">报表口径</div></div>
         </div>

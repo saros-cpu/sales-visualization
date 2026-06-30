@@ -1,6 +1,7 @@
 ﻿param(
     [string]$Version = "0.2.0",
     [string]$IncludeKeyPath = "",
+    [switch]$PlainBundledKey,
     [switch]$SkipWallpaperAssets,
     [switch]$NoInstaller,
     [switch]$NoPublishDownload
@@ -18,6 +19,84 @@ $setupPath = Join-Path $publishRoot ("SalesWallpaperEngine-Setup-{0}.exe" -f $Ve
 $installerPayload = Join-Path $publishRoot "installer-payload"
 $downloadDir = Join-Path $desktopDir "download\wallpaper-engine"
 $publicBase = "https://sales.example.com/download/wallpaper-engine"
+
+function Get-Sha256Bytes {
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text))
+    } finally {
+        $sha.Dispose()
+    }
+}
+
+function Join-Bytes {
+    param([byte[][]]$Parts)
+
+    $length = 0
+    foreach ($part in $Parts) {
+        $length += $part.Length
+    }
+    $result = New-Object byte[] $length
+    $offset = 0
+    foreach ($part in $Parts) {
+        [System.Buffer]::BlockCopy($part, 0, $result, $offset, $part.Length)
+        $offset += $part.Length
+    }
+    return $result
+}
+
+function New-ProtectedWallpaperKeyFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourcePath,
+        [Parameter(Mandatory = $true)][string]$DestinationPath
+    )
+
+    $purpose = "kg.example.sales.wallpaper.engine.protected-key.2026-08"
+    $plainBytes = [System.IO.File]::ReadAllBytes((Resolve-Path $SourcePath).Path)
+    $iv = New-Object byte[] 16
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($iv)
+    } finally {
+        $rng.Dispose()
+    }
+
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    try {
+        $aes.Key = Get-Sha256Bytes "${purpose}:enc"
+        $aes.IV = $iv
+        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+        $encryptor = $aes.CreateEncryptor()
+        try {
+            $cipherBytes = $encryptor.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
+        } finally {
+            $encryptor.Dispose()
+        }
+    } finally {
+        $aes.Dispose()
+    }
+
+    $hmac = [System.Security.Cryptography.HMACSHA256]::new((Get-Sha256Bytes "${purpose}:mac"))
+    try {
+        $magic = [System.Text.Encoding]::ASCII.GetBytes("swpe1")
+        $macBytes = $hmac.ComputeHash((Join-Bytes @($magic, $iv, $cipherBytes)))
+    } finally {
+        $hmac.Dispose()
+    }
+
+    $payload = [ordered]@{
+        version = 1
+        alg = "A256CBC-HS256"
+        iv = [System.Convert]::ToBase64String($iv)
+        ciphertext = [System.Convert]::ToBase64String($cipherBytes)
+        mac = [System.Convert]::ToBase64String($macBytes)
+    }
+    $json = $payload | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText($DestinationPath, $json, [System.Text.UTF8Encoding]::new($false))
+}
 
 if (-not $SkipWallpaperAssets) {
     Push-Location $desktopDir
@@ -168,10 +247,18 @@ if (-not $NoInstaller) {
         Copy-Item -Path (Join-Path $PSScriptRoot "install-user.ps1") -Destination (Join-Path $installerPayload "install-user.ps1") -Force
 
         $keyArgs = ""
+        $bundledKeyFile = ""
         if ($IncludeKeyPath) {
             $resolvedKeyPath = (Resolve-Path $IncludeKeyPath).Path
-            Copy-Item -LiteralPath $resolvedKeyPath -Destination (Join-Path $installerPayload "wallpaper-key.json") -Force
-            $keyArgs = ' -KeyFile "%~dp0wallpaper-key.json" -DeployBundledKey'
+            if ($PlainBundledKey) {
+                $bundledKeyFile = "wallpaper-key.json"
+                Copy-Item -LiteralPath $resolvedKeyPath -Destination (Join-Path $installerPayload $bundledKeyFile) -Force
+                $keyArgs = ' -KeyFile "%~dp0wallpaper-key.json" -DeployBundledKey'
+            } else {
+                $bundledKeyFile = "wallpaper-key.protected.json"
+                New-ProtectedWallpaperKeyFile -SourcePath $resolvedKeyPath -DestinationPath (Join-Path $installerPayload $bundledKeyFile)
+                $keyArgs = ' -ProtectedKeyFile "%~dp0wallpaper-key.protected.json" -DeployBundledKey'
+            }
         }
 
         $installCmd = @"
@@ -193,8 +280,8 @@ exit /b 0
             "install-user.ps1",
             "SalesWallpaperEngine-app.zip"
         )
-        if ($IncludeKeyPath) {
-            $payloadFiles += "wallpaper-key.json"
+        if ($bundledKeyFile) {
+            $payloadFiles += $bundledKeyFile
         }
 
         $sourceFileLines = for ($i = 0; $i -lt $payloadFiles.Count; $i++) {

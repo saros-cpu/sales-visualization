@@ -21,9 +21,7 @@ _MODULES_TO_ISOLATE = (
     "constants",
     "export_excel",
     "routes",
-    "routes.analytics",
     "routes.basic",
-    "routes.kpi",
 )
 
 

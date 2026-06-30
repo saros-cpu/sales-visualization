@@ -606,15 +606,15 @@ def run_exchange_maintenance(cur):
 def run_market_watch_maintenance(cur):
     ensure_market_watch_schema(cur)
     official_items = []
-    errors = []
+    source_errors = []
     try:
         official_items.append(fetch_market_benchmark_item())
     except RuntimeError as exc:
-        errors.append(str(exc))
+        source_errors.append(str(exc))
     try:
         official_items.append(fetch_uzex_market_item(cur))
     except RuntimeError as exc:
-        errors.append(str(exc))
+        source_errors.append(str(exc))
     official_items.append(spimex_official_reference_item())
     inserted = 0
     updated = 0
@@ -623,7 +623,14 @@ def run_market_watch_maintenance(cur):
         inserted += status == "inserted"
         updated += status == "updated"
     translated = refresh_market_watch_chinese(cur)
-    return {"fetched": len(official_items), "inserted": inserted, "updated": updated, "translated": translated, "errors": errors}
+    return {
+        "fetched": len(official_items),
+        "inserted": inserted,
+        "updated": updated,
+        "translated": translated,
+        "warnings": source_errors if official_items else [],
+        "errors": [] if official_items else source_errors,
+    }
 
 
 def run_retail_snapshot_maintenance():

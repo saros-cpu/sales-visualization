@@ -2948,7 +2948,7 @@ textarea:focus-visible {
 
 .home-rate-panel .panel-head {
   display: grid;
-  grid-template-columns: minmax(150px, 0.45fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(140px, 0.32fr) minmax(360px, 1fr) minmax(150px, auto);
   align-items: center;
   gap: 12px;
 }
@@ -2962,8 +2962,24 @@ textarea:focus-visible {
 .rate-grid div {
   flex: 1 1 0;
   min-width: 0;
-  max-width: 180px;
+  max-width: none;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.home-rate-panel .rate-grid div {
+  flex: 1 1 0;
+  min-width: 118px;
+  padding-inline: 9px;
+}
+
+.home-rate-panel .rate-grid span {
+  flex: 0 0 auto;
+}
+
+.home-rate-panel .rate-grid strong {
+  flex: 1 1 auto;
+  min-width: 56px;
+  text-align: right;
 }
 
 .home-market-panel {

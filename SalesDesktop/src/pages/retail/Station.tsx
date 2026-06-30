@@ -9,10 +9,18 @@ import { downloadRetailRangeReport } from '@/api/export';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
-import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
+import {
+  formatRetailCnyKpi,
+  formatRetailLitersKpi,
+  formatRetailSomKpi,
+  formatRetailTonsKpi,
+  retailCnyAmountOf,
+  retailTonsOf,
+} from '@/utils/retailMetrics';
 import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
+import { defaultRetailMonth } from '@/utils/retailPeriod';
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -26,15 +34,14 @@ function defaultWeeklyReportRange() {
 }
 
 export default function Station() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { message } = AntApp.useApp();
   const { can } = useAuth();
   const canExport = can('retail:export');
   const { region, station } = useNameI18n();
-  const now = new Date();
-  const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  const [ym, setYm] = useState(defaultRetailMonth);
   const [shopKey, setShopKey] = useState<number | null>(null);
   const [weeklyReportRange, setWeeklyReportRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(defaultWeeklyReportRange);
   const [weeklyReportLoading, setWeeklyReportLoading] = useState(false);
@@ -128,6 +135,14 @@ export default function Station() {
     }
   };
 
+  const language = i18n.language;
+  const detailSummary = detail?.summary as any;
+  const stationAmount = Number(detailSummary?.amount ?? detailSummary?.totalSales ?? 0);
+  const stationLiters = Number(detailSummary?.volume ?? detailSummary?.totalLiters ?? 0);
+  const stationSalesCny = retailCnyAmountOf(
+    detailSummary ? { ...detailSummary, amount: stationAmount, avgCnyKgs: detailSummary.avgCnyKgs ?? (detail as any)?.avgCnyKgs } : null,
+  );
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -165,11 +180,16 @@ export default function Station() {
             </Col>
           </Row>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.totalSales')} value={Math.round(((detail.summary as any).amount ?? detail.summary.totalSales ?? 0) / 10000)} suffix={CHART_AXIS.wanSom} /></Card></Col>
+            <Col xs={12} lg={6}>
+              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}>
+                <Statistic title={t('retail.totalSales')} value={formatRetailSomKpi(stationAmount, language)} />
+                <Text type="secondary" style={{ fontSize: 12 }}>人民币 {formatRetailCnyKpi(stationSalesCny, language)}</Text>
+              </Card>
+            </Col>
             <Col xs={12} lg={6}>
               <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
-                <Statistic title={t('retail.totalLiters')} value={Math.round((detail.summary as any).volume ?? detail.summary.totalLiters ?? 0)} suffix="L" />
-                <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(detail.summary))} t</Text>
+                <Statistic title={t('retail.totalLiters')} value={formatRetailLitersKpi(stationLiters, language)} />
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(retailTonsOf(detail.summary), language)}</Text>
               </Card>
             </Col>
             <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>

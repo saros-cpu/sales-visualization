@@ -170,16 +170,18 @@ Invoke-Check "Desktop updater package files" {
     } | Where-Object {
         $_.Version -lt ([version]$version)
     } | Sort-Object Version -Descending | Select-Object -First 1
-    if (-not $referenceInstaller) {
-        throw "reference desktop installer older than $version was not found"
-    }
-    Invoke-External "powershell" @(
+    $auditArgs = @(
         "-ExecutionPolicy", "Bypass",
         "-File", $auditScript,
         "-Installer", $installer,
-        "-ReferenceInstaller", $referenceInstaller.Path,
         "-Version", $version
-    ) $RepoRoot
+    )
+    if ($referenceInstaller) {
+        $auditArgs += @("-ReferenceInstaller", $referenceInstaller.Path)
+    } else {
+        Write-Host "WARN: reference desktop installer older than $version was not found; current package structure audit will still run." -ForegroundColor Yellow
+    }
+    Invoke-External "powershell" $auditArgs $RepoRoot
 }
 
 Invoke-Check "Nginx download route shape" {

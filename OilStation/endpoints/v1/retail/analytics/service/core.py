@@ -27,11 +27,17 @@ from db import get_connection
 from export_excel import RESOURCE_DENSITY, SK4_RSK_MAP, SK6_RSK_MAP, SK28_RSK_MAP, SK29_RSK_MAP, STATION_RK_CORRECTIONS
 
 from endpoints.v1.retail.common.query import calc_yoy_mom, get_query_date_range, query_month_summary
+from endpoints.v1.retail.common.currency import (
+    attach_amount_cny_average,
+    average_cny_kgs_for_period,
+    cny_from_kgs_average,
+    load_cny_rates as _common_load_cny_rates,
+)
 from endpoints.v1.retail.analytics.service.shared import _resource_key_from_report_name, _to_float
 from endpoints.v1.retail.analytics.service.shared import *
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-OILSTATION_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[6]
+OILSTATION_ROOT = Path(__file__).resolve().parents[5]
 
 def cache_allowed():
     return request.args.get("refresh") not in {"1", "true", "yes"}
@@ -124,34 +130,7 @@ def _parse_day(value):
 
 
 def _load_cny_rates(start, end):
-    rates = {}
-    try:
-        start_day = _parse_day(start)
-        end_day = _parse_day(end)
-    except (TypeError, ValueError):
-        return rates
-    if end_day <= start_day:
-        return rates
-    try:
-        conn = pymysql.connect(**_sales_db_config())
-    except Exception:
-        return rates
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT rate_date, cny_kgs
-            FROM exchange_rates
-            WHERE rate_date >= %s AND rate_date < %s
-              AND cny_kgs IS NOT NULL
-            """,
-            (start_day, end_day),
-        )
-        for rate_date, cny_kgs in cur.fetchall():
-            rates[_parse_day(rate_date).isoformat()] = float(cny_kgs)
-    finally:
-        conn.close()
-    return rates
+    return _common_load_cny_rates(start, end)
 
 
 def _load_density_history():
@@ -198,24 +177,26 @@ def _density_for(density_history, resource_key, day):
 def _monthly_cny_from_daily(daily_rows, start, end):
     rates = _load_cny_rates(start, end)
     total_cny = 0.0
+    total_amount = 0.0
     missing = []
-    rate_values = []
     for item in daily_rows or []:
         amount = float(item.get("amount") or 0)
         if not amount:
             continue
+        total_amount += amount
         day = str(item.get("date") or "")[:10]
         rate = rates.get(day)
         if rate:
             total_cny += amount / rate
-            rate_values.append(rate)
         else:
             missing.append(day)
+    avg_cny = average_cny_kgs_for_period(start, end)
     return {
         "totalSalesCny": round(total_cny, 2),
+        "totalSalesCnyAvg": cny_from_kgs_average(total_amount, avg_cny),
         "exchangeMissingDates": sorted(set(missing)),
         "exchangeComplete": not missing,
-        "avgCnyKgs": round(sum(rate_values) / len(rate_values), 4) if rate_values else None,
+        "avgCnyKgs": avg_cny,
     }
 
 
@@ -283,6 +264,15 @@ def _attach_monthly_finance_metrics(payload, daily_resource_rows=None):
         end = (datetime.strptime(last_day, "%Y-%m-%d").date() + timedelta(days=1)).isoformat()
     if start and end:
         summary.update(_monthly_cny_from_daily(daily, start, end))
+        avg_cny = summary.get("avgCnyKgs")
+        for group_name in ("stations", "regions", "byResource"):
+            rows = payload.get(group_name)
+            if isinstance(rows, dict):
+                rows = rows.values()
+            if not isinstance(rows, (list, tuple)):
+                continue
+            for item in rows:
+                attach_amount_cny_average(item, "amount", "amountCnyAvg", avg_cny)
     if daily_resource_rows:
         summary.update(_total_tons_from_daily_resource(daily_resource_rows))
     elif "totalTons" not in summary:
@@ -293,6 +283,51 @@ def _attach_monthly_finance_metrics(payload, daily_resource_rows=None):
         summary.update(_total_tons_from_resource_summary(payload.get("byResource") or [], business_day))
     payload["summary"] = summary
     return payload
+
+
+def _attach_summary_cny_average(summary, start=None, end=None, amount_key="totalSales"):
+    if not isinstance(summary, dict):
+        return False
+    start = start or summary.get("queryStart")
+    end = end or summary.get("queryEndExclusive") or summary.get("queryEnd")
+    avg_cny = average_cny_kgs_for_period(start, end)
+    amount = summary.get(amount_key)
+    if amount is None and amount_key != "totalAmount":
+        amount = summary.get("totalAmount")
+    changed = False
+    amount_cny = cny_from_kgs_average(amount, avg_cny)
+    for key in ("totalSalesCnyAvg", "totalAmountCnyAvg"):
+        if summary.get(key) != amount_cny:
+            summary[key] = amount_cny
+            changed = True
+    if avg_cny is not None and summary.get("avgCnyKgs") != avg_cny:
+        summary["avgCnyKgs"] = avg_cny
+        changed = True
+    return changed
+
+
+def _attach_period_cny_average(payload, row_groups=()):
+    if not isinstance(payload, dict):
+        return False
+    start = payload.get("queryStart") or (payload.get("summary") or {}).get("queryStart")
+    end = payload.get("queryEndExclusive") or payload.get("queryEnd") or (payload.get("summary") or {}).get("queryEnd")
+    avg_cny = average_cny_kgs_for_period(start, end)
+    changed = False
+    if avg_cny is not None and payload.get("avgCnyKgs") != avg_cny:
+        payload["avgCnyKgs"] = avg_cny
+        changed = True
+    summary = payload.get("summary")
+    if isinstance(summary, dict):
+        changed = _attach_summary_cny_average(summary, start, end, "totalAmount") or changed
+    for group_name in row_groups:
+        rows = payload.get(group_name)
+        if isinstance(rows, dict):
+            rows = rows.values()
+        if not isinstance(rows, (list, tuple)):
+            continue
+        for item in rows:
+            changed = attach_amount_cny_average(item, "amount", "amountCnyAvg", avg_cny) or changed
+    return changed
 def _latest_report_workbook_for_map():
     index_path = OILSTATION_ROOT / "exports" / ".monthly_report_index.json"
     if not index_path.exists():
@@ -1149,7 +1184,7 @@ def _dashboard_yearly_from_monthly_snapshots(year):
             data[key] = round(data[key], 2)
         data["tons"] = round(data.get("tons") or 0, 3)
 
-    return {
+    result = {
         "year": year,
         "queryStart": query_start,
         "queryEndExclusive": query_end,
@@ -1174,6 +1209,8 @@ def _dashboard_yearly_from_monthly_snapshots(year):
         ]),
         "snapshot": True,
     }
+    _attach_period_cny_average(result, ("stations", "regions", "byResource"))
+    return result
 
 
 def _resources_yearly_from_monthly_snapshots(year, month=None):
@@ -1216,7 +1253,7 @@ def _resources_yearly_from_monthly_snapshots(year, month=None):
         period_end = max((payload.get("summary", {}).get("queryEnd") or period_start for payload in months), default=period_start)
         resources = _resource_items_from_map(current, previous, month_data, prev_month_data)
 
-    return {
+    result = {
         "year": year,
         "month": month,
         "periodLabel": f"{year}-{month:02d}" if month else f"{year} 全年",
@@ -1233,3 +1270,5 @@ def _resources_yearly_from_monthly_snapshots(year, month=None):
         },
         "snapshot": True,
     }
+    _attach_period_cny_average(result, ("resources",))
+    return result

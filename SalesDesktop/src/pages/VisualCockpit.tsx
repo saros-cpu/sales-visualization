@@ -13,6 +13,7 @@ import type { KpiTone } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { CHART_PALETTE } from '@/theme/charts';
 import { sortRankingRows } from '@/utils/rankingCharts';
+import { formatRetailCnyKpi, formatRetailLitersKpi, formatRetailSomKpi, formatRetailTonsKpi } from '@/utils/retailMetrics';
 
 const { Text } = Typography;
 
@@ -45,6 +46,8 @@ const defaultComponentKeyByType: Partial<Record<CockpitComponent['type'], string
 const exchangeRateMetricKeys = new Set(['exchange_usd_kgs', 'exchange_cny_kgs', 'exchange_kgs_cny']);
 const exchangeRateComponentKeys = new Set(Array.from(exchangeRateMetricKeys, key => `kpi.${key}`));
 const exchangeRateComponentIdKeys = new Set(Array.from(exchangeRateComponentKeys, key => componentIdKey(key)));
+const retailAmountMetricKeys = new Set(['retail_sales_amount', 'retail_month_sales_amount']);
+const retailVolumeMetricKeys = new Set(['retail_volume_liters', 'retail_month_volume_liters']);
 
 function componentIdKey(value: string) {
   return value.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -166,6 +169,12 @@ function cockpitKpiDisplay(definition: KpiDefinition | undefined, metricKey: str
   const unit = definition?.unit || '';
   const compact = unit.replace(/\s+/g, '');
   const numeric = Number(value);
+  if (metricKey && retailAmountMetricKeys.has(metricKey) && Number.isFinite(numeric)) {
+    return { value: formatRetailSomKpi(numeric, language), suffix: undefined, precision: undefined };
+  }
+  if (metricKey && retailVolumeMetricKeys.has(metricKey) && Number.isFinite(numeric)) {
+    return { value: formatRetailLitersKpi(numeric, language), suffix: undefined, precision: undefined };
+  }
   if (isAmountMetric(definition, metricKey) && Number.isFinite(numeric)) {
     if (compact === 'сом' || compact.toLowerCase() === 'som' || compact.toUpperCase() === 'KGS') {
       return { value: numeric / 10000, suffix: localizedUnit('万索姆', language), precision: 0 };
@@ -175,6 +184,24 @@ function cockpitKpiDisplay(definition: KpiDefinition | undefined, metricKey: str
     }
   }
   return { value, suffix: unitFor(definition, language), precision: definition?.precision };
+}
+
+function cockpitSecondaryDisplay(metric: KpiMetricValue | undefined, language: string) {
+  const value = metric?.secondaryValue;
+  if (value === null || value === undefined || value === '') {
+    return { value, suffix: undefined, precision: undefined };
+  }
+  const unit = String(metric?.secondaryUnit || '').replace(/\s+/g, '');
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    if (unit === '¥' || unit.toUpperCase() === 'CNY') {
+      return { value: formatRetailCnyKpi(numeric, language), suffix: undefined, precision: undefined };
+    }
+    if (unit === 't' || unit === '吨' || unit === 'т') {
+      return { value: formatRetailTonsKpi(numeric, language), suffix: undefined, precision: undefined };
+    }
+  }
+  return { value, suffix: localizedUnit(metric?.secondaryUnit, language), precision: metric?.secondaryPrecision };
 }
 
 function toneFor(definition: KpiDefinition | undefined, value: number | string | undefined): KpiTone {
@@ -987,6 +1014,7 @@ export default function VisualCockpit() {
     const metric = metricKey ? query.data?.metrics?.[metricKey] : undefined;
     const targetRoute = routeForCockpitKpi(definition, metricKey);
     const kpiDisplay = cockpitKpiDisplay(definition, metricKey, metric?.value ?? 0, i18n.language);
+    const secondaryDisplay = cockpitSecondaryDisplay(metric, i18n.language);
     return (
       <Col key={component.id} {...cockpitColProps(widthPercent, height, type, layoutEditing && isAdmin)}>
         {renderLayoutFrame(component, span, widthPercent, height, type, (
@@ -995,9 +1023,9 @@ export default function VisualCockpit() {
             value={kpiDisplay.value}
             suffix={kpiDisplay.suffix}
             precision={kpiDisplay.precision}
-            secondaryValue={metric?.secondaryValue}
-            secondarySuffix={metric?.secondaryUnit}
-            secondaryPrecision={metric?.secondaryPrecision}
+            secondaryValue={secondaryDisplay.value}
+            secondarySuffix={secondaryDisplay.suffix}
+            secondaryPrecision={secondaryDisplay.precision}
             secondaryLabel={secondaryMetricLabel(metric, i18n.language)}
             tone={toneFor(definition, metric?.value)}
             valueColor={cockpitKpiValueColor(definition, metricKey)}

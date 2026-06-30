@@ -9,7 +9,14 @@ import KpiCard from '@/components/ui/KpiCard';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n, ZH_REGION_KEY } from '@/utils/i18nNames';
-import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
+import {
+  formatRetailCnyKpi,
+  formatRetailLitersKpi,
+  formatRetailSomKpi,
+  formatRetailTonsKpi,
+  retailCnyAmountOf,
+  retailTonsOf,
+} from '@/utils/retailMetrics';
 import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,7 +27,7 @@ const REGION_COLORS: Record<string, string> = {
 };
 
 export default function Overview() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { can } = useAuth();
   const canExport = can('retail:export');
@@ -42,6 +49,10 @@ export default function Overview() {
   const regionVolumeRows = sortRankingRows(Object.entries(dash?.regions ?? {}), ([, value]: [string, any]) => value?.volume);
   const productRows = sortRankingRows(resQ.data?.resources ?? [], (row: any) => row.amount);
   const top10 = sortRankingRows(dash?.stations ?? [], (row: any) => row.amount, 10);
+  const language = i18n.language;
+  const totalSalesCny = retailCnyAmountOf(
+    kpi ? { ...kpi, avgCnyKgs: (kpi as any).avgCnyKgs ?? (kpiQ.data as any)?.avgCnyKgs } : null,
+  );
   const goRegion = (key: string) => {
     const regionKey = ZH_REGION_KEY[key] || key;
     if (regionKey) navigate(`/retail/region?region=${encodeURIComponent(regionKey)}`);
@@ -108,15 +119,18 @@ export default function Overview() {
       </Space>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} lg={6}>
-          <KpiCard title={t('retail.totalSales')} value={Math.round((kpi?.totalSales ?? 0) / 10000)} precision={0} suffix={CHART_AXIS.wanSom} onClick={() => navigate('/retail/report')} />
+          <KpiCard
+            title={t('retail.totalSales')}
+            value={formatRetailSomKpi(kpi?.totalSales ?? 0, language)}
+            extra={<span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>人民币 {formatRetailCnyKpi(totalSalesCny, language)}</span>}
+            onClick={() => navigate('/retail/report')}
+          />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <KpiCard
             title={t('retail.totalLiters')}
-            value={kpi?.totalLiters ?? 0}
-            precision={0}
-            suffix="L"
-            extra={<span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</span>}
+            value={formatRetailLitersKpi(kpi?.totalLiters ?? 0, language)}
+            extra={<span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(totalTons, language)}</span>}
             onClick={() => navigate('/retail/resource')}
           />
         </Col>

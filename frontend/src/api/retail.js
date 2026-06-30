@@ -17,7 +17,6 @@ export const getMonthlyData = (ym, { refresh } = {}) => {
   return get(`/api/monthly/${ym}`, refresh ? { refresh: '1' } : undefined);
 };
 export const getStations = (ym) => get(`/api/stations/${ym}`);
-export const getStationsForMonth = (ym) => get(`/api/stations/${ym}`);
 
 // ── 站点详情 ──
 export const getStationDetail = (ym, shopKey) =>

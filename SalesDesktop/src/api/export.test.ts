@@ -106,4 +106,42 @@ describe('desktop report export API', () => {
       '零售日销表_2026-07.xlsx',
     );
   });
+
+  it('generates monthly wholesale reports through the shared web endpoint', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      status: 'ok',
+      docxDownloadUrl: '/api/export/analysis/sales/download/wholesale-month.docx',
+      docxFile: 'wholesale-month.docx',
+    }));
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { downloadWholesaleReport } = await import('./export');
+    await downloadWholesaleReport({ year: 2026, month: 7 });
+
+    expect(firstFetchUrl(fetchMock)).toBe('https://sales.example.com/api/export/analysis/wholesale/monthly/2026-07');
+    expect(mocks.downloadWithAuth).toHaveBeenCalledWith(
+      'https://sales.example.com/api/export/analysis/sales/download/wholesale-month.docx',
+      'wholesale-month.docx',
+    );
+  });
+
+  it('generates yearly wholesale reports through the shared web endpoint', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      status: 'ok',
+      htmlDownloadUrl: '/api/export/analysis/sales/download/wholesale-year.html',
+      htmlFile: 'wholesale-year.html',
+    }));
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { downloadWholesaleReport } = await import('./export');
+    await downloadWholesaleReport({ year: 2026 });
+
+    expect(firstFetchUrl(fetchMock)).toBe('https://sales.example.com/api/export/analysis/wholesale/yearly/2026');
+    expect(mocks.downloadWithAuth).toHaveBeenCalledWith(
+      'https://sales.example.com/api/export/analysis/sales/download/wholesale-year.html',
+      'wholesale-year.html',
+    );
+  });
 });

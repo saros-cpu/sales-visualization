@@ -12,6 +12,7 @@ from endpoints.v1.retail.common.query import (
     get_latest_month_in_year,
     get_report_month_inventory,
 )
+from endpoints.v1.retail.common.currency import average_cny_kgs_for_period, cny_from_kgs_average
 from endpoints.v1.retail.analytics.service.shared import (
     report_mass_expr,
     retail_mass_from_item,
@@ -175,6 +176,40 @@ def _safe_float(value):
         return 0.0
 
 
+def _attach_summary_cny_average(summary):
+    if not isinstance(summary, dict):
+        return False
+    start = summary.get("queryStart")
+    end = summary.get("queryEndExclusive") or summary.get("queryEnd")
+    avg_cny = average_cny_kgs_for_period(start, end)
+    amount = summary.get("totalSales")
+    if amount is None:
+        amount = summary.get("totalAmount")
+    amount_cny = cny_from_kgs_average(amount, avg_cny)
+    changed = False
+    for key in ("totalSalesCnyAvg", "totalAmountCnyAvg"):
+        if summary.get(key) != amount_cny:
+            summary[key] = amount_cny
+            changed = True
+    if avg_cny is not None and summary.get("avgCnyKgs") != avg_cny:
+        summary["avgCnyKgs"] = avg_cny
+        changed = True
+    return changed
+
+
+def _ensure_summary_period(summary, start, end):
+    if not isinstance(summary, dict):
+        return False
+    changed = False
+    if summary.get("queryStart") != start:
+        summary["queryStart"] = start
+        changed = True
+    if summary.get("queryEndExclusive") != end:
+        summary["queryEndExclusive"] = end
+        changed = True
+    return changed
+
+
 def _payload_tons(payload):
     if not payload:
         return 0.0
@@ -328,7 +363,7 @@ def yearly_kpi_from_monthly_snapshots(year, include_inventory):
     latest_summary = months[-1].get("summary") or {}
     inventory = _resolve_inventory(latest_month, latest_summary) if latest_month else 0.0
 
-    return {
+    result = {
         "year": year,
         "summary": {
             "activeShops": int(latest_summary.get("activeShops") or current["activeShops"]),
@@ -353,6 +388,8 @@ def yearly_kpi_from_monthly_snapshots(year, include_inventory):
         },
         "snapshot": True,
     }
+    _attach_summary_cny_average(result["summary"])
+    return result
 
 
 def get_current_kpi():
@@ -360,9 +397,17 @@ def get_current_kpi():
     cached = get_cached(cache_key)
     if cached:
         summary = cached.setdefault("summary", {})
+        changed = False
+        snapshot_month = cached.get("month") or completed_month_label()
+        start, end = get_query_date_range(snapshot_month)
+        if _ensure_summary_period(summary, start, end):
+            changed = True
         if _safe_float(summary.get("totalTons")) <= 0:
-            snapshot_month = cached.get("month") or completed_month_label()
             summary["totalTons"] = round(_payload_tons(get_cached(f"monthly:{snapshot_month}")), 3)
+            changed = True
+        if _attach_summary_cny_average(summary):
+            changed = True
+        if changed:
             set_cached(cache_key, cached, ttl=60)
         return cached
 
@@ -376,6 +421,7 @@ def get_current_kpi():
         summary.setdefault("totalTonsSource", snapshot.get("massSource") or "monthly_snapshot_mass")
         summary["inventory"] = _resolve_inventory(snapshot_month, summary)
         summary["inventoryMonth"] = snapshot_month
+        _attach_summary_cny_average(summary)
         result = {
             "month": snapshot_month,
             "summary": summary,
@@ -414,6 +460,7 @@ def get_current_kpi():
         summary["totalTonsSource"] = YEARLY_TONS_SOURCE_DB
         summary["inventory"] = get_report_month_inventory(cur, ym)
         summary["inventoryMonth"] = ym
+        _attach_summary_cny_average(summary)
 
         result = {
             "month": ym,
@@ -431,6 +478,9 @@ def get_yearly_kpi(year, include_inventory):
     if cached:
         changed = _attach_yearly_inventory(year, cached, include_inventory)
         changed = _attach_yearly_tons(year, cached) or changed
+        start, end = _year_query_range(year)
+        changed = _ensure_summary_period(cached.setdefault("summary", {}), start, end) or changed
+        changed = _attach_summary_cny_average(cached.setdefault("summary", {})) or changed
         if changed:
             set_cached(cache_key, cached, ttl=CACHE_TTL["kpi_yearly"])
         return cached
@@ -440,6 +490,9 @@ def get_yearly_kpi(year, include_inventory):
     if snapshot:
         changed = _attach_yearly_inventory(year, snapshot, include_inventory)
         changed = _attach_yearly_tons(year, snapshot) or changed
+        start, end = _year_query_range(year)
+        changed = _ensure_summary_period(snapshot.setdefault("summary", {}), start, end) or changed
+        changed = _attach_summary_cny_average(snapshot.setdefault("summary", {})) or changed
         if changed:
             set_cached(cache_key, snapshot, ttl=CACHE_TTL["kpi_yearly"])
             set_cached(snapshot_cache_key, snapshot, ttl=CACHE_TTL["kpi_yearly"])
@@ -524,6 +577,7 @@ def get_yearly_kpi(year, include_inventory):
                 "yoySalesAmount": calc_change(summary[3] or 0, prev_summary[1] or 0),
             },
         }
+        _attach_summary_cny_average(result["summary"])
 
         set_cached(cache_key, result, ttl=CACHE_TTL["kpi"])
         return result

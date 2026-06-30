@@ -5,13 +5,13 @@ const api = createApi('/api');
 interface StationData {
   shopKey: number; name: string; short: string; region: string;
   lng: number; lat: number;
-  txnCount: number; volume: number; mass?: number; tons?: number; amount: number; cash: number;
+  txnCount: number; volume: number; mass?: number; tons?: number; amount: number; amountCnyAvg?: number | null; avgCnyKgs?: number | null; cash: number;
   card: number; cashLiters: number; cardLiters: number; bonus: number;
   status: string; closedReason?: string;
 }
 
 interface ResourceData {
-  resourceKey: number; name: string; volume: number; mass?: number; tons?: number; density?: number; amount: number; color: string;
+  resourceKey: number; name: string; volume: number; mass?: number; tons?: number; density?: number; amount: number; amountCnyAvg?: number | null; avgCnyKgs?: number | null; color: string;
   yoyVolume?: number; yoySales?: number; momVolume?: number; momSales?: number;
   latestMonthMass?: number; latestMonthTons?: number;
 }
@@ -26,17 +26,18 @@ interface MonthlySummary {
   cashSales: number; cardSales: number; cashLiters: number; cardLiters: number;
   activeShops: number;
   inventory?: number; inventoryMonth?: string;
-  totalTons?: number; totalSalesCny?: number;
+  totalTons?: number; totalSalesCny?: number; totalSalesCnyAvg?: number | null; totalAmountCnyAvg?: number | null; avgCnyKgs?: number | null;
 }
 
 interface RegionData {
-  amount: number; volume: number; mass?: number; tons?: number; cash: number; card: number; bonus: number;
+  amount: number; volume: number; mass?: number; tons?: number; amountCnyAvg?: number | null; avgCnyKgs?: number | null; cash: number; card: number; bonus: number;
   stationCount: number; activeCount: number;
   momSales?: number; momVolume?: number; yoySales?: number; yoyVolume?: number;
 }
 
 export interface DashboardYearlyData {
   year: number;
+  queryStart?: string; queryEndExclusive?: string; avgCnyKgs?: number | null;
   stations: StationData[];
   depots: { name: string; short: string; region: string; lng: number; lat: number }[];
   regions: Record<string, RegionData>;
@@ -54,7 +55,7 @@ export interface MonthlyData {
 }
 
 export interface StationMonthlyData {
-  month: string; shopKey: number; name: string; short: string; region: string;
+  month: string; queryStart?: string; queryEndExclusive?: string; avgCnyKgs?: number | null; shopKey: number; name: string; short: string; region: string;
   summary: MonthlySummary & { baseCost: number };
   comparison: { mom: Record<string, number>; yoy: Record<string, number> };
   byResource: ResourceData[];
@@ -63,6 +64,7 @@ export interface StationMonthlyData {
 
 export interface RegionsData {
   month: string;
+  queryStart?: string; queryEndExclusive?: string; avgCnyKgs?: number | null;
   regions: Record<string, RegionData>;
   byResource: ResourceData[];
   byResourceByRegion: Record<string, ResourceData[]>;
@@ -76,8 +78,9 @@ export interface DailyDataResponse {
 
 export interface ResourceYearlyData {
   year: number; month: number;
+  queryStart?: string; queryEndExclusive?: string; avgCnyKgs?: number | null;
   resources: ResourceData[];
-  summary: { totalVolume: number; totalTons?: number; totalAmount: number; resourceCount: number };
+  summary: { totalVolume: number; totalTons?: number; totalAmount: number; totalSalesCnyAvg?: number | null; totalAmountCnyAvg?: number | null; avgCnyKgs?: number | null; resourceCount: number };
 }
 
 export async function getDashboardYearly(year: number) {
@@ -145,11 +148,6 @@ export async function getMonths() {
 export async function getStationStatuses() {
   const res = await api.get('/retail/station-statuses');
   return res.data?.items ?? res.data;
-}
-
-export async function exportMonthlyExcel(ym: string) {
-  const res = await api.get(`/export/monthly/${ym}`);
-  return res.data;
 }
 
 export interface SelfUseRecord {

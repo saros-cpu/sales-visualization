@@ -3,7 +3,17 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getMonths, getMonthlyData, generateMonthlyReport } from '../../api/retail';
 import { download } from '../../api/client';
 import { useChart } from '../../hooks/useChart';
-import { REGION_COLORS, numberFormat, volumeFormat, sortRankingRows } from '../../utils/retail-helpers';
+import {
+  REGION_COLORS,
+  amountCnyOf,
+  formatCnyKpi,
+  formatLitersKpiParts,
+  formatSomKpiParts,
+  formatTonsKpi,
+  numberFormat,
+  volumeFormat,
+  sortRankingRows,
+} from '../../utils/retail-helpers';
 import { useRetailHeader } from '../../components/layout/RetailHeaderContext';
 
 export default function MonthlyPage() {
@@ -210,7 +220,9 @@ export default function MonthlyPage() {
   const dailyLitersAvg = daysInData > 0 ? s.totalLiters / daysInData : 0;
   const totalTons = Number(s.totalTons || 0);
   const dailyTonsAvg = daysInData > 0 ? totalTons / daysInData : 0;
-  const totalSalesCny = Number(s.totalSalesCny || 0);
+  const totalSalesCny = amountCnyOf(s);
+  const totalSalesKpi = formatSomKpiParts(s.totalSales || 0);
+  const totalLitersKpi = formatLitersKpiParts(s.totalLiters || 0);
   const cardPct = s.totalSales > 0 ? (s.cardSales / s.totalSales * 100) : 0;
   const inactiveSt = (s.totalShops || 0) - (s.activeShops || 0);
 
@@ -286,20 +298,20 @@ export default function MonthlyPage() {
       <div className="retail-kpi-row">
         <div className="retail-panel retail-kpi-card c1">
           <div className="kpi-label">💰 月销售总金额</div>
-          <div className="kpi-value">{numberFormat(s.totalSales)}</div>
-          <div className="kpi-unit">索姆（COM）</div>
+          <div className="kpi-value">{totalSalesKpi.value}</div>
+          <div className="kpi-unit">{totalSalesKpi.unit}</div>
           <div className="kpi-sub">
-            {totalSalesCny > 0 ? `人民币 ${numberFormat(totalSalesCny)}元 | ` : ''}
+            {totalSalesCny != null ? <>人民币 {formatCnyKpi(totalSalesCny)} | </> : ''}
             {fmtChange(mom.sales, '环比')}
             {yoy.sales != null && <> | {fmtChange(yoy.sales, '同比')}</>}
           </div>
         </div>
         <div className="retail-panel retail-kpi-card c2">
           <div className="kpi-label">⛽ 月销售总量</div>
-          <div className="kpi-value">{volumeFormat(s.totalLiters)}</div>
-          <div className="kpi-unit">升（Л）</div>
+          <div className="kpi-value">{totalLitersKpi.value}</div>
+          <div className="kpi-unit">{totalLitersKpi.unit}</div>
           <div className="kpi-sub">
-            {totalTons > 0 ? `吨位 ${Number(totalTons).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} 吨 | ` : ''}
+            {totalTons > 0 ? <>吨位 {formatTonsKpi(totalTons)} | </> : ''}
             {fmtChange(mom.volume, '环比')}
           </div>
         </div>
@@ -359,8 +371,15 @@ export default function MonthlyPage() {
       {/* Rank Table */}
       <div className="retail-panel monthly-rank-cell" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div className="retail-panel-header"><div className="dot" />销售金额 TOP 10</div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
-          <table className="retail-rank-table">
+        <div className="monthly-top10-wrap">
+          <table className="retail-rank-table monthly-top10-table">
+            <colgroup>
+              <col className="rank-col" />
+              <col className="station-col" />
+              <col className="region-col" />
+              <col className="amount-col" />
+              <col className="share-col" />
+            </colgroup>
             <thead>
               <tr><th>排名</th><th>站点</th><th>区域</th><th style={{ textAlign: 'right' }}>销售金额</th><th style={{ textAlign: 'right' }}>占比</th></tr>
             </thead>
@@ -371,11 +390,11 @@ export default function MonthlyPage() {
                 return (
                   <tr key={i}>
                     <td style={{ textAlign: 'center' }}>{medal}</td>
-                    <td>
+                    <td className="station-cell">
                       <b>{st.name}</b>
-                      <div style={{ fontSize: 10, color: 'rgba(160,180,210,0.4)' }}>{st.short}</div>
+                      <div className="station-cell-sub">{st.short}</div>
                     </td>
-                    <td>
+                    <td className="region-cell">
                       <span className="retail-tag" style={{ background: rc + '20', color: rc, border: `1px solid ${rc}40` }}>{st.region}</span>
                     </td>
                     <td className="num">{(st.amount / 1e4).toFixed(2)}万</td>

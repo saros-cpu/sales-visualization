@@ -21,24 +21,30 @@ from openpyxl.worksheet.cell_range import CellRange
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).resolve().parents[5]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+_root_str = str(ROOT)
+_original_sys_path = list(sys.path)
+if _root_str in sys.path:
+    sys.path.remove(_root_str)
+sys.path.insert(0, _root_str)
 
-from export_excel import (  # noqa: E402
-    EXPORT_DIR,
-    _allow_fixed_density_fallback,
-    _missing_density_fallback_density,
-    _selling_mass_expr,
-)
-from scripts.generate_accounting_handover_reports import (  # noqa: E402
-    ShiftRange,
-    as_float,
-    connect,
-    infer_resource as _fallback_infer_resource,
-    load_shift_operator,
-    round_float,
-    sql_in,
-)
+try:
+    from export_excel import (  # noqa: E402
+        EXPORT_DIR,
+        _allow_fixed_density_fallback,
+        _missing_density_fallback_density,
+        _selling_mass_expr,
+    )
+    from scripts.generate_accounting_handover_reports import (  # noqa: E402
+        ShiftRange,
+        as_float,
+        connect,
+        infer_resource as _fallback_infer_resource,
+        load_shift_operator,
+        round_float,
+        sql_in,
+    )
+finally:
+    sys.path[:] = _original_sys_path
 
 ARCHIVE_ROOT = Path(os.getenv("SALES_RETAIL_254_ARCHIVE_ROOT", r"D:\DevTeam文件夹\АЗС Общее Данных Документ"))
 STAGING_ROOT = Path(os.getenv("SALES_RETAIL_254_STAGING_ROOT", str(Path(EXPORT_DIR) / "retail_254_monthly")))

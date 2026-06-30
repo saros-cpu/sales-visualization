@@ -6,13 +6,31 @@
 
 ## 版本更新记录
 
-### 2026-08-01 (SalesWallpaperEngine 0.2.0, 待发布)
+### 2026-08-01 (v4.0.1)
+
+- **站点详情稳定性**：修复 `/api/station/YYYY-MM/<shop>` 在补充人民币平均汇率字段时因内部导入缺失导致的 500，已覆盖 Web 与客户端。
+- **区域每日趋势**：修复 2026-07 daily 快照因单个质量边界值被误判过期而触发慢查询的问题；Web 区域页在日趋势失败时不再阻断区域/站点数据加载。
+- **客户端零售 KPI**：总览、月度、油品等销售额 KPI 增加平均 CNY/KGS 兜底，人民币副值与 Web/壁纸端口径一致。
+- **预警显示**：客户端库存预警隐藏 11、12、21 停业站，其他站点显示站号 + 中俄文站名；Web 库存预警支持纵向滚动。
+- **壁纸安装授权**：SalesWallpaperEngine 增加 `wallpaper-key.protected.json` 保护型打包密钥支持，领导机安装包可避免明文 token 直接随安装器分发；该能力不授予主系统登录权限，只用于壁纸专用接口。
+- **发布状态**：待打包部署；客户端补丁版本为 `4.0.1`，壁纸公共自动更新 feed 是否切到新包需单独决定。
+
+### 2026-08-01 (v4.0.0)
+
+- **HTTPS 新基线**：域名和 SSL 证书就位后，主客户端默认 API、自动更新源、Web 入口和壁纸更新清单统一切换到 `https://sales.example.com`。
+- **报表入口统一**：客户端年度分析报告、月度分析报告和零售日报统一复用 Web 端 `/api/export` 生成接口；批发年度分析报告走 `/api/export/analysis/wholesale/yearly/<year>`。
+- **零售 KPI 口径统一**：Web、客户端零售页和数据可视化页的销售额 KPI 统一显示索姆主值和按期间平均 CNY/KGS 折算的人民币副值，销量 KPI 统一显示升数主值和实际吨位副值。
+- **接口治理**：OilStation 零售 KPI、分析报告、年度/月度聚合统一到 `OilStation/endpoints/v1/retail/*` 当前实现，旧 routes 副本已备份后移除。
+- **发布状态**：`d6c9d14` 后已重新打包并部署；`/download/latest.yml` 指向 `SalesDesktop Setup 4.0.0.exe`，大小 `130365320` bytes。自检前外网客户端已更新到 `4.0.0`，同版本已安装客户端通常不会再次自动拉取同版本包。
+
+### 2026-08-01 (SalesWallpaperEngine 0.2.0)
 
 - **托盘检查更新**：手动检查更新移到壁纸托盘一级菜单，设置页只保留自动检查/自动安装更新开关，日常操作不再需要先打开设置窗口。
 - **HUD 编辑退出优化**：退出 HUD 编辑模式时不再整页刷新，直接应用保存后的 HUD 布局，降低壁纸闪屏或短暂露出系统背景的概率。
 - **更新包校验增强**：自动更新和按清单手动安装都会校验包大小和 SHA256，防止下载不完整或清单异常时继续覆盖程序目录。
 - **进程自恢复与状态区**：播放器 WebView2 进程失败或播放器异常退出后由主进程自动拉起；设置页新增当前版本、API、授权、刷新/更新状态和实时数据可达性。
 - **托盘菜单精简**：配置目录、日志目录等排查入口收进“高级”，一级菜单保留设置、HUD 编辑、重启、检查更新、安装更新和退出等日常动作。
+- **发布状态**：`/download/wallpaper-engine/latest.json` 指向 `SalesWallpaperEngine 0.2.0`；zip `7812410` bytes，Setup `7725056` bytes。自检前外网壁纸端已更新到 `0.2.0`，同版本已安装壁纸通常不会再次自动拉取同版本包。
 
 ### 2026-08-01 (SalesWallpaperEngine 0.1.18)
 
@@ -91,7 +109,7 @@
 - **0.1.7 exchange HUD**: the bottom-right wallpaper HUD shows authorized USD/KGS and CNY/KGS exchange rates from the project exchange-rate snapshot.
 - **0.1.8 display cleanup**: removes the bottom-left data timestamp and refresh timestamp from the wallpaper canvas.
 - **0.1.9 daily data refresh**: refreshes wallpaper data immediately on startup, then once daily at 09:00 after the morning automation tasks; `refreshAtLocalTime` can override this.
-- **Independent package**: `/download/wallpaper-engine/latest.json` currently serves the published `SalesWallpaperEngine 0.1.19` line; this does not update `SalesDesktop` version, installer, or `latest.yml`.
+- **Independent package**: `/download/wallpaper-engine/latest.json` currently serves the published `SalesWallpaperEngine 0.2.0` line; this does not update `SalesDesktop` version, installer, or `latest.yml`.
 
 ### 2026-07-29 (v3.9.17 后端热修)
 
@@ -1360,6 +1378,6 @@ D:\SalesVisualization\ops-refresh-retail-snapshots.bat
 
 - Production HTTPS is enabled: `https://sales.example.com/`.
 - HTTP domain traffic redirects to HTTPS; backup endpoint and certificate paths are kept only in `docs/配置文档.md`.
-- SalesDesktop source version is now `4.0.0`; new packaged builds default to the HTTPS API and update feed, upgrade legacy public HTTP config to HTTPS, and keep manual fallback details only in configuration.
+- SalesDesktop source version is now `4.0.1`; new packaged builds default to the HTTPS API and update feed, upgrade legacy public HTTP config to HTTPS, and keep manual fallback details only in configuration.
 - System Health now includes a manual task for generating the previous completed month's original-software 254 monthly archive on the server; it saves in place and does not download a package to the client.
 - SalesWallpaperEngine source version is now `0.2.0`; new wallpaper builds default to the HTTPS API/update manifest and upgrade legacy public HTTP config to HTTPS.

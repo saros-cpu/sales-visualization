@@ -157,8 +157,10 @@ export async function downloadYearlyReport(year: number) {
 }
 
 export async function downloadWholesaleReport(params: { year: number; month?: number }) {
-  const ym = params.month ? `${params.year}-${String(params.month).padStart(2, '0')}` : `${params.year}`;
-  const json = await fetchJsonWithAuth(`${BASE_URL}/api/export/analysis/wholesale/monthly/${ym}`);
+  const path = params.month
+    ? `${API_BASE}/export/analysis/wholesale/monthly/${params.year}-${String(params.month).padStart(2, '0')}`
+    : `${API_BASE}/export/analysis/wholesale/yearly/${params.year}`;
+  const json = await fetchJsonWithAuth(path);
   if (json.docxDownloadUrl) await downloadBlob(`${BASE_URL}${json.docxDownloadUrl}`, json.docxFile || 'wholesale-report.docx');
   if (json.htmlDownloadUrl) await downloadBlob(`${BASE_URL}${json.htmlDownloadUrl}`, json.htmlFile || 'wholesale-report.html');
   if (json.htmlViewUrl) (window as any).electronAPI?.openExternal(`${BASE_URL}${json.htmlViewUrl}`);

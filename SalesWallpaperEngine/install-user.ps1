@@ -3,6 +3,7 @@ param(
     [string]$ManifestUrl = "",
     [string]$PackageZip = "",
     [string]$KeyFile = "",
+    [string]$ProtectedKeyFile = "",
     [switch]$DeployBundledKey,
     [switch]$NoStart,
     [switch]$Quiet
@@ -19,7 +20,25 @@ function Deploy-KeyFile {
         [string]$SourceDir
     )
 
-    if (-not $DeployBundledKey -and -not $KeyFile) {
+    if (-not $DeployBundledKey -and -not $KeyFile -and -not $ProtectedKeyFile) {
+        return
+    }
+
+    $protectedCandidates = @()
+    if ($ProtectedKeyFile) {
+        $protectedCandidates += $ProtectedKeyFile
+    }
+    if ($DeployBundledKey) {
+        $protectedCandidates += (Join-Path $SourceDir "wallpaper-key.protected.json")
+        $protectedCandidates += (Join-Path $PSScriptRoot "wallpaper-key.protected.json")
+    }
+
+    $sourceProtectedKey = $protectedCandidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    if ($sourceProtectedKey) {
+        $configDir = Join-Path $env:APPDATA "sales-wallpaper-engine"
+        New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+        Copy-Item -LiteralPath $sourceProtectedKey -Destination (Join-Path $configDir "wallpaper-key.protected.json") -Force
+        Write-Host "Deployed protected wallpaper key to $configDir"
         return
     }
 
@@ -34,7 +53,7 @@ function Deploy-KeyFile {
 
     $sourceKey = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     if (-not $sourceKey) {
-        Write-Warning "Bundled wallpaper-key.json was requested but not found."
+        Write-Warning "Bundled wallpaper key was requested but not found."
         return
     }
 
@@ -75,6 +94,7 @@ function Show-InstallSummary {
 
     $configDir = Join-Path $env:APPDATA "sales-wallpaper-engine"
     $keyPath = Join-Path $configDir "wallpaper-key.json"
+    $protectedKeyPath = Join-Path $configDir "wallpaper-key.protected.json"
     $message = @"
 Sales Wallpaper Engine installed.
 
@@ -86,6 +106,9 @@ $configDir
 
 Key file:
 $keyPath
+
+Protected key file:
+$protectedKeyPath
 
 Startup shortcut:
 $ShortcutPath

@@ -3,7 +3,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useChart } from '../../hooks/useChart';
 import { getMonths, getStations, getStationDetail } from '../../api/retail';
-import { REGION_COLORS, REGION_ORDER, numberFormat, sortRankingRows } from '../../utils/retail-helpers';
+import {
+  REGION_COLORS,
+  REGION_ORDER,
+  amountCnyOf,
+  formatCnyKpi,
+  formatLitersKpiParts,
+  formatSomKpiParts,
+  formatTonsKpi,
+  numberFormat,
+  sortRankingRows,
+} from '../../utils/retail-helpers';
 
 const darkTooltip = {
   backgroundColor: 'rgba(10,20,50,0.9)',
@@ -17,8 +27,6 @@ function rankBadge(rank, total, label) {
   return <span className={`rank-badge ${cls}`}>{medal} {label}第 {rank} / {total}</span>;
 }
 
-function fixed2(n) { return Number(n || 0).toFixed(2); }
-
 function numeric(value) {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -29,10 +37,6 @@ function tonsOf(item) {
   if (tons > 0) return tons;
   const mass = numeric(item?.mass ?? item?.totalWeightKg);
   return mass > 0 ? mass / 1000 : 0;
-}
-
-function formatTons(value) {
-  return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
 
 export default function StationPage() {
@@ -263,6 +267,11 @@ export default function StationPage() {
   };
 
   const s = detail?.summary || {};
+  const stationAmount = numeric(s.amount ?? s.totalSales);
+  const stationVolume = numeric(s.volume ?? s.totalLiters);
+  const stationSalesKpi = formatSomKpiParts(stationAmount);
+  const stationLitersKpi = formatLitersKpiParts(stationVolume);
+  const stationSalesCny = amountCnyOf({ ...s, amount: stationAmount, avgCnyKgs: s.avgCnyKgs ?? detail?.avgCnyKgs });
   return (
     <div className="retail-page-wrap">
       {/* Header */}
@@ -309,8 +318,8 @@ export default function StationPage() {
           <div className="retail-panel" style={{ flexShrink: 0 }}>
             <div className="panel-header"><div className="dot" /><span>当月经营指标</span></div>
             <div className="station-kpi">
-              <div className="retail-kpi-card c1"><div className="kpi-label">💰 销售金额</div><div className="kpi-value">{fixed2(s.amount / 1e4)}</div><div className="kpi-unit">万索姆</div></div>
-              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{fixed2(s.volume / 1e4)}</div><div className="kpi-unit">万升</div><div className="kpi-change">吨位 {formatTons(tonsOf(s))} 吨</div></div>
+              <div className="retail-kpi-card c1"><div className="kpi-label">💰 销售金额</div><div className="kpi-value">{stationSalesKpi.value}</div><div className="kpi-unit">{stationSalesKpi.unit}</div><div className="kpi-change">人民币 {formatCnyKpi(stationSalesCny)}</div></div>
+              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{stationLitersKpi.value}</div><div className="kpi-unit">{stationLitersKpi.unit}</div><div className="kpi-change">吨位 {formatTonsKpi(tonsOf(s))}</div></div>
               <div className="retail-kpi-card c3"><div className="kpi-label">💵 现金占比</div><div className="kpi-value">{s.amount > 0 ? (s.cashSales / s.amount * 100).toFixed(2) : '0'}</div><div className="kpi-unit">%</div></div>
               <div className="retail-kpi-card c4"><div className="kpi-label">🎯 积分消费</div><div className="kpi-value">{numberFormat(s.bonusCost || 0)}</div><div className="kpi-unit">索姆</div></div>
             </div>

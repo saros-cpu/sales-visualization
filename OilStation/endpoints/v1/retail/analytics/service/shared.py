@@ -420,7 +420,16 @@ def retail_daily_payload_mass_needs_refresh(payload):
             volume = 0
         if volume <= 0:
             continue
-        if "mass" not in item or retail_mass_from_item(item) is None:
+        has_mass_field = "mass" in item or "tons" in item
+        try:
+            mass = float(item.get("mass") or 0)
+        except (TypeError, ValueError):
+            mass = 0
+        try:
+            tons = float(item.get("tons") or 0)
+        except (TypeError, ValueError):
+            tons = 0
+        if not has_mass_field or (mass <= 0 and tons <= 0):
             return True
     return False
 

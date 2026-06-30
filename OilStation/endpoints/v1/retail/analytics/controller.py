@@ -218,6 +218,8 @@ from endpoints.v1.retail.analytics.service.core import (
     _station_map_details_payload,
     _dashboard_yearly_from_monthly_snapshots,
     _resources_yearly_from_monthly_snapshots,
+    _attach_period_cny_average,
+    _attach_summary_cny_average,
     _attach_monthly_finance_metrics,
     _attach_region_snapshot_comparisons,
 )
@@ -228,6 +230,20 @@ analytics_api = Blueprint("analytics_api_v2", __name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 OILSTATION_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _monthly_rows_need_cny_average(payload):
+    for group_name in ("stations", "regions", "byResource"):
+        rows = payload.get(group_name)
+        if isinstance(rows, dict):
+            rows = rows.values()
+        if not isinstance(rows, (list, tuple)):
+            continue
+        if any(isinstance(item, dict) and "amountCnyAvg" not in item for item in rows):
+            return True
+    return False
+
+
 RESOURCE_NAMES = {
     102: "\u0410\u0418 80",
     103: "\u0410\u0418 92",
@@ -633,16 +649,6 @@ def api_retail_self_use_range():
 def api_dashboard_yearly():
     """Dashboard yearly cumulative data for map, rankings, regions, oil mix, and payment charts."""
     year = request.args.get("year", type=int) or datetime.now().year
-    cache_key = f'dashboard_yearly:{year}'
-    cached = get_cached(cache_key)
-    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
-        return jsonify(cached)
-    if cache_allowed():
-        snapshot_result = _dashboard_yearly_from_monthly_snapshots(year)
-        if snapshot_result and not retail_payload_mass_needs_refresh(snapshot_result):
-            set_cached(cache_key, snapshot_result)
-            return jsonify(snapshot_result)
-
     year_start = f'{year}-01-01'
     current_year = datetime.now().year
     if year == current_year:
@@ -651,6 +657,26 @@ def api_dashboard_yearly():
         year_end = f'{year + 1}-01-01'
     else:
         year_end = year_start
+    cache_key = f'dashboard_yearly:{year}'
+    cached = get_cached(cache_key)
+    if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
+        cache_changed = False
+        if cached.get("queryStart") != year_start:
+            cached["queryStart"] = year_start
+            cache_changed = True
+        if cached.get("queryEndExclusive") != year_end:
+            cached["queryEndExclusive"] = year_end
+            cache_changed = True
+        if _attach_period_cny_average(cached, ("stations", "regions", "byResource")):
+            cache_changed = True
+        if cache_changed:
+            set_cached(cache_key, cached)
+        return jsonify(cached)
+    if cache_allowed():
+        snapshot_result = _dashboard_yearly_from_monthly_snapshots(year)
+        if snapshot_result and not retail_payload_mass_needs_refresh(snapshot_result):
+            set_cached(cache_key, snapshot_result)
+            return jsonify(snapshot_result)
 
     conn = get_connection()
     try:
@@ -800,6 +826,7 @@ def api_dashboard_yearly():
             'regions': regions,
             'byResource': by_resource,
         }
+        _attach_period_cny_average(result, ("stations", "regions", "byResource"))
         set_cached(cache_key, result)
         return jsonify(result)
     finally:
@@ -815,6 +842,28 @@ def api_resources_yearly():
     cache_key = f'resources_yearly:{year}:{month or "year"}'
     cached = get_cached(cache_key)
     if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
+        cache_changed = False
+        if month:
+            cached_start, cached_end = get_query_date_range(f"{year}-{month:02d}")
+        else:
+            now = datetime.now()
+            cached_start = f'{year}-01-01'
+            if year == now.year:
+                cached_end = now.strftime('%Y-%m-%d')
+            elif year < now.year:
+                cached_end = f'{year + 1}-01-01'
+            else:
+                cached_end = cached_start
+        if cached.get("queryStart") != cached_start:
+            cached["queryStart"] = cached_start
+            cache_changed = True
+        if cached.get("queryEndExclusive") != cached_end:
+            cached["queryEndExclusive"] = cached_end
+            cache_changed = True
+        if _attach_period_cny_average(cached, ("resources",)):
+            cache_changed = True
+        if cache_changed:
+            set_cached(cache_key, cached)
         return jsonify(cached)
     if cache_allowed():
         snapshot_result = _resources_yearly_from_monthly_snapshots(year, month)
@@ -962,6 +1011,7 @@ def api_resources_yearly():
                 'resourceCount': len([item for item in resources if item['amount'] > 0 or item['volume'] > 0]),
             },
         }
+        _attach_period_cny_average(result, ("resources",))
         set_cached(cache_key, result)
         return jsonify(result)
     finally:
@@ -1277,7 +1327,13 @@ def api_monthly(year_month):
             cached = None
     if cached and cache_allowed():
         cache_changed = False
-        if "totalTons" not in (cached.get("summary") or {}) or "totalSalesCny" not in (cached.get("summary") or {}):
+        summary = cached.get("summary") or {}
+        if (
+            "totalTons" not in summary
+            or "totalSalesCny" not in summary
+            or "totalSalesCnyAvg" not in summary
+            or _monthly_rows_need_cny_average(cached)
+        ):
             cached = _attach_monthly_finance_metrics(cached)
             cache_changed = True
         if _attach_monthly_inventory(year_month, cached):
@@ -1525,6 +1581,11 @@ def api_station_monthly(year_month, shop_key):
     cache_key = f'station:{year_month}:{shop_key}'
     cached = get_cached(cache_key)
     if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
+        start, end = get_query_date_range(year_month)
+        cached.setdefault("queryStart", start)
+        cached.setdefault("queryEndExclusive", end)
+        if _attach_summary_cny_average(cached.setdefault("summary", {}), start, end, "amount"):
+            set_cached(cache_key, cached)
         return jsonify(cached)
 
     conn = get_connection()
@@ -1671,6 +1732,8 @@ def api_station_monthly(year_month, shop_key):
 
         result = {
             'month': year_month,
+            'queryStart': ym_start,
+            'queryEndExclusive': ym_end,
             'shopKey': shop_key,
             'name': info['name'],
             'short': info['short'],
@@ -1682,6 +1745,7 @@ def api_station_monthly(year_month, shop_key):
             'byResource': by_resource,
             'daily': daily,
         }
+        _attach_summary_cny_average(summary, ym_start, ym_end, "amount")
         set_cached(cache_key, result)
         return jsonify(result)
     finally:
@@ -1862,6 +1926,11 @@ def api_regions(year_month):
     cached = get_cached(cache_key)
     if cached and cache_allowed() and not retail_payload_mass_needs_refresh(cached):
         cache_changed = retail_repair_payload_mass_from_report(year_month, cached)
+        start, end = get_query_date_range(year_month)
+        cached.setdefault("queryStart", start)
+        cached.setdefault("queryEndExclusive", end)
+        if _attach_period_cny_average(cached, ("regions", "byResource")):
+            cache_changed = True
         if _attach_region_snapshot_comparisons(year_month, cached):
             cache_changed = True
         if cache_changed:
@@ -2000,10 +2069,13 @@ def api_regions(year_month):
 
         result = {
             'month': year_month,
+            'queryStart': ym_start,
+            'queryEndExclusive': ym_end,
             'regions': regions,
             'byResource': by_resource,
             'byResourceByRegion': by_resource_by_region,
         }
+        _attach_period_cny_average(result, ("regions", "byResource"))
         set_cached(cache_key, result)
         return jsonify(result)
     finally:

@@ -8,6 +8,11 @@ import {
   REGION_COLORS, REGION_ORDER,
   fmtNum, fmtWanLiters, fmtLiters, fmtPct, pctColor,
   buildResourceRank,
+  amountCnyOf,
+  formatCnyKpi,
+  formatLitersKpiParts,
+  formatSomKpiParts,
+  formatTonsKpi,
   sortRankingRows,
 } from '../../utils/retail-helpers';
 
@@ -23,8 +28,13 @@ function tonsOf(item) {
   return mass > 0 ? mass / 1000 : 0;
 }
 
-function formatTons(value) {
-  return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+function hasMonthlySales(item) {
+  return (
+    numeric(item?.amount ?? item?.totalSales) > 0
+    || numeric(item?.volume ?? item?.totalLiters) > 0
+    || numeric(item?.txnCount) > 0
+    || tonsOf(item) > 0
+  );
 }
 
 const CORE_DEPOTS = [
@@ -113,6 +123,7 @@ export default function RetailDashboard() {
   const [regionMap, setRegionMap] = useState({});
   const [footerMessages, setFooterMessages] = useState([]);
   const [cutoffText, setCutoffText] = useState('数据截止：--');
+  const [latestStationActivity, setLatestStationActivity] = useState({ month: '', active: null, total: null });
   const [retailMapFullscreen, setRetailMapFullscreen] = useState(false);
 
   // 3D map refs
@@ -237,6 +248,7 @@ export default function RetailDashboard() {
         setRegionMap(computeRegionMap(stationList));
 
         // Auto-detect station status from recent sales
+        let latestActivity = { month: '', active: null, total: stationList.filter(s => s.type === 'station').length };
         try {
           const monthsList = await getMonths().catch(() => []);
           const yearStr = String(y);
@@ -244,13 +256,32 @@ export default function RetailDashboard() {
           const targetMonth = yearMonths.length > 0 ? yearMonths[yearMonths.length - 1] : null;
           if (targetMonth) {
             await updateStationStatusBySales(stationList, targetMonth);
+            try {
+              const monthStations = await getStations(targetMonth);
+              const stationRows = Array.isArray(monthStations?.stations) ? monthStations.stations : [];
+              latestActivity = {
+                month: targetMonth,
+                active: stationRows.filter(hasMonthlySales).length,
+                total: stationRows.length || stationList.filter(s => s.type === 'station').length,
+              };
+              setLatestStationActivity(latestActivity);
+            } catch (e) {
+              latestActivity = {
+                month: targetMonth,
+                active: null,
+                total: stationList.filter(s => s.type === 'station').length,
+              };
+              setLatestStationActivity(latestActivity);
+            }
+          } else {
+            setLatestStationActivity(latestActivity);
           }
         } catch (e) { console.warn('[站点状态] 自动判定失败:', e); }
         const updatedRegionMap = computeRegionMap(stationList);
         setRegionMap(updatedRegionMap);
 
         // Build footer messages
-        const msgs = buildFooterMessages(stationList, updatedRegionMap, dd);
+        const msgs = buildFooterMessages(stationList, updatedRegionMap, dd, latestActivity);
         setFooterMessages(msgs);
       }
     } catch (err) {
@@ -659,6 +690,11 @@ export default function RetailDashboard() {
   const totalTons = tonsOf(summary)
     || (dashData?.byResource || []).reduce((sum, row) => sum + tonsOf(row), 0)
     || stations.reduce((sum, row) => sum + tonsOf(row), 0);
+  const totalSalesKpi = formatSomKpiParts(summary.totalSales || summary.totalAmount || 0);
+  const totalLitersKpi = formatLitersKpiParts(summary.totalLiters || summary.totalVolume || 0);
+  const totalSalesCny = amountCnyOf(summary);
+  const latestActiveCount = latestStationActivity.active ?? stations.filter(s => s.type === 'station' && hasMonthlySales(s)).length;
+  const latestActivityMonth = latestStationActivity.month || '最新月份';
 
   // 计算所有站点日快照库存合计
   const totalStationInventory = stations.reduce((sum, s) => sum + (s.currentInventory || 0), 0);
@@ -681,8 +717,9 @@ export default function RetailDashboard() {
               <div className="retail-kpi-card c1">
                 <div className="kpi-icon">💰</div>
                 <div className="kpi-label">累计销售总金额</div>
-                <div className="kpi-value">{((summary.totalSales || 0) / 1e8).toFixed(2)}</div>
-                <div className="kpi-unit">亿索姆（COM）</div>
+                <div className="kpi-value">{totalSalesKpi.value}</div>
+                <div className="kpi-unit">{totalSalesKpi.unit}</div>
+                <div className="kpi-change">人民币 {formatCnyKpi(totalSalesCny)}</div>
                 <div className="kpi-change" style={{ color: pctColor(cmp.yoySales) }}>
                   {cmp.yoySales != null ? `同比 ${fmtPct(cmp.yoySales)}` : ''}
                 </div>
@@ -690,9 +727,9 @@ export default function RetailDashboard() {
               <div className="retail-kpi-card c2">
                 <div className="kpi-icon">⛽</div>
                 <div className="kpi-label">累计销售总量</div>
-                <div className="kpi-value">{((summary.totalLiters || 0) / 1e4).toFixed(2)}</div>
-                <div className="kpi-unit">万升（Л）</div>
-                <div className="kpi-change">吨位 {formatTons(totalTons)} 吨</div>
+                <div className="kpi-value">{totalLitersKpi.value}</div>
+                <div className="kpi-unit">{totalLitersKpi.unit}</div>
+                <div className="kpi-change">吨位 {formatTonsKpi(totalTons)}</div>
                 <div className="kpi-change" style={{ color: pctColor(cmp.yoyVolume) }}>
                   {cmp.yoyVolume != null ? `同比 ${fmtPct(cmp.yoyVolume)}` : ''}
                 </div>
@@ -700,8 +737,8 @@ export default function RetailDashboard() {
               <div className="retail-kpi-card c3">
                 <div className="kpi-icon">🏪</div>
                 <div className="kpi-label">活跃加油站</div>
-                <div className="kpi-value">{summary.activeShops || 0}</div>
-                <div className="kpi-unit">站（共 28 站，不含油库）</div>
+                <div className="kpi-value">{latestActiveCount}</div>
+                <div className="kpi-unit">站（{latestActivityMonth} 实际有销售）</div>
               </div>
               <div className="retail-kpi-card c4">
                 <div className="kpi-icon">📦</div>
@@ -786,10 +823,10 @@ export default function RetailDashboard() {
 }
 
 // Build footer messages
-function buildFooterMessages(stations, regionMap, monthlyData) {
+function buildFooterMessages(stations, regionMap, monthlyData, latestActivity = {}) {
   const totalVol = stations.filter(s => s.type === 'station').reduce((a, b) => a + b.volume, 0);
   const totalAmt = stations.filter(s => s.type === 'station').reduce((a, b) => a + b.amount, 0);
-  const activeCount = stations.filter(s => s.type === 'station' && s.status !== 'closed').length;
+  const activeCount = latestActivity.active ?? stations.filter(s => s.type === 'station' && hasMonthlySales(s)).length;
   const totalCash = stations.reduce((a, b) => a + (b.cash || 0), 0);
   const totalCard = stations.reduce((a, b) => a + (b.card || 0), 0);
   const totalPts = stations.reduce((a, b) => a + (b.bonus || 0), 0);

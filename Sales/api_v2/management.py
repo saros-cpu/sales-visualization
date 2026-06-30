@@ -725,9 +725,35 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
         """),
         "cache_missing": sum(1 for item in cache_items if not item.get("exists") or not item.get("valid")),
     }
-    secondary_values = {
-        "retail_volume_liters": _summary_optional_value(retail_year_summary, "totalTons"),
-        "retail_month_volume_liters": _summary_optional_value(retail_month_summary, "totalTons"),
+    secondary_metrics = {
+        "retail_sales_amount": {
+            "value": _summary_optional_value(retail_year_summary, "totalSalesCnyAvg", "totalAmountCnyAvg", "totalSalesCny"),
+            "unit": "CNY",
+            "precision": 2,
+            "labelZh": "人民币",
+            "labelRu": "CNY",
+        },
+        "retail_volume_liters": {
+            "value": _summary_optional_value(retail_year_summary, "totalTons"),
+            "unit": "t",
+            "precision": 3,
+            "labelZh": "实际吨位",
+            "labelRu": "Фактическая масса",
+        },
+        "retail_month_sales_amount": {
+            "value": _summary_optional_value(retail_month_summary, "totalSalesCnyAvg", "totalAmountCnyAvg", "totalSalesCny"),
+            "unit": "CNY",
+            "precision": 2,
+            "labelZh": "人民币",
+            "labelRu": "CNY",
+        },
+        "retail_month_volume_liters": {
+            "value": _summary_optional_value(retail_month_summary, "totalTons"),
+            "unit": "t",
+            "precision": 3,
+            "labelZh": "实际吨位",
+            "labelRu": "Фактическая масса",
+        },
     }
 
     max_month = 12 if year < today.year else today.month
@@ -839,13 +865,14 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
             "source": metric["group"],
             "periodScope": metric.get("periodScope", "latest"),
         }
-        if metric_key in secondary_values and secondary_values[metric_key] is not None:
+        secondary = secondary_metrics.get(metric_key)
+        if secondary and secondary["value"] is not None:
             payload.update({
-                "secondaryValue": secondary_values[metric_key],
-                "secondaryUnit": "t",
-                "secondaryPrecision": 3,
-                "secondaryLabelZh": "实际吨位",
-                "secondaryLabelRu": "Фактическая масса",
+                "secondaryValue": secondary["value"],
+                "secondaryUnit": secondary["unit"],
+                "secondaryPrecision": secondary["precision"],
+                "secondaryLabelZh": secondary["labelZh"],
+                "secondaryLabelRu": secondary["labelRu"],
             })
         result[metric_key] = payload
     return result, component_data

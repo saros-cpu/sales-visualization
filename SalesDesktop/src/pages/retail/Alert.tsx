@@ -7,8 +7,10 @@ import { getStationStatuses, getKpi, getDaily, getDashboardYearly, getStationMap
 import { getRetailAlertInsights } from '@/api/retailAlerts';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
+import { defaultRetailMonth } from '@/utils/retailPeriod';
 
 const { Text } = Typography;
+const HIDDEN_INVENTORY_ALERT_SHOPS = new Set([11, 12, 21]);
 
 function formatLiters(value: unknown, digits = 0) {
   const numeric = Number(value || 0);
@@ -34,14 +36,14 @@ function stationStatusTag(item: any) {
 export default function Alert() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { region } = useNameI18n();
-  const now = new Date();
-  const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  const { region, station, product } = useNameI18n();
+  const [ym, setYm] = useState(defaultRetailMonth);
+  const year = Number(ym.slice(0, 4)) || new Date().getFullYear();
 
   const statusQ = useApiQuery(['retail', 'station-statuses'], getStationStatuses);
   const kpiQ = useApiQuery(['retail', 'kpi'], getKpi);
   const dailyQ = useApiQuery(['retail', 'daily', ym], () => getDaily(ym));
-  const dashQ = useApiQuery(['retail', 'dashboard-yearly', now.getFullYear()], () => getDashboardYearly(now.getFullYear()));
+  const dashQ = useApiQuery(['retail', 'dashboard-yearly', year], () => getDashboardYearly(year));
   const mapDetailsQ = useApiQuery(['retail', 'station-map-details'], getStationMapDetails);
   const lang = i18n.language === 'ru' ? 'ru' : 'zh';
   const insightQ = useApiQuery(['retail', 'alert-insights', ym, lang], () => getRetailAlertInsights(ym, false, lang));
@@ -73,26 +75,32 @@ export default function Alert() {
     return result;
   }, [daily]);
   const anomalies = insightQ.data?.trendAnomalies?.length ? insightQ.data.trendAnomalies : fallbackAnomalies;
-  const inventoryLevels = useMemo(() => {
-    const rows: any[] = [];
-    for (const station of mapDetailsQ.data?.items ?? []) {
-      for (const resource of station.inventoryByResource ?? []) {
-        if (resource.fillStatus === 'critical' || resource.fillStatus === 'warning') {
-          rows.push({
-            shopKey: station.shopKey,
-            stationName: station.name || station.short || `站点${station.shopKey}`,
-            resourceKey: resource.resourceKey,
-            resourceName: resource.name,
-            inventory: resource.inventory,
+	  const inventoryLevels = useMemo(() => {
+	    const rows: any[] = [];
+	    for (const station of mapDetailsQ.data?.items ?? []) {
+	      const shopKey = Number(station.shopKey);
+	      if (HIDDEN_INVENTORY_ALERT_SHOPS.has(shopKey)) continue;
+	      for (const resource of station.inventoryByResource ?? []) {
+	        if (resource.fillStatus === 'critical' || resource.fillStatus === 'warning') {
+	          rows.push({
+	            shopKey,
+	            stationName: station.name || '',
+	            stationShort: station.short || '',
+	            resourceKey: resource.resourceKey,
+	            resourceName: resource.name,
+	            inventory: resource.inventory,
             capacity: resource.capacity,
             fillPercent: resource.fillPercent,
             fillStatus: resource.fillStatus,
           });
         }
       }
-    }
-    return rows.sort((a, b) => Number(a.fillPercent ?? 999) - Number(b.fillPercent ?? 999));
-  }, [mapDetailsQ.data]);
+	    }
+	    return rows.sort((a, b) => Number(a.fillPercent ?? 999) - Number(b.fillPercent ?? 999));
+	  }, [mapDetailsQ.data]);
+	  const inventoryRuleText = lang === 'ru'
+	    ? 'зеленый >= 50%, желтый 30%-50%, красный < 30%'
+	    : '绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%';
 
   const regionKeys = dashQ.data ? Object.keys(dashQ.data.regions) : [];
   const topRegion = regionKeys.length > 0
@@ -113,10 +121,10 @@ export default function Alert() {
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
         <Card size="small" title={t('retail.closedStations')}>
           {statuses.closed.length > 0 ? (
-            <Table dataSource={statuses.closed} rowKey={(r: any) => r.shopKey ?? r.name} size="small"
-              columns={[
-                { title: t('retail.station'), dataIndex: 'name', key: 'name' },
-                { title: t('retail.region'), dataIndex: 'region', key: 'region' },
+	            <Table dataSource={statuses.closed} rowKey={(r: any) => r.shopKey ?? r.name} size="small"
+	              columns={[
+	                { title: t('retail.station'), dataIndex: 'name', key: 'name', render: (_: any, row: any) => `${row.shopKey ? `${row.shopKey}. ` : ''}${station({ name: row.name, short: row.short }) || row.name || row.short || ''}` },
+	                { title: t('retail.region'), dataIndex: 'region', key: 'region', render: (value: string) => region(value) },
                 { title: t('retail.status'), dataIndex: 'status', key: 'status', render: (_: any, row: any) => {
                   const status = stationStatusTag(row);
                   return <Tag color={status.color}>{t(`retailStatus.${status.key}`, { defaultValue: status.text })}</Tag>;
@@ -128,9 +136,9 @@ export default function Alert() {
             />
           ) : <Text type="secondary">{t('common.noData')}</Text>}
         </Card>
-        <Card size="small" title={t('retail.inventoryAlert')}>
-          <Text>{t('retail.inventory')}: {Math.round(kpi?.inventory ?? 0).toLocaleString()}L</Text>
-          <br /><Text type="secondary">{t('retail.alertRules')}: 绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%</Text>
+	        <Card size="small" title={t('retail.inventoryAlert')}>
+	          <Text>{t('retail.inventory')}: {Math.round(kpi?.inventory ?? 0).toLocaleString()}L</Text>
+	          <br /><Text type="secondary">{t('retail.alertRules')}: {inventoryRuleText}</Text>
           {inventoryLevels.length > 0 ? (
             <Table
               style={{ marginTop: 12 }}
@@ -138,13 +146,13 @@ export default function Alert() {
               rowKey={(r: any) => `${r.shopKey}-${r.resourceKey}`}
               size="small"
               columns={[
-                { title: t('retail.station'), dataIndex: 'stationName', key: 'stationName' },
-                { title: '油品', dataIndex: 'resourceName', key: 'resourceName' },
-                { title: t('retail.inventory'), dataIndex: 'inventory', key: 'inventory', render: (v: any) => `${formatLiters(v, 2)} L` },
-                { title: '容量', dataIndex: 'capacity', key: 'capacity', render: (v: any) => (v ? `${formatLiters(v)} L` : '-') },
-                { title: '水位', dataIndex: 'fillPercent', key: 'fillPercent', render: (v: any, row: any) => (
-                  <Tag color={row.fillStatus === 'critical' ? 'red' : 'gold'}>{Number(v || 0).toFixed(1)}%</Tag>
-                ) },
+	                { title: t('retail.station'), dataIndex: 'stationName', key: 'stationName', render: (_: any, row: any) => `${row.shopKey}. ${station({ name: row.stationName, short: row.stationShort }) || row.stationName || row.stationShort}` },
+	                { title: t('retail.product'), dataIndex: 'resourceName', key: 'resourceName', render: (v: string) => product(v) },
+	                { title: t('retail.inventory'), dataIndex: 'inventory', key: 'inventory', render: (v: any) => `${formatLiters(v, 2)} L` },
+	                { title: t('retail.capacity', { defaultValue: lang === 'ru' ? 'Емкость' : '容量' }), dataIndex: 'capacity', key: 'capacity', render: (v: any) => (v ? `${formatLiters(v)} L` : '-') },
+	                { title: t('retail.waterLevel', { defaultValue: lang === 'ru' ? 'Уровень' : '水位' }), dataIndex: 'fillPercent', key: 'fillPercent', render: (v: any, row: any) => (
+	                  <Tag color={row.fillStatus === 'critical' ? 'red' : 'gold'}>{Number(v || 0).toFixed(1)}%</Tag>
+	                ) },
               ]}
               pagination={false}
               scroll={{ x: 720, y: 260 }}
@@ -177,7 +185,7 @@ export default function Alert() {
         <Card size="small" title={t('retail.alertRules')}>
           <ul>
             <li>{t('retail.ruleTrendAnomaly')}</li>
-            <li>库存水位：黄色 30%-50%，红色 ＜ 30%</li>
+	            <li>{lang === 'ru' ? `Уровень запасов: ${inventoryRuleText}` : `库存水位：${inventoryRuleText}`}</li>
             <li>{t('retail.ruleRegionConcentration')}</li>
             <li>{t('retail.ruleStationDowntime')}</li>
           </ul>

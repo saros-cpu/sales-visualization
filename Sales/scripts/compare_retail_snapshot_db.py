@@ -11,7 +11,7 @@ sys.path.insert(0, str(OILSTATION_ROOT))
 from business_time import business_period_condition_with_pruning, business_period_params, shift_join  # noqa: E402
 from constants import SHOP_KEY_MAP  # noqa: E402
 from db import get_connection  # noqa: E402
-from routes.analytics import (  # noqa: E402
+from endpoints.v1.retail.analytics.service.shared import (  # noqa: E402
     report_amount_expr,
     report_bonus_amount_expr,
     report_card_amount_expr,

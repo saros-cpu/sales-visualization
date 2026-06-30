@@ -79,6 +79,61 @@ export function metricNumber(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function compactNumber(value, divisor, maximumFractionDigits) {
+  return (metricNumber(value) / divisor).toLocaleString('zh-CN', {
+    maximumFractionDigits,
+  });
+}
+
+export function formatSomKpiParts(value) {
+  const numeric = metricNumber(value);
+  const abs = Math.abs(numeric);
+  if (abs >= 1e8) return { value: compactNumber(numeric, 1e8, 2), unit: '亿索姆' };
+  if (abs >= 1e4) return { value: compactNumber(numeric, 1e4, 1), unit: '万索姆' };
+  return {
+    value: numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 }),
+    unit: '索姆',
+  };
+}
+
+export function formatLitersKpiParts(value) {
+  const numeric = metricNumber(value);
+  if (Math.abs(numeric) >= 1e4) return { value: compactNumber(numeric, 1e4, 1), unit: '万L' };
+  return {
+    value: numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 }),
+    unit: 'L',
+  };
+}
+
+export function formatCnyKpi(value) {
+  if (value == null || value === '') return '--';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '--';
+  const abs = Math.abs(numeric);
+  if (abs >= 1e8) return `${compactNumber(numeric, 1e8, 2)} 亿元`;
+  if (abs >= 1e4) return `${compactNumber(numeric, 1e4, 1)} 万元`;
+  return `${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} 元`;
+}
+
+export function formatTonsKpi(value) {
+  return `${metricNumber(value).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 吨`;
+}
+
+export function amountCnyOf(item) {
+  if (!item || typeof item !== 'object') return null;
+  const keys = ['totalSalesCnyAvg', 'totalAmountCnyAvg', 'amountCnyAvg', 'totalSalesCny', 'amountCny'];
+  for (const key of keys) {
+    if (item[key] != null && item[key] !== '') {
+      const numeric = Number(item[key]);
+      if (Number.isFinite(numeric)) return numeric;
+    }
+  }
+  const avg = Number(item.avgCnyKgs || 0);
+  const amount = Number(item.totalSales ?? item.totalAmount ?? item.amount ?? 0);
+  if (avg > 0 && Number.isFinite(amount)) return amount / avg;
+  return null;
+}
+
 export function sortRankingRows(rows, valueOf, limit) {
   const sorted = [...(rows || [])].sort((left, right) => metricNumber(valueOf(right)) - metricNumber(valueOf(left)));
   return typeof limit === 'number' ? sorted.slice(0, limit) : sorted;

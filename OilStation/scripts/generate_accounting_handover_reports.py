@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 from collections import defaultdict
 from copy import copy
 from dataclasses import dataclass
@@ -22,11 +23,30 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+_root_str = str(ROOT)
+_original_sys_path = list(sys.path)
+if _root_str in sys.path:
+    sys.path.remove(_root_str)
+sys.path.insert(0, _root_str)
 
-from config import DB_CONFIG  # noqa: E402
-from export_excel import _infer_resource_code_daily  # noqa: E402
+
+def _load_local_module(module_name: str, path: Path):
+    cached = sys.modules.get(module_name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+DB_CONFIG = _load_local_module("_oilstation_accounting_config", ROOT / "config.py").DB_CONFIG
+try:
+    from export_excel import _infer_resource_code_daily  # noqa: E402
+finally:
+    sys.path[:] = _original_sys_path
 
 
 REPORT_ROOT = Path(r"D:\每日销量日报")
@@ -48,11 +68,20 @@ RESOURCE_ORDER = {
 }
 SALES_FIELDS = ("cash_volume", "cash_amount", "talon_sber", "talon_zenit", "card_cnk", "vedomosti", "card_ts")
 STATION_RESOURCE_SHOP_MAP = {
+    19: {
+        7: 108,
+    },
     21: {
         1: 103,
         2: 102,
         3: 102,
         5: 106,
+    },
+    22: {
+        7: 108,
+    },
+    24: {
+        7: 108,
     },
 }
 

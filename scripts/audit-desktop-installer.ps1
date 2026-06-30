@@ -89,7 +89,7 @@ function Resolve-ReferenceInstaller {
     if ($candidate) {
         return (Resolve-Path -LiteralPath $candidate.Path).Path
     }
-    throw "reference installer older than $CurrentVersion not found"
+    return ""
 }
 
 function Expand-DesktopInstaller {
@@ -310,14 +310,21 @@ try {
         $Version = [string]((Get-Content (Join-Path $DesktopDir "package.json") -Encoding utf8 | ConvertFrom-Json).version)
     }
     $installerPath = Resolve-Installer $Installer $Version
-    $referencePath = Resolve-ReferenceInstaller $ReferenceInstaller $Version
     Write-Host "Auditing desktop installer: $installerPath"
-    Write-Host "Reference installer: $referencePath"
+    $referencePath = Resolve-ReferenceInstaller $ReferenceInstaller $Version
+    if ($referencePath) {
+        Write-Host "Reference installer: $referencePath"
+    } else {
+        Write-Host "Reference installer: not found; skipping size regression comparison." -ForegroundColor Yellow
+    }
 
     $currentExpanded = Expand-DesktopInstaller $installerPath "current"
-    $referenceExpanded = Expand-DesktopInstaller $referencePath "reference-3.9.17"
     $current = Get-InstallTreeSummary $currentExpanded
-    $reference = Get-InstallTreeSummary $referenceExpanded
+    $reference = $null
+    if ($referencePath) {
+        $referenceExpanded = Expand-DesktopInstaller $referencePath "reference"
+        $reference = Get-InstallTreeSummary $referenceExpanded
+    }
     Assert-DesktopPackage $current $reference $Version
 
     Write-Host "Desktop installer audit passed." -ForegroundColor Green

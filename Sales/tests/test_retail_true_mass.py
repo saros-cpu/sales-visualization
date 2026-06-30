@@ -16,7 +16,11 @@ from endpoints.v1.retail.analytics.service.core import (  # noqa: E402
     _total_tons_from_daily_resource,
     _total_tons_from_resource_summary,
 )
-from endpoints.v1.retail.analytics.service.shared import add_resource_tons, format_resource_rows  # noqa: E402
+from endpoints.v1.retail.analytics.service.shared import (  # noqa: E402
+    add_resource_tons,
+    format_resource_rows,
+    retail_daily_payload_mass_needs_refresh,
+)
 from retail_bridge import summarize_from_oilstation  # noqa: E402
 
 
@@ -50,6 +54,23 @@ class RetailTrueMassTests(unittest.TestCase):
             ])["totalTons"],
             1.82,
         )
+
+    def test_daily_snapshot_with_explicit_mass_does_not_force_refresh(self):
+        payload = {
+            "daily": [
+                {"date": "2026-07-29", "volume": 693.91, "mass": 275.694, "tons": 0.276, "amount": 50660.41}
+            ],
+            "stations": {
+                "1": [{"date": "2026-07-29", "volume": 1000, "mass": 740, "tons": 0.74, "amount": 10000}]
+            },
+        }
+
+        self.assertFalse(retail_daily_payload_mass_needs_refresh(payload))
+
+    def test_daily_snapshot_missing_mass_still_forces_refresh(self):
+        payload = {"daily": [{"date": "2026-07-01", "volume": 1000, "amount": 10000}], "stations": {}}
+
+        self.assertTrue(retail_daily_payload_mass_needs_refresh(payload))
 
     def test_sales_retail_bridge_prefers_oilstation_mass(self):
         source = {

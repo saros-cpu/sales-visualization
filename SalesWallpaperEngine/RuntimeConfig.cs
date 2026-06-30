@@ -90,6 +90,8 @@ internal sealed class RuntimeConfig
         MergeJson(fileConfig, AppPaths.AppConfigPath);
         MergeJson(fileConfig, AppPaths.UserConfigPath);
         var keySource = MergeJson(fileConfig, AppPaths.AppKeyPath);
+        keySource = ProtectedWallpaperKey.MergeJson(fileConfig, AppPaths.AppProtectedKeyPath) ?? keySource;
+        keySource = ProtectedWallpaperKey.MergeJson(fileConfig, AppPaths.UserProtectedKeyPath) ?? keySource;
         keySource = MergeJson(fileConfig, AppPaths.UserKeyPath) ?? keySource;
 
         var language = ResolveLanguage();
@@ -165,7 +167,7 @@ internal sealed class RuntimeConfig
             : "wallpaper-key.json not configured";
         var keySource = HasWallpaperToken
             ? (string.IsNullOrWhiteSpace(KeySource) ? "app-config.json" : Path.GetFileName(KeySource))
-            : "wallpaper-key.json";
+            : "wallpaper-key.json / wallpaper-key.protected.json";
 
         var keyStatus = new Dictionary<string, object?>
         {

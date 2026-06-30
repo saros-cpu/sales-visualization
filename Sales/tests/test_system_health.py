@@ -1,4 +1,5 @@
 import unittest
+import inspect
 import sys
 from pathlib import Path
 from datetime import date, datetime
@@ -9,6 +10,7 @@ SALES_ROOT = Path(__file__).resolve().parents[1]
 if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 import daily_maintenance
+import routes_data
 from api_v2 import system
 from api_v2.system import (
     _action_center,
@@ -106,8 +108,48 @@ class SystemHealthActionCenterTests(unittest.TestCase):
             system.ensure_audit_schema = original
 
         self.assertEqual(summary["failed24h"], 0)
-        self.assertIn("status_code NOT IN (401, 403)", cursor.queries[0])
-        self.assertIn("status_code NOT IN (401, 403)", cursor.queries[1])
+        self.assertIn("status_code >= 500", cursor.queries[0])
+        self.assertIn("status_code >= 500", cursor.queries[1])
+
+    def test_market_watch_source_errors_are_warnings_when_reference_item_available(self):
+        originals = {
+            "ensure_market_watch_schema": routes_data.ensure_market_watch_schema,
+            "fetch_market_benchmark_item": routes_data.fetch_market_benchmark_item,
+            "fetch_uzex_market_item": routes_data.fetch_uzex_market_item,
+            "spimex_official_reference_item": routes_data.spimex_official_reference_item,
+            "upsert_market_source_item": routes_data.upsert_market_source_item,
+            "refresh_market_watch_chinese": routes_data.refresh_market_watch_chinese,
+        }
+
+        def source_failed(*args, **kwargs):
+            raise RuntimeError("source empty")
+
+        routes_data.ensure_market_watch_schema = lambda cur: None
+        routes_data.fetch_market_benchmark_item = source_failed
+        routes_data.fetch_uzex_market_item = source_failed
+        routes_data.spimex_official_reference_item = lambda: {
+            "region": "Russia",
+            "type": "refined",
+            "title": "Reference",
+            "summary": "Reference source",
+            "priceText": "",
+            "sourceName": "SPIMEX",
+            "sourceUrl": "https://example.test",
+            "observedAt": date(2026, 8, 1),
+            "priority": 2,
+        }
+        routes_data.upsert_market_source_item = lambda cur, item: "inserted"
+        routes_data.refresh_market_watch_chinese = lambda cur: 0
+        try:
+            result = routes_data.run_market_watch_maintenance(object())
+        finally:
+            for name, value in originals.items():
+                setattr(routes_data, name, value)
+
+        self.assertEqual(result["fetched"], 1)
+        self.assertEqual(result["inserted"], 1)
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(len(result["warnings"]), 2)
 
     def test_accounting_summary_returns_structured_failed_items(self):
         items = _accounting_failed_items_from_summary({
@@ -431,6 +473,43 @@ class SystemHealthActionCenterTests(unittest.TestCase):
             report254_monthly.month_dir("2026-07", archive_root=root),
             root / "2026г" / "По Месяц" / "Июль",
         )
+
+    def test_retail_254_monthly_archive_uses_oilstation_config_after_sales_config(self):
+        import config as sales_config
+
+        self.assertEqual(
+            Path(inspect.getsourcefile(sales_config)).resolve(),
+            SALES_ROOT / "config.py",
+        )
+        if str(system.OILSTATION_ROOT) not in sys.path:
+            sys.path.insert(0, str(system.OILSTATION_ROOT))
+        from endpoints.v1.retail.export.service import report254_monthly
+
+        connect_source = Path(inspect.getsourcefile(report254_monthly.connect)).resolve()
+        self.assertEqual(
+            connect_source,
+            system.OILSTATION_ROOT / "scripts" / "generate_accounting_handover_reports.py",
+        )
+        self.assertIsNot(
+            report254_monthly.connect.__globals__["DB_CONFIG"],
+            sales_config.DB_CONFIG,
+        )
+        self.assertNotEqual(
+            report254_monthly.connect.__globals__["DB_CONFIG"]["database"],
+            sales_config.DB_CONFIG["database"],
+        )
+        self.assertEqual(
+            report254_monthly.connect.__globals__["DB_CONFIG"]["database"],
+            os.getenv("DB_NAME", "ocw"),
+        )
+
+    def test_accounting_handover_lpg_balance_mapping_for_legacy_resource_key_zero(self):
+        if str(system.OILSTATION_ROOT) not in sys.path:
+            sys.path.insert(0, str(system.OILSTATION_ROOT))
+        from scripts.generate_accounting_handover_reports import infer_resource
+
+        for shop_key in (19, 22, 24):
+            self.assertEqual(infer_resource(shop_key, 0, 7), 108)
 
     def test_retail_254_monthly_archive_task_fails_when_nothing_applied(self):
         records = []

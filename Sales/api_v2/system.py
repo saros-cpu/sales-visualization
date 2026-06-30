@@ -45,7 +45,7 @@ AUTOMATION_TASK_KEYS = {
     "retail_accounting_reports",
     "retail_254_monthly_archive",
 }
-API_HEALTH_FAILURE_CONDITION = "success = 0 AND status_code NOT IN (401, 403)"
+API_HEALTH_FAILURE_CONDITION = "success = 0 AND status_code >= 500"
 
 
 def _file_info(path: Path, required_keys: set[str] | None = None) -> dict[str, Any]:

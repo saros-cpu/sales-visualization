@@ -22,7 +22,7 @@ from cache_store import get_cached, set_cached
 from constants import SHOP_KEY_MAP
 from db import get_connection
 from export_excel import EXPORT_DIR, RESOURCE_DENSITY, _build_sheet_data, _round_half_up
-from routes.analytics import (
+from endpoints.v1.retail.analytics.service.shared import (
     format_resource_rows,
     report_amount_expr,
     report_bonus_amount_expr,
@@ -36,8 +36,9 @@ from routes.analytics import (
 from endpoints.v1.retail.common.query import get_query_date_range, query_month_summary
 
 analysis_report_api = Blueprint("analysis_report_api", __name__)
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-REPORT_EXTRAS_DIR = Path(__file__).resolve().parents[1] / "cache_snapshots" / "report_extras"
+PROJECT_ROOT = Path(__file__).resolve().parents[6]
+OILSTATION_ROOT = Path(__file__).resolve().parents[5]
+REPORT_EXTRAS_DIR = OILSTATION_ROOT / "cache_snapshots" / "report_extras"
 REPORT_MONTH_NAMES_RU = {
     1: "Январь",
     2: "Февраль",

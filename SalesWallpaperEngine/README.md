@@ -9,13 +9,14 @@ This project replaces the retired `SalesWallpaperNative` line. It has its own ve
 - Host process: tray app, loopback HTTP server, update check, WorkerW/Progman desktop attachment, player watchdog.
 - Player process: the same executable in `--player` mode, running WebView2 with the built `SalesDesktop` wallpaper page.
 - Data path: `wallpaper.html` -> `http://127.0.0.1:<port>/api/wallpaper/map` -> configured public API host.
-- Token path: the engine reads `wallpaper-key.json` or `app-config.json`; the web page never needs to request the remote API directly.
+- Token path: the engine reads `wallpaper-key.protected.json`, `wallpaper-key.json`, or `app-config.json`; the web page never needs to request the remote API directly.
 - Sales summary: when the wallpaper token is authorized, `/api/wallpaper/map` can include year/month retail volume, tons, Som sales amount, CNY amount converted with period-average CNY/KGS, and latest USD/KGS + CNY/KGS exchange rates for the bottom-right HUD.
 
 ## Config
 
 Install-time or runtime config can be placed in:
 
+- `%APPDATA%\sales-wallpaper-engine\wallpaper-key.protected.json`
 - `%APPDATA%\sales-wallpaper-engine\wallpaper-key.json`
 - `%APPDATA%\sales-wallpaper-engine\app-config.json`
 - next to `SalesWallpaperEngine.exe`
@@ -109,7 +110,7 @@ Output:
 
 The package is framework-dependent to keep it light. The target computer needs WebView2 Runtime and .NET 8 Desktop Runtime.
 
-The zip is the self-update package used by the running engine. The setup exe is for first install or manual overwrite install. If `-IncludeKeyPath` is supplied, the setup exe embeds that local key file and deploys it to `%APPDATA%\sales-wallpaper-engine\wallpaper-key.json` during install. The real key file and generated setup exe are local release artifacts and must not be committed.
+The zip is the self-update package used by the running engine. The setup exe is for first install or manual overwrite install. If `-IncludeKeyPath` is supplied, the setup exe now embeds a protected `wallpaper-key.protected.json` by default and deploys it to `%APPDATA%\sales-wallpaper-engine\wallpaper-key.protected.json` during install. Use `-PlainBundledKey` only for local troubleshooting. The real key file, protected key file, and generated setup exe are local release artifacts and must not be committed.
 
 ## Install
 
@@ -132,6 +133,7 @@ The script installs to `%LOCALAPPDATA%\SalesWallpaperEngine`, adds a Startup sho
 ### 0.2.0 (pending)
 
 - **HTTPS defaults**: new builds use `https://sales.example.com` for the API host and wallpaper update manifest. The manual compatibility endpoint remains available through local configuration.
+- **Protected setup key**: setup builds created with `-IncludeKeyPath` embed `wallpaper-key.protected.json` by default, so first installs can authorize the wallpaper proxy without shipping a plaintext token file.
 - **Legacy config migration**: 0.2.0 upgrades public HTTP values found in config files or update manifests to the HTTPS domain, while explicit environment overrides stay unchanged for operations fallback.
 - **Tray update check**: manual update checking is now a first-level tray action, while Settings keeps only automatic update options.
 - **HUD edit exit**: leaving HUD edit mode now applies the saved layout without a full page reload, reducing wallpaper flicker.

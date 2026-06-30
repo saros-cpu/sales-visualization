@@ -7,9 +7,19 @@ import { getResourcesYearly } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
-import { formatRetailTons, numericMetric as numeric, retailTonsOf } from '@/utils/retailMetrics';
+import {
+  formatRetailCnyKpi,
+  formatRetailLitersKpi,
+  formatRetailSomKpi,
+  formatRetailTons,
+  formatRetailTonsKpi,
+  numericMetric as numeric,
+  retailCnyAmountOf,
+  retailTonsOf,
+} from '@/utils/retailMetrics';
 import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
+import { defaultRetailMonth } from '@/utils/retailPeriod';
 
 // 与 Web 端 ResourcePage 保持一致的口径
 const RESOURCE_ORDER = [102, 103, 104, 106, 110, 108];
@@ -26,13 +36,14 @@ function normalizeResources(rows: any[]): any[] {
     const cur = buckets.get(key) || {
       resourceKey: key, key, name: RESOURCE_NAMES[key], volume: 0, amount: 0, color: RESOURCE_COLORS[key],
       yoyVolumeParts: [] as number[], yoySalesParts: [] as number[], momVolumeParts: [] as number[], momSalesParts: [] as number[],
-      latestMonthVolume: 0, latestMonthAmount: 0, mass: 0, tons: 0, latestMonthMass: 0, latestMonthTons: 0,
+      latestMonthVolume: 0, latestMonthAmount: 0, mass: 0, tons: 0, latestMonthMass: 0, latestMonthTons: 0, amountCnyAvg: 0,
     };
     const rowTons = retailTonsOf(row);
     const rowMass = numeric(row.mass ?? row.latestMonthMass) || rowTons * 1000;
     const latestTons = numeric(row.latestMonthTons) || (numeric(row.latestMonthMass) > 0 ? numeric(row.latestMonthMass) / 1000 : 0);
     cur.volume += Number(row.volume || 0);
     cur.amount += Number(row.amount || 0);
+    cur.amountCnyAvg += numeric(row.amountCnyAvg);
     cur.mass += rowMass;
     cur.tons += rowTons || rowMass / 1000;
     cur.latestMonthVolume += Number(row.latestMonthVolume || 0);
@@ -53,6 +64,7 @@ function normalizeResources(rows: any[]): any[] {
     });
     item.volume = Number(item.volume.toFixed(2));
     item.amount = Number(item.amount.toFixed(2));
+    item.amountCnyAvg = Number(item.amountCnyAvg.toFixed(2));
     item.mass = Number(item.mass.toFixed(3));
     item.tons = Number(item.tons.toFixed(3));
     item.latestMonthMass = Number(item.latestMonthMass.toFixed(3));
@@ -62,10 +74,9 @@ function normalizeResources(rows: any[]): any[] {
 }
 
 export default function Resource() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const now = new Date();
-  const [ym, setYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  const [ym, setYm] = useState(defaultRetailMonth);
   const year = parseInt(ym.split('-')[0]);
   const month = ym.includes('-') ? parseInt(ym.split('-')[1]) : undefined;
 
@@ -77,6 +88,13 @@ export default function Resource() {
   const totalAmount = useMemo(() => resources.reduce((s, r) => s + (r.amount || 0), 0), [resources]);
   const totalVolume = useMemo(() => resources.reduce((s, r) => s + (r.volume || 0), 0), [resources]);
   const totalTons = numeric((data as any)?.summary?.totalTons) || resources.reduce((s, r) => s + retailTonsOf(r), 0);
+  const language = i18n.language;
+  const totalAmountCny = retailCnyAmountOf({
+    ...((data as any)?.summary || {}),
+    totalAmount,
+    amount: totalAmount,
+    avgCnyKgs: (data as any)?.summary?.avgCnyKgs ?? (data as any)?.avgCnyKgs,
+  });
 
   const columns = [
     { title: t('retail.product'), dataIndex: 'name', key: 'name', render: (v: string, r: any) => (
@@ -95,11 +113,16 @@ export default function Resource() {
         <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
       </Space>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={8}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.totalSales')} value={Math.round(totalAmount / 10000)} suffix={CHART_AXIS.wanSom} /></Card></Col>
+        <Col xs={24} sm={8}>
+          <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}>
+            <Statistic title={t('retail.totalSales')} value={formatRetailSomKpi(totalAmount, language)} />
+            <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>人民币 {formatRetailCnyKpi(totalAmountCny, language)}</div>
+          </Card>
+        </Col>
         <Col xs={24} sm={8}>
           <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/monthly')}>
-            <Statistic title={t('retail.totalLiters')} value={Math.round(totalVolume).toLocaleString()} suffix="L" />
-            <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</div>
+            <Statistic title={t('retail.totalLiters')} value={formatRetailLitersKpi(totalVolume, language)} />
+            <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(totalTons, language)}</div>
           </Card>
         </Col>
         <Col xs={24} sm={8}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/overview')}><Statistic title={t('retail.resource')} value={resources.length} suffix={t('common.type')} /></Card></Col>

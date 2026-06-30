@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '4.0.0';
+export const VERSION = '4.0.1';
 export const BUILD_DATE = '2026-08-01';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '4.0.1',
+    date: '2026-08-01',
+    type: 'patch',
+    changes: [
+      '修复：站点详情接口补齐 CNY 平均汇率补充函数导入，避免单站月度详情 500。',
+      '修复：客户端零售站点、区域、油品和预警页默认月份按上一已结束营业日选择，避免月初默认打到新月空数据。',
+      '修复：客户端总览、月度、油品等销售额 KPI 增加根级平均 CNY/KGS 兜底，人民币副值与 Web/壁纸端一致。',
+      '修复：区域页每日趋势优先使用 daily 快照，7 月历史快照不再因单个质量边界值触发慢查询；站点日明细缺日期时也能聚合成图。',
+      '优化：预警页库存水位隐藏 11、12、21 停业站，其他站点显示站号加中俄文站名。',
+      '安全：壁纸引擎支持保护型打包密钥，领导机安装包可部署 wallpaper-key.protected.json，避免明文 token 直接随安装器分发。',
+    ],
+  },
   {
     version: '4.0.0',
     date: '2026-08-01',

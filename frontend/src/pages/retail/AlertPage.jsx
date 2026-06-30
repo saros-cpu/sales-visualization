@@ -63,7 +63,7 @@ function InventoryLevelList({ items }) {
       <span>当前地图油品库存水位正常。颜色规则：绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%。</span>
     </div>
   );
-  return items.slice(0, 30).map((item, i) => (
+  return items.map((item, i) => (
     <div key={`${item.shopKey}-${item.resourceKey}-${i}`} className={`alert-item ${inventoryItemClass(item)} handled`}>
       <div className="alert-item-icon">{item.fillStatus === 'critical' ? '🔴' : '🟡'}</div>
       <div className="alert-item-body">
@@ -250,7 +250,7 @@ export default function AlertPage() {
                 <span style={{ fontSize: 20 }}>✅</span>
                 <span>各站点期末库存合计 <b style={{ color: '#00e5a0' }}>{inventoryWan}万升</b>。油品库存水位按容量百分比着色：绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%。</span>
               </div>
-              <div style={{ marginTop: 10 }}>
+              <div className="inventory-alert-scroll">
                 <InventoryLevelList items={inventoryLevels} />
               </div>
             </div>

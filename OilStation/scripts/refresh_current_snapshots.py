@@ -35,13 +35,19 @@ from export_excel import (  # noqa: E402
     _missing_density_fallback_density,
     _selling_mass_expr,
 )
-from routes.analysis_report import _inventory_contract_totals  # noqa: E402
-from routes.analysis_report import _find_report_workbook_for_ym, _station_key_from_cell, _to_float  # noqa: E402
-from routes.analytics import (  # noqa: E402
+from endpoints.v1.retail.analysis_report.service.common import (  # noqa: E402
+    _find_report_workbook_for_ym,
+    _inventory_contract_totals,
+    _station_key_from_cell,
+    _to_float,
+)
+from endpoints.v1.retail.analytics.service.core import (  # noqa: E402
     _dashboard_yearly_from_monthly_snapshots,
     _resources_yearly_from_monthly_snapshots,
-    add_resource_bucket,
     _attach_monthly_finance_metrics,
+)
+from endpoints.v1.retail.analytics.service.shared import (  # noqa: E402
+    add_resource_bucket,
     format_resource_rows,
     report_amount_expr,
     report_bonus_amount_expr,
@@ -53,7 +59,7 @@ from routes.analytics import (  # noqa: E402
     report_volume_expr,
     station_status_for,
 )
-from routes.kpi import _yearly_kpi_from_monthly_snapshots  # noqa: E402
+from endpoints.v1.retail.kpi.service import yearly_kpi_from_monthly_snapshots  # noqa: E402
 
 DAY_SNAPSHOT_DIR = ROOT / "cache_snapshots" / "daily"
 REFRESH_LOCK_PATH = ROOT / "cache_snapshots" / ".refresh_current_snapshots.lock"
@@ -179,7 +185,7 @@ def _rebuild_yearly_snapshots(year: int, month: int) -> bool:
         written.append(f"resources_yearly:{year}:{month}")
 
     for include_inventory, label in ((False, "summary"), (True, "with_inventory")):
-        kpi = _yearly_kpi_from_monthly_snapshots(year, include_inventory, get_report_month_inventory)
+        kpi = yearly_kpi_from_monthly_snapshots(year, include_inventory)
         if kpi:
             set_cached(f"kpi_yearly:{year}:{label}", kpi)
             written.append(f"kpi_yearly:{year}:{label}")

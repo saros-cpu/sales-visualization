@@ -3,7 +3,16 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useChart } from '../../hooks/useChart';
 import { getMonths, getStations, getRegions, getDaily } from '../../api/retail';
-import { REGION_COLORS, REGION_ORDER, sortRankingRows } from '../../utils/retail-helpers';
+import {
+  REGION_COLORS,
+  REGION_ORDER,
+  amountCnyOf,
+  formatCnyKpi,
+  formatLitersKpiParts,
+  formatSomKpiParts,
+  formatTonsKpi,
+  sortRankingRows,
+} from '../../utils/retail-helpers';
 
 const darkTooltip = { backgroundColor: 'rgba(10,20,50,0.9)', borderColor: 'rgba(0,180,255,0.3)', textStyle: { color: '#e0e8f5', fontSize: 11 } };
 
@@ -17,10 +26,6 @@ function tonsOf(item) {
   if (tons > 0) return tons;
   const mass = numeric(item?.mass ?? item?.totalWeightKg);
   return mass > 0 ? mass / 1000 : 0;
-}
-
-function formatTons(value) {
-  return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
 
 export default function RegionPage() {
@@ -55,11 +60,16 @@ export default function RegionPage() {
     if (!currentMonth) return;
     (async () => {
       try {
-        const [stationsRes, regionsRes, dailyRes] = await Promise.all([
+        const [stationsRes, regionsRes] = await Promise.all([
           getStations(currentMonth),
           getRegions(currentMonth),
-          getDaily(currentMonth),
         ]);
+        let dailyRes = { daily: [], stations: {} };
+        try {
+          dailyRes = await getDaily(currentMonth);
+        } catch (dailyError) {
+          console.warn('区域每日趋势加载失败，保留区域汇总数据', dailyError);
+        }
         setAllStations(stationsRes.stations || []);
         setAllRegionsData(regionsRes || {});
         setRegionsData(regionsRes.regions || {});
@@ -85,7 +95,11 @@ export default function RegionPage() {
       globalDaily.forEach(d => { dayMap[d.date] = { date: d.date, volume: 0, amount: 0 }; });
       regionShopKeys.forEach(sk => {
         const sDaily = stationDaily[String(sk)] || [];
-        sDaily.forEach(d => { if (dayMap[d.date]) { dayMap[d.date].volume += d.volume || 0; dayMap[d.date].amount += d.amount || 0; } });
+        sDaily.forEach(d => {
+          if (!dayMap[d.date]) dayMap[d.date] = { date: d.date, volume: 0, amount: 0 };
+          dayMap[d.date].volume += numeric(d.volume);
+          dayMap[d.date].amount += numeric(d.amount);
+        });
       });
       dailyData = Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
     }
@@ -184,9 +198,13 @@ export default function RegionPage() {
   }, [currentRegion, allStations, regionsData, allRegionsData, monthlyData]);
 
   const rd = regionsData[currentRegion] || { amount: 0, volume: 0 };
+  const rdWithRate = { ...rd, avgCnyKgs: rd.avgCnyKgs ?? allRegionsData.avgCnyKgs };
   const sts = allStations.filter(s => s.region === currentRegion);
   const activeSts = sts.filter(s => s.amount > 0);
   const regionTons = tonsOf(rd) || sts.reduce((sum, row) => sum + tonsOf(row), 0);
+  const regionSalesKpi = formatSomKpiParts(rd.amount);
+  const regionLitersKpi = formatLitersKpiParts(rd.volume);
+  const regionSalesCny = amountCnyOf(rdWithRate);
   const cardPct = rd.amount > 0 ? ((rd.card / rd.amount) * 100).toFixed(2) : '0.0';
 
   return (
@@ -208,8 +226,8 @@ export default function RegionPage() {
           <div className="retail-panel" style={{ flexShrink: 0 }}>
             <div className="retail-panel-header"><div className="dot" /><span>{currentRegion} 核心指标</span></div>
             <div className="retail-kpi-grid">
-              <div className="retail-kpi-card c1"><div className="kpi-label">💰 销售总金额</div><div className="kpi-value">{(rd.amount / 1e4).toFixed(2)}</div><div className="kpi-unit">万索姆</div></div>
-              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{(rd.volume / 1e4).toFixed(2)}</div><div className="kpi-unit">万升</div><div className="kpi-change">吨位 {formatTons(regionTons)} 吨</div></div>
+              <div className="retail-kpi-card c1"><div className="kpi-label">💰 销售总金额</div><div className="kpi-value">{regionSalesKpi.value}</div><div className="kpi-unit">{regionSalesKpi.unit}</div><div className="kpi-change">人民币 {formatCnyKpi(regionSalesCny)}</div></div>
+              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{regionLitersKpi.value}</div><div className="kpi-unit">{regionLitersKpi.unit}</div><div className="kpi-change">吨位 {formatTonsKpi(regionTons)}</div></div>
               <div className="retail-kpi-card c3"><div className="kpi-label">🏪 活跃站点</div><div className="kpi-value">{activeSts.length}/{sts.length}</div><div className="kpi-unit">站</div></div>
               <div className="retail-kpi-card c4"><div className="kpi-label">💳 刷卡占比</div><div className="kpi-value">{cardPct}</div><div className="kpi-unit">%</div></div>
             </div>

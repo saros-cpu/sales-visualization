@@ -9,21 +9,24 @@ import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
 import { useNameI18n } from '@/utils/i18nNames';
-import { formatRetailTons, retailTonsOf } from '@/utils/retailMetrics';
+import {
+  formatRetailCnyKpi,
+  formatRetailLitersKpi,
+  formatRetailSomKpi,
+  formatRetailTons,
+  formatRetailTonsKpi,
+  retailCnyAmountOf,
+  retailTonsOf,
+} from '@/utils/retailMetrics';
 import { sortRankingRows } from '@/utils/rankingCharts';
 import { CHART_PALETTE, CHART_AXIS } from '@/theme/charts';
 import { useAuth } from '@/contexts/AuthContext';
+import { defaultRetailMonth } from '@/utils/retailPeriod';
 
 const { Text } = Typography;
 
-function defaultRetailMonth() {
-  const day = new Date();
-  day.setDate(day.getDate() - 1);
-  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}`;
-}
-
 export default function Monthly() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { can } = useAuth();
   const canExport = can('retail:export');
@@ -45,6 +48,10 @@ export default function Monthly() {
   const s = data?.summary;
   const inventoryLiters = Math.round(Number(s?.inventory ?? 0));
   const totalTons = retailTonsOf(s);
+  const language = i18n.language;
+  const totalSalesCny = retailCnyAmountOf(
+    s ? { ...s, avgCnyKgs: (s as any).avgCnyKgs ?? (data as any)?.avgCnyKgs } : null,
+  );
 
   const mom = data?.comparison?.mom as any;
   const yoy = data?.comparison?.yoy as any;
@@ -82,11 +89,16 @@ export default function Monthly() {
       {s && (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.monthlySales')} value={Math.round(s.totalSales / 10000)} suffix={CHART_AXIS.wanSom} /></Card></Col>
+            <Col xs={24} sm={12} md={8} xl={4}>
+              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}>
+                <Statistic title={t('retail.monthlySales')} value={formatRetailSomKpi(s.totalSales, language)} />
+                <Text type="secondary" style={{ fontSize: 12 }}>人民币 {formatRetailCnyKpi(totalSalesCny, language)}</Text>
+              </Card>
+            </Col>
             <Col xs={24} sm={12} md={8} xl={4}>
               <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
-                <Statistic title={t('retail.totalLiters')} value={Math.round(s.totalLiters)} suffix="L" />
-                <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTons(totalTons)} t</Text>
+                <Statistic title={t('retail.totalLiters')} value={formatRetailLitersKpi(s.totalLiters, language)} />
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(totalTons, language)}</Text>
               </Card>
             </Col>
             <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.activeShops')} value={`${s.activeShops}/${s.totalShops}`} /></Card></Col>
