@@ -892,12 +892,17 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
           AND {shift_business_day} < '%s'
         ORDER BY b.ShopKey, s.DatetimeShiftBegin DESC, b.ResourceKey
     """ % (','.join(str(k) for k in station_keys), ym_start, month_end_str))
+    bal_price_seen = {}
     for r in cur.fetchall():
         sk = int(r[0])
         rsk = r[4] if len(r) > 4 else None
         rk = _infer_resource_code_daily(int(r[1]), r[2], rsk=rsk, sk=sk)
         ds = str(r[3])
-        if (sk, rk) not in daily_price_cache.get(ds, {}) and float(r[2] or 0) > 0:
+        if float(r[2] or 0) <= 0:
+            continue
+        seen = bal_price_seen.setdefault(ds, set())
+        if (sk, rk) not in seen:
+            seen.add((sk, rk))
             daily_price_cache.setdefault(ds, {})[(sk, rk)] = _round_half_up(float(r[2] or 0), 2)
 
     pre_month_bal = _new_balance_map()
@@ -1005,7 +1010,8 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 d_start_bal.density[key] = getattr(prev_day_bal, 'density', {}).get(key, 0)
         d_loss = daily_loss_cache.get(day_str, {})
         d_prices = dict(daily_price_cache.get(day_str, {}))
-        d_prices.update(_official_price_list_for_day(day_str))
+        for _price_key, _price_val in _official_price_list_for_day(day_str).items():
+            d_prices.setdefault(_price_key, _price_val)
         d_sales_daily = {}
         for sk_key, rk_dict in d_sales.items():
             d_sales_daily[sk_key] = {}

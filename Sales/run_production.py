@@ -26,13 +26,19 @@ def start_retail_cache_warmup():
         paths = [
             ("/api/months", False, ""),
             ("/api/years", False, ""),
-            (f"/api/dashboard/yearly", False, f"year={now.year}"),
-            (f"/api/resources/yearly", False, f"year={now.year}"),
-            (f"/api/monthly/{year_month}", False, ""),
+            ("/api/dashboard/yearly", False, f"year={now.year}"),
+            ("/api/resources/yearly", False, f"year={now.year}"),
+            ("/api/kpi/yearly", False, f"year={now.year}&inventory=0"),
+        ]
+        paths.extend(
+            (f"/api/monthly/{now.year}-{month:02d}", False, "")
+            for month in range(1, now.month + 1)
+        )
+        paths.extend([
             (f"/api/stations/{year_month}", False, ""),
             (f"/api/regions/{year_month}", False, ""),
             (f"/api/daily/{year_month}", False, ""),
-        ]
+        ])
         for path, refresh, query in paths:
             try:
                 label = f"{path}?{query}" if query else path

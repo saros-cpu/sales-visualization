@@ -83,6 +83,10 @@ SK29_RSK_MAP = {
     10: 108,  # СПБТ（液化气）
 }
 
+# SK=19/22/24：RK=0 油罐为液化气罐（fuelbalance.ResourceName=ГАЗ 交叉验证），
+# 7/31 起调价至 45.9/47.8 越过价格推断阈值 p<=45，改用 RSK 精确映射
+SK19_22_24_RSK_MAP = {7: 108}   # СПБТ（液化气）
+
 # 部分加油站的 ResourceKey 编号非标准：RK=104 实际是 АИ-80 而非 АИ-95
 # 经 fuelbalance.ResourceName 交叉验证确认
 STATION_RK_CORRECTIONS = {
@@ -888,6 +892,11 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         # SK=29 新站测试清理后 EndPrice=0，价格推断失效
         if sk == 29 and rsk is not None:
             return SK29_RSK_MAP.get(int(rsk), rc)
+        # SK=19/22/24 液化气罐调价后价格推断失效，RSK 精确映射
+        if sk in (19, 22, 24) and rsk is not None:
+            mapped = SK19_22_24_RSK_MAP.get(int(rsk))
+            if mapped:
+                return mapped
         # 通用价格推断
         p = float(price or 0)
         if p <= 45:    return 108  # СПБТ（液化气）
@@ -1912,6 +1921,11 @@ def _infer_resource_code_daily(rc, price, rsk=None, sk=None):
             return mapped
     if sk == 29 and rsk is not None:
         mapped = SK29_RSK_MAP.get(int(rsk))
+        if mapped:
+            return mapped
+    # SK=19/22/24 液化气罐调价后价格推断失效，RSK 精确映射
+    if sk in (19, 22, 24) and rsk is not None:
+        mapped = SK19_22_24_RSK_MAP.get(int(rsk))
         if mapped:
             return mapped
     # 低编号 RK 先查 STATION_RK_CORRECTIONS（兜底）

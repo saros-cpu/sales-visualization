@@ -6,6 +6,12 @@
 
 ## 版本更新记录
 
+### 2026-08-03 (v4.0.1 后端热修)
+
+- **8 月日销表价格列修复**：7/30 调价后，零售月度 Excel 日分表价格列优先使用数据库实际价（`daily_price_cache` 按日聚合 `fuelbalance.CurrentPrice` 与 `balance.EndPrice`，后者覆盖前者、同一天取最新班次），官方调价表（7/19 硬编码表）只通过 `setdefault` 补缺失的 `(站点, 油品)` 键，不再覆盖数据库新价。
+- **验证**：站 19/22/24 СПБТ 现金单价 = 45.9 / 47.8 / 47.8，与 ocw DB 8/1 `balance.EndPrice` 一致；`py_compile` 通过；`python -m unittest discover -s Sales/tests` 165 项全通过。
+- **发布边界**：本次只部署后端报表导出逻辑，不更新 `SalesDesktop` 客户端版本号，也不重新发布主客户端安装包。
+
 ### 2026-08-01 (v4.0.1)
 
 - **站点详情稳定性**：修复 `/api/station/YYYY-MM/<shop>` 在补充人民币平均汇率字段时因内部导入缺失导致的 500，已覆盖 Web 与客户端。

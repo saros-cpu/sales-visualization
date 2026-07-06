@@ -124,7 +124,7 @@ function isPasswordChangeRequired(body: Record<string, unknown> | undefined) {
 export function createApi(basePath: string): AxiosInstance {
   const instance = axios.create({
     baseURL: `${API_HOST}${basePath}`,
-    timeout: 30000,
+    timeout: 120000,
     headers: { 'Content-Type': 'application/json' },
   });
 

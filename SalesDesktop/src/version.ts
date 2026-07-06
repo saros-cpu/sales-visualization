@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '4.0.1';
-export const BUILD_DATE = '2026-08-01';
+export const VERSION = '4.0.2';
+export const BUILD_DATE = '2026-08-04';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '4.0.2',
+    date: '2026-08-04',
+    type: 'patch',
+    changes: [
+      '修复：数据可视化驾驶舱在零售后端重启后首次打开超时。生产服务启动预热扩展为当年 1 月至当前月全部月度接口 + 年度 KPI，历史月份快照缺 mass 字段时在启动后台即修复/重建，不再等用户首次请求串行触发慢查询。',
+      '优化：客户端 API 请求超时由 30 秒提高到 120 秒，冷缓存重建等慢请求不再被客户端提前中断。',
+    ],
+  },
   {
     version: '4.0.1',
     date: '2026-08-01',

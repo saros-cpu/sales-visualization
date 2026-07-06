@@ -10,7 +10,7 @@ from export_excel import EXPORT_DIR, MONTH_NAMES_RU, openpyxl, os
 REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".monthly_report_index.json"
 WEEKLY_REPORT_DIR = Path(EXPORT_DIR) / "weekly"
 WEEKLY_REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".weekly_report_index.json"
-REPORT_DATA_VERSION = "db-true-mass-ai80-0.721-price-v6-report-half-up-rounding"
+REPORT_DATA_VERSION = "db-true-mass-ai80-0.721-price-v8-report-half-up-rounding"
 WEEKLY_REPORT_NAME_PREFIX = "加油站零售周报表"
 
 

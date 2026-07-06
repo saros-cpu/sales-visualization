@@ -607,10 +607,10 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
                 total_volume = _to_float(row[18] if len(row) > 18 else None)
                 total_mass = _to_float(row[19] if len(row) > 19 else None) * 1000
                 total_amount = _to_float(row[20] if len(row) > 20 else None)
-                if not total_volume and (cash_volume or card_volume or bonus_volume):
-                    total_volume = cash_volume + card_volume + bonus_volume
-                if not total_amount and (cash_amount or card_amount or bonus_amount):
-                    total_amount = cash_amount + card_amount + bonus_amount
+                if not total_volume and (cash_volume or card_volume):
+                    total_volume = cash_volume + card_volume
+                if not total_amount and (cash_amount or card_amount):
+                    total_amount = cash_amount + card_amount
                 if not any((total_volume, total_amount, cash_amount, card_amount, bonus_amount)):
                     continue
 
