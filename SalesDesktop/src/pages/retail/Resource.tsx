@@ -7,6 +7,7 @@ import { getResourcesYearly } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import KpiCard from '@/components/ui/KpiCard';
 import {
   formatRetailCnyKpi,
   formatRetailLitersKpi,
@@ -95,6 +96,11 @@ export default function Resource() {
     amount: totalAmount,
     avgCnyKgs: (data as any)?.summary?.avgCnyKgs ?? (data as any)?.avgCnyKgs,
   });
+  const averageCompare = (field: 'momSales' | 'yoySales' | 'momVolume' | 'yoyVolume') => {
+    const values = resources.map((row: any) => Number(row[field])).filter((value) => Number.isFinite(value));
+    if (!values.length) return undefined;
+    return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
+  };
 
   const columns = [
     { title: t('retail.product'), dataIndex: 'name', key: 'name', render: (v: string, r: any) => (
@@ -114,16 +120,28 @@ export default function Resource() {
       </Space>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={8}>
-          <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}>
-            <Statistic title={t('retail.totalSales')} value={formatRetailSomKpi(totalAmount, language)} />
-            <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>人民币 {formatRetailCnyKpi(totalAmountCny, language)}</div>
-          </Card>
+          <KpiCard
+            title={t('retail.totalSales')}
+            value={formatRetailSomKpi(totalAmount, language)}
+            compare={[
+              { value: averageCompare('momSales'), label: t('common.mom') },
+              { value: averageCompare('yoySales'), label: t('common.yoy') },
+            ]}
+            extra={<span>人民币 {formatRetailCnyKpi(totalAmountCny, language)}</span>}
+            onClick={() => navigate('/retail/report')}
+          />
         </Col>
         <Col xs={24} sm={8}>
-          <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/monthly')}>
-            <Statistic title={t('retail.totalLiters')} value={formatRetailLitersKpi(totalVolume, language)} />
-            <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(totalTons, language)}</div>
-          </Card>
+          <KpiCard
+            title={t('retail.totalLiters')}
+            value={formatRetailLitersKpi(totalVolume, language)}
+            compare={[
+              { value: averageCompare('momVolume'), label: t('common.mom') },
+              { value: averageCompare('yoyVolume'), label: t('common.yoy') },
+            ]}
+            extra={<span>{t('retail.totalTons')} {formatRetailTonsKpi(totalTons, language)}</span>}
+            onClick={() => navigate('/retail/monthly')}
+          />
         </Col>
         <Col xs={24} sm={8}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/overview')}><Statistic title={t('retail.resource')} value={resources.length} suffix={t('common.type')} /></Card></Col>
       </Row>

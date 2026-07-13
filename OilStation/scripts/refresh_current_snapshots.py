@@ -265,6 +265,7 @@ def _add_aggregate(
     daily_totals: dict,
     station_daily: dict,
     day_totals: dict | None = None,
+    station_resources: dict | None = None,
     shop_key: int,
     current_date: str,
     resource_key: int,
@@ -333,10 +334,15 @@ def _add_aggregate(
     region_resource = resource_by_region.setdefault(region, {})
     add_resource_bucket(region_resource, resource_key, total_volume, total_amount, mass)
 
+    if station_resources is not None:
+        per_station = station_resources.setdefault(shop_key, {})
+        add_resource_bucket(per_station, resource_key, total_volume, total_amount, mass)
+
     if day_totals is not None:
         day_item = day_totals.setdefault(current_date, {
             "stations": {},
             "resources": {},
+            "stationResources": {},
             "daily": {"date": current_date, "volume": 0.0, "mass": 0.0, "amount": 0.0},
             "totalTxn": 0,
         })
@@ -356,6 +362,8 @@ def _add_aggregate(
         day_item["daily"]["amount"] += total_amount
         day_item["totalTxn"] += int(txn_count or 0)
         add_resource_bucket(day_item["resources"], resource_key, total_volume, total_amount, mass)
+        day_station_resources = day_item["stationResources"].setdefault(shop_key, {})
+        add_resource_bucket(day_station_resources, resource_key, total_volume, total_amount, mass)
 
 
 def _merge_db_missing_days(
@@ -367,6 +375,7 @@ def _merge_db_missing_days(
     daily_totals: dict,
     station_daily: dict,
     day_totals: dict | None = None,
+    station_resources: dict | None = None,
 ) -> None:
     year, month = [int(part) for part in ym.split("-")]
     loaded_days = [
@@ -456,6 +465,7 @@ def _merge_db_missing_days(
                 daily_totals=daily_totals,
                 station_daily=station_daily,
                 day_totals=day_totals,
+                station_resources=station_resources,
                 shop_key=int(shop_key),
                 current_date=str(current_date),
                 resource_key=int(rk or 0),
@@ -513,6 +523,31 @@ def _regions_from_station_rows(station_rows: list[dict]) -> dict:
     return regions
 
 
+def _format_station_resources(station_resources: dict) -> list:
+    rows = []
+    for shop_key in sorted(station_resources):
+        bucket = station_resources[shop_key]
+        if not bucket:
+            continue
+        info = SHOP_KEY_MAP.get(shop_key, {"name": f"Station-{shop_key}", "short": "", "region": ""})
+        resources = format_resource_rows([
+            (rk, item["volume"], item["amount"], item.get("mass", 0))
+            for rk, item in bucket.items()
+        ])
+        rows.append({
+            "shopKey": shop_key,
+            "name": info["name"],
+            "short": info["short"],
+            "region": info["region"],
+            "volume": round(sum(item["volume"] for item in resources), 2),
+            "mass": round(sum(item["mass"] for item in resources), 3),
+            "tons": round(sum(item["tons"] for item in resources), 3),
+            "amount": round(sum(item["amount"] for item in resources), 2),
+            "resources": resources,
+        })
+    return rows
+
+
 def _write_day_snapshots(day_totals: dict) -> int:
     written = 0
     for current_date, values in sorted(day_totals.items()):
@@ -552,6 +587,7 @@ def _write_day_snapshots(day_totals: dict) -> int:
             "stations": station_rows,
             "regions": _regions_from_station_rows(station_rows),
             "byResource": by_resource,
+            "stationResources": _format_station_resources(values.get("stationResources") or {}),
             "daily": [daily_item],
         }
         _attach_monthly_finance_metrics(payload)
@@ -578,6 +614,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
         daily_totals = {}
         station_daily = {}
         day_totals = {}
+        station_resources = {}
 
         for sheet_name in workbook.sheetnames:
             if not sheet_name.endswith("日") or not sheet_name[:2].isdigit():
@@ -622,6 +659,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
                     daily_totals=daily_totals,
                     station_daily=station_daily,
                     day_totals=day_totals,
+                    station_resources=station_resources,
                     shop_key=current_shop_key,
                     current_date=current_date,
                     resource_key=resource_key,
@@ -644,6 +682,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
             daily_totals,
             station_daily,
             day_totals,
+            station_resources,
         )
 
         for shop_key, station in stations.items():
@@ -801,6 +840,7 @@ def _report_snapshots_from_workbook(ym: str) -> bool:
             "byResource": format_resource_rows([
                 (key, values["volume"], values["amount"], values.get("mass", 0)) for key, values in resource_totals.items()
             ]),
+            "stationResources": _format_station_resources(station_resources),
             "daily": daily_rows,
         }
         _attach_monthly_finance_metrics(monthly_payload)
@@ -895,6 +935,8 @@ def _refresh_month_snapshots(year: int, month: int) -> bool:
         set_cached(f"self_use:{ym}", self_use_snapshot)
         print(f"ok self_use snapshot {ym}: {len(self_use_snapshot['records'])} records")
     ok = _rebuild_yearly_snapshots(year, month) and ok
+    ok = _request(client, f"/api/export/profit/{ym}/data", {"refresh": "1"}) and ok
+    ok = _request(client, f"/api/export/profit-year/{year}/data", {"refresh": "1"}) and ok
     requests = [
         (f"/api/regions/{ym}", {}),
         ("/api/dashboard/yearly", {"year": str(year)}),

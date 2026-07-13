@@ -14,3 +14,8 @@ export async function getTransferLoss(params: { year?: number; quarter?: number 
   const res = await client.get('/transfer/loss', { params });
   return res.data;
 }
+
+export async function getTransferLossYears() {
+  const res = await client.get('/transfer/loss/years');
+  return res.data as number[];
+}

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStationStatuses, getKpi, getMonthlyData, getDashboardYearly, getYears, getDaily, getStationMapDetails } from '../../api/retail';
-import { REGION_ORDER } from '../../utils/retail-helpers';
+import { REGION_ORDER, normalizeRetailYears } from '../../utils/retail-helpers';
 
 const ym = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; })();
 
@@ -60,7 +60,7 @@ function InventoryLevelList({ items }) {
   if (!items.length) return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 14, background: 'rgba(0,229,160,0.05)', border: '1px solid rgba(0,229,160,0.15)', borderRadius: 6, color: 'rgba(160,180,210,0.6)', fontSize: 12 }}>
       <span style={{ fontSize: 20 }}>✅</span>
-      <span>当前地图油品库存水位正常。颜色规则：绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%。</span>
+      <span>当前地图油品库存液位正常。颜色规则：绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%。</span>
     </div>
   );
   return items.map((item, i) => (
@@ -70,7 +70,7 @@ function InventoryLevelList({ items }) {
         <div className="alert-title">{item.stationName} · {item.resourceName}</div>
         <div className="alert-desc">
           当前库存：<b>{formatLiters(item.inventory, 2)} L</b>
-          {item.capacity ? <> / 容量 <b>{formatLiters(item.capacity, 0)} L</b>，水位 <b>{Number(item.fillPercent || 0).toFixed(1)}%</b></> : '，容量未配置'}
+          {item.capacity ? <> / 容量 <b>{formatLiters(item.capacity, 0)} L</b>，液位 <b>{Number(item.fillPercent || 0).toFixed(1)}%</b></> : '，容量未配置'}
         </div>
       </div>
       <div className="alert-item-right">
@@ -135,11 +135,11 @@ export default function AlertPage() {
         });
         rows.sort((a, b) => Number(a.fillPercent || 999) - Number(b.fillPercent || 999));
         setInventoryLevels(rows);
-      } catch (e) { console.warn('库存水位加载失败', e); }
+      } catch (e) { console.warn('库存液位加载失败', e); }
 
       // Build region advice from dashboard data
       try {
-        const yearList = await getYears();
+        const yearList = normalizeRetailYears(await getYears());
         if (yearList.length > 0) {
           const dashData = await getDashboardYearly(yearList[0]);
           const stations = dashData.stations || [];
@@ -248,7 +248,7 @@ export default function AlertPage() {
             <div style={{ padding: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 14, background: 'rgba(0,229,160,0.05)', border: '1px solid rgba(0,229,160,0.15)', borderRadius: 6, color: 'rgba(160,180,210,0.6)', fontSize: 12 }}>
                 <span style={{ fontSize: 20 }}>✅</span>
-                <span>各站点期末库存合计 <b style={{ color: '#00e5a0' }}>{inventoryWan}万升</b>。油品库存水位按容量百分比着色：绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%。</span>
+                <span>各站点期末库存合计 <b style={{ color: '#00e5a0' }}>{inventoryWan}万升</b>。油品库存液位按容量百分比着色：绿色 ≥ 50%，黄色 30%-50%，红色 ＜ 30%。</span>
               </div>
               <div className="inventory-alert-scroll">
                 <InventoryLevelList items={inventoryLevels} />
@@ -328,7 +328,7 @@ export default function AlertPage() {
             <div className="retail-panel-header"><div className="dot" /><span>⚙️ 预警规则配置</span></div>
             <div style={{ padding: 12 }}>
               <div className="rule-item"><span className="rule-icon">🔴</span><span><b>停业预警</b>：月度销售额为 0 → 自动标记为停业站点</span></div>
-              <div className="rule-item"><span className="rule-icon">🟡</span><span><b>库存预警</b>：油品库存水位 ＜ 50% 显示黄色，＜ 30% 显示红色</span></div>
+              <div className="rule-item"><span className="rule-icon">🟡</span><span><b>库存预警</b>：油品库存液位 ＜ 50% 显示黄色，＜ 30% 显示红色</span></div>
               <div className="rule-item"><span className="rule-icon">🔵</span><span><b>趋势预警</b>：单日销量环比下降 ＞ 30% 且持续 ≥ 2天 → 触发趋势异常</span></div>
               <div className="rule-item"><span className="rule-icon">📊</span><span><b>集中度预警</b>：单区域销售占比 ＞ 50% → 触发区域集中度提醒</span></div>
             </div>

@@ -31,6 +31,13 @@ export interface CategoryCard {
   reviewRows?: number;
 }
 
+export interface WholesaleCardComparison {
+  momTons?: number | null;
+  momAmountCny?: number | null;
+  yoyTons?: number | null;
+  yoyAmountCny?: number | null;
+}
+
 export interface ProductRanking {
   name: string;
   tons: number;
@@ -70,6 +77,7 @@ export interface WholesaleReview {
 export interface WholesalePageData {
   period: { year: number; month?: number };
   cards: Record<string, CategoryCard>;
+  comparison?: Record<string, WholesaleCardComparison>;
   productRankings: Record<string, ProductRanking[]>;
   customerRankings: Record<string, CustomerRanking[]>;
   transferSummary: TransferSummary;

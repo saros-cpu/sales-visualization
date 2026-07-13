@@ -198,6 +198,11 @@ PASSWORD_CHANGE_ALLOWED_PATHS = {
     "/api/auth/change-password",
 }
 
+ADMIN_ONLY_API_PREFIXES = (
+    "/api/export/profit",
+    "/api/export/profit-year",
+)
+
 LEGACY_API_PERMISSION_PREFIXES = (
     ("/api/export/exchange-rates", "exchange:view"),
     ("/api/export/analysis/wholesale", "wholesale:export"),
@@ -241,6 +246,10 @@ def _legacy_api_permission(path: str) -> str | None:
 
 
 def _enforce_legacy_api_permission(path: str, user_id, role: str | None):
+    if any(path == prefix or path.startswith(f"{prefix}/") for prefix in ADMIN_ONLY_API_PREFIXES):
+        if role != "admin":
+            return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
+        return None
     permission_code = _legacy_api_permission(path)
     if not permission_code or role == "admin":
         return None

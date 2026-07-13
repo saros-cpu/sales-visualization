@@ -155,8 +155,8 @@ function MaterialDictTab() {
   ];
 
   return (
-    <div>
-      <Space wrap style={{ marginBottom: 16 }}>
+    <div className="client-fit-page">
+      <Space wrap className="client-fit-fixed">
         {canCreate && (
           <Button icon={<PlusOutlined />} type="primary" onClick={handleAddRow}>
             {t('common.add')}
@@ -190,30 +190,32 @@ function MaterialDictTab() {
           </Button>
         )}
       </Space>
-      <ExcelTable
-        ref={tableRef}
-        dataSource={data}
-        columns={columns}
-        editing={editing}
-        setEditing={(value) => setEditing(canEdit && value)}
-        isAdmin={false}
-        canDelete={canDelete}
-        onBatchSave={handleBatchSave}
-        onAddNew={handleAddNew}
-        onDelete={handleDeleteMaterials}
-        onSelectionChange={setSelectedIds}
-        validateRow={validateMaterialRow}
-        initialNewRow={() => ({
-          material_code: nextMaterialCode,
-          category_id: defaultCategoryId,
-          unit: '\u4e2a',
-          unit_price: 0,
-          is_active: true,
-        })}
-        draftKey="material-dict-spreadsheet-draft"
-        rowHeight={40}
-        height={600}
-      />
+      <div className="client-fit-table-scroll">
+        <ExcelTable
+          ref={tableRef}
+          dataSource={data}
+          columns={columns}
+          editing={editing}
+          setEditing={(value) => setEditing(canEdit && value)}
+          isAdmin={false}
+          canDelete={canDelete}
+          onBatchSave={handleBatchSave}
+          onAddNew={handleAddNew}
+          onDelete={handleDeleteMaterials}
+          onSelectionChange={setSelectedIds}
+          validateRow={validateMaterialRow}
+          initialNewRow={() => ({
+            material_code: nextMaterialCode,
+            category_id: defaultCategoryId,
+            unit: '\u4e2a',
+            unit_price: 0,
+            is_active: true,
+          })}
+          draftKey="material-dict-spreadsheet-draft"
+          rowHeight={40}
+          height="100%"
+        />
+      </div>
     </div>
   );
 }
@@ -342,8 +344,8 @@ function InboundTab() {
   ];
 
   return (
-    <div>
-      <Space wrap style={{ marginBottom: 16 }}>
+    <div className="client-fit-page">
+      <Space wrap className="client-fit-fixed">
         {canCreate && (
           <Button icon={<PlusOutlined />} type="primary" onClick={() => tableRef.current?.addNewRow()} disabled={!editing}>
             {t('common.add')}
@@ -365,19 +367,21 @@ function InboundTab() {
           </Button>
         )}
       </Space>
-      <ExcelTable
-        ref={tableRef}
-        dataSource={data}
-        columns={columns}
-        editing={editing}
-        setEditing={(value) => setEditing(canEdit && value)}
-        isAdmin={false}
-        onBatchSave={handleBatchSave}
-        onRealTimeSave={handleRealTimeSave}
-        onAddNew={handleAddNew}
-        rowHeight={40}
-        height={600}
-      />
+      <div className="client-fit-table-scroll">
+        <ExcelTable
+          ref={tableRef}
+          dataSource={data}
+          columns={columns}
+          editing={editing}
+          setEditing={(value) => setEditing(canEdit && value)}
+          isAdmin={false}
+          onBatchSave={handleBatchSave}
+          onRealTimeSave={handleRealTimeSave}
+          onAddNew={handleAddNew}
+          rowHeight={40}
+          height="100%"
+        />
+      </div>
     </div>
   );
 }
@@ -566,11 +570,11 @@ function TransferOrdersTab() {
   ];
 
   return (
-    <div>
-      <div style={{ marginBottom: 16 }}>
+    <div className="client-fit-page">
+      <div className="client-fit-fixed">
         <KpiGrid items={transferKpis} defaultSpan={6} />
       </div>
-      <Space wrap style={{ marginBottom: 16 }}>
+      <Space wrap className="client-fit-fixed">
         {canCreate && (
           <Button icon={<PlusOutlined />} type="primary" onClick={() => { if (!editing) setEditing(true); tableRef.current?.addNewRow(); }}>
             {t('common.add')}
@@ -592,22 +596,24 @@ function TransferOrdersTab() {
           </Button>
         )}
       </Space>
-      <ExcelTable
-        ref={tableRef}
-        dataSource={data}
-        columns={columns}
-        editing={editing}
-        setEditing={(value) => setEditing(canEdit && value)}
-        isAdmin={false}
-        onBatchSave={handleBatchSave}
-        onRealTimeSave={handleRealTimeSave}
-        onAddNew={handleAddNew}
-        validateRow={validateRow}
-        initialNewRow={() => ({ order_date: new Date().toISOString().slice(0, 10), status: 'pending' })}
-        draftKey="material-transfer-spreadsheet-draft"
-        rowHeight={40}
-        height={600}
-      />
+      <div className="client-fit-table-scroll">
+        <ExcelTable
+          ref={tableRef}
+          dataSource={data}
+          columns={columns}
+          editing={editing}
+          setEditing={(value) => setEditing(canEdit && value)}
+          isAdmin={false}
+          onBatchSave={handleBatchSave}
+          onRealTimeSave={handleRealTimeSave}
+          onAddNew={handleAddNew}
+          validateRow={validateRow}
+          initialNewRow={() => ({ order_date: new Date().toISOString().slice(0, 10), status: 'pending' })}
+          draftKey="material-transfer-spreadsheet-draft"
+          rowHeight={40}
+          height="100%"
+        />
+      </div>
     </div>
   );
 }
@@ -637,13 +643,15 @@ function InventoryTab() {
   ];
 
   return (
-    <div>
-      <Space wrap style={{ marginBottom: 16 }}>
+    <div className="client-fit-page">
+      <Space wrap className="client-fit-fixed">
         <Select value={depotId} onChange={setDepotId} allowClear placeholder={t('common.filterWarehouse')} style={{ width: 150 }}>
           <Select.Option value={1}>{t('common.defaultWarehouse')}</Select.Option>
         </Select>
       </Space>
-      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" pagination={false} scroll={{ x: 800, y: 'calc(100vh - 360px)' }} />
+      <div className="client-fit-table-scroll">
+        <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" pagination={false} scroll={{ x: 800 }} />
+      </div>
     </div>
   );
 }
@@ -651,8 +659,8 @@ function InventoryTab() {
 export default function MaterialsPage() {
   const { t } = useTranslation();
   return (
-    <Card title={t('common.materialsManagement')}>
-      <Tabs items={[
+    <Card title={t('common.materialsManagement')} className="client-fit-page client-fit-table-card">
+      <Tabs className="client-fit-tabs" items={[
         { key: 'dict', label: t('common.materialDict'), children: <MaterialDictTab /> },
         { key: 'inbound', label: t('common.inboundMgmt'), children: <InboundTab /> },
         { key: 'orders', label: t('common.transferOrders'), children: <TransferOrdersTab /> },

@@ -7,7 +7,7 @@ import {
   CalendarOutlined, DatabaseOutlined, FileDoneOutlined, AlertOutlined,
   ToolOutlined, UserOutlined, ClusterOutlined, SafetyCertificateOutlined,
   PlusSquareOutlined, LineChartOutlined, SearchOutlined, PartitionOutlined,
-  SwapOutlined, ProfileOutlined,
+  SwapOutlined, ProfileOutlined, CalculatorOutlined, MoneyCollectOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 
@@ -44,6 +44,7 @@ export const menuConfig: MenuItem[] = [
           { key: '/retail/report', icon: <FileDoneOutlined />, labelKey: 'retail.report' },
           { key: '/retail/alert', icon: <AlertOutlined />, labelKey: 'retail.alert' },
           { key: '/retail/self-use', icon: <ToolOutlined />, labelKey: 'retail.selfUse' },
+          { key: '/retail/profit', icon: <CalculatorOutlined />, labelKey: 'retail.profit', roles: ['admin'] },
         ],
       },
       {
@@ -89,6 +90,7 @@ export const menuConfig: MenuItem[] = [
         ],
       },
       { key: '/management-center', icon: <ControlOutlined />, labelKey: 'nav.configCenter', roles: ['admin'] },
+      { key: '/profit-cost-items', icon: <MoneyCollectOutlined />, labelKey: 'nav.profitCostItems', roles: ['admin'] },
       { key: '/aliases', icon: <BookOutlined />, labelKey: 'nav.referenceMaintenance', moduleKey: 'aliases' },
       { key: '/weighing', icon: <AuditOutlined />, labelKey: 'nav.weighing', moduleKey: 'weighing' },
       { key: '/system-health', icon: <MonitorOutlined />, labelKey: 'nav.systemHealth', moduleKey: 'system_health', permissionCode: 'system_health:view' },

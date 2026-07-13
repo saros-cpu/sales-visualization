@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$Version = "0.2.0",
+    [string]$Version = "0.2.3",
     [string]$IncludeKeyPath = "",
     [switch]$PlainBundledKey,
     [switch]$SkipWallpaperAssets,
@@ -402,6 +402,7 @@ if (-not $NoPublishDownload) {
             "Adds authorized USD/KGS and CNY/KGS exchange rates to the bottom-right HUD.",
             "Removes the bottom-left data timestamp and refresh timestamp from the wallpaper view.",
             "Refreshes wallpaper map data once every morning at 09:00 by default, after daily retail snapshot tasks, while still refreshing immediately on startup.",
+            "Retries missed or failed daily wallpaper data refreshes after sleep, unlock, remote reconnect, or temporary network loss.",
             "Colors per-fuel inventory rows by capacity fill level without changing station status colors.",
             "Shows Chinese business status labels on map hover instead of internal values such as normal.",
             "Displays install, config, key, and Startup shortcut paths after setup finishes.",

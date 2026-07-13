@@ -1,13 +1,12 @@
-import { useState } from 'react';
-import { Row, Col, Space, Button, message } from 'antd';
+import { Row, Col, Space, Button, message, Select } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
-import { getYears, getDashboardYearly, getKpiYearly, getResourcesYearly } from '@/api/retail';
+import { getDashboardYearly, getKpiYearly, getResourcesYearly } from '@/api/retail';
 import { downloadYearlyReport } from '@/api/export';
 import KpiCard from '@/components/ui/KpiCard';
 import ChartCard from '@/components/ui/ChartCard';
-import PeriodPicker from '@/components/ui/PeriodPicker';
+import { useRetailYears } from '@/hooks/useRetailYears';
 import { useNameI18n, ZH_REGION_KEY } from '@/utils/i18nNames';
 import {
   formatRetailCnyKpi,
@@ -32,7 +31,7 @@ export default function Overview() {
   const { can } = useAuth();
   const canExport = can('retail:export');
   const { region, station, product } = useNameI18n();
-  const [year, setYear] = useState(new Date().getFullYear());
+  const { year, setYear, yearOptions } = useRetailYears(new Date().getFullYear());
 
   const dashQ = useApiQuery(['retail', 'dashboard', year], () => getDashboardYearly(year));
   const kpiQ = useApiQuery(['retail', 'kpi', year], () => getKpiYearly(year));
@@ -40,6 +39,7 @@ export default function Overview() {
 
   const dash = dashQ.data;
   const kpi = kpiQ.data?.summary as Record<string, number> | undefined;
+  const kpiComparison = (kpiQ.data as any)?.comparison || {};
   const activeShopValue = kpi ? `${kpi.activeShops ?? 0}/${kpi.totalShops ?? '-'}` : '0/-';
   const totalTons = retailTonsOf(kpi)
     || retailTonsOf((resQ.data as any)?.summary)
@@ -114,7 +114,12 @@ export default function Overview() {
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
-        <PeriodPicker value={year} onChange={(y) => setYear(y)} picker="year" />
+        <Select
+          value={year}
+          onChange={setYear}
+          style={{ width: 100 }}
+          options={yearOptions.map((item) => ({ value: item, label: `${item}` }))}
+        />
         {canExport && <Button type="primary" onClick={onGenerate}>{t('retail.generateReport')}</Button>}
       </Space>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -122,6 +127,10 @@ export default function Overview() {
           <KpiCard
             title={t('retail.totalSales')}
             value={formatRetailSomKpi(kpi?.totalSales ?? 0, language)}
+            compare={[
+              { value: kpiComparison.momSales ?? kpiComparison.momSalesAmount, label: t('common.mom') },
+              { value: kpiComparison.yoySales ?? kpiComparison.yoySalesAmount, label: t('common.yoy') },
+            ]}
             extra={<span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>人民币 {formatRetailCnyKpi(totalSalesCny, language)}</span>}
             onClick={() => navigate('/retail/report')}
           />
@@ -130,6 +139,10 @@ export default function Overview() {
           <KpiCard
             title={t('retail.totalLiters')}
             value={formatRetailLitersKpi(kpi?.totalLiters ?? 0, language)}
+            compare={[
+              { value: kpiComparison.momVolume, label: t('common.mom') },
+              { value: kpiComparison.yoyVolume, label: t('common.yoy') },
+            ]}
             extra={<span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(totalTons, language)}</span>}
             onClick={() => navigate('/retail/resource')}
           />

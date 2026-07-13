@@ -150,7 +150,7 @@ export default function Alert() {
 	                { title: t('retail.product'), dataIndex: 'resourceName', key: 'resourceName', render: (v: string) => product(v) },
 	                { title: t('retail.inventory'), dataIndex: 'inventory', key: 'inventory', render: (v: any) => `${formatLiters(v, 2)} L` },
 	                { title: t('retail.capacity', { defaultValue: lang === 'ru' ? 'Емкость' : '容量' }), dataIndex: 'capacity', key: 'capacity', render: (v: any) => (v ? `${formatLiters(v)} L` : '-') },
-	                { title: t('retail.waterLevel', { defaultValue: lang === 'ru' ? 'Уровень' : '水位' }), dataIndex: 'fillPercent', key: 'fillPercent', render: (v: any, row: any) => (
+	                { title: t('retail.waterLevel', { defaultValue: lang === 'ru' ? 'Уровень' : '液位' }), dataIndex: 'fillPercent', key: 'fillPercent', render: (v: any, row: any) => (
 	                  <Tag color={row.fillStatus === 'critical' ? 'red' : 'gold'}>{Number(v || 0).toFixed(1)}%</Tag>
 	                ) },
               ]}
@@ -185,7 +185,7 @@ export default function Alert() {
         <Card size="small" title={t('retail.alertRules')}>
           <ul>
             <li>{t('retail.ruleTrendAnomaly')}</li>
-	            <li>{lang === 'ru' ? `Уровень запасов: ${inventoryRuleText}` : `库存水位：${inventoryRuleText}`}</li>
+	            <li>{lang === 'ru' ? `Уровень запасов: ${inventoryRuleText}` : `库存液位：${inventoryRuleText}`}</li>
             <li>{t('retail.ruleRegionConcentration')}</li>
             <li>{t('retail.ruleStationDowntime')}</li>
           </ul>

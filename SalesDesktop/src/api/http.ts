@@ -57,6 +57,21 @@ function isAllowedApiHost(host: string) {
 }
 
 export function resolveApiHost() {
+  const isDevHost = window.location.port === '5173'
+    || (import.meta.env.DEV && ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname));
+  if (isDevHost) {
+    const devConfiguredHosts = [
+      import.meta.env.VITE_API_HOST,
+    ].filter(Boolean).map((value) => upgradeLegacyPublicUrl(String(value)));
+    const normalizedDevConfigured = devConfiguredHosts.find(isAllowedApiHost) || '';
+    if (normalizedDevConfigured && normalizedDevConfigured !== window.location.origin) {
+      return normalizedDevConfigured;
+    }
+    const host = window.location.hostname || 'localhost';
+    const backendHost = host === '0.0.0.0' ? 'localhost' : host;
+    return `http://${backendHost}:8900`;
+  }
+
   const configuredHosts = [
     window.__SALES_API_HOST__,
     window.SALES_RUNTIME_CONFIG?.apiHost,
@@ -64,14 +79,8 @@ export function resolveApiHost() {
     import.meta.env.VITE_API_HOST,
   ].filter(Boolean).map((value) => upgradeLegacyPublicUrl(String(value)));
   const normalizedConfigured = configuredHosts.find(isAllowedApiHost) || '';
-  const isDevHost = import.meta.env.DEV || window.location.port === '5173';
-  if (normalizedConfigured && !(isDevHost && normalizedConfigured === window.location.origin)) {
+  if (normalizedConfigured) {
     return normalizedConfigured;
-  }
-  if (isDevHost) {
-    const host = window.location.hostname || 'localhost';
-    const backendHost = host === '0.0.0.0' ? 'localhost' : host;
-    return `http://${backendHost}:8900`;
   }
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     return window.location.origin;

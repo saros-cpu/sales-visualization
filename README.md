@@ -6,6 +6,41 @@
 
 ## 版本更新记录
 
+### 2026-08-09 (v4.0.3 / SalesWallpaperEngine 0.2.3)
+
+- **客户端版本收口**：主客户端升级为 `SalesDesktop 4.0.3`，承接 2026-08-08 利润核算、KPI 同比环比、长表格满屏滚动、系统健康利润快照检查和数据可视化驾驶舱比较值等全部客户端改动。
+- **利润核算发布版**：月度/年度利润核算、成本维护、快照刷新和报表中心下载作为正式发布功能；利润数据仍统一复用 `/api/export/profit/*` 与 `/api/export/profit-year/*`，避免重复接口。
+- **壁纸端独立发布**：`SalesWallpaperEngine` 升级为 `0.2.3`，继续独立打包和独立更新；本次包含错过 09:00 刷新窗口后的自动补刷、恢复/解锁刷新信号和库存液位术语统一。
+- **打包部署边界**：主客户端安装包、自动更新 feed 与壁纸端 zip/setup/latest.json 分开生成和部署；壁纸端不并入 `SalesDesktop` 主安装包。
+
+### 2026-08-08 (利润核算与壁纸刷新收口)
+
+- **利润核算闭环**：新增月度/年度利润核算数据、下载和快照接口，客户端零售菜单、Web 零售页和报表中心均复用 `/api/export/profit/*` 与 `/api/export/profit-year/*`，不再保留重复同义接口。
+- **月度维护数据**：利润核算成本维护支持按月保存 M/N/O/P/Q 成本项和购油单价；2026 年 1-7 月购油价按已确认月度文件固化，维护保存后自动清理对应月度与年度利润快照。
+- **利润页展示优化**：月度/年度利润页各 8 个 KPI 按两排四列展示，第一排固定为累计销售额、累计销量、柴油销售额、柴油销量；销售额类显示人民币副值，除薪酬和水电网警外同步显示环比/同比；年度表补齐吨位、汇率和柴油销售字段。
+- **接口与加载治理**：利润数据接口默认读取 `profit_report_snapshots`，`refresh=1` 才强制重算；每日 `08:30` 零售快照任务同步刷新当前月利润快照和年度利润总表快照，快速切换年月时使用请求序号保护，旧请求不会覆盖当前页面；客户端与 Web 系统健康均纳入利润快照有效性检查。
+- **利润 KPI 微调**：Web 与客户端零售利润页 KPI 恢复左侧数据上下显示，人民币/吨位副值回到主数据下方，右侧仅展示放大的环比/同比；客户端移除底部说明区，KPI 及以上区域固定，站点/年度明细在下方独立滚动并占满剩余页面。
+- **客户端列表页满屏显示**：自用油、零售报表、批发查询、过磅列表、损耗、合同和审计日志等查数页面复用利润页的固定上方区域与下方独立滚动表格布局，减少底部空白和外层页面滚动。
+- **客户端维护页满屏与健康页补齐**：汇率、物资调拨四个分页面、权限矩阵、利润核算成本维护和系统健康页统一改为上方筛选/KPI/Tab 固定、下方内容区铺满后独立滚动；系统健康页在提醒中心与缓存页突出利润月度/年度快照状态；购油单价维护在同一油品全站同价时自动合并为“全部站点”一行，只有站点差异时才展开站点明细。
+- **经营 KPI 同比环比复用**：客户端公共 KPI 组件支持右侧同比/环比比较项；利润核算页保留放大左右布局，利润核算之外的页面默认使用原 KPI 右侧紧凑布局，不改变卡片尺寸。零售总览、月度、区域、站点、油品等已有可靠比较数据的销售额/销量 KPI 同步展示同比/环比；批发总览和数据可视化驾驶舱的金额、销量、吨数类 KPI 复用接口 `compare` 数据。年度总览环比按“本年累计 vs 少一个月累计”、同比按“上一年同期”计算，系统健康、汇率缺口、物资行数等非经营同比指标不硬造比较值。
+- **壁纸每日刷新补刷**：如果电脑在 09:00 前后睡眠、锁屏、断网或 VPN 未恢复，壁纸端会在当天 09:00 后检测是否已成功刷新，失败按 5 分钟节流自动重试；恢复、解锁、控制台重连或远程重连时主动触发刷新检查。
+- **库存液位术语统一**：Web、客户端、壁纸和文档统一使用“库存液位/液位百分比”。
+- **发布状态**：本地已生成 `SalesWallpaperEngine 0.2.2` zip 与 Setup，并更新本地 `SalesDesktop/download/wallpaper-engine/latest.json`；公网同步需单独执行部署。本次主客户端仍保持 `SalesDesktop 4.0.2`。
+
+### 2026-08-05 (后端快照热修)
+
+- **零售快照新口径**：月度、单日快照必须携带 `stationResources`（按站点按油品销量/金额/质量明细）；带该字段的快照不再回读日销表工作簿修复质量字段（修复门 `retail_repair_payload_mass_from_report`），避免旧工作簿覆盖新口径。
+- **日销表文件名年限定**：零售月度日销表文件名改为 `加油站{y}年{month_cn}日销表{gen_date}.xlsx`（如 `加油站2026年八月份日销表04.08.xlsx`），索引按年份限定，跨年同月不互相覆盖或复用。
+- **33 个月全量重建**：按新口径从 2023-12 至 2026-08 重建全部 33 个月快照（`backfill_retail_mass_snapshots.py --start 2023-12 --end 2026-08 --force`），年度派生快照 2023-2026 同步重建；全部月份 `needs_refresh=False`，快照内一致性及快照 vs DB 验数通过（仅 2025-08 2 处 0.02/0.05 L 浮点边界尾差，容差内）。
+- **发布边界**：本次只部署后端快照与报表导出逻辑，不更新 `SalesDesktop` 客户端版本号，也不重新发布主客户端安装包。
+
+### 2026-08-04 (v4.0.2)
+
+- **驾驶舱冷缓存超时修复**：零售后端重启后首次打开数据可视化驾驶舱不再超时。生产入口（`Sales/run_production.py`）启动预热扩展为当年 1 月至当前月全部 `/api/monthly/{ym}` + 当月站点/区域/日趋势接口，并新增 `/api/kpi/yearly`，历史月份快照缺 `mass` 字段时在启动后台即修复/重建，不再等用户首次请求串行触发 30–90s/月的慢查询。
+- **客户端超时提高**：客户端 API 请求超时由 30 秒提高到 120 秒，冷缓存重建等慢请求不再被客户端提前中断。
+- **验证**：`py_compile` 通过；`npx tsc --noEmit` 通过；`npx vite build` 通过（3904 modules, 21.56s）；`/api/kpi/yearly` 的 `inventory=0` 参数已验证有效。
+- **发布状态**：源码已提交（`5acfafd` + `e5f7340`），安装包已生成并同步 `/download`（`SalesDesktop Setup 4.0.2.exe` + blockmap + `latest.yml`），**已部署**；`latest.yml` 已指向 4.0.2。生产已重启使预热生效，重启后驾驶舱首屏复测 123/136/71ms。
+
 ### 2026-08-03 (v4.0.1 后端热修)
 
 - **8 月日销表价格列修复**：7/30 调价后，零售月度 Excel 日分表价格列优先使用数据库实际价（`daily_price_cache` 按日聚合 `fuelbalance.CurrentPrice` 与 `balance.EndPrice`，后者覆盖前者、同一天取最新班次），官方调价表（7/19 硬编码表）只通过 `setdefault` 补缺失的 `(站点, 油品)` 键，不再覆盖数据库新价。
@@ -77,12 +112,12 @@
 - **图表下钻恢复**：零售总览区域柱状图可跳转并选中对应区域，站点 Top10 可跳转并选中对应站点；区域页和站点页同步支持 URL 参数定位。
 - **单位和 tooltip 统一**：趋势图、排行图和 KPI 的 tooltip 补齐升、万升、索姆、万索姆、万元、吨、百分比等单位，并隐藏默认 `series0` 名称。
 - **知识库滚动优化**：知识库菜单左右两列支持独立上下滚动，长列表查看更稳。
-- **库存水位口径升级**：库存预警改为按数据库最新 `fuelbalance.VolumeMaximum` 实际库容和当前库存计算；库容缺失时使用数据库历史观测上限兜底，黄色表示 30%-50%，红色表示低于 30%。
-- **地图悬停增强**：地图点位颜色继续只表达营业状态，悬停信息按每个油品显示库存、库容、水位百分比和零售价，并用绿色/黄色/红色区分油品库存水位。
+- **库存液位口径升级**：库存预警改为按数据库最新 `fuelbalance.VolumeMaximum` 实际库容和当前库存计算；库容缺失时使用数据库历史观测上限兜底，黄色表示 30%-50%，红色表示低于 30%。
+- **地图悬停增强**：地图点位颜色继续只表达营业状态，悬停信息按每个油品显示库存、库容、液位百分比和零售价，并用绿色/黄色/红色区分油品库存液位。
 - **地图观感优化**：客户端吉尔吉斯地图、Web 零售板块总览地图和壁纸地图恢复总部/北方/南方三处油库标点，但改为高位小标点且不常驻文字；每个油库点位增加到实际坐标的指向线；CTY-22、REG-08、CTY-28等密集加油站自动散开并缩小，提高悬停命中率。
 - **停业站地图口径**：11、12、21 号站在地图和壁纸端按停业红色显示；这三站实际库存已清零，但零售系统数据库仍有旧值，因此地图悬停、壁纸库存和库存预警按清零规则覆盖展示，不回写原始数据库。
-- **预警页同步**：Web 端和客户端零售预警页增加油品库存水位预警表，便于直接查看低水位站点和油品。
-- **壁纸引擎增强**：独立壁纸授权接口返回库存库容、水位百分比、低库存汇总、年/月销量销售额和汇率；HUD 自动避让 Windows 任务栏；`SalesWallpaperEngine` 独立版本线默认自动检查、下载、校验、替换并重启，壁纸更新仍不混入主客户端安装包；壁纸数据启动时刷新，之后每天 09:00 自动刷新一次。
+- **预警页同步**：Web 端和客户端零售预警页增加油品库存液位预警表，便于直接查看低液位站点和油品。
+- **壁纸引擎增强**：独立壁纸授权接口返回库存库容、液位百分比、低库存汇总、年/月销量销售额和汇率；HUD 自动避让 Windows 任务栏；`SalesWallpaperEngine` 独立版本线默认自动检查、下载、校验、替换并重启，壁纸更新仍不混入主客户端安装包；壁纸数据启动时刷新，之后每天 09:00 自动刷新一次，错过定时或刷新失败会自动补刷重试。
 - **发布校验加强**：新增主程序安装包审计脚本，打包后会解开 NSIS 外层和 `app-64.7z`，对比已验证参考包检查 `SalesDesktop.exe`、`resources/app.asar`、入口 JS/CSS、地图资源和 `app-update.yml`。
 
 ### 2026-07-31 (SalesWallpaperEngine 0.1.12)
@@ -115,7 +150,7 @@
 - **0.1.7 exchange HUD**: the bottom-right wallpaper HUD shows authorized USD/KGS and CNY/KGS exchange rates from the project exchange-rate snapshot.
 - **0.1.8 display cleanup**: removes the bottom-left data timestamp and refresh timestamp from the wallpaper canvas.
 - **0.1.9 daily data refresh**: refreshes wallpaper data immediately on startup, then once daily at 09:00 after the morning automation tasks; `refreshAtLocalTime` can override this.
-- **Independent package**: `/download/wallpaper-engine/latest.json` currently serves the published `SalesWallpaperEngine 0.2.0` line; this does not update `SalesDesktop` version, installer, or `latest.yml`.
+- **Independent package**: local `SalesDesktop/download/wallpaper-engine/latest.json` is prepared for `SalesWallpaperEngine 0.2.2`; production sync is separate from the main `SalesDesktop` version, installer, and `latest.yml`.
 
 ### 2026-07-29 (v3.9.17 后端热修)
 
@@ -1008,7 +1043,7 @@ D:\SalesVisualization\OilStation\cache_snapshots
 
 - `SalesVisualizationDailyExchangeRates`：每天 `07:30` 自动补齐汇率。
 - `SalesVisualizationDailyMarketWatch`：每天 `07:30` 自动获取市场观察。
-- `SalesVisualizationDailyRetailSnapshots`：每天 `08:30` 先强制刷新当月零售日销表，再生成零售日快照、当前月与年度派生快照，并预热区域同比环比数据。
+- `SalesVisualizationDailyRetailSnapshots`：每天 `08:30` 先强制刷新当月零售日销表，再生成零售日快照、当前月与年度派生快照，刷新当前月利润快照和年度利润总表快照，并预热区域同比环比数据。
 - `SalesVisualizationDailyRetailAccountingReports`：每天 `08:45` 自动生成吉方财务交接日报。
 - `SalesVisualizationProduction`：生产服务任务。
 
@@ -1379,11 +1414,11 @@ D:\SalesVisualization\ops-refresh-retail-snapshots.bat
 
 - `07:30`：补齐汇率。
 - `07:30`：获取并整理市场观察。
-- `08:30`：生成零售日快照、当前月/年度汇总快照、区域同比环比数据，并同步生成零售预警趋势异常和运营建议；Excel 日销报表按需生成并复用已有索引。
+- `08:30`：生成零售日快照、当前月/年度汇总快照、当前月利润快照、年度利润总表快照、区域同比环比数据，并同步生成零售预警趋势异常和运营建议；Excel 日销报表按需生成并复用已有索引。
 ## 2026-08-01 Current Deployment Status
 
 - Production HTTPS is enabled: `https://sales.example.com/`.
 - HTTP domain traffic redirects to HTTPS; backup endpoint and certificate paths are kept only in `docs/配置文档.md`.
-- SalesDesktop source version is now `4.0.1`; new packaged builds default to the HTTPS API and update feed, upgrade legacy public HTTP config to HTTPS, and keep manual fallback details only in configuration.
+- SalesDesktop source version is now `4.0.2` (committed, packaged, deployed); the publicly deployed line is now `4.0.2`. New packaged builds default to the HTTPS API and update feed, upgrade legacy public HTTP config to HTTPS, and keep manual fallback details only in configuration.
 - System Health now includes a manual task for generating the previous completed month's original-software 254 monthly archive on the server; it saves in place and does not download a package to the client.
-- SalesWallpaperEngine source version is now `0.2.0`; new wallpaper builds default to the HTTPS API/update manifest and upgrade legacy public HTTP config to HTTPS.
+- SalesWallpaperEngine source version is now `0.2.2`; new wallpaper builds default to the HTTPS API/update manifest and upgrade legacy public HTTP config to HTTPS.

@@ -10,6 +10,7 @@ import {
   formatTonsKpi,
   numberFormat,
   volumeFormat,
+  normalizeRetailYears,
   pctColor,
   sortRankingRows,
 } from '../../utils/retail-helpers';
@@ -98,9 +99,15 @@ export default function ResourcePage() {
   // ── 加载年份 ──
   useEffect(() => {
     (async () => {
-      const y = await getYears();
-      setYears(y);
-      if (y[0]) setYear(y[0]);
+      try {
+        const y = normalizeRetailYears(await getYears());
+        setYears(y);
+        if (y[0]) setYear(y[0]);
+      } catch {
+        const y = normalizeRetailYears([]);
+        setYears(y);
+        if (y[0]) setYear(y[0]);
+      }
     })();
   }, []);
 

@@ -164,13 +164,14 @@ export default function WeighingList() {
   ];
 
   return (
-    <div>
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+    <div className="client-fit-page">
+      <Row gutter={[16, 16]} className="client-fit-fixed">
         <Col xs={12} lg={6}><Card size="small"><Statistic title={t('common.rows')} value={total} /></Card></Col>
         <Col xs={12} lg={6}><Card size="small"><Statistic title={t('weighing.netWeight')} value={Math.round(totalKg)} suffix="kg" /></Card></Col>
       </Row>
       <Card
         title={t('weighing.title')}
+        className="client-fit-table-card"
         extra={
           <Space wrap>
             <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
@@ -189,7 +190,7 @@ export default function WeighingList() {
         }
       >
         {canVerify && (
-          <Space wrap style={{ marginBottom: 12 }}>
+          <Space wrap className="client-fit-card-fixed">
             <Tag color={selectedCount ? 'blue' : 'default'}>{t('common.selectedCount', { count: selectedCount })}</Tag>
             <Button disabled={!selectedCount} onClick={() => runBatchReview('approve')}>{t('weighing.batchApprove')}</Button>
             <Button danger disabled={!selectedCount} onClick={() => runBatchReview('reject')}>{t('weighing.batchReject')}</Button>
@@ -207,23 +208,25 @@ export default function WeighingList() {
             <Button disabled={!selectedCount || !batchClassification} onClick={() => runBatchReview('classify')}>{t('weighing.batchClassify')}</Button>
           </Space>
         )}
-        <Table
-          className="weighing-list-table"
-          dataSource={data}
-          columns={columns}
-          rowKey={(r) => `${r.source}-${r.id}`}
-          rowSelection={canVerify ? {
-            selectedRowKeys,
-            onChange: (keys, rows) => {
-              setSelectedRowKeys(keys);
-              setSelectedRows(rows);
-            },
-          } : undefined}
-          loading={loading}
-          pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
-          tableLayout="fixed"
-          size="small"
-        />
+        <div className="client-fit-table-scroll">
+          <Table
+            className="weighing-list-table"
+            dataSource={data}
+            columns={columns}
+            rowKey={(r) => `${r.source}-${r.id}`}
+            rowSelection={canVerify ? {
+              selectedRowKeys,
+              onChange: (keys, rows) => {
+                setSelectedRowKeys(keys);
+                setSelectedRows(rows);
+              },
+            } : undefined}
+            loading={loading}
+            pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
+            tableLayout="fixed"
+            size="small"
+          />
+        </div>
       </Card>
     </div>
   );

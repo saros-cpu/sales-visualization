@@ -43,7 +43,7 @@ interface ExcelTableProps<T extends { id: number }> {
   initialNewRow?: () => Partial<T>;
   draftKey?: string;
   rowHeight?: number;
-  height?: number;
+  height?: number | string;
   onKeyDown?: (e: KeyboardEvent) => void;
   pagination?: false | {
     current: number;

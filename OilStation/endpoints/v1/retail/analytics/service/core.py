@@ -390,20 +390,14 @@ def _station_map_details_cache_current(cached):
         return False
     if not _station_map_details_has_capacity(cached):
         return False
+    if cached.get("source") == "live_database":
+        # The in-memory cache TTL already bounds live DB staleness. Re-querying
+        # the latest shift marker here made every warm map-details request as
+        # slow as a cold request.
+        return bool(cached.get("snapshotGeneratedAt") or cached.get("updatedAt"))
     _, workbook_path = _latest_report_workbook_for_map()
     if not workbook_path:
-        latest_shift_end = _latest_completed_shift_marker_for_map()
-        if not latest_shift_end:
-            return cached.get("source") == "live_database" and bool(cached.get("snapshotGeneratedAt"))
-        try:
-            cached_mtime = float(cached.get("sourceMtime"))
-        except (TypeError, ValueError):
-            cached_mtime = None
-        return (
-            cached.get("source") == "live_database"
-            and cached_mtime is not None
-            and abs(cached_mtime - latest_shift_end.timestamp()) < 0.001
-        )
+        return False
     try:
         snapshot_state = _report_workbook_snapshot_state(workbook_path)
     except OSError:

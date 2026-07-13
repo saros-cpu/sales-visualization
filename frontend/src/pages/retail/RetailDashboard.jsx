@@ -13,6 +13,7 @@ import {
   formatLitersKpiParts,
   formatSomKpiParts,
   formatTonsKpi,
+  normalizeRetailYears,
   sortRankingRows,
 } from '../../utils/retail-helpers';
 
@@ -143,12 +144,17 @@ export default function RetailDashboard() {
   // Load years
   useEffect(() => {
     getYears().then(list => {
-      setYears(list);
-      if (list.length > 0) {
-        const y = list[0];
+      const options = normalizeRetailYears(list);
+      setYears(options);
+      if (options.length > 0) {
+        const y = options[0];
         setYear(y);
       }
-    }).catch(() => {});
+    }).catch(() => {
+      const options = normalizeRetailYears([]);
+      setYears(options);
+      if (options.length > 0) setYear(options[0]);
+    });
   }, []);
 
   // Compute region map from stations

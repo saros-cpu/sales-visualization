@@ -16,11 +16,21 @@ import {
   normalizeWallpaperPayload,
   type WallpaperPayload,
 } from './wallpaperData';
+import {
+  DAILY_REFRESH_STATE_KEY,
+  isDailyRefreshDue,
+  localDateKey,
+  nextRefreshDelayMs as computeNextRefreshDelayMs,
+  parseRefreshAtLocalTime,
+  shouldRunDailyRefreshCatchUp,
+} from './wallpaperRefresh';
 
 const CACHE_KEY = 'sales-wallpaper-map-cache-v1';
 const WALLPAPER_API_HOST_KEY = 'sales_wallpaper_api_host';
 const DEFAULT_REFRESH_INTERVAL_MS = 24 * 60 * 60_000;
 const MIN_REFRESH_INTERVAL_MS = 5 * 60_000;
+const DAILY_REFRESH_CHECK_INTERVAL_MS = 60_000;
+const FAILED_REFRESH_RETRY_MS = 5 * 60_000;
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60_000;
 const WALLPAPER_BASE_W = 1920;
 const WALLPAPER_BASE_H = 1080;
@@ -166,27 +176,40 @@ function resolveRefreshIntervalMs() {
 }
 
 function resolveRefreshAtLocalTime() {
-  const text = String(window.SALES_RUNTIME_CONFIG?.wallpaper?.refreshAtLocalTime || '').trim();
-  const match = /^(\d{1,2}):(\d{2})$/.exec(text);
-  if (!match) return null;
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  return { hour, minute };
+  return parseRefreshAtLocalTime(window.SALES_RUNTIME_CONFIG?.wallpaper?.refreshAtLocalTime);
 }
 
-function nextRefreshDelayMs() {
-  const daily = resolveRefreshAtLocalTime();
-  if (!daily) return resolveRefreshIntervalMs();
+function nextScheduledRefreshDelayMs() {
+  return computeNextRefreshDelayMs(
+    new Date(),
+    resolveRefreshAtLocalTime(),
+    resolveRefreshIntervalMs(),
+    MIN_REFRESH_INTERVAL_MS,
+  );
+}
 
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(daily.hour, daily.minute, 0, 0);
-  if (next.getTime() <= now.getTime() + 5000) {
-    next.setDate(next.getDate() + 1);
+function readLastDailyRefreshDate() {
+  try {
+    return localStorage.getItem(DAILY_REFRESH_STATE_KEY);
+  } catch {
+    return null;
   }
-  return Math.max(MIN_REFRESH_INTERVAL_MS, next.getTime() - now.getTime());
+}
+
+function writeLastDailyRefreshDate(now = new Date()) {
+  try {
+    localStorage.setItem(DAILY_REFRESH_STATE_KEY, localDateKey(now));
+  } catch {}
+}
+
+function markDailyRefreshSuccessIfDue(now = new Date()) {
+  if (isDailyRefreshDue(now, resolveRefreshAtLocalTime())) {
+    writeLastDailyRefreshDate(now);
+  }
+}
+
+function shouldRunDailyCatchUp(now = new Date()) {
+  return shouldRunDailyRefreshCatchUp(now, resolveRefreshAtLocalTime(), readLastDailyRefreshDate());
 }
 
 function runtimeSafeArea() {
@@ -509,6 +532,7 @@ export default function WallpaperApp() {
   const editModeRef = useRef(false);
   const dragActiveRef = useRef(false);
   const previewTimerRef = useRef<number | undefined>(undefined);
+  const refreshInFlightRef = useRef<Promise<boolean> | null>(null);
   const [payload, setPayload] = useState<WallpaperPayload | null>(() => readCache());
   const [mode, setMode] = useState<'loading' | 'live' | 'cached' | 'error'>(() => (readCache() ? 'cached' : 'loading'));
   const [updateInfo, setUpdateInfo] = useState<WallpaperUpdateInfo | null>(null);
@@ -676,6 +700,8 @@ export default function WallpaperApp() {
       }
       writeCache(next);
       setMode('live');
+      markDailyRefreshSuccessIfDue();
+      return true;
     } catch {
       const cached = readCache();
       if (cached) {
@@ -685,26 +711,54 @@ export default function WallpaperApp() {
         setPayload(fallbackPayloadFromBusinessPoints());
         setMode('cached');
       }
+      return false;
     }
   }, []);
 
   useEffect(() => {
+    let retryAfter = 0;
+    const runRefresh = () => {
+      if (!refreshInFlightRef.current) {
+        refreshInFlightRef.current = refresh().finally(() => {
+          refreshInFlightRef.current = null;
+        });
+      }
+      return refreshInFlightRef.current;
+    };
+    const runCatchUpIfDue = () => {
+      const now = new Date();
+      if (!shouldRunDailyCatchUp(now) || now.getTime() < retryAfter) return;
+      void runRefresh().then((ok) => {
+        if (!ok) retryAfter = Date.now() + FAILED_REFRESH_RETRY_MS;
+      });
+    };
     const handleRefresh = () => {
-      void refresh();
+      void runRefresh();
     };
     let timer: number | undefined;
     const scheduleNextRefresh = () => {
       timer = window.setTimeout(() => {
-        void refresh().finally(scheduleNextRefresh);
-      }, nextRefreshDelayMs());
+        void runRefresh().then((ok) => {
+          if (!ok) retryAfter = Date.now() + FAILED_REFRESH_RETRY_MS;
+        }).finally(scheduleNextRefresh);
+      }, nextScheduledRefreshDelayMs());
     };
+    const catchUpTimer = window.setInterval(runCatchUpIfDue, DAILY_REFRESH_CHECK_INTERVAL_MS);
+    const handleResume = () => runCatchUpIfDue();
 
-    refresh();
+    void runRefresh();
     window.addEventListener('sales-wallpaper-refresh', handleRefresh);
+    window.addEventListener('online', handleResume);
+    window.addEventListener('focus', handleResume);
+    document.addEventListener('visibilitychange', handleResume);
     scheduleNextRefresh();
     return () => {
       if (timer) window.clearTimeout(timer);
+      window.clearInterval(catchUpTimer);
       window.removeEventListener('sales-wallpaper-refresh', handleRefresh);
+      window.removeEventListener('online', handleResume);
+      window.removeEventListener('focus', handleResume);
+      document.removeEventListener('visibilitychange', handleResume);
     };
   }, [refresh]);
 

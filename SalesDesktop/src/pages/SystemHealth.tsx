@@ -75,6 +75,11 @@ export default function SystemHealth() {
   const accountingSkipped = asArray<any>(accounting.skipped);
   const accountingFailedItems = asArray<any>(accounting.failedItems);
   const cacheItems = asArray<any>(cache.items);
+  const profitCacheItems = cacheItems.filter((item) => String(item?.key || '').startsWith('profit_'));
+  const profitMonthSnapshot = profitCacheItems.find((item) => item?.key === 'profit_month');
+  const profitYearSnapshot = profitCacheItems.find((item) => item?.key === 'profit_year');
+  const profitSnapshotOk = profitCacheItems.length > 0 && profitCacheItems.every((item) => item?.exists && item?.valid);
+  const profitSnapshotMissing = profitCacheItems.filter((item) => !item?.exists || !item?.valid).length;
   const apiRecent = asArray<any>(api.recent);
   const apiTop = asArray<any>(api.topPaths24h);
   const automation = asArray<any>(data.automation);
@@ -175,16 +180,18 @@ export default function SystemHealth() {
 
   return (
     <Card
+      className="client-fit-page client-fit-table-card"
       title={t('systemHealth.title')}
       extra={<Button icon={<ReloadOutlined />} onClick={() => query.refetch()} loading={query.isFetching}>{t('common.update')}</Button>}
     >
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+      <Row gutter={[16, 16]} className="client-fit-fixed" style={{ marginBottom: 12 }}>
         <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.overall')} value={data.status || '-'} tone={data.status === 'ok' ? 'success' : 'warning'} /></Col>
         <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.actionOpenCount')} value={actionSummary.openCount ?? 0} goodWhen="down" tone={(actionSummary.openCount ?? 0) > 0 ? 'warning' : 'success'} /></Col>
         <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.apiFailed24h')} value={api.failed24h ?? 0} goodWhen="down" tone={(api.failed24h ?? 0) > 0 ? 'danger' : 'success'} /></Col>
         <Col xs={24} sm={12} xl={6}><KpiCard title={t('systemHealth.aiFailed7d')} value={ai.failed7d ?? 0} goodWhen="down" tone={(ai.failed7d ?? 0) > 0 ? 'danger' : 'success'} /></Col>
       </Row>
       <Tabs
+        className="client-fit-tabs system-health-tabs"
         activeKey={activeTab}
         onChange={handleTabChange}
         items={[
@@ -207,6 +214,7 @@ export default function SystemHealth() {
                   { key: 'warning', title: t('systemHealth.actionWarningCount'), value: actionSummary.warningCount ?? 0, tone: (actionSummary.warningCount ?? 0) > 0 ? 'warning' : 'success', span: 6 },
                   { key: 'retailAnomaly', title: t('systemHealth.retailAnomalyCount'), value: retailAlerts.anomalyCount ?? 0, tone: (retailAlerts.anomalyCount ?? 0) > 0 ? 'warning' : 'success', span: 6 },
                   { key: 'report254', title: t('systemHealth.report254Diff'), value: reportAudit.monthVs254 ?? 0, tone: (reportAudit.monthVs254 ?? 0) > 0 ? 'warning' : 'success', span: 6 },
+                  { key: 'profitSnapshots', title: t('systemHealth.profitSnapshots'), value: profitSnapshotOk ? t('common.ok') : profitSnapshotMissing, tone: profitSnapshotOk ? 'success' : 'warning', span: 6 },
                 ]} />
                 <Table
                   size="small"
@@ -298,19 +306,39 @@ export default function SystemHealth() {
             key: 'cache',
             label: t('systemHealth.cache'),
             children: (
-              <Table
-                size="small"
-                rowKey="key"
-                dataSource={cacheItems}
-                pagination={false}
-                columns={[
-                  { title: t('systemHealth.cacheItem'), dataIndex: 'label', width: 180 },
-                  { title: t('common.status'), dataIndex: 'valid', width: 100, render: (_: any, row: any) => <Tag color={row?.exists && row?.valid ? 'green' : 'red'}>{row?.exists && row?.valid ? t('common.ok') : t('common.failed')}</Tag> },
-                  { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170 },
-                  { title: t('systemHealth.size'), dataIndex: 'size', width: 100 },
-                  { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any, row: any) => v || textList(row?.missingKeys).join(', ') || '-' },
-                ]}
-              />
+              <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                <KpiGrid items={[
+                  {
+                    key: 'profitMonth',
+                    title: t('systemHealth.profitMonthSnapshot'),
+                    value: profitMonthSnapshot?.exists && profitMonthSnapshot?.valid ? t('common.ok') : t('common.failed'),
+                    tone: profitMonthSnapshot?.exists && profitMonthSnapshot?.valid ? 'success' : 'warning',
+                    statusText: profitMonthSnapshot?.updatedAt || '-',
+                    span: 6,
+                  },
+                  {
+                    key: 'profitYear',
+                    title: t('systemHealth.profitYearSnapshot'),
+                    value: profitYearSnapshot?.exists && profitYearSnapshot?.valid ? t('common.ok') : t('common.failed'),
+                    tone: profitYearSnapshot?.exists && profitYearSnapshot?.valid ? 'success' : 'warning',
+                    statusText: profitYearSnapshot?.updatedAt || '-',
+                    span: 6,
+                  },
+                ]} />
+                <Table
+                  size="small"
+                  rowKey="key"
+                  dataSource={cacheItems}
+                  pagination={false}
+                  columns={[
+                    { title: t('systemHealth.cacheItem'), dataIndex: 'label', width: 180 },
+                    { title: t('common.status'), dataIndex: 'valid', width: 100, render: (_: any, row: any) => <Tag color={row?.exists && row?.valid ? 'green' : 'red'}>{row?.exists && row?.valid ? t('common.ok') : t('common.failed')}</Tag> },
+                    { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170 },
+                    { title: t('systemHealth.size'), dataIndex: 'size', width: 100 },
+                    { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any, row: any) => v || textList(row?.missingKeys).join(', ') || '-' },
+                  ]}
+                />
+              </Space>
             ),
           },
           {

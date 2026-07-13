@@ -587,7 +587,7 @@ export default function KnowledgeBase() {
         onOk={saveArticle}
         confirmLoading={saving}
         width={820}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" initialValues={{ articleType: 'article', status: 'published', allowAi: true }}>
           <Row gutter={12}>

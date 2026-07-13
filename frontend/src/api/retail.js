@@ -1,5 +1,5 @@
 // src/api/retail.js — 零售模块 API
-import { get } from './client';
+import { get, download } from './client';
 
 // ── 年份 & 月份 ──
 export const getYears = () => get('/api/years');
@@ -46,6 +46,30 @@ export const generateMonthlyReport = (ym) =>
   get(`/api/export/analysis/monthly/${encodeURIComponent(ym)}`);
 export const exportMonthlyExcel = (ym) =>
   get(`/api/export/monthly/${ym}`);
+
+export const getProfitMonthData = (ym, { refresh } = {}) =>
+  get(`/api/export/profit/${encodeURIComponent(ym)}/data`, refresh ? { refresh: '1' } : undefined);
+
+export const getProfitYearData = (year, { refresh } = {}) =>
+  get(`/api/export/profit-year/${encodeURIComponent(year)}/data`, refresh ? { refresh: '1' } : undefined);
+
+export const downloadProfitReport = async (ym) => {
+  const res = await get(`/api/export/profit/${encodeURIComponent(ym)}`);
+  if ((res.status && res.status !== 'ok') || (res.code && res.code !== 0)) {
+    throw new Error(res.error || res.message || '利润核算月度文件生成失败');
+  }
+  await download(`/api/export/profit/${encodeURIComponent(ym)}/download`, res.file || `利润核算_${ym}.xlsx`);
+  return res;
+};
+
+export const downloadProfitYearReport = async (year) => {
+  const res = await get(`/api/export/profit-year/${encodeURIComponent(year)}`);
+  if ((res.status && res.status !== 'ok') || (res.code && res.code !== 0)) {
+    throw new Error(res.error || res.message || '年度利润核算总表生成失败');
+  }
+  await download(`/api/export/profit-year/${encodeURIComponent(year)}/download`, res.file || `利润核算_${year}年.xlsx`);
+  return res;
+};
 
 // ── 零售页面导航 ──
 export const getRetailPages = () => get('/api/retail/pages');

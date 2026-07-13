@@ -27,6 +27,13 @@ export interface ComponentDefinition {
   permissionCode?: string;
 }
 
+export interface KpiCompareValue {
+  value?: number | null;
+  labelZh?: string;
+  labelRu?: string;
+  goodWhen?: 'up' | 'down' | 'neutral';
+}
+
 export interface KpiMetricValue {
   value: number | string;
   secondaryValue?: number | string | null;
@@ -37,6 +44,7 @@ export interface KpiMetricValue {
   updatedAt?: string;
   status?: string;
   source?: string;
+  compare?: KpiCompareValue[];
 }
 
 export interface CockpitComponent {
@@ -152,4 +160,78 @@ export async function saveDictionaryItem(item: DictionaryItem) {
 export async function saveCockpitTemplate(template: CockpitTemplate) {
   const res = await client.put(`/management/cockpit/templates/${template.templateKey}`, template);
   return res.data;
+}
+
+export interface ProfitCostType {
+  costType: 'M' | 'N' | 'O' | 'P' | 'Q';
+  labelZh: string;
+  labelRu: string;
+}
+
+export interface ProfitCostItemValue {
+  value: number | null;
+  source: 'db' | 'config';
+  updatedAt?: string | null;
+}
+
+export interface ProfitStationRow {
+  shopKey: number;
+  name: string;
+  items: Record<string, ProfitCostItemValue>;
+}
+
+export interface ProfitCostItemsPayload {
+  month: string;
+  stations: ProfitStationRow[];
+}
+
+export interface ProfitPurchasePriceValue {
+  resourceKey: number;
+  product: string;
+  purchaseProduct: string;
+  purchasePrice: number | null;
+  source: 'db' | 'template' | 'config';
+  updatedAt?: string | null;
+}
+
+export interface ProfitPurchaseStationRow {
+  shopKey: number;
+  name: string;
+  rows: ProfitPurchasePriceValue[];
+}
+
+export interface ProfitPurchasePricesPayload {
+  month: string;
+  stations: ProfitPurchaseStationRow[];
+}
+
+export async function getProfitCostTypes() {
+  const res = await client.get('/profit/cost-types');
+  return res.data as ProfitCostType[];
+}
+
+export async function getProfitCostItems(month: string) {
+  const res = await client.get('/profit/cost-items', { params: { month } });
+  return res.data as ProfitCostItemsPayload;
+}
+
+export async function saveProfitCostItems(
+  month: string,
+  items: Array<{ shopKey: number; costType: string; value: number | null }>,
+) {
+  const res = await client.put('/profit/cost-items', { month, items });
+  return res.data as { month: string; saved: number; deleted: number };
+}
+
+export async function getProfitPurchasePrices(month: string) {
+  const res = await client.get('/profit/purchase-prices', { params: { month } });
+  return res.data as ProfitPurchasePricesPayload;
+}
+
+export async function saveProfitPurchasePrices(
+  month: string,
+  items: Array<{ shopKey: number; resourceKey: number; purchaseProduct?: string; purchasePrice: number | null }>,
+) {
+  const res = await client.put('/profit/purchase-prices', { month, items });
+  return res.data as { month: string; saved: number; deleted: number };
 }

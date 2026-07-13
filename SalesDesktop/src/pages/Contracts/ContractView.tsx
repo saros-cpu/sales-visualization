@@ -44,11 +44,11 @@ export default function ContractView() {
   ], [t, productOptions, customerOptions]);
 
   return (
-    <div>
+    <div className="client-fit-page">
       <Card
         size="small"
         title={t('nav.contractView')}
-        className="contract-view-card"
+        className="contract-view-card client-fit-table-card"
         extra={
           <Select value={company} onChange={(v) => { setCompany(v ?? ''); setPage(1); }} style={{ width: 130 }} allowClear placeholder={t('common.all')}>
             <Select.Option value="Example">{t('contracts.exCompany')}</Select.Option>
@@ -56,21 +56,23 @@ export default function ContractView() {
           </Select>
         }
       >
-        <Table<Contract>
-          dataSource={data}
-          columns={columns as any}
-          rowKey="id"
-          loading={loading}
-          size="small"
-          pagination={{
-            current: page,
-            pageSize: 50,
-            total,
-            onChange: setPage,
-            showTotal: (tot) => t('common.total', { count: tot }),
-          }}
-          scroll={{ x: 'max-content', y: 'calc(100vh - 260px)' }}
-        />
+        <div className="client-fit-table-scroll">
+          <Table<Contract>
+            dataSource={data}
+            columns={columns as any}
+            rowKey="id"
+            loading={loading}
+            size="small"
+            pagination={{
+              current: page,
+              pageSize: 50,
+              total,
+              onChange: setPage,
+              showTotal: (tot) => t('common.total', { count: tot }),
+            }}
+            scroll={{ x: 'max-content' }}
+          />
+        </div>
       </Card>
     </div>
   );

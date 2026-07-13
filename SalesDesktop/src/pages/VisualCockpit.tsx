@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { App as AntApp, Button, Card, Col, Empty, Row, Select, Space, Tag, Tooltip, Typography } from 'antd';
-import { ArrowsAltOutlined, CloseOutlined, EditOutlined, FullscreenOutlined, HolderOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, ArrowUpOutlined, ArrowsAltOutlined, CloseOutlined, EditOutlined, FullscreenOutlined, HolderOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -9,7 +9,7 @@ import { useApiQuery } from '@/hooks/useApi';
 import { getCockpit, getManagementOverview, saveCockpitTemplate, type CockpitComponent, type CockpitTemplate, type ComponentDefinition, type KpiDefinition, type KpiMetricValue } from '@/api/management';
 import ChartCard from '@/components/ui/ChartCard';
 import PageState from '@/components/ui/PageState';
-import type { KpiTone } from '@/components/ui/KpiCard';
+import type { KpiGoodWhen, KpiTone } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { CHART_PALETTE } from '@/theme/charts';
 import { sortRankingRows } from '@/utils/rankingCharts';
@@ -221,6 +221,42 @@ const cockpitToneColors: Record<KpiTone, string | undefined> = {
   info: '#1677ff',
 };
 
+type CockpitCompareItem = { value: number; label?: string; goodWhen?: KpiGoodWhen };
+
+function cockpitCompareColor(value: number, goodWhen: KpiGoodWhen = 'up') {
+  if (goodWhen === 'neutral' || value === 0) return '#5f6368';
+  const isGood = goodWhen === 'up' ? value > 0 : value < 0;
+  return isGood ? '#389e0d' : '#cf1322';
+}
+
+function metricCompareItems(metric: KpiMetricValue | undefined, definition: KpiDefinition | undefined, language: string): CockpitCompareItem[] {
+  return (metric?.compare || [])
+    .map((item) => {
+      const value = Number(item.value);
+      if (!Number.isFinite(value)) return null;
+      return {
+        value,
+        label: labelFor(item, language),
+        goodWhen: item.goodWhen || definition?.goodWhen || 'up',
+      };
+    })
+    .filter(Boolean) as CockpitCompareItem[];
+}
+
+function CockpitCompareBadge({ item }: { item: CockpitCompareItem }) {
+  const toneClass = item.value > 0 ? 'up' : item.value < 0 ? 'down' : 'neutral';
+  const color = cockpitCompareColor(item.value, item.goodWhen);
+  return (
+    <span className={`cockpit-kpi-compare-item ${toneClass}`}>
+      <span className="cockpit-kpi-compare-label">{item.label}</span>
+      <span className="cockpit-kpi-compare-value" style={{ color }}>
+        {item.value > 0 ? <ArrowUpOutlined /> : item.value < 0 ? <ArrowDownOutlined /> : null}
+        {Math.abs(item.value)}%
+      </span>
+    </span>
+  );
+}
+
 function cockpitKpiValueColor(definition: KpiDefinition | undefined, metricKey?: string) {
   const key = metricKey || definition?.key || '';
   const unit = definition?.unit || '';
@@ -310,6 +346,7 @@ function CockpitKpiPanel({
   secondarySuffix,
   secondaryPrecision,
   secondaryLabel,
+  compare,
   tone,
   valueColor,
   tooltip,
@@ -324,6 +361,7 @@ function CockpitKpiPanel({
   secondarySuffix?: string;
   secondaryPrecision?: number;
   secondaryLabel?: string;
+  compare?: CockpitCompareItem[];
   tone?: KpiTone;
   valueColor?: string;
   tooltip?: ReactNode;
@@ -331,23 +369,33 @@ function CockpitKpiPanel({
   onClick?: () => void;
 }) {
   const hasSecondaryValue = secondaryValue !== null && secondaryValue !== undefined && secondaryValue !== '';
+  const compareItems = (compare || []).filter((item) => Number.isFinite(item.value));
   const content = (
-    <Card size="small" className={['cockpit-component-card', 'cockpit-kpi-panel', onClick ? 'cockpit-kpi-clickable' : ''].filter(Boolean).join(' ')} style={style} onClick={onClick}>
+    <Card size="small" className={['cockpit-component-card', 'cockpit-kpi-panel', compareItems.length ? 'has-compare' : '', onClick ? 'cockpit-kpi-clickable' : ''].filter(Boolean).join(' ')} style={style} onClick={onClick}>
       <div className="cockpit-kpi-panel-body">
-        <div className="cockpit-kpi-panel-title">{title}</div>
-        <div className="cockpit-kpi-panel-stat">
-          <div className="cockpit-kpi-panel-value" style={{ color: valueColor || cockpitToneColors[tone || 'neutral'] }}>
-            <span className="cockpit-kpi-panel-number">{formatCockpitKpiValue(value, precision)}</span>
-            {suffix && <span className="cockpit-kpi-panel-unit">{suffix}</span>}
-          </div>
-          {hasSecondaryValue && (
-            <div className="cockpit-kpi-panel-secondary">
-              {secondaryLabel && <span className="cockpit-kpi-panel-secondary-label">{secondaryLabel}</span>}
-              <span>{formatCockpitKpiValue(secondaryValue, secondaryPrecision)}</span>
-              {secondarySuffix && <span className="cockpit-kpi-panel-secondary-unit">{secondarySuffix}</span>}
+        <div className="cockpit-kpi-panel-main">
+          <div className="cockpit-kpi-panel-title">{title}</div>
+          <div className="cockpit-kpi-panel-stat">
+            <div className="cockpit-kpi-panel-value" style={{ color: valueColor || cockpitToneColors[tone || 'neutral'] }}>
+              <span className="cockpit-kpi-panel-number">{formatCockpitKpiValue(value, precision)}</span>
+              {suffix && <span className="cockpit-kpi-panel-unit">{suffix}</span>}
             </div>
-          )}
+            {hasSecondaryValue && (
+              <div className="cockpit-kpi-panel-secondary">
+                {secondaryLabel && <span className="cockpit-kpi-panel-secondary-label">{secondaryLabel}</span>}
+                <span>{formatCockpitKpiValue(secondaryValue, secondaryPrecision)}</span>
+                {secondarySuffix && <span className="cockpit-kpi-panel-secondary-unit">{secondarySuffix}</span>}
+              </div>
+            )}
+          </div>
         </div>
+        {compareItems.length > 0 && (
+          <div className="cockpit-kpi-compare-panel">
+            {compareItems.map((item, index) => (
+              <CockpitCompareBadge key={`${item.label || 'compare'}-${index}`} item={item} />
+            ))}
+          </div>
+        )}
       </div>
     </Card>
   );
@@ -434,6 +482,11 @@ function cardHeightStyle(height: number, span = 6, widthPercent = (span / compon
   const tiny = height < 56;
   const narrow = widthPercent < 12;
   const valueSize = boundedNumber(height * 0.24 + widthPercent * 0.22, 22, tiny ? 10 : compact ? 14 : 18, narrow ? 24 : 40);
+  const compareWidth = boundedNumber(height * 0.22 + widthPercent * 2, 98, tiny ? 56 : narrow ? 70 : 86, narrow ? 98 : 132);
+  const compareValueSize = boundedNumber(height * 0.07 + widthPercent * 0.36, 18, tiny ? 13 : compact ? 15 : 18, narrow ? 18 : 23);
+  const compareLabelSize = boundedNumber(height * 0.036 + widthPercent * 0.1, 13, tiny ? 11 : compact ? 12 : 13, narrow ? 14 : 15);
+  const compareGap = boundedNumber(height * 0.012 + widthPercent * 0.025, 4, tiny ? 2 : 3, 6);
+  const compareColumnGap = boundedNumber(height * 0.018 + widthPercent * 0.06, 8, tiny ? 3 : compact ? 4 : 6, narrow ? 8 : 12);
   const titleSize = tiny ? 10 : 12;
   const cardTitleSize = tiny ? 10 : 12;
   const padding = boundedNumber(Math.min(height * 0.09, widthPercent * 0.45), 14, tiny ? 2 : compact ? 4 : 8, 16);
@@ -449,6 +502,11 @@ function cardHeightStyle(height: number, span = 6, widthPercent = (span / compon
     '--cockpit-kpi-delta-margin': `${tiny ? 1 : compact ? 3 : 8}px`,
     '--cockpit-kpi-footer-gap': `${tiny ? 2 : 6}px`,
     '--cockpit-kpi-stat-gap': `${tiny ? 1 : compact ? 3 : 6}px`,
+    '--cockpit-kpi-compare-width': `${compareWidth}px`,
+    '--cockpit-kpi-compare-value-size': `${compareValueSize}px`,
+    '--cockpit-kpi-compare-label-size': `${compareLabelSize}px`,
+    '--cockpit-kpi-compare-gap': `${compareGap}px`,
+    '--cockpit-kpi-compare-column-gap': `${compareColumnGap}px`,
     '--cockpit-exchange-value-size': `${boundedNumber(height * 0.18 + widthPercent * 0.14, 20, tiny ? 13 : compact ? 17 : 19, 34)}px`,
     '--cockpit-exchange-label-size': `${tiny ? 10 : 12}px`,
     '--cockpit-card-title-size': `${cardTitleSize}px`,
@@ -1015,6 +1073,7 @@ export default function VisualCockpit() {
     const targetRoute = routeForCockpitKpi(definition, metricKey);
     const kpiDisplay = cockpitKpiDisplay(definition, metricKey, metric?.value ?? 0, i18n.language);
     const secondaryDisplay = cockpitSecondaryDisplay(metric, i18n.language);
+    const compareItems = metricCompareItems(metric, definition, i18n.language);
     return (
       <Col key={component.id} {...cockpitColProps(widthPercent, height, type, layoutEditing && isAdmin)}>
         {renderLayoutFrame(component, span, widthPercent, height, type, (
@@ -1027,6 +1086,7 @@ export default function VisualCockpit() {
             secondarySuffix={secondaryDisplay.suffix}
             secondaryPrecision={secondaryDisplay.precision}
             secondaryLabel={secondaryMetricLabel(metric, i18n.language)}
+            compare={compareItems}
             tone={toneFor(definition, metric?.value)}
             valueColor={cockpitKpiValueColor(definition, metricKey)}
             tooltip={metric?.updatedAt ? `${t('common.updated')}: ${metric.updatedAt}` : undefined}

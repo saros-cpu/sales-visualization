@@ -21,6 +21,9 @@ export default function HealthPanel() {
   const latestTask = (data.automation || [])[0] || {};
   const taskWarnings = (data.tasks || []).filter(i => i.warning).length;
   const snapshotState = (data.snapshots?.dailyActualCount || 0) >= (data.snapshots?.dailyExpectedCount || 0);
+  const profitSnapshots = data.snapshots?.profitSnapshots || {};
+  const profitSnapshotItems = profitSnapshots.items || [];
+  const profitSnapshotState = profitSnapshots.ok ? 'ok' : 'warn';
   const exchangeState = data.latestExchange?.date ? 'ok' : 'warn';
   const marketState = data.latestMarket?.observedAt ? 'ok' : 'warn';
 
@@ -37,7 +40,7 @@ export default function HealthPanel() {
             <div><span>更新时间</span><strong>{data.generatedAt || '--'}</strong></div>
           </div>
         </section>
-        <section className="panel panel-wide health-ops-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, padding: 12 }}>
+        <section className="panel panel-wide health-ops-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, padding: 12 }}>
           <div className={`ops-card ${exchangeState}`}>
             <span>今日汇率</span>
             <strong>{data.latestExchange?.date || '--'}</strong>
@@ -52,6 +55,11 @@ export default function HealthPanel() {
             <span>零售快照</span>
             <strong>{data.snapshots?.dailyActualCount || 0}/{data.snapshots?.dailyExpectedCount || 0}</strong>
             <small>最后数据日 {data.snapshots?.reportWorkbook?.lastNonemptyDay || '--'}</small>
+          </div>
+          <div className={`ops-card ${profitSnapshotState}`}>
+            <span>利润快照</span>
+            <strong>{profitSnapshots.ok ? '已生成' : `${profitSnapshots.missing?.length || 0} 项缺失`}</strong>
+            <small>{profitSnapshots.month || '--'} · {profitSnapshotItems.map(item => item.generatedAt).filter(Boolean)[0] || '--'}</small>
           </div>
           <div className={`ops-card ${taskWarnings ? 'warn' : 'ok'}`}>
             <span>任务状态</span>
@@ -69,6 +77,7 @@ export default function HealthPanel() {
             <div className="stack-row"><span>报表辅助快照</span><strong>{healthMark(!data.snapshots?.missing?.length)}</strong><small>缺失：{data.snapshots?.missing?.join('、') || '无'}</small></div>
             <div className="stack-row"><span>缓存刷新</span><strong>{healthMark(data.cacheRefresh?.status !== 'failed')}</strong><small>{data.cacheRefresh?.message || '--'}</small></div>
             <div className="stack-row"><span>最近月度日销表</span><strong>{healthMark(data.snapshots?.reportWorkbook?.exists)}</strong><small>{data.snapshots?.reportWorkbook?.exists ? `${data.snapshots.reportWorkbook.month} · ${data.snapshots.reportWorkbook.lastNonemptyDay || '--'} · ${(data.snapshots.reportWorkbook.size / 1024).toFixed(0)}KB` : '无'}</small></div>
+            <div className="stack-row"><span>利润核算快照</span><strong>{healthMark(!!profitSnapshots.ok)}</strong><small>{profitSnapshots.missing?.length ? `缺失：${profitSnapshots.missing.join('、')}` : `${profitSnapshots.month || '--'} · 已生成`}</small></div>
           </div>
         </section>
         <section className="panel">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Row, Col, Space, Card, Button } from 'antd';
+import { Row, Col, Space, Button } from 'antd';
 import { FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { useApiQuery } from '@/hooks/useApi';
 import { fetchWholesale } from '@/api/wholesale';
 import { downloadWholesaleReport } from '@/api/export';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import KpiCard from '@/components/ui/KpiCard';
 import type { WholesaleClass } from '@/types/api';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -31,12 +32,22 @@ export default function Overview() {
 
   const q = useApiQuery(['wholesale', year, month], () => fetchWholesale({ year, month }));
   const data = q.data;
+  const compareFor = (key: WholesaleClass) => {
+    const compare = data?.comparison?.[key] || {};
+    return [
+      { value: compare.momTons, label: t('common.mom'), goodWhen: key === 'unknown' ? 'down' as const : 'up' as const },
+      { value: compare.yoyTons, label: t('common.yoy'), goodWhen: key === 'unknown' ? 'down' as const : 'up' as const },
+    ];
+  };
 
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
-        <PeriodPicker value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
-          onChange={(y, m) => { setYear(y); setMonth(m); }} picker="month" />
+        <PeriodPicker
+          value={month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`}
+          onChange={(y, m) => { setYear(y); setMonth(m); }}
+          picker="month"
+        />
         {canExport && (
           <Button icon={<FileTextOutlined />} onClick={() => downloadWholesaleReport({ year, month })}>
             {t('wholesale.generateReport')}
@@ -47,30 +58,24 @@ export default function Overview() {
         {ORDER.map((key) => {
           const card = data?.cards[key];
           if (!card) return null;
+          const amountText = (key === 'export_wholesale' || key === 'local_wholesale')
+            ? ` | CNY ${card.amountCny.toLocaleString()}`
+            : '';
           return (
             <Col xs={24} sm={12} md={8} xl={4} key={key} style={{ display: 'flex' }}>
-              <Card
-                size="small"
+              <KpiCard
                 title={t(`wholesale.${key}`)}
-                className="kpi-card-clickable"
+                value={`${card.tons.toLocaleString()} t`}
+                compare={compareFor(key)}
+                goodWhen={key === 'unknown' ? 'down' : 'up'}
+                extra={<span>{t('wholesale.entities')}: {card.entities} | {t('common.rows')}: {card.rows}{amountText}</span>}
                 style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
                 onClick={() => navigate(CARD_ROUTES[key])}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 24, fontWeight: 600 }}>{card.tons.toLocaleString()} т</div>
-                  <div style={{ fontSize: 12, color: '#909090' }}>
-                    {t('wholesale.entities')}: {card.entities} | {t('common.rows')}: {card.rows}
-                  </div>
-                  {(key === 'export_wholesale' || key === 'local_wholesale') && (
-                    <div style={{ fontSize: 12, color: '#909090' }}>¥{card.amountCny.toLocaleString()}</div>
-                  )}
-                </div>
-              </Card>
+              />
             </Col>
           );
         })}
       </Row>
-
     </div>
   );
 }

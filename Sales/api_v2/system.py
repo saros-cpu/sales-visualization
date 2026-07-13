@@ -89,6 +89,72 @@ def _active_month() -> str:
     return f"{completed_day.year}-{completed_day.month:02d}"
 
 
+def _profit_snapshot_cache_items(ym: str) -> list[dict[str, Any]]:
+    year = ym.split("-", 1)[0]
+    expected = [
+        ("profit_month", f"利润月度快照 {ym}", "month", ym, {"summary", "stations"}),
+        ("profit_year", f"年度利润总表快照 {year}", "year", year, {"summary", "months"}),
+    ]
+    rows: dict[tuple[str, str], dict[str, Any]] = {}
+    error: str | None = None
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT snapshot_type, period_key, payload_json, generated_at
+                    FROM profit_report_snapshots
+                    WHERE (snapshot_type=%s AND period_key=%s)
+                       OR (snapshot_type=%s AND period_key=%s)
+                    """,
+                    ("month", ym, "year", year),
+                )
+                rows = {
+                    (str(row["snapshot_type"]), str(row["period_key"])): row
+                    for row in cur.fetchall()
+                }
+        finally:
+            conn.close()
+    except pymysql.err.MySQLError as exc:
+        error = exc.__class__.__name__
+
+    result: list[dict[str, Any]] = []
+    for key, label, snapshot_type, period_key, required_keys in expected:
+        item: dict[str, Any] = {
+            "key": key,
+            "label": label,
+            "path": f"profit_report_snapshots:{snapshot_type}:{period_key}",
+            "exists": False,
+            "size": 0,
+            "updatedAt": None,
+            "valid": False,
+            "missingKeys": [],
+            "error": error,
+            "month": ym,
+        }
+        row = rows.get((snapshot_type, period_key))
+        if not row:
+            item["error"] = error or "missing"
+            result.append(item)
+            continue
+        payload_text = row.get("payload_json") or ""
+        item["exists"] = True
+        item["size"] = len(str(payload_text).encode("utf-8"))
+        generated_at = row.get("generated_at")
+        item["updatedAt"] = generated_at.isoformat(sep=" ") if hasattr(generated_at, "isoformat") else generated_at
+        try:
+            payload = json.loads(payload_text)
+            missing = sorted(required_keys - set(payload.keys())) if isinstance(payload, dict) else sorted(required_keys)
+            item["missingKeys"] = missing
+            item["valid"] = not missing
+            item["error"] = None if item["valid"] else "missing_keys"
+        except (TypeError, json.JSONDecodeError) as exc:
+            item["error"] = exc.__class__.__name__
+        result.append(item)
+    return result
+
+
 def _cache_items() -> list[dict[str, Any]]:
     ym = _active_month()
     year, month = ym.split("-")
@@ -112,6 +178,7 @@ def _cache_items() -> list[dict[str, Any]]:
         info = _file_info(path, required)
         info.update({"key": key, "label": label, "month": ym})
         result.append(info)
+    result.extend(_profit_snapshot_cache_items(ym))
 
     completed_day = date.today() - timedelta(days=1)
     day_path = daily_dir / f"day_{completed_day.day:02d}.json"

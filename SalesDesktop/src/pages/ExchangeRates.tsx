@@ -97,26 +97,27 @@ export default function ExchangeRates() {
   ];
 
   return (
-    <div>
-      <Row justify="space-between" className="page-toolbar">
-        <Col><h2>{t('nav.exchange')}</h2></Col>
-        <Col>
-          <Space wrap>
-            <Select value={month} onChange={setMonth} style={{ width: 90 }}>
-              {Array.from({ length: 12 }, (_, i) => (
-                <Select.Option key={i + 1} value={i + 1}>{i + 1}{t('common.month')}</Select.Option>
-              ))}
-            </Select>
-            <Select value={year} onChange={setYear} style={{ width: 100 }}>
-              {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
-                <Select.Option key={y} value={y}>{y}</Select.Option>
-              ))}
-            </Select>
-            <Button icon={<DownloadOutlined />} onClick={() => exportExchangeRates(year, month)}>{t('common.export')}</Button>
-          </Space>
-        </Col>
-      </Row>
-      <div style={{ marginBottom: 16 }}>
+    <div className="client-fit-page">
+      <div className="client-fit-stack">
+        <Row justify="space-between" className="page-toolbar" style={{ marginBottom: 0 }}>
+          <Col><h2>{t('nav.exchange')}</h2></Col>
+          <Col>
+            <Space wrap>
+              <Select value={month} onChange={setMonth} style={{ width: 90 }}>
+                {Array.from({ length: 12 }, (_, i) => (
+                  <Select.Option key={i + 1} value={i + 1}>{i + 1}{t('common.month')}</Select.Option>
+                ))}
+              </Select>
+              <Select value={year} onChange={setYear} style={{ width: 100 }}>
+                {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                  <Select.Option key={y} value={y}>{y}</Select.Option>
+                ))}
+              </Select>
+              <Button icon={<DownloadOutlined />} onClick={() => exportExchangeRates(year, month)}>{t('common.export')}</Button>
+            </Space>
+          </Col>
+        </Row>
+      <div>
         <KpiGrid items={[
           { key: 'total', title: t('exchange.totalDays'), value: data?.total ?? 0, suffix: t('common.day') },
           { key: 'gaps', title: t('exchange.openGaps'), value: data?.openGaps ?? 0, goodWhen: 'down', tone: (data?.openGaps ?? 0) > 0 ? 'danger' : 'success' },
@@ -124,18 +125,21 @@ export default function ExchangeRates() {
           { key: 'cny', title: t('exchange.missingCny'), value: data?.missingCny ?? 0, goodWhen: 'down', tone: (data?.missingCny ?? 0) > 0 ? 'warning' : 'success' },
         ]} />
       </div>
-      <Card size="small" style={{ marginBottom: 16 }}>
+      <Card size="small">
         <ReactEChartsCore echarts={echarts} option={chartOption} style={{ height: 320 }} />
       </Card>
-      <Card size="small">
-        <Table
-          dataSource={items}
-          columns={rateColumns}
-          rowKey="date"
-          pagination={{ pageSize: 31, showTotal: (tot) => t('common.total', { count: tot }) }}
-          size="small"
-          scroll={{ x: 600, y: 'calc(100vh - 470px)' }}
-        />
+      </div>
+      <Card size="small" className="client-fit-table-card">
+        <div className="client-fit-table-scroll">
+          <Table
+            dataSource={items}
+            columns={rateColumns}
+            rowKey="date"
+            pagination={{ pageSize: 31, showTotal: (tot) => t('common.total', { count: tot }) }}
+            size="small"
+            scroll={{ x: 600 }}
+          />
+        </div>
       </Card>
     </div>
   );

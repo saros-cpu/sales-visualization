@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getPeriods } from '../api/sales';
+import { normalizeRetailYears } from '../utils/retail-helpers';
 
 // 从 localStorage 恢复用户上次选择的时间段
 function getSavedPeriod() {
@@ -30,9 +31,10 @@ export function usePeriod() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const fallbackYears = normalizeRetailYears([]).slice().reverse();
     getPeriods()
       .then((data) => {
-        const list = data.years?.length ? data.years : [2023, 2024, 2025, 2026];
+        const list = normalizeRetailYears(data.years?.length ? data.years : fallbackYears).slice().reverse();
         setYears(list);
         // 如果当前 year 不在列表中，使用最新年份
         const latest = String(Math.max(...list));
@@ -40,7 +42,7 @@ export function usePeriod() {
           setYearState(latest);
         }
       })
-      .catch(() => setYears([2023, 2024, 2025, 2026]))
+      .catch(() => setYears(fallbackYears))
       .finally(() => setLoading(false));
   }, []);
 

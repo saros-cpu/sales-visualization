@@ -117,6 +117,50 @@ def _wholesale_transfer_rows(cur, start, end):
     return cur.fetchall()
 
 
+def _merge_transfer_loss_years(*groups):
+    years = set()
+    for group in groups:
+        for value in group or []:
+            try:
+                year = int(value)
+            except (TypeError, ValueError):
+                continue
+            if 2000 <= year <= 2100:
+                years.add(year)
+    return sorted(years, reverse=True)
+
+
+def _retail_supply_years():
+    conn = _retail_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT YEAR(AcceptDateTime) AS loss_year
+                FROM supply
+                WHERE AcceptDateTime IS NOT NULL
+                  AND COALESCE(Deleted, 0) = 0
+                ORDER BY loss_year DESC
+                """
+            )
+            return [row[0] for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def _wholesale_transfer_years(cur):
+    cur.execute(
+        """
+        SELECT DISTINCT YEAR(business_date) AS loss_year
+        FROM wholesale_detail_records
+        WHERE business_date IS NOT NULL
+          AND classification = 'transfer'
+        ORDER BY loss_year DESC
+        """
+    )
+    return [row["loss_year"] for row in cur.fetchall()]
+
+
 def _direct_station_index(rows):
     index = {}
     for row in rows:
@@ -145,6 +189,21 @@ def _matched_direct(index, supply_date, shop_key):
                 "daysBefore": days,
             }
     return None
+
+
+@bp_v2.route('/transfer/loss/years', methods=['GET'])
+@jwt_required()
+@permission_required('transfer_loss:view')
+def transfer_loss_years():
+    sales_conn = get_connection()
+    try:
+        with sales_conn.cursor(pymysql.cursors.DictCursor) as cur:
+            wholesale_years = _wholesale_transfer_years(cur)
+        retail_years = _retail_supply_years()
+        years = _merge_transfer_loss_years(retail_years, wholesale_years)
+        return jsonify({'code': 0, 'message': 'success', 'data': years})
+    finally:
+        sales_conn.close()
 
 
 @bp_v2.route('/transfer/loss', methods=['GET'])

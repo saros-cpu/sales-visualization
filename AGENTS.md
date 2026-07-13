@@ -15,14 +15,14 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `4.0.0`.
-- Current release code commit: the latest `chore: prepare 4.0.0 release and wallpaper 0.2.0` commit in `git log`.
+- Current released client version: `4.0.3`.
+- Current release code commit: the latest `feat: add profit accounting and wallpaper refresh catch-up` commit in `git log`.
 - Production public entry: `https://sales.example.com/`.
 - Production backup entry details are kept only in `docs/配置文档.md`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `https://sales.example.com/download/latest.yml`; fallback endpoint details are kept only in `docs/配置文档.md`.
-- Current installer: `SalesDesktop Setup 4.0.0.exe`.
-- Current wallpaper package: `SalesWallpaperEngine 0.2.0` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
+- Current installer: `SalesDesktop Setup 4.0.3.exe`.
+- Current wallpaper package: `SalesWallpaperEngine 0.2.3` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
 - The old web wallpaper package is retired and removed. Future wallpaper work must use `SalesWallpaperEngine`.
 - HTTPS certificate: enabled; certificate paths are kept only in `docs/配置文档.md`. HTTP remains active for compatibility.
 
@@ -45,6 +45,12 @@ Future agents, tools, and maintainers must treat this file as the project memory
   - For local Kyrgyz/finance handover.
   - Must match original report 84 completely: data, layout, fields, order, merged cells, styles, and file behavior.
   - Do not apply Chinese retail daily report layout to this report.
+- Profit accounting reports:
+  - For Chinese management.
+  - Monthly and yearly profit accounting use retail daily/monthly snapshot station and fuel naming as the sales source; sales amount, sales volume, tons, diesel sales amount, and diesel volume must come from the same retail report/snapshot口径.
+  - 2026 January-July purchase prices use the confirmed monthly files under `D:\每月加油站业绩考核类表单\2026年`; do not re-infer or overwrite them by taste.
+  - Water/electric/network/security and payroll costs are full-month for normally operating stations and prorated by actual operating days only for newly opened stations.
+  - Loss cannot be carried backward without data; do not fabricate historical loss values.
 
 ## Living Documents
 
@@ -120,18 +126,18 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.0.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.0.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%204.0.0.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.3.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.3.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%204.0.3.exe"
 ```
 
 ## CodeGraph Memory
 
 Current CodeGraph baseline:
 
-- Files: `358`
-- Nodes: `8,433`
-- Edges: `30,207`
+- Files: `372`
+- Nodes: `9,363`
+- Edges: `32,967`
 - DB size: `58.13 MB`
 - Status: `Index is up to date`
 
@@ -142,6 +148,7 @@ codegraph status
 codegraph explore "self-use report24-only"
 codegraph explore "retail range report 254"
 codegraph explore "accounting handover report 84"
+codegraph explore "profit accounting snapshots purchase prices"
 codegraph explore "knowledge attachments reindex"
 codegraph explore "electron-updater latest.yml download"
 ```

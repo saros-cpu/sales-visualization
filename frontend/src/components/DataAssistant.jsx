@@ -161,28 +161,7 @@ async function queryAssistant(question, conversationContext) {
     sessionId: conversationContext?.sessionId,
     conversationContext,
   };
-  const token = localStorage.getItem('accessToken');
-  if (token) {
-    const res = await fetch('/api/v2/assistant/query', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) {
-      const body = await res.json();
-      return body.data ?? body;
-    }
-    if (res.status !== 401 && res.status !== 404) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message || body.error || 'AI 查询失败');
-    }
-  }
-
-  return post('/api/data-assistant/query?_=' + Date.now(), body);
+  return post('/api/v2/assistant/query', body);
 }
 
 export default function DataAssistant() {

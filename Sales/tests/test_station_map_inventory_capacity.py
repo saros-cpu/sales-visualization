@@ -17,10 +17,12 @@ try:
         sys.path.insert(0, str(ROOT))
     if str(OILSTATION_ROOT) not in sys.path:
         sys.path.insert(0, str(OILSTATION_ROOT))
+    from endpoints.v1.retail.analytics.service import core as retail_core  # noqa: E402
     from endpoints.v1.retail.analytics.service.core import (  # noqa: E402
         _fuelbalance_capacity_by_resource_from_rows,
         _infer_fuelbalance_resource_key,
         _station_map_depots,
+        _station_map_details_cache_current,
         _station_map_details_has_capacity,
         _station_map_details_has_depots,
     )
@@ -113,6 +115,31 @@ class StationMapInventoryCapacityTests(unittest.TestCase):
         self.assertTrue(all(item.get("name") for item in depots))
         self.assertEqual(len(depots), 3)
         self.assertTrue(all(item.get("type") in {"depot", "headquarters"} for item in depots))
+
+    def test_station_map_live_cache_does_not_query_shift_marker(self):
+        payload = {
+            "source": "live_database",
+            "snapshotGeneratedAt": "2026-08-08 08:00",
+            "depots": _station_map_depots(),
+            "items": [
+                {
+                    "shopKey": 1,
+                    "inventoryByResource": [
+                        {"resourceKey": 103, "inventory": 1000, "fillStatus": "warning"},
+                    ],
+                }
+            ],
+        }
+        original_workbook = retail_core._latest_report_workbook_for_map
+        original_marker = retail_core._latest_completed_shift_marker_for_map
+        try:
+            retail_core._latest_report_workbook_for_map = lambda: (_ for _ in ()).throw(AssertionError("workbook lookup should not run"))
+            retail_core._latest_completed_shift_marker_for_map = lambda: (_ for _ in ()).throw(AssertionError("shift marker should not run"))
+
+            self.assertTrue(_station_map_details_cache_current(payload))
+        finally:
+            retail_core._latest_report_workbook_for_map = original_workbook
+            retail_core._latest_completed_shift_marker_for_map = original_marker
 
     def test_station_map_zero_inventory_override(self):
         details = {

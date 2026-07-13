@@ -6,6 +6,7 @@ import { useApiQuery } from '@/hooks/useApi';
 import { getRegions, getStations, getDaily } from '@/api/retail';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import KpiCard from '@/components/ui/KpiCard';
 import { useNameI18n, EN_REGION_KEY, ZH_REGION_KEY } from '@/utils/i18nNames';
 import {
   formatRetailCnyKpi,
@@ -89,6 +90,10 @@ export default function Region() {
   const regionSalesCny = retailCnyAmountOf(
     regionData ? { ...(regionData as any), avgCnyKgs: (regionData as any).avgCnyKgs ?? (data as any)?.avgCnyKgs } : null,
   );
+  const regionMomSales = (regionData as any)?.momSales;
+  const regionYoySales = (regionData as any)?.yoySales;
+  const regionMomVolume = (regionData as any)?.momVolume;
+  const regionYoyVolume = (regionData as any)?.yoyVolume;
 
   // 当月日销趋势：按区域内站点聚合每日 volume/amount
   const regionDaily = useMemo(() => {
@@ -124,16 +129,28 @@ export default function Region() {
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={12} lg={6}>
-              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}>
-                <Statistic title={t('retail.totalSales')} value={formatRetailSomKpi(regionData.amount, language)} />
-                <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>人民币 {formatRetailCnyKpi(regionSalesCny, language)}</div>
-              </Card>
+              <KpiCard
+                title={t('retail.totalSales')}
+                value={formatRetailSomKpi(regionData.amount, language)}
+                compare={[
+                  { value: regionMomSales, label: t('common.mom') },
+                  { value: regionYoySales, label: t('common.yoy') },
+                ]}
+                extra={<span>人民币 {formatRetailCnyKpi(regionSalesCny, language)}</span>}
+                onClick={() => navigate('/retail/report')}
+              />
             </Col>
             <Col xs={12} lg={6}>
-              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
-                <Statistic title={t('retail.totalLiters')} value={formatRetailLitersKpi(regionData.volume, language)} />
-                <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(retailTonsOf(regionData), language)}</div>
-              </Card>
+              <KpiCard
+                title={t('retail.totalLiters')}
+                value={formatRetailLitersKpi(regionData.volume, language)}
+                compare={[
+                  { value: regionMomVolume, label: t('common.mom') },
+                  { value: regionYoyVolume, label: t('common.yoy') },
+                ]}
+                extra={<span>{t('retail.totalTons')} {formatRetailTonsKpi(retailTonsOf(regionData), language)}</span>}
+                onClick={() => navigate('/retail/resource')}
+              />
             </Col>
             <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
             <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>

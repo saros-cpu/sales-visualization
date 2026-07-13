@@ -284,6 +284,11 @@ def _safe_oilstation_json(path: str, query: dict[str, Any] | None = None) -> dic
         return {}
 
 
+def _oilstation_payload(data: dict[str, Any]) -> dict[str, Any]:
+    payload = data.get("data") if isinstance(data, dict) else None
+    return payload if isinstance(payload, dict) else data
+
+
 def _summary_value(summary: dict[str, Any], *keys: str) -> float:
     for key in keys:
         if key in summary:
@@ -296,6 +301,27 @@ def _summary_optional_value(summary: dict[str, Any], *keys: str) -> float | None
         if key in summary and summary.get(key) is not None:
             return _num(summary.get(key))
     return None
+
+
+def _optional_value(values: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        if key in values and values.get(key) is not None:
+            return _num(values.get(key))
+    return None
+
+
+def _percent_change(current: Any, previous: Any) -> float | None:
+    previous_value = _num(previous)
+    if abs(previous_value) < 0.000001:
+        return None
+    return round((_num(current) - previous_value) / abs(previous_value) * 100, 2)
+
+
+def _date_or_last_day(year: int, month: int, day: int) -> date:
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return date(year, month + 1, 1) - timedelta(days=1)
 
 
 def _latest_exchange(cur) -> dict[str, Any]:
@@ -606,7 +632,7 @@ def _retail_year_trend(year: int, max_month: int) -> list[dict[str, Any]]:
     rows = []
     for month in range(1, max_month + 1):
         ym = f"{year}-{month:02d}"
-        monthly = _safe_oilstation_json(f"/api/monthly/{ym}")
+        monthly = _oilstation_payload(_safe_oilstation_json(f"/api/monthly/{ym}"))
         summary = monthly.get("summary") or {}
         rows.append({
             "label": f"{month}月",
@@ -631,14 +657,24 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
     today = date.today()
     year_start = date(year, 1, 1)
     year_end = min(date(year + 1, 1, 1) - timedelta(days=1), today)
+    previous_period_end = date(year_end.year, year_end.month, 1) - timedelta(days=1)
+    prior_year_start = date(year - 1, 1, 1)
+    prior_year_end = _date_or_last_day(year - 1, year_end.month, year_end.day)
+    if year < today.year:
+        prior_year_end = date(year, 1, 1) - timedelta(days=1)
     period_month = f"{year}-{month:02d}"
 
     retail_year = _safe_oilstation_json("/api/kpi/yearly", {"year": year, "inventory": 0})
-    retail_year_summary = retail_year.get("summary") or retail_year.get("data", {}).get("summary") or {}
-    retail_month = _safe_oilstation_json(f"/api/monthly/{period_month}")
+    retail_year_payload = _oilstation_payload(retail_year)
+    retail_year_summary = retail_year_payload.get("summary") or {}
+    retail_year_comparison = retail_year_payload.get("comparison") or {}
+    retail_month = _oilstation_payload(_safe_oilstation_json(f"/api/monthly/{period_month}"))
     retail_month_summary = retail_month.get("summary") or {}
-    retail_dashboard_year = _safe_oilstation_json("/api/dashboard/yearly", {"year": year})
-    retail_resources_year = _safe_oilstation_json("/api/resources/yearly", {"year": year})
+    retail_month_comparison = retail_month.get("comparison") or {}
+    retail_month_mom = retail_month_comparison.get("mom") or {}
+    retail_month_yoy = retail_month_comparison.get("yoy") or {}
+    retail_dashboard_year = _oilstation_payload(_safe_oilstation_json("/api/dashboard/yearly", {"year": year}))
+    retail_resources_year = _oilstation_payload(_safe_oilstation_json("/api/resources/yearly", {"year": year}))
 
     try:
         wholesale_page = summarize_wholesale_page(cur, year, month)
@@ -651,6 +687,7 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
     procurement_card = cards.get("procurement") or {}
     processing_card = cards.get("processing") or {}
     unknown_card = cards.get("unknown") or {}
+    wholesale_comparison = wholesale_page.get("comparison") or {}
 
     try:
         insight = latest_retail_alert_insights(period_month, language="zh")
@@ -662,6 +699,36 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
     ensure_audit_schema(cur)
     ensure_ai_call_schema(cur)
     cache_items = _cache_items()
+    yearly_wholesale_tons = _safe_scalar(cur, """
+        SELECT COALESCE(SUM(weight_tons), 0)
+        FROM wholesale_detail_records
+        WHERE business_date >= %s AND business_date <= %s
+    """, (year_start, year_end))
+    yearly_procurement_tons = _safe_scalar(cur, """
+        SELECT COALESCE(SUM(weight_tons), 0)
+        FROM wholesale_detail_records
+        WHERE classification = 'procurement' AND business_date >= %s AND business_date <= %s
+    """, (year_start, year_end))
+    previous_period_wholesale_tons = _safe_scalar(cur, """
+        SELECT COALESCE(SUM(weight_tons), 0)
+        FROM wholesale_detail_records
+        WHERE business_date >= %s AND business_date <= %s
+    """, (year_start, previous_period_end)) if previous_period_end >= year_start else 0
+    previous_period_procurement_tons = _safe_scalar(cur, """
+        SELECT COALESCE(SUM(weight_tons), 0)
+        FROM wholesale_detail_records
+        WHERE classification = 'procurement' AND business_date >= %s AND business_date <= %s
+    """, (year_start, previous_period_end)) if previous_period_end >= year_start else 0
+    prior_year_wholesale_tons = _safe_scalar(cur, """
+        SELECT COALESCE(SUM(weight_tons), 0)
+        FROM wholesale_detail_records
+        WHERE business_date >= %s AND business_date <= %s
+    """, (prior_year_start, prior_year_end)) if prior_year_end >= prior_year_start else 0
+    prior_year_procurement_tons = _safe_scalar(cur, """
+        SELECT COALESCE(SUM(weight_tons), 0)
+        FROM wholesale_detail_records
+        WHERE classification = 'procurement' AND business_date >= %s AND business_date <= %s
+    """, (prior_year_start, prior_year_end)) if prior_year_end >= prior_year_start else 0
 
     values = {
         "retail_sales_amount": _summary_value(retail_year_summary, "totalSales", "totalAmount"),
@@ -673,16 +740,8 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
         "retail_month_active_shops": _summary_value(retail_month_summary, "activeShops"),
         "retail_trend_anomalies": len(insight.get("trendAnomalies") or []),
         "retail_ai_suggestions": len(insight.get("suggestions") or []),
-        "yearly_wholesale_tons": _safe_scalar(cur, """
-            SELECT COALESCE(SUM(weight_tons), 0)
-            FROM wholesale_detail_records
-            WHERE business_date >= %s AND business_date <= %s
-        """, (year_start, year_end)),
-        "yearly_procurement_tons": _safe_scalar(cur, """
-            SELECT COALESCE(SUM(weight_tons), 0)
-            FROM wholesale_detail_records
-            WHERE classification = 'procurement' AND business_date >= %s AND business_date <= %s
-        """, (year_start, year_end)),
+        "yearly_wholesale_tons": yearly_wholesale_tons,
+        "yearly_procurement_tons": yearly_procurement_tons,
         "wholesale_month_export_tons": _num(export_card.get("tons")),
         "wholesale_month_local_tons": _num(local_card.get("tons")),
         "wholesale_month_transfer_tons": _num(transfer_card.get("tons")),
@@ -754,6 +813,64 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
             "labelZh": "实际吨位",
             "labelRu": "Фактическая масса",
         },
+    }
+    compare_metrics = {
+        "retail_sales_amount": [
+            {"value": _optional_value(retail_year_comparison, "momSales", "momSalesAmount"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(retail_year_comparison, "yoySales", "yoySalesAmount"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "retail_volume_liters": [
+            {"value": _optional_value(retail_year_comparison, "momVolume"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(retail_year_comparison, "yoyVolume"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "retail_month_sales_amount": [
+            {"value": _optional_value(retail_month_mom, "sales", "amount"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(retail_month_yoy, "sales", "amount"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "retail_month_volume_liters": [
+            {"value": _optional_value(retail_month_mom, "volume"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(retail_month_yoy, "volume"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "yearly_wholesale_tons": [
+            {"value": _percent_change(yearly_wholesale_tons, previous_period_wholesale_tons), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _percent_change(yearly_wholesale_tons, prior_year_wholesale_tons), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "yearly_procurement_tons": [
+            {"value": _percent_change(yearly_procurement_tons, previous_period_procurement_tons), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _percent_change(yearly_procurement_tons, prior_year_procurement_tons), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "wholesale_month_export_tons": [
+            {"value": _optional_value(wholesale_comparison.get("export_wholesale") or {}, "momTons"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(wholesale_comparison.get("export_wholesale") or {}, "yoyTons"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "wholesale_month_local_tons": [
+            {"value": _optional_value(wholesale_comparison.get("local_wholesale") or {}, "momTons"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(wholesale_comparison.get("local_wholesale") or {}, "yoyTons"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "wholesale_month_transfer_tons": [
+            {"value": _optional_value(wholesale_comparison.get("transfer") or {}, "momTons"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(wholesale_comparison.get("transfer") or {}, "yoyTons"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "wholesale_month_procurement_tons": [
+            {"value": _optional_value(wholesale_comparison.get("procurement") or {}, "momTons"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(wholesale_comparison.get("procurement") or {}, "yoyTons"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "wholesale_month_processing_tons": [
+            {"value": _optional_value(wholesale_comparison.get("processing") or {}, "momTons"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(wholesale_comparison.get("processing") or {}, "yoyTons"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "wholesale_month_unknown_tons": [
+            {"value": _optional_value(wholesale_comparison.get("unknown") or {}, "momTons"), "labelZh": "环比", "labelRu": "MoM", "goodWhen": "down"},
+            {"value": _optional_value(wholesale_comparison.get("unknown") or {}, "yoyTons"), "labelZh": "同比", "labelRu": "YoY", "goodWhen": "down"},
+        ],
+        "wholesale_month_export_amount_cny": [
+            {"value": _optional_value(wholesale_comparison.get("export_wholesale") or {}, "momAmountCny"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(wholesale_comparison.get("export_wholesale") or {}, "yoyAmountCny"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
+        "wholesale_month_local_amount_cny": [
+            {"value": _optional_value(wholesale_comparison.get("local_wholesale") or {}, "momAmountCny"), "labelZh": "环比", "labelRu": "MoM"},
+            {"value": _optional_value(wholesale_comparison.get("local_wholesale") or {}, "yoyAmountCny"), "labelZh": "同比", "labelRu": "YoY"},
+        ],
     }
 
     max_month = 12 if year < today.year else today.month
@@ -874,6 +991,12 @@ def _metric_values_and_component_data(cur, year: int, month: int) -> tuple[dict[
                 "secondaryLabelZh": secondary["labelZh"],
                 "secondaryLabelRu": secondary["labelRu"],
             })
+        compare = [
+            item for item in compare_metrics.get(metric_key, [])
+            if item.get("value") is not None
+        ]
+        if compare:
+            payload["compare"] = compare
         result[metric_key] = payload
     return result, component_data
 

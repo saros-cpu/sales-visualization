@@ -2,7 +2,6 @@
 import { get, post, buildQuery } from './client';
 
 // ── 概览 & 通用 ──
-export const getAdminOverview = () => get('/api/admin/overview');
 export const getReferenceOptions = () => get('/api/reference/options');
 export const getProducts = () => get('/api/admin/products');
 export const getDensities = () => get('/api/densities');

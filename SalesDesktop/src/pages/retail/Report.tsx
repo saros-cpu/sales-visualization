@@ -92,20 +92,26 @@ export default function Report() {
   const onExport = () => exportExcel(ym);
 
   return (
-    <div>
-      <Space wrap style={{ marginBottom: 16 }}>
+    <div className="client-fit-page">
+      <Space wrap className="client-fit-fixed">
         <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
         {canExport && <Button onClick={onExport}>{t('common.excelExport')}</Button>}
       </Space>
-      <Tabs items={[
+      <Tabs className="client-fit-tabs" items={[
         { key: 'station', label: t('retail.byStation'), children: (
-          <Table columns={stationColumns} dataSource={stations} rowKey="shopKey" loading={monthQ.isLoading} size="small" pagination={{ pageSize: 20, showTotal: (tot) => t('common.total', { count: tot }) }} scroll={{ x: 'max-content' }} />
+          <div className="client-fit-table-scroll">
+            <Table columns={stationColumns} dataSource={stations} rowKey="shopKey" loading={monthQ.isLoading} size="small" pagination={{ pageSize: 20, showTotal: (tot) => t('common.total', { count: tot }) }} scroll={{ x: 'max-content' }} />
+          </div>
         )},
         { key: 'region', label: t('retail.byRegion'), children: (
-          <Table columns={regionColumns} dataSource={regionData} rowKey="name" loading={monthQ.isLoading} size="small" pagination={false} scroll={{ x: 'max-content' }} />
+          <div className="client-fit-table-scroll">
+            <Table columns={regionColumns} dataSource={regionData} rowKey="name" loading={monthQ.isLoading} size="small" pagination={false} scroll={{ x: 'max-content' }} />
+          </div>
         )},
         { key: 'payment', label: t('retail.byPayment'), children: (
-          <Table columns={paymentColumns} dataSource={paymentData} rowKey="key" loading={monthQ.isLoading} size="small" pagination={{ pageSize: 20, showTotal: (tot) => t('common.total', { count: tot }) }} scroll={{ x: 'max-content' }} />
+          <div className="client-fit-table-scroll">
+            <Table columns={paymentColumns} dataSource={paymentData} rowKey="key" loading={monthQ.isLoading} size="small" pagination={{ pageSize: 20, showTotal: (tot) => t('common.total', { count: tot }) }} scroll={{ x: 'max-content' }} />
+          </div>
         )},
       ]} />
     </div>

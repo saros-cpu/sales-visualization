@@ -180,3 +180,157 @@ export async function downloadSelfUseReport(dateFrom: string, dateTo: string) {
     `自用油_${dateFrom}_至_${dateTo}.xlsx`,
   );
 }
+
+export async function downloadProfitReport(yearMonth: string) {
+  const json = await fetchJsonWithAuth(`${API_BASE}/export/profit/${encodeURIComponent(yearMonth)}`);
+  if (!(json.status === 'ok' || json.code === 0)) {
+    throw new Error(json.message || json.error || '生成利润核算报表失败');
+  }
+  await downloadBlob(
+    `${API_BASE}/export/profit/${encodeURIComponent(yearMonth)}/download`,
+    json.file || `利润核算_${yearMonth}.xlsx`,
+  );
+}
+
+export async function downloadProfitYearReport(year: number) {
+  const json = await fetchJsonWithAuth(`${API_BASE}/export/profit-year/${encodeURIComponent(String(year))}`);
+  if (!(json.status === 'ok' || json.code === 0)) {
+    throw new Error(json.message || json.error || '生成年度利润核算报表失败');
+  }
+  await downloadBlob(
+    `${API_BASE}/export/profit-year/${encodeURIComponent(String(year))}/download`,
+    json.file || `利润核算_${year}年.xlsx`,
+  );
+}
+
+export interface ProfitProductRow {
+  shopKey: number;
+  resourceKey: number;
+  product: string;
+  volume: number;
+  tons: number;
+  salesPrice: number | null;
+  salesAmount: number;
+  purchaseProduct: string;
+  purchasePrice: number;
+  purchaseAmount: number;
+}
+
+export interface ProfitStationSummary {
+  shopKey: number;
+  name: string;
+  volume: number;
+  salesAmount: number;
+  dieselVolume: number;
+  dieselTons: number;
+  dieselSalesAmount: number;
+  purchaseAmount: number;
+  salary: number;
+  salaryBase: number;
+  freight: number;
+  water: number;
+  waterBase: number;
+  police: number;
+  policeBase: number;
+  netFee: number;
+  netFeeBase: number;
+  otherFees: number;
+  income: number;
+  purchaseCost: number;
+  vat: number;
+  businessTax: number;
+  grossProfit: number;
+  netProfit: number;
+  tons: number;
+  operatingDays: number;
+  periodDays: number;
+  operatingRatio: number;
+  firstOperatingDay?: string | null;
+  costProrationReason?: 'full_month' | 'new_station' | 'no_operation' | string;
+  rows: ProfitProductRow[];
+}
+
+export interface ProfitSummary {
+  volume?: number;
+  salesAmount?: number;
+  dieselVolume?: number;
+  dieselTons?: number;
+  dieselSalesAmount?: number;
+  purchaseAmount?: number;
+  salary?: number;
+  freight?: number;
+  otherFees?: number;
+  income?: number;
+  purchaseCost?: number;
+  vat?: number;
+  businessTax?: number;
+  grossProfit?: number;
+  netProfit?: number;
+  tons?: number;
+  avgCnyKgs?: number | null;
+  netProfitCny?: number | null;
+  hasActivity?: boolean;
+}
+
+export interface ProfitComparisonItem {
+  period?: string;
+  prevMonth?: string;
+  yoyMonth?: string;
+  prevPeriod?: string;
+  yoyPeriod?: string;
+  summary?: ProfitSummary | null;
+  source?: string | null;
+}
+
+export interface ProfitComparison {
+  mom?: ProfitComparisonItem | null;
+  yoy?: ProfitComparisonItem | null;
+}
+
+export interface ProfitMonthData {
+  year: number;
+  month: number;
+  yearMonth: string;
+  queryStart: string;
+  queryEnd: string;
+  periodDays: number;
+  summary: ProfitSummary;
+  stations: ProfitStationSummary[];
+  comparison?: ProfitComparison;
+  snapshotGeneratedAt?: string | null;
+  snapshotCached?: boolean;
+}
+
+export interface ProfitYearMonthRow extends ProfitSummary {
+  month: number;
+  monthName: string;
+  active: boolean;
+}
+
+export interface ProfitYearData {
+  year: number;
+  includedMonths: number;
+  months: ProfitYearMonthRow[];
+  summary: ProfitSummary;
+  comparison?: ProfitComparison;
+  snapshotGeneratedAt?: string | null;
+  snapshotCached?: boolean;
+}
+
+export async function getProfitMonthData(yearMonth: string, refresh = false) {
+  const params = refresh ? '?refresh=1' : '';
+  const json = await fetchJsonWithAuth(`${API_BASE}/export/profit/${encodeURIComponent(yearMonth)}/data${params}`);
+  if (!(json.status === 'ok' || json.code === 0)) {
+    throw new Error(json.message || json.error || '读取利润核算数据失败');
+  }
+  return json.data as ProfitMonthData;
+}
+
+export async function getProfitYearData(year: number, refresh = false) {
+  const params = refresh ? '?refresh=1' : '';
+  const json = await fetchJsonWithAuth(`${API_BASE}/export/profit-year/${encodeURIComponent(String(year))}/data${params}`);
+  if (!(json.status === 'ok' || json.code === 0)) {
+    throw new Error(json.message || json.error || '读取年度利润核算数据失败');
+  }
+  return json.data as ProfitYearData;
+}

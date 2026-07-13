@@ -492,6 +492,7 @@ def register_admin_routes(app):
                 })
         except (OSError, json.JSONDecodeError):
             pass
+        profit_snapshots = _health_profit_snapshot_status(active_ym)
         return {
             "expectedStart": start_ym,
             "expectedEnd": end_ym,
@@ -506,6 +507,78 @@ def register_admin_routes(app):
             "currentMonth": current_ym,
             "currentMonthFiles": current_files,
             "reportWorkbook": report_workbook,
+            "profitSnapshots": profit_snapshots,
+        }
+
+
+    def _health_profit_snapshot_status(active_ym):
+        year = active_ym.split("-", 1)[0]
+        expected = [
+            ("month", active_ym, "月度利润快照", {"summary", "stations"}),
+            ("year", year, "年度利润总表快照", {"summary", "months"}),
+        ]
+        rows = {}
+        query_error = None
+        try:
+            conn = get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT snapshot_type, period_key, payload_json, generated_at
+                    FROM profit_report_snapshots
+                    WHERE (snapshot_type=%s AND period_key=%s)
+                       OR (snapshot_type=%s AND period_key=%s)
+                    """,
+                    ("month", active_ym, "year", year),
+                )
+                rows = {
+                    (str(row[0]), str(row[1])): row
+                    for row in cur.fetchall()
+                }
+            finally:
+                conn.close()
+        except Exception as exc:
+            query_error = exc.__class__.__name__
+
+        items = []
+        for snapshot_type, period_key, label, required_keys in expected:
+            item = {
+                "type": snapshot_type,
+                "period": period_key,
+                "label": label,
+                "exists": False,
+                "valid": False,
+                "generatedAt": None,
+                "size": 0,
+                "missingKeys": [],
+                "error": query_error,
+            }
+            row = rows.get((snapshot_type, period_key))
+            if not row:
+                item["error"] = query_error or "missing"
+                items.append(item)
+                continue
+            payload_text = row[2] or ""
+            item["exists"] = True
+            item["size"] = len(str(payload_text).encode("utf-8"))
+            generated_at = row[3]
+            item["generatedAt"] = generated_at.isoformat(sep=" ") if hasattr(generated_at, "isoformat") else generated_at
+            try:
+                payload = json.loads(payload_text)
+                missing = sorted(required_keys - set(payload.keys())) if isinstance(payload, dict) else sorted(required_keys)
+                item["missingKeys"] = missing
+                item["valid"] = not missing
+                item["error"] = "" if item["valid"] else "missing_keys"
+            except (TypeError, json.JSONDecodeError) as exc:
+                item["error"] = exc.__class__.__name__
+            items.append(item)
+        return {
+            "month": active_ym,
+            "year": year,
+            "ok": all(item["exists"] and item["valid"] for item in items),
+            "missing": [item["label"] for item in items if not item["exists"] or not item["valid"]],
+            "items": items,
         }
 
 
@@ -820,6 +893,7 @@ def register_admin_routes(app):
             all(item["ok"] for item in checks)
             and not snapshots["missing"]
             and not snapshots["dailyMissing"]
+            and snapshots.get("profitSnapshots", {}).get("ok", True)
             and all(not item.get("hasTraceback") for item in logs)
             and all(item["ok"] for item in tasks)
         )
@@ -2682,6 +2756,3 @@ def register_admin_routes(app):
             raise
         finally:
             conn.close()
-
-
-

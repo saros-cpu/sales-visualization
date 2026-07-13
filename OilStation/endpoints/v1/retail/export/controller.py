@@ -15,6 +15,16 @@ from endpoints.v1.retail.export.service.workbook import (
     _weekly_report_workbook,
 )
 from endpoints.v1.retail.export.service.generator import generate_monthly_excel, generate_range_summary_excel
+from endpoints.v1.retail.export.service.profit_generator import (
+    generate_profit_excel,
+    generate_profit_year_excel,
+    get_profit_month_data,
+    get_profit_year_data,
+    normalize_profit_year,
+    normalize_profit_year_month,
+    profit_month_workbook_path,
+    profit_year_workbook_path,
+)
 from datetime import datetime, timedelta
 
 from endpoints.v1.retail.analytics.controller import _build_self_use_month_response
@@ -294,6 +304,106 @@ def _write_self_use_station_sheet(wb, records, styles):
 
 def register_export_routes(app):
     app.register_blueprint(export_api)
+
+
+def _invalid_profit_period(message):
+    return jsonify({"status": "error", "error": message, "message": message}), 400
+
+
+@export_api.route('/api/export/profit/<year_month>')
+def api_export_profit_excel(year_month):
+    year_month = normalize_profit_year_month(year_month)
+    if not year_month:
+        return _invalid_profit_period("invalid year_month, expected YYYY-MM")
+    force_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    conn = get_connection()
+    try:
+        result = generate_profit_excel(conn, year_month, force_refresh=force_refresh)
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+@export_api.route('/api/export/profit/<year_month>/data')
+def api_export_profit_data(year_month):
+    year_month = normalize_profit_year_month(year_month)
+    if not year_month:
+        return _invalid_profit_period("invalid year_month, expected YYYY-MM")
+    force_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    conn = get_connection()
+    try:
+        return jsonify({"status": "ok", "data": get_profit_month_data(conn, year_month, force_refresh=force_refresh)})
+    finally:
+        conn.close()
+
+
+@export_api.route('/api/export/profit/<year_month>/download')
+def api_export_profit_download(year_month):
+    year_month = normalize_profit_year_month(year_month)
+    if not year_month:
+        return _invalid_profit_period("invalid year_month, expected YYYY-MM")
+    force_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    _, filepath = profit_month_workbook_path(year_month)
+    workbook_path = Path(filepath)
+    if force_refresh or not workbook_path.exists():
+        conn = get_connection()
+        try:
+            result = generate_profit_excel(conn, year_month, force_refresh=force_refresh)
+            workbook_path = Path(result.get('path') or '')
+        finally:
+            conn.close()
+
+    if not workbook_path.exists():
+        return jsonify({'error': 'File not found, please generate first'}), 404
+    return send_file(workbook_path, as_attachment=True, download_name=workbook_path.name)
+
+
+@export_api.route('/api/export/profit-year/<year>')
+def api_export_profit_year_excel(year):
+    year = normalize_profit_year(year)
+    if not year:
+        return _invalid_profit_period("invalid year, expected YYYY")
+    force_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    conn = get_connection()
+    try:
+        result = generate_profit_year_excel(conn, year, force_refresh=force_refresh)
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+@export_api.route('/api/export/profit-year/<year>/data')
+def api_export_profit_year_data(year):
+    year = normalize_profit_year(year)
+    if not year:
+        return _invalid_profit_period("invalid year, expected YYYY")
+    force_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    conn = get_connection()
+    try:
+        return jsonify({"status": "ok", "data": get_profit_year_data(conn, year, force_refresh=force_refresh)})
+    finally:
+        conn.close()
+
+
+@export_api.route('/api/export/profit-year/<year>/download')
+def api_export_profit_year_download(year):
+    year = normalize_profit_year(year)
+    if not year:
+        return _invalid_profit_period("invalid year, expected YYYY")
+    force_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    _, filepath = profit_year_workbook_path(year)
+    workbook_path = Path(filepath)
+    if force_refresh or not workbook_path.exists():
+        conn = get_connection()
+        try:
+            result = generate_profit_year_excel(conn, year, force_refresh=force_refresh)
+            workbook_path = Path(result.get('path') or '')
+        finally:
+            conn.close()
+
+    if not workbook_path.exists():
+        return jsonify({'error': 'File not found, please generate first'}), 404
+    return send_file(workbook_path, as_attachment=True, download_name=workbook_path.name)
 
 
 @export_api.route('/api/export/monthly/<year_month>')

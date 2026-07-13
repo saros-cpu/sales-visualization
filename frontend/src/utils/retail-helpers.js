@@ -22,9 +22,56 @@ export const RETAIL_NAV = [
   { key: 'station', label: '⛽ 站点', path: '/retail/station' },
   { key: 'monthly', label: '📅 月度', path: '/retail/monthly' },
   { key: 'resource', label: '🛢️ 油品', path: '/retail/resource' },
+  { key: 'profit', label: '💹 利润', path: '/retail/profit' },
   { key: 'report', label: '📋 报表', path: '/retail/report' },
   { key: 'alert', label: '⚠️ 预警', path: '/retail/alert', badge: true },
 ];
+
+export const RETAIL_DATA_START_YEAR = 2023;
+
+export function fallbackRetailYears(currentYear = new Date().getFullYear()) {
+  const latestYear = Math.max(currentYear, RETAIL_DATA_START_YEAR);
+  return Array.from(
+    { length: latestYear - RETAIL_DATA_START_YEAR + 1 },
+    (_, index) => latestYear - index,
+  );
+}
+
+export function normalizeRetailYears(values, currentYear = new Date().getFullYear()) {
+  const years = Array.from(new Set((Array.isArray(values) ? values : [])
+    .map(value => Number(value))
+    .filter(value => Number.isFinite(value) && value >= RETAIL_DATA_START_YEAR)))
+    .sort((a, b) => b - a);
+  return years.length ? years : fallbackRetailYears(currentYear);
+}
+
+const CJK_RE = /[\u3400-\u9fff]/;
+const CYRILLIC_RE = /[\u0400-\u052f]/;
+
+function splitStationNameParts(value) {
+  return String(value || '')
+    .split(/\s*(?:\r?\n|\/|\uff0f|\|)\s*/)
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+export function splitStationName(name, short) {
+  const seen = new Set();
+  const parts = [...splitStationNameParts(name), ...splitStationNameParts(short)].filter(part => {
+    if (seen.has(part)) return false;
+    seen.add(part);
+    return true;
+  });
+  const zh = parts.find(part => CJK_RE.test(part));
+  const ru = parts.find(part => CYRILLIC_RE.test(part));
+  const primary = zh || parts[0] || '-';
+  const secondary = ru && ru !== primary ? ru : (parts.find(part => part !== primary) || '');
+  return {
+    primary,
+    secondary,
+    title: secondary ? `${primary} / ${secondary}` : primary,
+  };
+}
 
 // ── 格式化函数 ──
 export function fmtNum(n) {

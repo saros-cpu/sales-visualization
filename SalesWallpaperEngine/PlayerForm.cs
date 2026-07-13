@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -15,6 +16,7 @@ internal sealed class PlayerForm : Form
     private bool _lastPointerInside;
     private bool _lastLeftDown;
     private bool _pointerScriptBusy;
+    private bool _refreshScriptBusy;
 
     public PlayerForm(string url, string userDataDir)
     {
@@ -40,6 +42,8 @@ internal sealed class PlayerForm : Form
         _webView.Dock = DockStyle.Fill;
         Controls.Add(_webView);
         _pointerTimer.Tick += ForwardPointerTick;
+        SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
+        SystemEvents.SessionSwitch += SystemEvents_SessionSwitch;
     }
 
     protected override CreateParams CreateParams
@@ -108,6 +112,54 @@ internal sealed class PlayerForm : Form
         }
     }
 
+    private void SystemEvents_PowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume)
+        {
+            BeginRefreshDispatch("power-resume");
+        }
+    }
+
+    private void SystemEvents_SessionSwitch(object sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
+        {
+            BeginRefreshDispatch($"session-{e.Reason}");
+        }
+    }
+
+    private void BeginRefreshDispatch(string reason)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try
+        {
+            BeginInvoke(new Action(async () => await DispatchRefreshEventAsync(reason)));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Warn($"queue wallpaper refresh dispatch failed reason={reason}: {ex.Message}");
+        }
+    }
+
+    private async Task DispatchRefreshEventAsync(string reason)
+    {
+        if (_refreshScriptBusy || _webView.CoreWebView2 == null || _webView.IsDisposed) return;
+        _refreshScriptBusy = true;
+        try
+        {
+            await _webView.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new Event('sales-wallpaper-refresh'));");
+            AppLogger.Info($"wallpaper refresh event dispatched reason={reason}");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Warn($"wallpaper refresh dispatch failed reason={reason}: {ex.Message}");
+        }
+        finally
+        {
+            _refreshScriptBusy = false;
+        }
+    }
+
     private async void ForwardPointerTick(object? sender, EventArgs e)
     {
         if (_pointerScriptBusy || _webView.CoreWebView2 == null || _webView.IsDisposed) return;
@@ -140,6 +192,8 @@ internal sealed class PlayerForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        SystemEvents.PowerModeChanged -= SystemEvents_PowerModeChanged;
+        SystemEvents.SessionSwitch -= SystemEvents_SessionSwitch;
         _pointerTimer.Stop();
         _pointerTimer.Dispose();
         _webView.Dispose();

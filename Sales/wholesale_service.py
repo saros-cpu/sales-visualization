@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 
 def summarize_wholesale_page(cur, year, month=None):
     start, end = period_bounds(year, month)
+    cards = category_cards(cur, start, end)
     return {
         "period": {
             "year": year,
@@ -20,7 +21,8 @@ def summarize_wholesale_page(cur, year, month=None):
             "start": start.isoformat(),
             "end": end.isoformat(),
         },
-        "cards": category_cards(cur, start, end),
+        "cards": cards,
+        "comparison": wholesale_card_comparison(cur, year, month, cards),
         "productRankings": product_rankings(cur, start, end),
         "customerRankings": customer_rankings(cur, start, end),
         "transferTargets": transfer_targets(cur, start, end),
@@ -30,6 +32,45 @@ def summarize_wholesale_page(cur, year, month=None):
         "issues": open_issues(cur, start, end),
         "exchangeRates": exchange_rates(cur, start, end),
     }
+
+
+def _calc_change(current, previous):
+    if not previous:
+        return None
+    return round((float(current or 0) - float(previous or 0)) / float(previous) * 100, 2)
+
+
+def _previous_month(year, month):
+    if month == 1:
+        return year - 1, 12
+    return year, month - 1
+
+
+def _comparison_cards(cur, year, month):
+    start, end = period_bounds(year, month)
+    return category_cards(cur, start, end)
+
+
+def wholesale_card_comparison(cur, year, month, current_cards):
+    if month:
+        prev_year, prev_month = _previous_month(year, month)
+        mom_cards = _comparison_cards(cur, prev_year, prev_month)
+        yoy_cards = _comparison_cards(cur, year - 1, month)
+    else:
+        mom_cards = {}
+        yoy_cards = _comparison_cards(cur, year - 1, None)
+
+    result = {}
+    for key, current in (current_cards or {}).items():
+        mom = (mom_cards or {}).get(key) or {}
+        yoy = (yoy_cards or {}).get(key) or {}
+        result[key] = {
+            "momTons": _calc_change(current.get("tons"), mom.get("tons")) if mom_cards else None,
+            "momAmountCny": _calc_change(current.get("amountCny"), mom.get("amountCny")) if mom_cards else None,
+            "yoyTons": _calc_change(current.get("tons"), yoy.get("tons")),
+            "yoyAmountCny": _calc_change(current.get("amountCny"), yoy.get("amountCny")),
+        }
+    return result
 
 
 def retail_region_lookup():

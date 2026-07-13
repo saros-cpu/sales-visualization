@@ -2,12 +2,13 @@ import sys
 import unittest
 from datetime import date
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SALES_ROOT = Path(__file__).resolve().parents[1]
 if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
+from assistant_agent import _parse_period_json, assistant_llm_parse_period
 from routes_assistant import (
     _assistant_cap_period_to_operational_cutoff,
     build_assistant_query_plan,
@@ -29,6 +30,69 @@ class AssistantPeriodTests(unittest.TestCase):
         self.assertEqual(label, "2026年6月")
         self.assertEqual(start, date(2026, 6, 1))
         self.assertEqual(end, date(2026, 7, 1))
+
+    def test_short_year_month_range_hyphen(self):
+        label, start, end = parse_assistant_period("26年1-7月零售销量", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年1月至7月")
+        self.assertEqual(start, date(2026, 1, 1))
+        self.assertEqual(end, date(2026, 8, 1))
+
+    def test_short_year_month_range_with_month_character(self):
+        label, start, end = parse_assistant_period("26年1月-7月销量", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年1月至7月")
+        self.assertEqual(start, date(2026, 1, 1))
+        self.assertEqual(end, date(2026, 8, 1))
+
+    def test_month_range_defaults_to_current_year(self):
+        label, start, end = parse_assistant_period("1-7月零售数据", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年1月至7月")
+        self.assertEqual(start, date(2026, 1, 1))
+        self.assertEqual(end, date(2026, 8, 1))
+
+    def test_month_range_chinese_range_word(self):
+        label, start, end = parse_assistant_period("1月至7月零售数据", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年1月至7月")
+        self.assertEqual(start, date(2026, 1, 1))
+        self.assertEqual(end, date(2026, 8, 1))
+
+    def test_month_range_with_this_year_prefix(self):
+        label, start, end = parse_assistant_period("今年1-7月零售数据", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年1月至7月")
+        self.assertEqual(start, date(2026, 1, 1))
+        self.assertEqual(end, date(2026, 8, 1))
+
+    def test_month_range_cross_year_explicit(self):
+        label, start, end = parse_assistant_period("26年11月-27年2月销量", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年11月至2027年2月")
+        self.assertEqual(start, date(2026, 11, 1))
+        self.assertEqual(end, date(2027, 3, 1))
+
+    def test_month_range_cross_year_implicit(self):
+        label, start, end = parse_assistant_period("26年11月-2月销量", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年11月至2027年2月")
+        self.assertEqual(start, date(2026, 11, 1))
+        self.assertEqual(end, date(2027, 3, 1))
+
+    def test_month_range_december_wraps_year(self):
+        label, start, end = parse_assistant_period("26年12月-27年1月销量", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年12月至2027年1月")
+        self.assertEqual(start, date(2026, 12, 1))
+        self.assertEqual(end, date(2027, 2, 1))
+
+    def test_month_range_does_not_steal_single_day(self):
+        label, start, end = parse_assistant_period("26年7月26日零售吨数", today=date(2026, 8, 6))
+
+        self.assertEqual(label, "2026年7月26日")
+        self.assertEqual(start, date(2026, 7, 26))
+        self.assertEqual(end, date(2026, 7, 27))
 
     def test_full_date_period(self):
         label, start, end = parse_assistant_period("2026年7月26日零售吨数", today=date(2026, 7, 27))
@@ -567,6 +631,82 @@ class AssistantQueryPlanTests(unittest.TestCase):
         self.assertEqual(plan["period"]["start"], "2026-01-01")
         self.assertEqual(plan["comparison"]["period"]["start"], "2025-01-01")
         self.assertTrue(plan["visual"]["requested"])
+
+
+class AssistantLlmPeriodFallbackTests(unittest.TestCase):
+    def setUp(self):
+        self.today = date(2026, 7, 22)
+
+    def test_parse_period_json_valid(self):
+        result = _parse_period_json(
+            '{"label": "月初", "start": "2026-07-01", "end": "2026-07-21"}',
+            self.today,
+        )
+
+        self.assertEqual(result, ("月初", date(2026, 7, 1), date(2026, 7, 21)))
+
+    def test_parse_period_json_invalid(self):
+        cases = [
+            "not json",
+            "[]",
+            '{"label": "x"}',
+            '{"label": "x", "start": "2026-07-01", "end": "not-a-date"}',
+            '{"label": "x", "start": "2026-07-21", "end": "2026-07-01"}',
+            '{"label": "x", "start": "2026-07-01", "end": "2026-07-23"}',
+            '{"label": "", "start": "2026-07-01", "end": "2026-07-21"}',
+        ]
+        for content in cases:
+            with self.subTest(content=content):
+                self.assertIsNone(_parse_period_json(content, self.today))
+
+    @patch("assistant_agent.get_settings")
+    def test_llm_parse_period_without_provider_returns_none(self, mock_get_settings):
+        settings = Mock()
+        settings.resolved_assistant_provider = "local"
+        settings.OPENROUTER_API_KEY = ""
+        mock_get_settings.return_value = settings
+        self.assertIsNone(assistant_llm_parse_period("月初零售销量", self.today))
+
+    @patch("routes_assistant.assistant_llm_parse_period")
+    def test_explicit_time_unresolved_by_rules_uses_llm_period(self, mock_parse):
+        mock_parse.return_value = ("月初", date(2026, 7, 1), date(2026, 7, 22))
+
+        plan = build_assistant_query_plan("月初零售销量", today=self.today)
+
+        mock_parse.assert_called_once()
+        self.assertEqual(plan["period"]["label"], "月初")
+        self.assertEqual(plan["period"]["start"], "2026-07-01")
+        self.assertEqual(plan["period"]["endExclusive"], "2026-07-22")
+        self.assertEqual(plan["period"]["endInclusive"], "2026-07-21")
+        self.assertIn("period", plan["contextUsed"])
+
+    @patch("routes_assistant.assistant_llm_parse_period")
+    def test_rules_resolved_period_skips_llm(self, mock_parse):
+        plan = build_assistant_query_plan("本月零售销量", today=self.today)
+
+        mock_parse.assert_not_called()
+        self.assertEqual(plan["period"]["label"], "本月")
+
+    @patch("routes_assistant.assistant_llm_parse_period")
+    def test_llm_none_keeps_rules_fallback(self, mock_parse):
+        mock_parse.return_value = None
+
+        plan = build_assistant_query_plan("上上个月零售销量", today=self.today)
+
+        self.assertEqual(plan["period"]["label"], "最近7天")
+
+    @patch("routes_assistant.assistant_llm_parse_period")
+    def test_followup_skips_llm_and_inherits_previous_period(self, mock_parse):
+        previous = build_assistant_query_plan("6月哪个油品卖得最好，为什么", today=self.today)
+
+        plan = build_assistant_query_plan(
+            "那为什么",
+            today=self.today,
+            context={"lastAssistantPlan": previous},
+        )
+
+        mock_parse.assert_not_called()
+        self.assertEqual(plan["period"]["start"], "2026-06-01")
 
 
 if __name__ == "__main__":

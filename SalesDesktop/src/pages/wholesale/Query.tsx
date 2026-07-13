@@ -109,17 +109,19 @@ export default function Query() {
   ];
 
   return (
-    <div>
-      <div className="page-toolbar">
+    <div className="client-fit-page">
+      <div className="page-toolbar client-fit-fixed">
         <h2>{t('wholesale.query')}</h2>
         <Space wrap>
           <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
           <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
         </Space>
       </div>
-      <Table className="wholesale-query-table" dataSource={data} columns={columns} rowKey="id" loading={loading} size="small"
-        pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
-        tableLayout="fixed" />
+      <div className="client-fit-table-scroll">
+        <Table className="wholesale-query-table" dataSource={data} columns={columns} rowKey="id" loading={loading} size="small"
+          pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
+          tableLayout="fixed" />
+      </div>
     </div>
   );
 }

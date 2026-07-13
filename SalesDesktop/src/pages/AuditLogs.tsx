@@ -170,14 +170,14 @@ export default function AuditLogs() {
   ];
 
   return (
-    <Card title={t('nav.auditLogs')}>
+    <Card title={t('nav.auditLogs')} className="client-fit-page client-fit-table-card">
       <Segmented
         value={preset}
         options={presetKeys.map((key) => ({ value: key, label: presetLabel(key) }))}
         onChange={handlePresetChange}
-        style={{ marginBottom: 12 }}
+        className="client-fit-card-fixed"
       />
-      <Form form={form} layout="inline" style={{ marginBottom: 16, rowGap: 8 }}>
+      <Form form={form} layout="inline" className="client-fit-card-fixed" style={{ rowGap: 8 }}>
         <Form.Item name="moduleKey">
           <Select
             allowClear
@@ -228,22 +228,24 @@ export default function AuditLogs() {
           {canExport && <Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExport}>{t('common.export')}</Button>}
         </Space>
       </Form>
-      <Table
-        rowKey="id"
-        size="small"
-        loading={loading}
-        columns={columns}
-        dataSource={data}
-        pagination={{
-          current: query.page || 1,
-          pageSize: query.pageSize || 50,
-          total,
-          showSizeChanger: true,
-          showTotal: (count) => t('common.total', { count }),
-        }}
-        onChange={(pagination) => loadData(buildFilters(pagination.current || 1, pagination.pageSize || 50))}
-        scroll={{ x: 1600, y: 'calc(100vh - 330px)' }}
-      />
+      <div className="client-fit-table-scroll">
+        <Table
+          rowKey="id"
+          size="small"
+          loading={loading}
+          columns={columns}
+          dataSource={data}
+          pagination={{
+            current: query.page || 1,
+            pageSize: query.pageSize || 50,
+            total,
+            showSizeChanger: true,
+            showTotal: (count) => t('common.total', { count }),
+          }}
+          onChange={(pagination) => loadData(buildFilters(pagination.current || 1, pagination.pageSize || 50))}
+          scroll={{ x: 1600 }}
+        />
+      </div>
       <Drawer
         title={t('auditLogs.detail')}
         open={Boolean(detail)}

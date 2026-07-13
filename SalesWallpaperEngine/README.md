@@ -66,7 +66,7 @@ Optional `app-config.json` fields:
 }
 ```
 
-`refreshAtLocalTime` controls the daily wallpaper data refresh time. The default is 09:00 local time, after the 07:30 exchange-rate task, 08:30 retail snapshot task, and 08:45 accounting handover task. The wallpaper still refreshes immediately when it starts. If `refreshAtLocalTime` is blank or invalid, `refreshSeconds` is used as the fallback interval.
+`refreshAtLocalTime` controls the daily wallpaper data refresh time. The default is 09:00 local time, after the 07:30 exchange-rate task, 08:30 retail snapshot task, and 08:45 accounting handover task. The wallpaper still refreshes immediately when it starts. If the computer sleeps, locks, or is offline around the scheduled time, the player checks for a missed daily refresh after resume/unlock and retries failed refreshes with a 5-minute throttle. If `refreshAtLocalTime` is blank or invalid, `refreshSeconds` is used as the fallback interval.
 
 The bottom-right HUD is controlled per block and per KPI cell. All keys default to ON; a missing field is treated as ON, so old machines are unaffected.
 
@@ -96,7 +96,7 @@ The tray menu includes `设置...`, which opens a local WebView2 settings window
 
 ```powershell
 cd D:\SalesVisualization
-powershell -ExecutionPolicy Bypass -File .\SalesWallpaperEngine\build.ps1 -Version 0.2.0 -IncludeKeyPath .\SalesWallpaperEngine\publish\wallpaper-key.json
+powershell -ExecutionPolicy Bypass -File .\SalesWallpaperEngine\build.ps1 -Version 0.2.3 -IncludeKeyPath .\SalesWallpaperEngine\publish\wallpaper-key.json
 ```
 
 Output:
@@ -117,7 +117,7 @@ The zip is the self-update package used by the running engine. The setup exe is 
 For normal users, run:
 
 ```powershell
-.\SalesWallpaperEngine-Setup-0.2.0.exe
+.\SalesWallpaperEngine-Setup-0.2.3.exe
 ```
 
 For manual folder install, extract the zip, then run:
@@ -130,7 +130,19 @@ The script installs to `%LOCALAPPDATA%\SalesWallpaperEngine`, adds a Startup sho
 
 ## Releases
 
-### 0.2.0 (pending)
+### 0.2.3
+
+- **Release packaging**: bumps the independent wallpaper engine update line to 0.2.3 so the catch-up refresh build can be shipped separately from the main SalesDesktop installer.
+- **Daily refresh catch-up**: keeps the missed 09:00 refresh detection and 5-minute retry throttle for sleeping, locked, offline, or VPN-delayed computers.
+- **Resume/unlock refresh signal**: keeps refresh checks on power resume, session unlock, console reconnect, or remote reconnect.
+
+### 0.2.2
+
+- **Daily refresh catch-up**: if a computer sleeps, locks, or loses network around the 09:00 refresh window, the wallpaper now checks for a missed same-day refresh and retries failed refreshes with a 5-minute throttle.
+- **Resume/unlock refresh signal**: the player dispatches a data refresh event after power resume, session unlock, console reconnect, or remote reconnect, so the wallpaper can update without a manual restart.
+- **Terminology cleanup**: Chinese UI and docs use 库存液位 / 液位百分比 terminology.
+
+### 0.2.0
 
 - **HTTPS defaults**: new builds use `https://sales.example.com` for the API host and wallpaper update manifest. The manual compatibility endpoint remains available through local configuration.
 - **Protected setup key**: setup builds created with `-IncludeKeyPath` embed `wallpaper-key.protected.json` by default, so first installs can authorize the wallpaper proxy without shipping a plaintext token file.
@@ -198,7 +210,7 @@ The script installs to `%LOCALAPPDATA%\SalesWallpaperEngine`, adds a Startup sho
 
 ### 0.1.9
 
-- Changes wallpaper data refresh to the business rhythm: refresh immediately on startup, then once daily at 09:00 by default after the morning automation tasks finish.
+- Changes wallpaper data refresh to the business rhythm: refresh immediately on startup, then once daily at 09:00 by default after the morning automation tasks finish; missed or failed daily refreshes are retried automatically after resume/unlock.
 - Adds `refreshAtLocalTime` config and keeps `refreshSeconds` as a fallback interval.
 - Keeps the update independent from the main SalesDesktop client version.
 

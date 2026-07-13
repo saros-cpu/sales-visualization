@@ -25,7 +25,12 @@ export default function PageState({ status, title, description, onRetry }: PageS
   if (status === 'loading') {
     return (
       <div style={centerStyle}>
-        <Spin tip={title || t('common.loading')} />
+        <div style={{ textAlign: 'center' }}>
+          <Spin />
+          <div style={{ marginTop: 12, color: 'rgba(0, 0, 0, 0.45)' }}>
+            {title || t('common.loading')}
+          </div>
+        </div>
       </div>
     );
   }

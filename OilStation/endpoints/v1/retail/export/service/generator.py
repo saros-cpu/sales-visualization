@@ -1068,7 +1068,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     month_cn = MONTH_NAMES_CN.get(m, f'{m}月')
     yesterday = datetime.now() - timedelta(days=1)
     gen_date = yesterday.strftime('%d.%m')
-    filename = f'加油站{month_cn}日销表{gen_date}.xlsx'
+    filename = f'加油站{y}年{month_cn}日销表{gen_date}.xlsx'
     filepath = os.path.join(EXPORT_DIR, filename)
     wb.save(filepath)
     _record_report_workbook(year_month, Path(filepath), _workbook_last_nonempty_day(Path(filepath)))

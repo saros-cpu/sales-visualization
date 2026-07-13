@@ -2,22 +2,53 @@ import { useEffect, useState, useCallback } from 'react';
 import { Card, Table, Select, Row, Col, Statistic, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
-import { getTransferLoss, LossItem } from '@/api/transferLoss';
+import { getTransferLoss, getTransferLossYears, LossItem } from '@/api/transferLoss';
 
 export default function TransferLoss() {
   const { t } = useTranslation();
   const [data, setData] = useState<LossItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
+  const [yearOptions, setYearOptions] = useState<number[]>([]);
+  const [yearsLoaded, setYearsLoaded] = useState(false);
   const [quarter, setQuarter] = useState<number>(Math.ceil((new Date().getMonth() + 1) / 3));
 
   const fetchData = useCallback(async () => {
+    if (!yearsLoaded) return;
+    if (!yearOptions.length) {
+      setData([]);
+      return;
+    }
     setLoading(true);
     try {
       const res = await getTransferLoss({ year, quarter });
       setData(Array.isArray(res) ? res : (res?.data || []));
     } finally { setLoading(false); }
-  }, [year, quarter]);
+  }, [year, quarter, yearOptions.length, yearsLoaded]);
+
+  useEffect(() => {
+    let active = true;
+    getTransferLossYears()
+      .then((list) => {
+        if (!active) return;
+        const years = Array.from(new Set((Array.isArray(list) ? list : [])
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value))))
+          .sort((a, b) => b - a);
+        setYearOptions(years);
+        if (years.length) setYear((prev) => (years.includes(prev) ? prev : years[0]));
+      })
+      .catch(() => {
+        if (!active) return;
+        const currentYear = new Date().getFullYear();
+        setYearOptions([currentYear]);
+        setYear(currentYear);
+      })
+      .finally(() => {
+        if (active) setYearsLoaded(true);
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -53,11 +84,17 @@ export default function TransferLoss() {
   ];
 
   return (
-    <div>
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+    <div className="client-fit-page">
+      <Row gutter={[16, 16]} className="client-fit-fixed">
         <Col>
-          <Select value={year} onChange={setYear} style={{ width: 100 }}>
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+          <Select
+            value={yearOptions.length ? year : undefined}
+            onChange={setYear}
+            disabled={!yearOptions.length}
+            placeholder={t('common.noData')}
+            style={{ width: 100 }}
+          >
+            {yearOptions.map((y) => (
               <Select.Option key={y} value={y}>{y}</Select.Option>
             ))}
           </Select>
@@ -70,12 +107,14 @@ export default function TransferLoss() {
           </Select>
         </Col>
       </Row>
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+      <Row gutter={[16, 16]} className="client-fit-fixed">
         <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.reviewRows')} value={data.length} /></Card></Col>
         <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.weighingTons')} value={totalWeighing.toFixed(3)} /></Card></Col>
         <Col xs={24} sm={8}><Card size="small"><Statistic title={t('transferLoss.retailSupplyTons')} value={totalRetailSupply.toFixed(3)} suffix={t('transferLoss.directRows', { count: directRows })} /></Card></Col>
       </Row>
-      <Table dataSource={data} columns={columns} rowKey={(r) => `${r.route_code || r.route}-${r.station_name}-${r.report_date}-${r.supply_date || ''}`} loading={loading} size="small" pagination={false} scroll={{ x: 1320, y: 'calc(100vh - 360px)' }} />
+      <div className="client-fit-table-scroll">
+        <Table dataSource={data} columns={columns} rowKey={(r) => `${r.route_code || r.route}-${r.station_name}-${r.report_date}-${r.supply_date || ''}`} loading={loading || !yearsLoaded} size="small" pagination={false} scroll={{ x: 1320 }} />
+      </div>
     </div>
   );
 }

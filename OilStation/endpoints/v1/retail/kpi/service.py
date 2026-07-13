@@ -352,7 +352,8 @@ def yearly_kpi_from_monthly_snapshots(year, include_inventory):
     resolved_tons, tons_source = _resolve_year_total_tons(year, allow_monthly=False)
     if resolved_tons > 0:
         current["totalTons"] = resolved_tons
-    previous = totals(prev_months) if prev_months else {"totalVolume": 0.0, "totalAmount": 0.0}
+    previous_period = totals(months[:-1]) if len(months) > 1 else {"totalVolume": 0.0, "totalAmount": 0.0}
+    previous = totals(prev_months[:len(months)]) if prev_months else {"totalVolume": 0.0, "totalAmount": 0.0}
 
     def calc_change(current_value, previous_value):
         if not previous_value or previous_value == 0:
@@ -382,6 +383,9 @@ def yearly_kpi_from_monthly_snapshots(year, include_inventory):
             "transactionCount": current["transactionCount"],
         },
         "comparison": {
+            "momVolume": calc_change(current["totalVolume"], previous_period["totalVolume"]),
+            "momSales": calc_change(current["totalAmount"], previous_period["totalAmount"]),
+            "momSalesAmount": calc_change(current["totalAmount"], previous_period["totalAmount"]),
             "yoyVolume": calc_change(current["totalVolume"], previous["totalVolume"]),
             "yoySales": calc_change(current["totalAmount"], previous["totalAmount"]),
             "yoySalesAmount": calc_change(current["totalAmount"], previous["totalAmount"]),
@@ -390,6 +394,24 @@ def yearly_kpi_from_monthly_snapshots(year, include_inventory):
     }
     _attach_summary_cny_average(result["summary"])
     return result
+
+
+def _attach_yearly_snapshot_comparison(year, payload, include_inventory):
+    if not isinstance(payload, dict):
+        return False
+    comparison = payload.setdefault("comparison", {})
+    if comparison.get("momSales") is not None and comparison.get("momVolume") is not None:
+        return False
+    snapshot = yearly_kpi_from_monthly_snapshots(year, include_inventory)
+    snapshot_comparison = (snapshot or {}).get("comparison") or {}
+    if not snapshot_comparison:
+        return False
+    changed = False
+    for key, value in snapshot_comparison.items():
+        if comparison.get(key) != value:
+            comparison[key] = value
+            changed = True
+    return changed
 
 
 def get_current_kpi():
@@ -478,6 +500,7 @@ def get_yearly_kpi(year, include_inventory):
     if cached:
         changed = _attach_yearly_inventory(year, cached, include_inventory)
         changed = _attach_yearly_tons(year, cached) or changed
+        changed = _attach_yearly_snapshot_comparison(year, cached, include_inventory) or changed
         start, end = _year_query_range(year)
         changed = _ensure_summary_period(cached.setdefault("summary", {}), start, end) or changed
         changed = _attach_summary_cny_average(cached.setdefault("summary", {})) or changed
@@ -490,6 +513,7 @@ def get_yearly_kpi(year, include_inventory):
     if snapshot:
         changed = _attach_yearly_inventory(year, snapshot, include_inventory)
         changed = _attach_yearly_tons(year, snapshot) or changed
+        changed = _attach_yearly_snapshot_comparison(year, snapshot, include_inventory) or changed
         start, end = _year_query_range(year)
         changed = _ensure_summary_period(snapshot.setdefault("summary", {}), start, end) or changed
         changed = _attach_summary_cny_average(snapshot.setdefault("summary", {})) or changed
@@ -531,7 +555,12 @@ def get_yearly_kpi(year, include_inventory):
 
         prev_year = year - 1
         prev_year_start = f"{prev_year}-01-01"
-        prev_next_year_start = f"{year}-01-01"
+        try:
+            current_end = datetime.strptime(year_end_exclusive, "%Y-%m-%d").date()
+            prev_year_end = current_end.replace(year=current_end.year - 1)
+        except ValueError:
+            prev_year_end = date(prev_year, 2, 28)
+        prev_year_end_exclusive = prev_year_end.strftime("%Y-%m-%d")
 
         cur.execute(
             f"""
@@ -541,16 +570,36 @@ def get_yearly_kpi(year, include_inventory):
             WHERE {period_condition}
               AND (s.DerivedPaymentTypeKey IS NULL OR s.DerivedPaymentTypeKey NOT IN (2, 4))
         """,
-            business_period_params(prev_year_start, prev_next_year_start),
+            business_period_params(prev_year_start, prev_year_end_exclusive),
         )
         prev_summary = cur.fetchone()
+
+        latest_month = get_latest_month_in_year(cur, year)
+        mom_summary = (0, 0)
+        if latest_month:
+            try:
+                latest_month_number = int(str(latest_month).split("-")[1])
+            except (IndexError, TypeError, ValueError):
+                latest_month_number = 0
+            if latest_month_number > 1:
+                mom_end = f"{year}-{latest_month_number:02d}-01"
+                cur.execute(
+                    f"""
+                    SELECT SUM(s.Volume) as mom_volume, SUM(s.ShopCost) as mom_amount
+                    FROM selling s
+                    {shift_join("s", "sh")}
+                    WHERE {period_condition}
+                      AND (s.DerivedPaymentTypeKey IS NULL OR s.DerivedPaymentTypeKey NOT IN (2, 4))
+                """,
+                    business_period_params(year_start, mom_end),
+                )
+                mom_summary = cur.fetchone() or (0, 0)
 
         def calc_change(current, previous):
             if not previous or previous == 0:
                 return 0
             return round((current - previous) / previous * 100, 1)
 
-        latest_month = get_latest_month_in_year(cur, year)
         latest_summary = query_month_summary(cur, latest_month, exclude_today=False) if latest_month else {}
         inventory = get_report_month_inventory(cur, latest_month) if include_inventory and latest_month else 0.0
 
@@ -572,6 +621,9 @@ def get_yearly_kpi(year, include_inventory):
                 "queryEndExclusive": year_end_exclusive,
             },
             "comparison": {
+                "momVolume": calc_change(summary[1] or 0, mom_summary[0] or 0),
+                "momSales": calc_change(summary[3] or 0, mom_summary[1] or 0),
+                "momSalesAmount": calc_change(summary[3] or 0, mom_summary[1] or 0),
                 "yoyVolume": calc_change(summary[1] or 0, prev_summary[0] or 0),
                 "yoySales": calc_change(summary[3] or 0, prev_summary[1] or 0),
                 "yoySalesAmount": calc_change(summary[3] or 0, prev_summary[1] or 0),

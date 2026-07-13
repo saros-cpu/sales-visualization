@@ -49,6 +49,7 @@ const RetailResource = lazyWithRetry(() => import('@/pages/retail/Resource'));
 const RetailReport = lazyWithRetry(() => import('@/pages/retail/Report'));
 const RetailAlert = lazyWithRetry(() => import('@/pages/retail/Alert'));
 const RetailSelfUse = lazyWithRetry(() => import('@/pages/retail/SelfUse'));
+const RetailProfit = lazyWithRetry(() => import('@/pages/retail/ProfitView'));
 const WholesaleLayout = lazyWithRetry(() => import('@/layouts/WholesaleLayout'));
 const WholesaleOverview = lazyWithRetry(() => import('@/pages/wholesale/Overview'));
 const WholesaleProducts = lazyWithRetry(() => import('@/pages/wholesale/Products'));
@@ -74,6 +75,7 @@ const Aliases = lazyWithRetry(() => import('@/pages/Aliases'));
 const AuditLogs = lazyWithRetry(() => import('@/pages/AuditLogs'));
 const SystemHealth = lazyWithRetry(() => import('@/pages/SystemHealth'));
 const ManagementCenter = lazyWithRetry(() => import('@/pages/ManagementCenter'));
+const ProfitCostItems = lazyWithRetry(() => import('@/pages/ProfitCostItems'));
 
 const loading = (
   <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
@@ -120,7 +122,7 @@ function AppCloseGuard() {
       open={open}
       centered
       width={460}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={!pendingAction}
       keyboard={!pendingAction}
       onCancel={() => resolveClose('cancel')}
@@ -194,7 +196,7 @@ function AppUpdateInstallGuard() {
       open={open}
       centered
       width={460}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={!pendingAction}
       keyboard={!pendingAction}
       onCancel={() => resolveInstall('later')}
@@ -247,6 +249,7 @@ function AppRoutes() {
           <Route path="report" element={<ErrorBoundary><Suspense fallback={loading}><RetailReport /></Suspense></ErrorBoundary>} />
           <Route path="alert" element={<ErrorBoundary><Suspense fallback={loading}><RetailAlert /></Suspense></ErrorBoundary>} />
           <Route path="self-use" element={<ErrorBoundary><Suspense fallback={loading}><RetailSelfUse /></Suspense></ErrorBoundary>} />
+          <Route path="profit" element={<ErrorBoundary><Suspense fallback={loading}><RetailProfit /></Suspense></ErrorBoundary>} />
         </Route>
         <Route path="wholesale" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleLayout /></Suspense></ErrorBoundary>}>
           <Route index element={<Navigate to="/wholesale/overview" replace />} />
@@ -278,6 +281,7 @@ function AppRoutes() {
         <Route path="audit-logs" element={<ErrorBoundary><Suspense fallback={loading}><AuditLogs /></Suspense></ErrorBoundary>} />
         <Route path="system-health" element={<ErrorBoundary><Suspense fallback={loading}><SystemHealth /></Suspense></ErrorBoundary>} />
         <Route path="management-center" element={<ErrorBoundary><Suspense fallback={loading}><ManagementCenter /></Suspense></ErrorBoundary>} />
+        <Route path="profit-cost-items" element={<ErrorBoundary><Suspense fallback={loading}><ProfitCostItems /></Suspense></ErrorBoundary>} />
         <Route path="settings" element={<ErrorBoundary><Suspense fallback={loading}><Settings /></Suspense></ErrorBoundary>} />
       </Route>
     </Routes>

@@ -41,7 +41,7 @@ def enforce_password_change():
         conn.close()
     return None
 
-from . import auth, weighing, train_entry, wholesale, procurement, contracts, materials, transfer_loss, users, dashboard, map, aliases, organization, audit_logs, assistant, system, retail_alerts, management, knowledge  # noqa
+from . import auth, weighing, train_entry, wholesale, procurement, contracts, materials, transfer_loss, users, dashboard, map, aliases, organization, audit_logs, assistant, system, retail_alerts, management, knowledge, profit  # noqa
 
 
 def register_v2_blueprints(app):

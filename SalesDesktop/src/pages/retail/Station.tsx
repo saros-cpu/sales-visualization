@@ -8,6 +8,7 @@ import { getStations, getStationMonthly } from '@/api/retail';
 import { downloadRetailRangeReport } from '@/api/export';
 import ChartCard from '@/components/ui/ChartCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import KpiCard from '@/components/ui/KpiCard';
 import { useNameI18n } from '@/utils/i18nNames';
 import {
   formatRetailCnyKpi,
@@ -142,6 +143,12 @@ export default function Station() {
   const stationSalesCny = retailCnyAmountOf(
     detailSummary ? { ...detailSummary, amount: stationAmount, avgCnyKgs: detailSummary.avgCnyKgs ?? (detail as any)?.avgCnyKgs } : null,
   );
+  const stationMom = (detail as any)?.comparison?.mom || {};
+  const stationYoy = (detail as any)?.comparison?.yoy || {};
+  const stationMomSales = stationMom.sales ?? stationMom.amount;
+  const stationYoySales = stationYoy.sales ?? stationYoy.amount;
+  const stationMomVolume = stationMom.volume;
+  const stationYoyVolume = stationYoy.volume;
 
   return (
     <div>
@@ -181,16 +188,28 @@ export default function Station() {
           </Row>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={12} lg={6}>
-              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}>
-                <Statistic title={t('retail.totalSales')} value={formatRetailSomKpi(stationAmount, language)} />
-                <Text type="secondary" style={{ fontSize: 12 }}>人民币 {formatRetailCnyKpi(stationSalesCny, language)}</Text>
-              </Card>
+              <KpiCard
+                title={t('retail.totalSales')}
+                value={formatRetailSomKpi(stationAmount, language)}
+                compare={[
+                  { value: stationMomSales, label: t('common.mom') },
+                  { value: stationYoySales, label: t('common.yoy') },
+                ]}
+                extra={<span>人民币 {formatRetailCnyKpi(stationSalesCny, language)}</span>}
+                onClick={() => navigate('/retail/report')}
+              />
             </Col>
             <Col xs={12} lg={6}>
-              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
-                <Statistic title={t('retail.totalLiters')} value={formatRetailLitersKpi(stationLiters, language)} />
-                <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(retailTonsOf(detail.summary), language)}</Text>
-              </Card>
+              <KpiCard
+                title={t('retail.totalLiters')}
+                value={formatRetailLitersKpi(stationLiters, language)}
+                compare={[
+                  { value: stationMomVolume, label: t('common.mom') },
+                  { value: stationYoyVolume, label: t('common.yoy') },
+                ]}
+                extra={<span>{t('retail.totalTons')} {formatRetailTonsKpi(retailTonsOf(detail.summary), language)}</span>}
+                onClick={() => navigate('/retail/resource')}
+              />
             </Col>
             <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.cash')} value={Math.round(detail.summary.cashLiters ?? 0)} suffix="L" /></Card></Col>
             <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}><Statistic title={t('retail.card')} value={Math.round(detail.summary.cardLiters ?? 0)} suffix="L" /></Card></Col>

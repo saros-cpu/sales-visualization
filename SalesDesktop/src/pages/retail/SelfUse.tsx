@@ -76,32 +76,36 @@ export default function SelfUse() {
   };
 
   return (
-    <div>
-      {error && <Alert type="error" message={error.message} closable style={{ marginBottom: 12 }} />}
-      <Space wrap style={{ marginBottom: 16 }}>
-        <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
-        <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
-        <Input.Search placeholder={t('retail.searchPlate')} value={search} onChange={e => setSearch(e.target.value)} style={{ width: 240 }} allowClear />
-        {canExport && (
-          <Button onClick={onExport}>{t('common.excelExport')}</Button>
-        )}
-      </Space>
-      {summary && (
-        <Space style={{ marginBottom: 12, color: '#666' }}>
-          <span>{t('common.total', { count: summary.totalRecords })} {t('retail.volume')} {summary.totalVolume.toLocaleString()}L</span>
-          <span>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(summary))}t</span>
-          {summary.totalWeightKg ? <span>{t('retail.weightKg')} {formatNumber(summary.totalWeightKg)}kg</span> : null}
+    <div className="client-fit-page">
+      <div className="client-fit-stack">
+        {error && <Alert type="error" message={error.message} closable />}
+        <Space wrap>
+          <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
+          <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
+          <Input.Search placeholder={t('retail.searchPlate')} value={search} onChange={e => setSearch(e.target.value)} style={{ width: 240 }} allowClear />
+          {canExport && (
+            <Button onClick={onExport}>{t('common.excelExport')}</Button>
+          )}
         </Space>
-      )}
-      <Table
-        columns={columns}
-        dataSource={filtered}
-        rowKey="transactionKey"
-        loading={loading}
-        size="small"
-        pagination={{ pageSize: 20, showTotal: (count) => t('common.total', { count }) }}
-        scroll={{ x: 'max-content' }}
-      />
+        {summary && (
+          <Space className="client-fit-summary-line">
+            <span>{t('common.total', { count: summary.totalRecords })} {t('retail.volume')} {summary.totalVolume.toLocaleString()}L</span>
+            <span>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(summary))}t</span>
+            {summary.totalWeightKg ? <span>{t('retail.weightKg')} {formatNumber(summary.totalWeightKg)}kg</span> : null}
+          </Space>
+        )}
+      </div>
+      <div className="client-fit-table-scroll">
+        <Table
+          columns={columns}
+          dataSource={filtered}
+          rowKey="transactionKey"
+          loading={loading}
+          size="small"
+          pagination={{ pageSize: 20, showTotal: (count) => t('common.total', { count }) }}
+          scroll={{ x: 'max-content' }}
+        />
+      </div>
     </div>
   );
 }

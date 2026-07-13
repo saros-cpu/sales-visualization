@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -323,14 +323,16 @@ def _chat_completion(
     provider: str,
     api_key: str = "",
     timeout: int = 30,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     settings = get_settings()
     started_at = time.perf_counter()
     body = {
         "model": model,
         "messages": messages,
-        "temperature": settings.OPENROUTER_TEMPERATURE,
-        "max_tokens": settings.OPENROUTER_MAX_TOKENS,
+        "temperature": temperature if temperature is not None else settings.OPENROUTER_TEMPERATURE,
+        "max_tokens": max_tokens if max_tokens is not None else settings.OPENROUTER_MAX_TOKENS,
     }
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -373,6 +375,85 @@ def _local_chat(question: str, context: dict[str, Any], language: str) -> tuple[
         api_key=settings.LOCAL_LLM_API_KEY,
         timeout=settings.LOCAL_LLM_TIMEOUT_SECONDS,
     )
+
+
+_ASSISTANT_PERIOD_PARSE_SYSTEM_PROMPT = (
+    "你是销售数据平台的查询理解助手。根据用户问题中的时间表达，输出唯一的时间区间。"
+    "只输出一个 JSON 对象，不要输出任何其他文字，格式："
+    '{"label": "月初", "start": "2026-08-01", "end": "2026-08-06"}。'
+    "label 是简短的中文期间名（如 月初、上周、本月），start 为区间开始日（含），end 为区间结束日（含）。"
+    "end 不得晚于今天，start 不得晚于 end。"
+    '无法确定时间区间时输出 {"label": "", "start": "", "end": ""}。'
+)
+
+
+def _parse_period_json(content: str, today: date) -> tuple[str, date, date] | None:
+    text = (content or "").strip()
+    # openrouter/free 常路由到推理模型，JSON 可能被代码围栏或散文包住
+    if text.startswith("```"):
+        first_nl = text.find("\n")
+        last = text.rfind("```")
+        if first_nl != -1 and last > first_nl:
+            text = text[first_nl + 1:last].strip()
+    payload = None
+    candidates = [text]
+    start_brace = text.find("{")
+    end_brace = text.rfind("}")
+    if start_brace != -1 and end_brace > start_brace:
+        candidates.append(text[start_brace:end_brace + 1])
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+            break
+        except (json.JSONDecodeError, TypeError):
+            continue
+    if not isinstance(payload, dict):
+        return None
+    label = payload.get("label")
+    start_text = payload.get("start")
+    end_text = payload.get("end")
+    if not isinstance(label, str) or not label.strip() or not start_text or not end_text:
+        return None
+    try:
+        start = date.fromisoformat(str(start_text))
+        end = date.fromisoformat(str(end_text))
+    except (ValueError, TypeError):
+        return None
+    if start > end or end > today:
+        return None
+    return label.strip(), start, end
+
+
+def assistant_llm_parse_period(question: str, today: date) -> tuple[str, date, date] | None:
+    # 规则解析不出但问题带明确时间时，用 LLM 补一次结构化解析；任何失败都回退规则结果
+    settings = get_settings()
+    if settings.resolved_assistant_provider != "openrouter" or not settings.OPENROUTER_API_KEY:
+        return None
+    messages = [
+        {"role": "system", "content": _ASSISTANT_PERIOD_PARSE_SYSTEM_PROMPT},
+        {"role": "user", "content": f"今天是{today.isoformat()}。用户问题：{question}"},
+    ]
+    # openrouter/free 免费模型响应不稳定，空响应/坏格式时重试，最多 3 次
+    for _ in range(3):
+        try:
+            content, _ = _chat_completion(
+                url=settings.OPENROUTER_BASE_URL,
+                model=settings.resolved_openrouter_model,
+                messages=messages,
+                provider="openrouter",
+                api_key=settings.OPENROUTER_API_KEY,
+                timeout=settings.OPENROUTER_TIMEOUT_SECONDS,
+                temperature=0.0,
+                max_tokens=512,
+            )
+        except Exception:
+            continue
+        parsed = _parse_period_json(content, today)
+        if not parsed:
+            continue
+        label, start, end_inclusive = parsed
+        return label, start, end_inclusive + timedelta(days=1)
+    return None
 
 
 def enhance_assistant_response(

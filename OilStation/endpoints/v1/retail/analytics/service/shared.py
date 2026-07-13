@@ -511,6 +511,8 @@ def _retail_report_sales_tons(year_month):
 def retail_repair_payload_mass_from_report(year_month, payload):
     if not year_month or not isinstance(payload, dict):
         return False
+    if payload.get("stationResources"):
+        return False
     resource_tons, station_tons = _retail_report_sales_tons(year_month)
     if not resource_tons and not station_tons:
         return False

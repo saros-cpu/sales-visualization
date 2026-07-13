@@ -17,6 +17,7 @@ import RegionPage from './pages/retail/RegionPage';
 import ResourcePage from './pages/retail/ResourcePage';
 import ReportPage from './pages/retail/ReportPage';
 import AlertPage from './pages/retail/AlertPage';
+import ProfitPage from './pages/retail/ProfitPage';
 
 export default function App() {
   return (
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="/retail/station" element={<StationPage />} />
             <Route path="/retail/region" element={<RegionPage />} />
             <Route path="/retail/resource" element={<ResourcePage />} />
+            <Route path="/retail/profit" element={<ProfitPage />} />
             <Route path="/retail/report" element={<ReportPage />} />
             <Route path="/retail/alert" element={<AlertPage />} />
           </Route>

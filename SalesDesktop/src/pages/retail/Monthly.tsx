@@ -8,6 +8,7 @@ import { downloadMonthlyReport } from '@/api/export';
 import ChartCard from '@/components/ui/ChartCard';
 import TableCard from '@/components/ui/TableCard';
 import PeriodPicker from '@/components/ui/PeriodPicker';
+import KpiCard from '@/components/ui/KpiCard';
 import { useNameI18n } from '@/utils/i18nNames';
 import {
   formatRetailCnyKpi,
@@ -90,16 +91,28 @@ export default function Monthly() {
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={12} md={8} xl={4}>
-              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/report')}>
-                <Statistic title={t('retail.monthlySales')} value={formatRetailSomKpi(s.totalSales, language)} />
-                <Text type="secondary" style={{ fontSize: 12 }}>人民币 {formatRetailCnyKpi(totalSalesCny, language)}</Text>
-              </Card>
+              <KpiCard
+                title={t('retail.monthlySales')}
+                value={formatRetailSomKpi(s.totalSales, language)}
+                compare={[
+                  { value: momSales, label: t('common.mom') },
+                  { value: yoySales, label: t('common.yoy') },
+                ]}
+                extra={<span>人民币 {formatRetailCnyKpi(totalSalesCny, language)}</span>}
+                onClick={() => navigate('/retail/report')}
+              />
             </Col>
             <Col xs={24} sm={12} md={8} xl={4}>
-              <Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/resource')}>
-                <Statistic title={t('retail.totalLiters')} value={formatRetailLitersKpi(s.totalLiters, language)} />
-                <Text type="secondary" style={{ fontSize: 12 }}>{t('retail.totalTons')} {formatRetailTonsKpi(totalTons, language)}</Text>
-              </Card>
+              <KpiCard
+                title={t('retail.totalLiters')}
+                value={formatRetailLitersKpi(s.totalLiters, language)}
+                compare={[
+                  { value: momVolume, label: t('common.mom') },
+                  { value: yoyVolume, label: t('common.yoy') },
+                ]}
+                extra={<span>{t('retail.totalTons')} {formatRetailTonsKpi(totalTons, language)}</span>}
+                onClick={() => navigate('/retail/resource')}
+              />
             </Col>
             <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.activeShops')} value={`${s.activeShops}/${s.totalShops}`} /></Card></Col>
             <Col xs={24} sm={12} md={8} xl={4}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.cardRatio')} value={s.totalSales > 0 ? `${Math.round((s.cardSales / s.totalSales) * 100)}%` : '-'} /></Card></Col>

@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Button, Card, Col, DatePicker, InputNumber, Row, Select, Space, Typography, message } from 'antd';
+import { App, Button, Card, Col, DatePicker, Row, Select, Space, Typography } from 'antd';
 import { FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useTranslation } from 'react-i18next';
 import {
   downloadMonthlyReport,
+  downloadProfitReport,
+  downloadProfitYearReport,
   downloadRetailRangeReport,
   downloadSelfUseReport,
   downloadWholesaleDetails,
@@ -14,6 +16,7 @@ import {
   exportExcel,
 } from '@/api/export';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRetailYears } from '@/hooks/useRetailYears';
 
 const { RangePicker } = DatePicker;
 const { Text, Title } = Typography;
@@ -53,9 +56,10 @@ function ReportCard({ title, desc, icon, runLabel, disabled, loading, onRun }: R
 
 export default function ReportsCenter() {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const { user, can } = useAuth();
   const now = dayjs();
-  const [year, setYear] = useState(now.year());
+  const { year, setYear, yearOptions } = useRetailYears(now.year());
   const [month, setMonth] = useState(now.month() + 1);
   const [range, setRange] = useState<[Dayjs, Dayjs]>([now.subtract(6, 'day'), now]);
   const [running, setRunning] = useState('');
@@ -63,6 +67,7 @@ export default function ReportsCenter() {
   const isAdmin = user?.role === 'admin';
   const canRetailExport = isAdmin || can('retail:export');
   const canWholesaleExport = isAdmin || can('wholesale:export');
+  const canProfitExport = isAdmin;
   const canAnyReport = canRetailExport || canWholesaleExport;
 
   const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, index) => ({
@@ -97,7 +102,12 @@ export default function ReportsCenter() {
       <div>
         <Space wrap>
           <span>{t('reportsCenter.month')}</span>
-          <InputNumber min={2020} max={2100} value={year} onChange={(value) => setYear(Number(value || now.year()))} />
+          <Select
+            style={{ width: 110 }}
+            value={year}
+            options={yearOptions.map((item) => ({ value: item, label: `${item}` }))}
+            onChange={setYear}
+          />
           <Select style={{ width: 120 }} value={month} options={monthOptions} onChange={setMonth} />
           <span>{t('reportsCenter.range')}</span>
           <RangePicker
@@ -197,6 +207,28 @@ export default function ReportsCenter() {
             disabled={!canWholesaleExport}
             loading={running === 'wholesale-detail'}
             onRun={() => run('wholesale-detail', () => downloadWholesaleDetails(ym(year, month)))}
+          />
+        </Col>
+        <Col xs={24} md={12} xl={8}>
+          <ReportCard
+            title={t('reportsCenter.profitTitle')}
+            desc={t('reportsCenter.profitDesc')}
+            icon={<FileExcelOutlined />}
+            runLabel={t('reportsCenter.run')}
+            disabled={!canProfitExport}
+            loading={running === 'profit'}
+            onRun={() => run('profit', () => downloadProfitReport(ym(year, month)))}
+          />
+        </Col>
+        <Col xs={24} md={12} xl={8}>
+          <ReportCard
+            title={t('reportsCenter.profitYearTitle')}
+            desc={t('reportsCenter.profitYearDesc')}
+            icon={<FileExcelOutlined />}
+            runLabel={t('reportsCenter.run')}
+            disabled={!canProfitExport}
+            loading={running === 'profit-year'}
+            onRun={() => run('profit-year', () => downloadProfitYearReport(year))}
           />
         </Col>
       </Row>

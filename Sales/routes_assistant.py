@@ -19,7 +19,13 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import pymysql
 from flask import jsonify, request
-from assistant_agent import clear_assistant_response, is_action_request, is_clear_assistant_command, read_only_refusal
+from assistant_agent import (
+    assistant_llm_parse_period,
+    clear_assistant_response,
+    is_action_request,
+    is_clear_assistant_command,
+    read_only_refusal,
+)
 from assistant_quality import enrich_assistant_payload
 from config import DB_CONFIG
 from db import get_connection
@@ -834,6 +840,37 @@ def _assistant_explicit_date_range(text):
     return None
 
 
+def _assistant_month_range_period(text, today):
+    year_prefix = r"20\d{2}|\d{2}|今年|本年|当前年|当年|这个年|去年|上年|上一年|前年|大前年"
+    match = re.search(
+        rf"(?<!\d)(?:({year_prefix})\s*年?\s*)?"
+        rf"({_ASSISTANT_MONTH_NAME_PATTERN})\s*月?\s*"
+        rf"{_ASSISTANT_RANGE_PATTERN}\s*"
+        rf"(?:({year_prefix})\s*年?\s*)?"
+        rf"({_ASSISTANT_MONTH_NAME_PATTERN})\s*月",
+        text,
+    )
+    if not match:
+        return None
+    start_year = _assistant_context_year_number(match.group(1), today)
+    start_month = _assistant_month_number(match.group(2))
+    end_month = _assistant_month_number(match.group(4))
+    if not start_month or not end_month:
+        return None
+    end_year = _assistant_context_year_number(match.group(3), today) if match.group(3) else start_year
+    if end_year < start_year:
+        return None
+    if end_year == start_year and end_month < start_month:
+        end_year = start_year + 1
+    start = date(start_year, start_month, 1)
+    end = date(end_year + 1, 1, 1) if end_month == 12 else date(end_year, end_month + 1, 1)
+    if end_year == start_year:
+        label = f"{start_year}年{start_month}月至{end_month}月"
+    else:
+        label = f"{start_year}年{start_month}月至{end_year}年{end_month}月"
+    return label, start, end
+
+
 def _assistant_explicit_day_period(text, today):
     full_day = re.search(_ASSISTANT_DATE_PATTERN, text)
     if full_day:
@@ -917,6 +954,9 @@ def parse_assistant_period(question, today=None):
     explicit_range = _assistant_explicit_date_range(text)
     if explicit_range:
         return explicit_range
+    month_range = _assistant_month_range_period(text, today)
+    if month_range:
+        return month_range
     explicit_day = _assistant_explicit_day_period(text, today)
     if explicit_day:
         return explicit_day
@@ -1296,6 +1336,10 @@ def _assistant_clarification_payload(
 
 def _assistant_has_explicit_time_signal(text):
     return bool(_ASSISTANT_EXPLICIT_TIME_PATTERN.search(str(text or "")))
+
+
+def _assistant_should_skip_llm_period_fallback(text):
+    return bool(re.search(r"(\u6625\u8282|\u4e94\u4e00|\u52b3\u52a8\u8282)\s*(\u524d|\u4ee5\u524d|\u4e4b\u524d)", str(text or "")))
 
 
 def _assistant_route_requires_period(route):
@@ -1978,6 +2022,16 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         previous_period = _assistant_period_from_plan(previous_plan)
         if previous_period:
             period_label, start, end = previous_period
+            context_used.append("period")
+    if (
+        not followup
+        and period_label == "最近7天"
+        and _assistant_has_explicit_time_signal(text)
+        and not _assistant_should_skip_llm_period_fallback(text)
+    ):
+        llm_period = assistant_llm_parse_period(text, today)
+        if llm_period:
+            period_label, start, end = llm_period
             context_used.append("period")
     station = _assistant_station_from_text(text)
     if not station and (followup or _assistant_context_reference_requested(text)):

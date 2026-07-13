@@ -593,23 +593,26 @@ export default function OrganizationPermissions() {
   if (error) return <PageState status="error" title={text.loadErrorTitle} description={error} onRetry={reload} />;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
+    <div className="client-fit-page">
+      <div className="client-fit-fixed">
         <Typography.Title level={4} style={{ marginBottom: 4 }}>{text.title}</Typography.Title>
         <Text type="secondary">{text.intro}</Text>
       </div>
 
       <Tabs
+        className="client-fit-tabs"
         items={[
           {
             key: 'departments',
             label: text.departments,
             children: (
-              <div>
-                <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+              <div className="client-fit-page">
+                <div className="client-fit-fixed" style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   {canManageDepartments && <Button type="primary" icon={<PlusOutlined />} onClick={() => openDeptModal()}>{text.addDepartment}</Button>}
                 </div>
-                <Table rowKey="id" size="small" dataSource={overview?.departments || []} columns={departmentColumns} pagination={false} scroll={{ x: 960, y: 'calc(100vh - 320px)' }} />
+                <div className="client-fit-table-scroll">
+                  <Table rowKey="id" size="small" dataSource={overview?.departments || []} columns={departmentColumns} pagination={false} scroll={{ x: 960 }} />
+                </div>
               </div>
             ),
           },
@@ -617,11 +620,13 @@ export default function OrganizationPermissions() {
             key: 'roles',
             label: text.roles,
             children: (
-              <div>
-                <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+              <div className="client-fit-page">
+                <div className="client-fit-fixed" style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   {canManageRoles && <Button type="primary" icon={<PlusOutlined />} onClick={() => openRoleModal()}>{text.addRole}</Button>}
                 </div>
-                <Table rowKey="id" size="small" dataSource={overview?.roles || []} columns={roleColumns} pagination={false} scroll={{ x: 900, y: 'calc(100vh - 320px)' }} />
+                <div className="client-fit-table-scroll">
+                  <Table rowKey="id" size="small" dataSource={overview?.roles || []} columns={roleColumns} pagination={false} scroll={{ x: 900 }} />
+                </div>
               </div>
             ),
           },
@@ -629,8 +634,8 @@ export default function OrganizationPermissions() {
             key: 'permissions',
             label: text.permissionMatrix,
             children: (
-              <div>
-                <Space wrap style={{ marginBottom: 12 }}>
+              <div className="client-fit-page">
+                <Space wrap className="client-fit-fixed">
                   <Text>{text.selectRole}</Text>
                   <Select
                     value={selectedRoleCode}
@@ -647,7 +652,9 @@ export default function OrganizationPermissions() {
                     </Button>
                   )}
                 </Space>
-                <Table rowKey="moduleKey" size="small" dataSource={permissionsByModule} columns={permissionColumns} pagination={false} scroll={{ x: 900, y: 'calc(100vh - 360px)' }} />
+                <div className="client-fit-table-scroll">
+                  <Table rowKey="moduleKey" size="small" dataSource={permissionsByModule} columns={permissionColumns} pagination={false} scroll={{ x: 900 }} />
+                </div>
               </div>
             ),
           },
@@ -655,8 +662,8 @@ export default function OrganizationPermissions() {
             key: 'scopes',
             label: text.dataScopes,
             children: (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <Space wrap>
+              <div className="client-fit-page">
+                <Space wrap className="client-fit-fixed">
                   <Text>{text.selectRole}</Text>
                   <Select
                     value={selectedRoleCode}
@@ -673,15 +680,16 @@ export default function OrganizationPermissions() {
                     </Button>
                   )}
                 </Space>
-                <Table
-                  rowKey="moduleKey"
-                  size="small"
-                  dataSource={(overview?.modules || []).map((item) => ({ ...item, moduleName: moduleLabel(item.moduleKey, item.moduleName) }))}
-                  columns={scopeColumns}
-                  pagination={false}
-                  scroll={{ x: 760, y: 260 }}
-                />
-                <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                <div className="client-fit-inner-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <Table
+                    rowKey="moduleKey"
+                    size="small"
+                    dataSource={(overview?.modules || []).map((item) => ({ ...item, moduleName: moduleLabel(item.moduleKey, item.moduleName) }))}
+                    columns={scopeColumns}
+                    pagination={false}
+                    scroll={{ x: 760 }}
+                  />
+                  <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
                   <Typography.Title level={5}>{text.customResources}</Typography.Title>
                   {canManageRoles && <Form form={resourceForm} layout="inline" style={{ marginBottom: 12 }}>
                     <Form.Item name="moduleKey" rules={[{ required: true }]} initialValue="wholesale">
@@ -728,8 +736,9 @@ export default function OrganizationPermissions() {
                     dataSource={resourceDraft}
                     columns={resourceColumns}
                     pagination={false}
-                    scroll={{ x: 760, y: 240 }}
+                    scroll={{ x: 760 }}
                   />
+                  </div>
                 </div>
               </div>
             ),
