@@ -9,6 +9,8 @@ bp_v2 = Blueprint('api_v2', __name__, url_prefix='/api/v2')
 
 
 PASSWORD_CHANGE_ALLOWED_PATHS = {
+    '/api/v2/auth/status',
+    '/api/v2/auth/bootstrap',
     '/api/v2/auth/login',
     '/api/v2/auth/logout',
     '/api/v2/auth/refresh',

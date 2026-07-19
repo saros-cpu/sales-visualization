@@ -74,7 +74,10 @@ _ASSISTANT_LOCATION_SIGNAL_WORDS = (
     "位置", "位置信息", "在哪", "在哪里", "在哪儿", "哪里", "坐标", "经纬度", "地点", "地址",
 )
 _ASSISTANT_COUNT_SIGNAL_WORDS = ("多少", "多少个", "几个", "几家", "数量", "个数", "总数", "共有", "总共")
-_ASSISTANT_ACTIVE_STATION_WORDS = ("在营站", "在营加油站", "营业站", "正常营业站", "运营站", "营运站", "开业站")
+_ASSISTANT_ACTIVE_STATION_WORDS = (
+    "在营站", "在营加油站", "营业站", "正常营业站", "运营站", "营运站", "开业站",
+    "开着的站", "开着站",
+)
 _ASSISTANT_MAP_OBJECT_WORDS = (
     "地图", "加油站", "站点", "油站", "油库", "仓库", "库区", "库点", *_ASSISTANT_ACTIVE_STATION_WORDS,
 )
@@ -210,6 +213,12 @@ _ASSISTANT_TOOL_CATALOG = {
         "description": "零售年度 KPI 查询",
         "readOnly": True,
         "dataSource": "retail_kpi_snapshots",
+    },
+    "profit_summary": {
+        "name": "profit_summary",
+        "description": "利润核算月度/年度报表、成本维护、购油单价和快照只读摘要",
+        "readOnly": True,
+        "dataSource": "profit_report_snapshots",
     },
     "retail_alert_summary": {
         "name": "retail_alert_summary",
@@ -496,39 +505,86 @@ _ASSISTANT_METRIC_WORDS = (
     "升",
     "升数",
     "油量",
+    "出油",
+    "出油量",
+    "用油量",
+    "用了多少",
+    "耗油",
+    "耗油量",
+    "卖油",
+    "最能卖",
+    "能卖",
+    "拿货",
     "卖得",
 )
 _ASSISTANT_BUSINESS_LEXICON = {
     "domains": {
         "dashboard": ("驾驶舱", "数据驾驶舱", "可视化驾驶舱", "数据可视化", "首页", "首页看板", "核心指标", "指标卡", "KPI卡片", "看板"),
-        "self_use": ("自用油", "自用油数据", "自用油量", "自用", "内部用油", "公司用油", "公司自用油"),
+        "self_use": (
+            "自用油", "自用油数据", "自用油量", "自用", "内部用油", "公司用油",
+            "公司自用油", "自己用油", "自己用了多少油", "自己用了",
+        ),
         "retail": ("零售", "加油站", "站点", "油站", "站里", "销售站"),
+        "profit": (
+            "利润", "利润核算", "利润页", "利润报表", "利润总表", "年度利润", "月度利润",
+            "利润成本", "成本维护", "购油单价", "购油价格", "购油金额", "水电网警",
+            "员工薪资", "薪酬", "利润快照", "柴油销售额", "柴油销量", "利润表",
+            "月度利润表", "年度利润表", "月利润", "年利润", "成本", "成本项",
+            "成本表", "油价成本", "油品成本", "购油价", "进油价", "进价",
+            "进货价", "采购价", "购进价", "赚", "赚了", "赚钱", "赚没赚",
+            "亏", "亏了", "亏损", "亏不亏", "盈利", "毛利", "净利", "净利润",
+        ),
         "retail_alert": ("零售预警", "预警摘要", "趋势异常", "库存预警", "预警规则", "运营建议", "经营建议", "异常提醒"),
         "wholesale": ("批发", "外运", "出口", "本地", "客户"),
-        "train_entry": ("火车入库", "火车录入", "火车外运录入", "火车数据", "入库录入", "入厂日期", "数据录入"),
-        "reports": ("报表中心", "报表文件", "导出报表", "导出文件", "下载报表", "月报", "年报", "日销表", "零售日报", "自用油报表", "批发报表", "批发明细"),
-        "accounting": ("吉方", "交接日报", "会计日报", "财务交接", "日报缺", "缺站"),
+        "train_entry": (
+            "火车", "火车入库", "火车录入", "火车外运", "火车外运录入",
+            "火车数据", "入库录入", "入厂日期", "数据录入",
+        ),
+        "reports": (
+            "报表中心", "报表文件", "导出报表", "导出文件", "下载报表", "月报", "年报",
+            "日销表", "零售日报", "自用油报表", "批发报表", "批发明细", "在哪下",
+            "能下不", "能不能下", "下表", "拿表", "取表", "出表", "表格",
+        ),
+        "accounting": ("吉方", "交接日报", "会计日报", "财务交接", "日报缺", "缺站", "缺没缺站", "有没有缺站", "日报齐", "日报全不全"),
         "combined": ("合并", "总销售", "整体", "公司", "全部业务", "经营情况"),
         "exchange": ("汇率", "美元", "人民币", "美金", "索姆/人民币"),
         "market": ("市场", "行情", "观察", "原油", "成品油", "俄罗斯", "乌兹别克", "国际"),
         "contract": ("合同", "协议"),
         "density": ("密度",),
-        "procurement": ("采购", "原料采购", "进货", "采购数据", "供应商", "供货商"),
+        "procurement": ("采购", "原料采购", "进货", "进货量", "进货数据", "进了多少货", "采购数据", "供应商", "供货商"),
         "weighing": ("称重", "地磅", "过磅", "磅单", "待审核", "待复核", "审核称重"),
         "materials": ("物资", "物料", "办公用品", "物资库存", "物资入库", "调拨单"),
-        "transfer_loss": ("调拨损耗", "损耗率", "损耗情况", "运输损耗", "途中损耗"),
-        "system_health": ("系统健康", "健康检查", "运行治理", "提醒中心", "告警", "自动任务", "任务状态", "服务状态", "AI助手", "AI助手状态", "AI状态", "大模型状态"),
+        "transfer_loss": ("调拨损耗", "损耗", "损耗率", "损耗情况", "运输损耗", "途中损耗"),
+        "system_health": (
+            "系统健康", "健康检查", "运行治理", "提醒中心", "告警", "自动任务",
+            "任务状态", "服务状态", "AI助手", "AI助手状态", "AI状态", "大模型状态",
+            "毛病", "有毛病", "系统故障", "服务故障", "接口故障", "挂了", "卡了",
+            "卡不卡", "系统卡", "卡顿", "响应慢", "加载慢", "没反应", "打不开",
+            "报错", "请求失败", "加载失败", "后端挂", "服务挂",
+        ),
         "knowledge": ("知识库", "知识文章", "附件索引", "资料库", "文档库", "口径说明"),
-        "audit": ("审计", "审计日志", "操作日志", "登录日志"),
+        "audit": (
+            "审计", "审计日志", "操作日志", "登录日志", "谁动", "动了数据",
+            "改了数据", "谁改", "谁操作", "操作记录", "谁登录", "登录过",
+        ),
         "alias": ("别名", "别名匹配", "未匹配名称", "客户别名", "油品别名"),
         "users": ("用户", "账号", "权限", "角色", "部门", "组织权限"),
         "management": ("管理中心", "配置中心", "驾驶舱配置", "看板配置", "组件配置", "字典项", "模板配置"),
-        "settings": ("设置", "系统设置", "客户端", "客户端设置", "客户端版本", "版本", "安装包", "api地址", "API地址", "更新源", "自动更新"),
+        "settings": (
+            "设置", "系统设置", "客户端", "客户端设置", "客户端版本", "版本", "安装包",
+            "api地址", "API地址", "更新源", "自动更新", "更新包", "升级包", "版本号",
+            "壁纸", "壁纸端",
+            "动态壁纸", "壁纸引擎", "SalesWallpaperEngine", "壁纸刷新", "壁纸更新",
+        ),
         "map": ("地图",),
     },
     "metrics": {
-        "amount": ("金额", "销售额", "营业额", "收入", "钱", "索姆", "人民币", "元", "款"),
-        "volume": ("销量", "销售量", "升", "升数", "油量", "卖得", "卖了多少", "出油量"),
+        "amount": ("金额", "销售额", "营业额", "收入", "钱", "索姆", "人民币", "元", "款", "利润", "毛利", "净利", "净利润", "盈利", "亏损", "赚", "亏"),
+        "volume": (
+            "销量", "销售量", "升", "升数", "油量", "卖得", "卖了多少",
+            "卖油", "最能卖", "能卖", "拿货", "出油", "出油量", "用油量",
+            "用了多少", "耗油", "耗油量",
+        ),
         "tons": ("吨", "吨数", "吨位", "重量", "质量"),
         "count": ("笔数", "单数", "交易数", "车次", "次数"),
     },
@@ -539,10 +595,10 @@ _ASSISTANT_BUSINESS_LEXICON = {
             ),
             "resource": ("油品", "产品", "品类", "资源", "汽油", "柴油", "д/т", "аи", "按油品", "油品拆分"),
             "region": ("区域", "地区", "州", "各州", "按区域", "区域拆分"),
-            "customer": ("客户", "客户排行", "哪家客户", "按客户", "客户拆分", "去向", "客户/去向", "收货单位"),
+            "customer": ("客户", "客户排行", "哪家客户", "按客户", "客户拆分", "去向", "去哪", "去哪里", "流向", "客户/去向", "收货单位"),
             "supplier": ("供应商", "供货商", "发货单位"),
             "vehicle": ("车辆", "车号", "车牌"),
-            "status": ("状态", "待审核", "待复核", "待审批", "告警", "异常"),
+            "status": ("状态", "待审核", "待复核", "待审批", "审批", "没审批", "未审批", "没审核", "未审核", "告警", "异常"),
             "depot": ("油库", "仓库", "库房", "库区", "库点"),
             "material": ("物资", "物料", "办公用品", "材料"),
             "date": ("每日", "日趋势", "按天", "每天", "按日", "逐日"),
@@ -562,7 +618,7 @@ _ASSISTANT_BUSINESS_LEXICON = {
         },
     }
 _ASSISTANT_DOMAIN_OPTIONS = (
-    "驾驶舱", "零售", "零售预警", "自用油", "批发", "合并", "吉方日报",
+    "驾驶舱", "零售", "利润核算", "零售预警", "自用油", "批发", "合并", "吉方日报",
     "报表中心", "采购", "火车入库录入", "称重", "物资", "地图位置", "系统健康",
 )
 _ASSISTANT_METRIC_OPTIONS = ("销量", "销售额", "吨数")
@@ -583,7 +639,7 @@ _ASSISTANT_CHART_SIGNAL_WORDS = (
 )
 _ASSISTANT_EXPLICIT_TIME_PATTERN = re.compile(
     rf"(?:20\d{{2}}|\d{{2}})\s*年|"
-    rf"(?:今年|本年|当前年|当年|这个年|去年|上年|上一年|前年|大前年|全年|年度|年初|月初|本月|这个月|上月|上个月|"
+    rf"(?:今年|本年|当前年|当年|这个年|去年|上年|上一年|前年|大前年|全年|年度|年初|月初|本月|这个月|这月|上月|上个月|"
     rf"本周|这周|上周|昨天|今天|今日|上半年|下半年|前半年度|后半年度|季度|春节|五一|劳动节)|"
     rf"(?:{_ASSISTANT_MONTH_NAME_PATTERN})\s*月(?:份)?|"
     rf"(?:最近|近|过去|前)\s*(?:半|{_ASSISTANT_COUNT_NAME_PATTERN})\s*(?:个\s*)?(?:天|日|周|星期|月|年)"
@@ -1021,7 +1077,7 @@ def parse_assistant_period(question, today=None):
             start = date(today.year, month, 1)
             end = date(today.year + 1, 1, 1) if month == 12 else date(today.year, month + 1, 1)
             return f"{today.year}年{month}月", start, end
-    if "本月" in text or "这个月" in text:
+    if "本月" in text or "这个月" in text or "这月" in text:
         start = today.replace(day=1)
         return "本月", start, today + timedelta(days=1)
     year_match = re.search(r"(?<!\d)(20\d{2}|\d{2})\s*年(?!\s*\d)", text)
@@ -1201,6 +1257,7 @@ def _assistant_domain_from_terms(business_terms, default="retail"):
         "management",
         "settings",
         "dashboard",
+        "profit",
         "transfer_loss",
         "materials",
         "procurement",
@@ -1398,7 +1455,7 @@ def _assistant_self_check(text, plan):
             add("comparison_baseline", "对比基准区间", "fail", "问题要求同环比/对比，但没有生成基准区间")
 
     if _assistant_contains_any(text, _ASSISTANT_RANKING_SIGNAL_WORDS):
-        if route in {"retail_ranking", "wholesale_summary", "procurement_summary", "weighing_summary"} and dimensions:
+        if route in {"retail_ranking", "wholesale_summary", "procurement_summary", "weighing_summary", "self_use_summary"} and dimensions:
             add("ranking_dimension", "排行维度", "pass", "、".join(dimensions))
         elif needs_clarification:
             add("ranking_dimension", "排行维度", "warn", "排行问题需要用户补充维度或指标")
@@ -1763,11 +1820,15 @@ def _assistant_enrich_segment(segment, base_plan):
 
 
 def _assistant_metric_from_text(text):
-    if _assistant_contains_any(text, ("金额", "销售额", "营业额", "收入", "索姆", "人民币", "元")):
+    if _assistant_contains_any(text, ("金额", "销售额", "营业额", "收入", "索姆", "人民币", "元", "钱", "利润", "毛利", "净利", "净利润", "盈利", "亏损", "赚", "亏")):
         return "amount"
     if _assistant_contains_any(text, ("吨", "吨数", "吨位", "重量")):
         return "tons"
-    if _assistant_contains_any(text, ("销量", "销售量", "升", "升数", "油量", "卖得")):
+    if _assistant_contains_any(text, (
+        "销量", "销售量", "升", "升数", "油量", "卖得", "卖了多少", "卖油",
+        "最能卖", "能卖", "拿货", "出油", "出油量", "用油量", "用了多少",
+        "耗油", "耗油量",
+    )):
         return "volume"
     return "amount"
 
@@ -1863,6 +1924,8 @@ def _assistant_route_for_domain(domain, previous_route="retail_summary", previou
         return f"{domain}_summary", "summary"
     if domain == "accounting":
         return "accounting_report_status", "status"
+    if domain == "profit":
+        return "profit_summary", "summary"
     if domain == "combined":
         return "combined_summary", "summary"
     if domain == "wholesale":
@@ -2176,6 +2239,16 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         intent = "status"
         if not explicit_metric:
             metric = "count"
+    elif domain == "profit":
+        route = "profit_summary"
+        intent = "status" if _assistant_contains_any(text, ("快照", "刷新", "状态", "维护", "购油单价", "成本")) else "summary"
+        if not explicit_metric:
+            if _assistant_contains_any(text, ("购油金额", "购油单价", "购油价", "进油价", "进价", "进货价", "采购价", "购进价", "成本", "薪资", "薪酬", "水电网警", "柴油销售额", "毛利", "净利", "净利润", "盈利", "亏损", "赚", "亏")):
+                metric = "amount"
+            elif _assistant_contains_any(text, ("柴油销量", "销售量", "销量", "吨位", "吨")):
+                metric = "volume"
+            else:
+                metric = "status"
     elif domain in {"market", "exchange", "density", "contract"}:
         route = f"{domain}_summary"
         intent = "summary"
@@ -2190,12 +2263,12 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
             dimensions.append("resource")
     elif domain == "weighing":
         route = "weighing_summary"
-        intent = "status" if _assistant_contains_any(text, ("待审核", "待复核", "未审核", "状态")) else "summary"
+        intent = "status" if _assistant_contains_any(text, ("待审核", "待复核", "未审核", "没审核", "审核", "状态")) else "summary"
         if not explicit_metric:
             metric = "count" if intent == "status" else "tons"
         if _assistant_contains_any(text, ("车辆", "车号", "车牌")) and "vehicle" not in dimensions:
             dimensions.append("vehicle")
-        if _assistant_contains_any(text, ("待审核", "待复核", "状态")) and "status" not in dimensions:
+        if _assistant_contains_any(text, ("待审核", "待复核", "未审核", "没审核", "审核", "状态")) and "status" not in dimensions:
             dimensions.append("status")
     elif domain == "materials":
         if _assistant_contains_any(text, ("调拨单", "调拨", "审批", "待审批")):
@@ -2206,6 +2279,8 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
             intent = "inventory" if _assistant_contains_any(text, ("库存", "现有", "剩余")) else "summary"
         if not explicit_metric:
             metric = "amount" if _assistant_contains_any(text, ("金额", "价格", "费用")) else "count"
+        if route == "material_transfer_summary" and _assistant_contains_any(text, ("状态", "审批", "待审批", "没审批", "未审批")) and "status" not in dimensions:
+            dimensions.append("status")
     elif domain == "transfer_loss":
         route = "transfer_loss_summary"
         intent = "summary"
@@ -2259,6 +2334,8 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         intent = "summary"
         if (_assistant_chart_kind(text) == "line" or _assistant_contains_any(text, trend_words)) and "date" not in dimensions:
             dimensions.append("date")
+        if not explicit_metric:
+            metric = "volume"
     elif station and _assistant_contains_any(text, status_words) and _assistant_contains_any(text, data_recovery_words):
         route = "station_data_check"
         intent = "data_availability"
@@ -3950,6 +4027,8 @@ def register_assistant_routes(app):
         reports = [
             ["零售月报", "月度", "retail:export", "按年月下载零售月报"],
             ["零售年报", "年度", "retail:export", "按年份下载零售年报"],
+            ["月度利润核算文件", "月度", "retail:export", "按年月下载利润核算月度文件"],
+            ["年度利润总表", "年度", "retail:export", "按年份下载年度利润核算总表"],
             ["批发月报", "月度", "wholesale:export", "按年月下载批发汇总报表"],
             ["零售月度Excel", "月度", "retail:export", "导出零售月度Excel明细"],
             ["零售区间日报", "日期区间", "retail:export", "按起止日期导出零售日报/区间报表"],
@@ -3969,6 +4048,180 @@ def register_assistant_routes(app):
 
     def _assistant_report_center_tables(data):
         return [_assistant_table("报表中心目录", ["报表", "时间口径", "权限", "说明"], data.get("reports") or [])]
+
+
+    def _assistant_profit_period_target(start, end, question):
+        year, month = _assistant_year_month_from_period(start, end)
+        text = str(question or "")
+        if month and not _assistant_contains_any(text, ("年度", "年利润", "年度总表", "全年", "年报")):
+            return {"snapshotType": "month", "periodKey": f"{year:04d}-{month:02d}", "label": f"{year:04d}-{month:02d}"}
+        return {"snapshotType": "year", "periodKey": f"{year or start.year:04d}", "label": f"{year or start.year:04d}年"}
+
+
+    def _assistant_profit_snapshot_summary(payload):
+        if not isinstance(payload, dict):
+            return {}
+        summary = payload.get("summary")
+        return dict(summary) if isinstance(summary, dict) else {}
+
+
+    def _assistant_profit_data(start, end, question):
+        target = _assistant_profit_period_target(start, end, question)
+        data = {
+            "target": target,
+            "snapshot": {"exists": False},
+            "summary": {},
+            "snapshotStats": [],
+            "costMaintenance": {"exists": False},
+            "purchaseMaintenance": {"exists": False},
+            "routes": [
+                ["客户端月度利润核算", "零售分析 > 月度利润核算，按月份查看，默认读快照"],
+                ["客户端年度利润核算", "零售分析 > 年度利润核算，按年份汇总，默认读快照"],
+                ["Web端利润核算", "Web零售板块同口径展示月度/年度利润数据"],
+                ["报表中心下载", "月度利润文件 / 年度利润总表"],
+                ["月度利润核算数据接口", "/api/export/profit/YYYY-MM/data"],
+                ["年度利润总表数据接口", "/api/export/profit-year/YYYY/data"],
+                ["成本维护接口", "/api/v2/profit/cost-items"],
+                ["购油单价维护接口", "/api/v2/profit/purchase-prices"],
+            ],
+            "rules": [
+                "销售额、销售量、吨位、柴油销售额和柴油销量来自零售日报/零售快照同一口径。",
+                "2026年1-7月购油价格按已确认月度文件固化，不能重新推测。",
+                "水电网警和员工薪资：正常营业站按整月，新开业站按实际营业天数。",
+                "损耗没有历史数据时不向前推、不补造。",
+                "月度/年度页面默认读取利润快照；页面手动刷新才强制重算，维护保存会清理对应月度和年度快照。",
+            ],
+        }
+        conn = get_connection()
+        try:
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                if _assistant_table_exists(cur, "profit_report_snapshots"):
+                    cur.execute(
+                        """
+                        SELECT snapshot_type, period_key, payload_json, generated_at
+                        FROM profit_report_snapshots
+                        WHERE snapshot_type = %s AND period_key = %s
+                        """,
+                        (target["snapshotType"], target["periodKey"]),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        payload = _assistant_json_loads(row.get("payload_json"), {})
+                        data["snapshot"] = {
+                            "exists": True,
+                            "type": row.get("snapshot_type"),
+                            "periodKey": row.get("period_key"),
+                            "generatedAt": row.get("generated_at"),
+                        }
+                        data["summary"] = _assistant_profit_snapshot_summary(payload)
+                    cur.execute(
+                        """
+                        SELECT snapshot_type, COUNT(*) AS records, MAX(generated_at) AS latest
+                        FROM profit_report_snapshots
+                        GROUP BY snapshot_type
+                        ORDER BY snapshot_type
+                        """
+                    )
+                    data["snapshotStats"] = [dict(item) for item in cur.fetchall()]
+                if _assistant_table_exists(cur, "profit_cost_items"):
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS records,
+                               COUNT(DISTINCT month_year) AS months,
+                               COUNT(DISTINCT shop_key) AS stations,
+                               MAX(updated_at) AS latest
+                        FROM profit_cost_items
+                        """
+                    )
+                    data["costMaintenance"] = {"exists": True, **dict(cur.fetchone() or {})}
+                    cur.execute(
+                        """
+                        SELECT cost_type, COUNT(*) AS records
+                        FROM profit_cost_items
+                        GROUP BY cost_type
+                        ORDER BY cost_type
+                        """
+                    )
+                    data["costMaintenance"]["byType"] = [dict(item) for item in cur.fetchall()]
+                if _assistant_table_exists(cur, "profit_purchase_prices"):
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS records,
+                               COUNT(DISTINCT month_year) AS months,
+                               COUNT(DISTINCT shop_key) AS stations,
+                               COUNT(DISTINCT resource_key) AS resources,
+                               MAX(updated_at) AS latest
+                        FROM profit_purchase_prices
+                        """
+                    )
+                    data["purchaseMaintenance"] = {"exists": True, **dict(cur.fetchone() or {})}
+                return data
+        finally:
+            conn.close()
+
+
+    def _assistant_profit_answer(data):
+        target = data.get("target") or {}
+        summary = data.get("summary") or {}
+        snapshot = data.get("snapshot") or {}
+        lines = [
+            "利润核算已接入客户端零售菜单、Web端零售板块和报表中心。",
+            "客户端可看月度利润核算、年度利润核算和利润核算成本维护；报表中心可下载月度利润文件与年度总表。",
+        ]
+        if snapshot.get("exists"):
+            lines.append(f"{target.get('label') or target.get('periodKey')}利润快照已生成，时间：{snapshot.get('generatedAt') or '--'}。")
+            if summary:
+                lines.append(
+                    "核心摘要："
+                    f"销售额 {_fmt_amount(summary.get('salesAmount'), '索姆')}，"
+                    f"销量 {_fmt_volume(summary.get('volume'))}，"
+                    f"柴油销售额 {_fmt_amount(summary.get('dieselSalesAmount'), '索姆')}，"
+                    f"柴油销量 {_fmt_volume(summary.get('dieselVolume'))}，"
+                    f"购油金额 {_fmt_amount(summary.get('purchaseAmount'), '索姆')}，"
+                    f"薪酬 {_fmt_amount(summary.get('salary'), '索姆')}，"
+                    f"净利润 {_fmt_amount(summary.get('netProfit'), '索姆')}。"
+                )
+        else:
+            lines.append(f"{target.get('label') or target.get('periodKey')}利润快照暂未查到；页面手动刷新或后端利润报表生成流程会写入快照。")
+        cost = data.get("costMaintenance") or {}
+        purchase = data.get("purchaseMaintenance") or {}
+        if cost.get("exists") or purchase.get("exists"):
+            lines.append(
+                "维护数据："
+                f"成本项覆盖 {int(cost.get('months') or 0)} 个月、{int(cost.get('stations') or 0)} 个站、{int(cost.get('records') or 0)} 条；"
+                f"购油单价覆盖 {int(purchase.get('months') or 0)} 个月、{int(purchase.get('stations') or 0)} 个站、{int(purchase.get('resources') or 0)} 个油品。"
+            )
+        lines.append("口径提醒：销售额/销量来源于零售日报快照；1-7月购油价按已确认月度文件；损耗无历史数据不前推。")
+        return "\n".join(lines)
+
+
+    def _assistant_profit_tables(data):
+        summary = data.get("summary") or {}
+        tables = [_assistant_table("利润核算入口", ["项目", "接口/说明"], data.get("routes") or [])]
+        if summary:
+            tables.append(_assistant_table("利润核算核心摘要", ["指标", "数值"], [
+                ["销售额(索姆)", _fmt_amount(summary.get("salesAmount"), "索姆")],
+                ["销量", _fmt_volume(summary.get("volume"))],
+                ["吨位", _fmt_tons(summary.get("tons"))],
+                ["柴油销售额(索姆)", _fmt_amount(summary.get("dieselSalesAmount"), "索姆")],
+                ["柴油销量", _fmt_volume(summary.get("dieselVolume"))],
+                ["柴油吨位", _fmt_tons(summary.get("dieselTons"))],
+                ["购油金额(索姆)", _fmt_amount(summary.get("purchaseAmount"), "索姆")],
+                ["薪酬(索姆)", _fmt_amount(summary.get("salary"), "索姆")],
+                ["净利润(索姆)", _fmt_amount(summary.get("netProfit"), "索姆")],
+            ]))
+        cost = data.get("costMaintenance") or {}
+        purchase = data.get("purchaseMaintenance") or {}
+        tables.append(_assistant_table("利润维护与快照状态", ["项目", "数值"], [
+            ["目标快照", "已生成" if (data.get("snapshot") or {}).get("exists") else "未生成"],
+            ["月度/年度快照记录", "；".join(f"{row.get('snapshot_type')} {int(row.get('records') or 0)}条" for row in data.get("snapshotStats") or []) or "--"],
+            ["成本维护月份", int(cost.get("months") or 0)],
+            ["成本维护记录", int(cost.get("records") or 0)],
+            ["购油单价维护月份", int(purchase.get("months") or 0)],
+            ["购油单价记录", int(purchase.get("records") or 0)],
+        ]))
+        tables.append(_assistant_table("利润核算口径规则", ["规则"], [[item] for item in data.get("rules") or []]))
+        return tables
 
 
     def _assistant_train_entry_classification(record):
@@ -5163,7 +5416,7 @@ def register_assistant_routes(app):
         conn = get_connection()
         try:
             with conn.cursor(pymysql.cursors.DictCursor) as cur:
-                data = {"database": "ok", "automation": [], "ai": {}, "knowledge": {}, "users": {}}
+                data = {"database": "ok", "automation": [], "ai": {}, "knowledge": {}, "users": {}, "profit": {}}
                 if _assistant_table_exists(cur, "automation_task_runs"):
                     cur.execute(
                         """
@@ -5196,6 +5449,32 @@ def register_assistant_routes(app):
                         """
                     )
                     data["knowledge"]["attachments"] = [dict(row) for row in cur.fetchall()]
+                if _assistant_table_exists(cur, "profit_report_snapshots"):
+                    cur.execute(
+                        """
+                        SELECT snapshot_type, COUNT(*) AS records, MAX(generated_at) AS latest
+                        FROM profit_report_snapshots
+                        GROUP BY snapshot_type
+                        ORDER BY snapshot_type
+                        """
+                    )
+                    data["profit"]["snapshots"] = [dict(row) for row in cur.fetchall()]
+                if _assistant_table_exists(cur, "profit_cost_items"):
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS records, COUNT(DISTINCT month_year) AS months, MAX(updated_at) AS latest
+                        FROM profit_cost_items
+                        """
+                    )
+                    data["profit"]["costItems"] = dict(cur.fetchone() or {})
+                if _assistant_table_exists(cur, "profit_purchase_prices"):
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS records, COUNT(DISTINCT month_year) AS months, MAX(updated_at) AS latest
+                        FROM profit_purchase_prices
+                        """
+                    )
+                    data["profit"]["purchasePrices"] = dict(cur.fetchone() or {})
                 if _assistant_table_exists(cur, "system_users"):
                     cur.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) AS active FROM system_users")
                     data["users"] = dict(cur.fetchone() or {})
@@ -5216,6 +5495,18 @@ def register_assistant_routes(app):
         knowledge = (data.get("knowledge") or {}).get("attachments") or []
         if knowledge:
             lines.append("知识库附件索引：" + "，".join(f"{row.get('extraction_status') or '--'} {int(row.get('records') or 0)}" for row in knowledge))
+        profit = data.get("profit") or {}
+        profit_snapshots = profit.get("snapshots") or []
+        if profit_snapshots:
+            lines.append("利润快照：" + "，".join(f"{row.get('snapshot_type') or '--'} {int(row.get('records') or 0)}条" for row in profit_snapshots))
+        if profit.get("costItems") or profit.get("purchasePrices"):
+            cost_items = profit.get("costItems") or {}
+            purchase_prices = profit.get("purchasePrices") or {}
+            lines.append(
+                "利润维护："
+                f"成本项 {int(cost_items.get('months') or 0)} 个月/{int(cost_items.get('records') or 0)} 条，"
+                f"购油单价 {int(purchase_prices.get('months') or 0)} 个月/{int(purchase_prices.get('records') or 0)} 条。"
+            )
         users = data.get("users") or {}
         if users:
             lines.append(f"用户：共 {int(users.get('total') or 0)} 个，启用 {int(users.get('active') or 0)} 个。")
@@ -5233,6 +5524,22 @@ def register_assistant_routes(app):
                 ["任务", "状态", "最近完成", "次数"],
                 [[row.get("task_name") or "--", row.get("status") or "--", row.get("last_finished_at") or "--", int(row.get("runs") or 0)] for row in data["automation"]],
             ))
+        profit = data.get("profit") or {}
+        profit_rows = []
+        for row in profit.get("snapshots") or []:
+            profit_rows.append([
+                f"{row.get('snapshot_type') or '--'}快照",
+                int(row.get("records") or 0),
+                row.get("latest") or "--",
+            ])
+        if profit.get("costItems"):
+            cost_items = profit.get("costItems") or {}
+            profit_rows.append(["成本维护", int(cost_items.get("records") or 0), cost_items.get("latest") or "--"])
+        if profit.get("purchasePrices"):
+            purchase_prices = profit.get("purchasePrices") or {}
+            profit_rows.append(["购油单价维护", int(purchase_prices.get("records") or 0), purchase_prices.get("latest") or "--"])
+        if profit_rows:
+            tables.append(_assistant_table("利润核算健康摘要", ["项目", "记录数", "最近更新时间"], profit_rows))
         return tables
 
 
@@ -5415,11 +5722,16 @@ def register_assistant_routes(app):
             "publicEntry": "https://sales.example.com/",
             "backendListen": "127.0.0.1:8900",
             "updateFeed": "https://sales.example.com/download/latest.yml",
+            "wallpaperFeed": "https://sales.example.com/download/wallpaper-engine/latest.json",
             "clientVersion": "",
             "packageVersion": "",
+            "wallpaperVersion": "",
             "buildDate": "",
             "developer": "",
             "installer": "",
+            "wallpaperInstaller": "",
+            "wallpaperRefreshAt": "09:00",
+            "wallpaperRefreshPolicy": "启动立即刷新；每日本地时间09:00刷新；睡眠、锁屏、断网或VPN延迟错过窗口后，恢复/解锁/网络恢复会补刷，失败重试按5分钟节流。",
             "readOnly": True,
         }
         version_path = root / "SalesDesktop" / "src" / "version.ts"
@@ -5445,6 +5757,16 @@ def register_assistant_routes(app):
         version = data["clientVersion"] or data["packageVersion"]
         if version:
             data["installer"] = f"SalesDesktop Setup {version}.exe"
+        wallpaper_project_path = root / "SalesWallpaperEngine" / "SalesWallpaperEngine.csproj"
+        try:
+            wallpaper_project = wallpaper_project_path.read_text(encoding="utf-8-sig")
+            wallpaper_version_match = re.search(r"<Version>([^<]+)</Version>", wallpaper_project)
+            if wallpaper_version_match:
+                data["wallpaperVersion"] = wallpaper_version_match.group(1).strip()
+        except OSError:
+            pass
+        if data.get("wallpaperVersion"):
+            data["wallpaperInstaller"] = f"SalesWallpaperEngine-Setup-{data['wallpaperVersion']}.exe"
         return data
 
 
@@ -5453,9 +5775,13 @@ def register_assistant_routes(app):
         version = data.get("clientVersion") or data.get("packageVersion") or "--"
         build_date = data.get("buildDate") or "--"
         installer = data.get("installer") or "--"
+        wallpaper_version = data.get("wallpaperVersion") or "--"
+        wallpaper_installer = data.get("wallpaperInstaller") or "--"
         return (
             "设置页属于只读安全边界：我可以说明当前系统公开入口、客户端版本和更新边界，但不会读取或修改本机隐藏配置、密钥或用户本地缓存。\n"
             f"当前客户端版本为 {version}（构建日期 {build_date}），安装包 {installer}。\n"
+            f"壁纸引擎版本为 {wallpaper_version}，安装包 {wallpaper_installer}，更新源为 {data.get('wallpaperFeed')}。\n"
+            f"壁纸数据刷新策略：{data.get('wallpaperRefreshPolicy')}\n"
             f"生产公开入口为 {data.get('publicEntry')}，后端生产服务只监听 {data.get('backendListen')}，客户端自动更新源为 {data.get('updateFeed')}。"
         )
 
@@ -6945,6 +7271,19 @@ def register_assistant_routes(app):
                 data=data,
             )
 
+        if route == "profit_summary":
+            data = _assistant_profit_data(start, end, match_question)
+            return _assistant_response(
+                question,
+                plan,
+                periodLabel=(data.get("target") or {}).get("label") or label,
+                queryStart=start.isoformat(),
+                queryEndExclusive=end.isoformat(),
+                answer=_assistant_profit_answer(data),
+                tables=_assistant_profit_tables(data),
+                data=data,
+            )
+
         if route == "train_entry_summary":
             data = _assistant_train_entry_data(start, end)
             return _assistant_response(
@@ -7196,6 +7535,11 @@ def register_assistant_routes(app):
                     ["客户端版本", data.get("clientVersion") or data.get("packageVersion") or "--"],
                     ["构建日期", data.get("buildDate") or "--"],
                     ["当前安装包", data.get("installer") or "--"],
+                    ["壁纸引擎版本", data.get("wallpaperVersion") or "--"],
+                    ["壁纸安装包", data.get("wallpaperInstaller") or "--"],
+                    ["壁纸更新源", data.get("wallpaperFeed") or "--"],
+                    ["壁纸刷新时间", data.get("wallpaperRefreshAt") or "--"],
+                    ["壁纸补刷策略", data.get("wallpaperRefreshPolicy") or "--"],
                     ["生产公开入口", data["publicEntry"]],
                     ["后端监听", data["backendListen"]],
                     ["客户端更新源", data["updateFeed"]],
@@ -7424,11 +7768,14 @@ def register_assistant_routes(app):
 
     @app.route("/api/data-assistant/query", methods=["POST"])
     def api_data_assistant_query():
-        result, status = _execute_data_assistant_query_payload(request.get_json(force=True) or {})
-        response = jsonify(result)
+        response = jsonify({
+            "code": 4100,
+            "message": "deprecated_assistant_api",
+            "data": {"successor": "/api/v2/assistant/query"},
+        })
         response.headers["Deprecation"] = "true"
         response.headers["Link"] = '</api/v2/assistant/query>; rel="successor-version"'
-        return response, status
+        return response, 410
 
 
 

@@ -31,6 +31,25 @@ MODULE_CATALOG = [
     ("settings", "设置", 140),
 ]
 
+LEGACY_MODULE_KEYS = (
+    "data_entry",
+    "contract_mgmt",
+    "data_view",
+    "wholesale_view",
+    "transfer_view",
+    "procurement_view",
+    "processing_view",
+    "retail_view",
+    "contract_view",
+    "reports",
+    "print_detail",
+    "print_summary",
+    "print_loss",
+    "print_retail",
+    "user_mgmt",
+    "about",
+)
+
 
 PERMISSION_CATALOG = [
     ("dashboard:view", "dashboard", "view", "menu", "View data visualization", 10),
@@ -265,18 +284,6 @@ def ensure_permission_schema(cur) -> None:
             KEY idx_scope_owner (owner_type, owner_id, module_key)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """)
-    _safe_execute(cur, """
-        CREATE TABLE IF NOT EXISTS role_module_permissions (
-            id BIGINT PRIMARY KEY AUTO_INCREMENT,
-            role VARCHAR(64) NOT NULL,
-            module_key VARCHAR(64) NOT NULL,
-            granted BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uq_role_module (role, module_key),
-            KEY idx_role (role)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    """)
     _seed_catalog(cur)
 
 
@@ -295,6 +302,17 @@ def _seed_catalog(cur) -> None:
         row["permission_code"] if isinstance(row, dict) else row[0]
         for row in cur.fetchall()
     }
+    legacy_placeholders = ",".join(["%s"] * len(LEGACY_MODULE_KEYS))
+    _safe_execute(
+        cur,
+        f"UPDATE app_modules SET is_active = FALSE WHERE module_key IN ({legacy_placeholders})",
+        LEGACY_MODULE_KEYS,
+    )
+    _safe_execute(
+        cur,
+        f"UPDATE system_permissions SET is_active = FALSE WHERE module_key IN ({legacy_placeholders})",
+        LEGACY_MODULE_KEYS,
+    )
     for module_key, module_name, sort_order in MODULE_CATALOG:
         _safe_execute(cur, """
             INSERT INTO app_modules (module_key, module_name, sort_order, is_active)
@@ -382,16 +400,6 @@ def _seed_default_role_permissions(cur, existing_permission_codes: set[str] | No
                 INSERT IGNORE INTO system_role_data_scopes (role_id, module_key, scope_type)
                 VALUES (%s, %s, %s)
             """, (role_id, module_key, scope))
-    for role_code, defaults in ROLE_DEFAULT_ACTIONS.items():
-        for module_key, _, _ in MODULE_CATALOG:
-            granted = "*" in defaults or f"{module_key}:view" in defaults or f"{module_key}:*" in defaults
-            _safe_execute(cur, """
-                INSERT INTO role_module_permissions (role, module_key, granted)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE role = role
-            """, (role_code, module_key, 1 if granted else 0))
-
-
 def _default_scope_for_role(role_code: str) -> str:
     if role_code in ("admin", "leadership"):
         return "all"

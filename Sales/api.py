@@ -175,12 +175,17 @@ PUBLIC_PATHS = {
     "/map",
     "/api/auth/status",
     "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/bootstrap",
+    "/api/auth/change-password",
     "/api/health",
 }
 
 PUBLIC_PAGE_PREFIXES = ()
 
-PUBLIC_API_PATHS = set()
+PUBLIC_API_PATHS = {
+    "/api/data-assistant/query",
+}
 
 PUBLIC_API_PREFIXES = (
     "/api/wallpaper/",
@@ -203,7 +208,7 @@ ADMIN_ONLY_API_PREFIXES = (
     "/api/export/profit-year",
 )
 
-LEGACY_API_PERMISSION_PREFIXES = (
+EXTERNAL_API_PERMISSION_PREFIXES = (
     ("/api/export/exchange-rates", "exchange:view"),
     ("/api/export/analysis/wholesale", "wholesale:export"),
     ("/api/export/wholesale", "wholesale:export"),
@@ -236,21 +241,21 @@ LEGACY_API_PERMISSION_PREFIXES = (
 )
 
 
-def _legacy_api_permission(path: str) -> str | None:
+def _external_api_permission(path: str) -> str | None:
     if not path.startswith("/api/"):
         return None
-    for prefix, permission_code in LEGACY_API_PERMISSION_PREFIXES:
+    for prefix, permission_code in EXTERNAL_API_PERMISSION_PREFIXES:
         if path == prefix or path.startswith(f"{prefix}/"):
             return permission_code
     return None
 
 
-def _enforce_legacy_api_permission(path: str, user_id, role: str | None):
+def _enforce_external_api_permission(path: str, user_id, role: str | None):
     if any(path == prefix or path.startswith(f"{prefix}/") for prefix in ADMIN_ONLY_API_PREFIXES):
         if role != "admin":
             return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
         return None
-    permission_code = _legacy_api_permission(path)
+    permission_code = _external_api_permission(path)
     if not permission_code or role == "admin":
         return None
     if not user_id:
@@ -329,7 +334,7 @@ def require_session():
                             return _password_change_required_response()
                 finally:
                     conn.close()
-            error_response = _enforce_legacy_api_permission(path, identity, (get_jwt() or {}).get("role"))
+            error_response = _enforce_external_api_permission(path, identity, (get_jwt() or {}).get("role"))
             if error_response:
                 return error_response
             return None
@@ -355,7 +360,7 @@ def require_session():
         _mark_session_password_state(user, must_change_password)
         if must_change_password and not _is_password_change_allowed(path):
             return _password_change_required_response()
-        error_response = _enforce_legacy_api_permission(path, user.get("id"), user.get("role"))
+        error_response = _enforce_external_api_permission(path, user.get("id"), user.get("role"))
         if error_response:
             return error_response
         return None

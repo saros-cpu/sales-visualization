@@ -39,10 +39,13 @@ ROUTE_PERMISSION_MAP: dict[str, tuple[str, ...]] = {
     "audit_log_summary": ("audit_logs:view",),
     "alias_summary": ("aliases:view",),
     "user_permission_summary": ("users:view",),
+    "profit_summary": ("admin",),
     "settings_summary": ("settings:view",),
     "report_center_summary": ("retail:export", "wholesale:export"),
     "compound_query": ("dashboard:view",),
 }
+
+ADMIN_ONLY_ROUTES = {"profit_summary"}
 
 SUMMARY_ROUTES = {
     "retail_summary",
@@ -62,6 +65,7 @@ SUMMARY_ROUTES = {
     "audit_log_summary",
     "alias_summary",
     "user_permission_summary",
+    "profit_summary",
     "settings_summary",
     "report_center_summary",
 }
@@ -126,6 +130,8 @@ def user_role(user_context: dict[str, Any] | None) -> str:
 
 def required_permissions(plan: dict[str, Any] | None) -> tuple[str, ...]:
     route = str((plan or {}).get("route") or "")
+    if route in ADMIN_ONLY_ROUTES:
+        return ("admin",)
     if route == "compound_query":
         required: list[str] = []
         for subplan in (plan or {}).get("subPlans") or []:
@@ -201,10 +207,12 @@ def has_required_permission(user_context: dict[str, Any] | None, plan: dict[str,
     role = user_role(user_context)
     if role == "admin":
         return True
+    required = required_permissions(plan)
+    if "admin" in required:
+        return False
     codes = compact_permission_codes(user_context)
     if "*" in codes:
         return True
-    required = required_permissions(plan)
     for code in required:
         module = code.split(":", 1)[0]
         if code in codes or f"{module}:*" in codes:

@@ -1,9 +1,10 @@
 // src/components/layout/RetailLayout.jsx — 零售模块暗色主题布局
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { RETAIL_NAV } from '../../utils/retail-helpers';
 import { RetailHeaderProvider, useRetailHeader } from './RetailHeaderContext';
 import DataAssistant from '../DataAssistant';
+import { useAuth } from '../../hooks/useAuth';
 
 function RetailHeaderControls() {
   const { controls } = useRetailHeader();
@@ -77,7 +78,12 @@ function RetailHeaderControls() {
 
 function RetailLayoutInner() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [clock, setClock] = useState({ time: '--:--:--', date: '' });
+  const navItems = useMemo(
+    () => RETAIL_NAV.filter(item => item.key !== 'profit' || user?.role === 'admin'),
+    [user?.role],
+  );
 
   useEffect(() => {
     const tick = () => {
@@ -113,7 +119,7 @@ function RetailLayoutInner() {
         <div className="retail-header-right">
           <RetailHeaderControls />
           <nav className="retail-nav">
-            {RETAIL_NAV.map(item => (
+            {navItems.map(item => (
               <NavLink
                 key={item.key}
                 to={item.path}

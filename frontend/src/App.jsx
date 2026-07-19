@@ -48,7 +48,9 @@ export default function App() {
             <Route path="/retail/station" element={<StationPage />} />
             <Route path="/retail/region" element={<RegionPage />} />
             <Route path="/retail/resource" element={<ResourcePage />} />
-            <Route path="/retail/profit" element={<ProfitPage />} />
+            <Route element={<AdminGuard />}>
+              <Route path="/retail/profit" element={<ProfitPage />} />
+            </Route>
             <Route path="/retail/report" element={<ReportPage />} />
             <Route path="/retail/alert" element={<AlertPage />} />
           </Route>

@@ -612,5 +612,12 @@
     "expected": {
       "actionRequest": true
     }
+  },
+  {
+    "id": "action_change_purchase_price",
+    "question": "把购油价改成100",
+    "expected": {
+      "actionRequest": true
+    }
   }
 ]

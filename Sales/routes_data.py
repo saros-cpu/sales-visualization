@@ -19,15 +19,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 import pandas as pd
-from flask import jsonify, request, session
-from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt_identity, verify_jwt_in_request
+from flask import jsonify, request
 from pymysql.err import IntegrityError
-from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from shared_utils import (
-    admin_required, log_operation, log_system_operation, session_user, has_users,
-    ensure_auth_schema, ensure_market_watch_schema, ensure_operation_log_schema,
+    admin_required, log_operation,
+    ensure_market_watch_schema, ensure_operation_log_schema,
     ensure_station_status_schema, review_detail_rows, review_issue_rows,
     recalculate_all_wholesale, record_automation_task,
     OILSTATION_ROOT, UPLOAD_ROOT, STATION_STATUS_TYPES,
@@ -890,236 +888,39 @@ def register_data_routes(app):
 
 
 
-    def issue_auth_tokens(user):
-        identity = str(user.get("id"))
-        access_token = create_access_token(
-            identity=identity,
-            additional_claims={
-                "username": user.get("username"),
-                "role": user.get("role"),
-                "mustChangePassword": bool(user.get("mustChangePassword")),
-            },
-            expires_delta=timedelta(hours=2),
-        )
-        refresh_token = create_refresh_token(identity=identity, expires_delta=timedelta(days=7))
-        return {"accessToken": access_token, "refreshToken": refresh_token}
+    def _deprecated_v1_auth_response(successor: str):
+        return jsonify({
+            "code": 4100,
+            "message": "deprecated_auth_api",
+            "data": {"successor": successor},
+        }), 410
 
 
     @app.route("/api/auth/status")
     def api_auth_status():
-        conn = get_connection()
-        try:
-            cur = conn.cursor()
-            user = session_user()
-            if user:
-                ensure_auth_schema(cur)
-                cur.execute(
-                    """
-                    SELECT id, username, display_name, role, must_change_password
-                    FROM system_users
-                    WHERE id = %s AND is_active = TRUE
-                    """,
-                    (user.get("id"),),
-                )
-                row = cur.fetchone()
-                if row:
-                    user = {
-                        "id": row[0],
-                        "username": row[1],
-                        "displayName": row[2],
-                        "role": row[3],
-                        "mustChangePassword": bool(row[4]),
-                    }
-                    session["user"] = user
-                else:
-                    session.clear()
-                    user = None
-            if not user:
-                identity = None
-                try:
-                    verify_jwt_in_request(optional=True)
-                    identity = get_jwt_identity()
-                except Exception:
-                    identity = None
-                if identity:
-                    ensure_auth_schema(cur)
-                    cur.execute(
-                        """
-                        SELECT id, username, display_name, role, must_change_password
-                        FROM system_users
-                        WHERE id = %s AND is_active = TRUE
-                        """,
-                        (identity,),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        user = {
-                            "id": row[0],
-                            "username": row[1],
-                            "displayName": row[2],
-                            "role": row[3],
-                            "mustChangePassword": bool(row[4]),
-                        }
-                        session.permanent = True
-                        session["user"] = user
-            response = {
-                "hasUsers": has_users(cur),
-                "authenticated": bool(user),
-                "user": user,
-            }
-            if user:
-                response.update(issue_auth_tokens(user))
-            return jsonify(response)
-        finally:
-            conn.close()
+        return _deprecated_v1_auth_response("/api/v2/auth/status")
 
 
     _ASSISTANT_DIGIT_TRANSLATION = str.maketrans("０１２３４５６７８９", "0123456789")
 
     @app.route("/api/auth/bootstrap", methods=["POST"])
     def api_auth_bootstrap():
-        payload = request.get_json(force=True)
-        username = clean_str(payload.get("username"))
-        password = payload.get("password") or ""
-        display_name = clean_str(payload.get("displayName")) or username
-        if password and len(password) < 8:
-            return jsonify({"error": "密码长度不能少于8位"}), 400
-        if not username or len(password) < 6:
-            return jsonify({"error": "用户名和至少 6 位密码必填"}), 400
-        conn = get_connection()
-        try:
-            cur = conn.cursor()
-            if has_users(cur):
-                return jsonify({"error": "系统已完成首次管理员创建"}), 409
-            cur.execute(
-                """
-                INSERT INTO system_users
-                    (username, password_hash, display_name, role, must_change_password, password_changed_at)
-                VALUES (%s, %s, %s, 'admin', FALSE, CURRENT_TIMESTAMP)
-                """,
-                (username, generate_password_hash(password), display_name),
-            )
-            user_id = cur.lastrowid
-            log_operation(cur, "bootstrap_admin", "system_users", user_id, {"username": username})
-            conn.commit()
-            session.permanent = True
-            session["user"] = {
-                "id": user_id,
-                "username": username,
-                "displayName": display_name,
-                "role": "admin",
-                "mustChangePassword": False,
-            }
-            return jsonify({"ok": True, "user": session["user"], **issue_auth_tokens(session["user"])})
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        return _deprecated_v1_auth_response("/api/v2/auth/bootstrap")
 
 
     @app.route("/api/auth/login", methods=["POST"])
     def api_auth_login():
-        payload = request.get_json(force=True)
-        username = clean_str(payload.get("username"))
-        password = payload.get("password") or ""
-        conn = get_connection()
-        try:
-            cur = conn.cursor()
-            ensure_auth_schema(cur)
-            cur.execute(
-                """
-                SELECT id, username, password_hash, display_name, role, is_active, must_change_password
-                FROM system_users
-                WHERE username = %s
-                """,
-                (username,),
-            )
-            row = cur.fetchone()
-            if not row or not row[5] or not check_password_hash(row[2], password):
-                log_operation(
-                    cur,
-                    "login_failed",
-                    "system_users",
-                    username,
-                    {"username": username, "reason": "invalid_credentials", "remoteAddr": request.remote_addr},
-                )
-                conn.commit()
-                return jsonify({"error": "用户名或密码不正确"}), 401
-            cur.execute("UPDATE system_users SET last_login_at = CURRENT_TIMESTAMP WHERE id = %s", (row[0],))
-            log_operation(cur, "login_success", "system_users", row[0], {"username": row[1], "remoteAddr": request.remote_addr})
-            conn.commit()
-            session.permanent = True
-            session["user"] = {
-                "id": row[0],
-                "username": row[1],
-                "displayName": row[3],
-                "role": row[4],
-                "mustChangePassword": bool(row[6]),
-            }
-            return jsonify({"ok": True, "user": session["user"], **issue_auth_tokens(session["user"])})
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        return _deprecated_v1_auth_response("/api/v2/auth/login")
 
 
     @app.route("/api/auth/logout", methods=["POST"])
     def api_auth_logout():
-        user = session_user()
-        if user:
-            log_system_operation("logout", "system_users", user.get("id"), {"username": user.get("username")})
-        session.clear()
-        return jsonify({"ok": True})
+        return _deprecated_v1_auth_response("/api/v2/auth/logout")
 
 
     @app.route("/api/auth/change-password", methods=["POST"])
     def api_auth_change_password():
-        user = session_user()
-        if not user:
-            return jsonify({"error": "login_required"}), 401
-        payload = request.get_json(force=True)
-        old_password = payload.get("oldPassword") or ""
-        new_password = payload.get("newPassword") or ""
-        if not old_password or not new_password:
-            return jsonify({"error": "旧密码和新密码不能为空"}), 400
-        if len(new_password) < 8:
-            return jsonify({"error": "新密码长度不能少于8位"}), 400
-        conn = get_connection()
-        try:
-            cur = conn.cursor()
-            ensure_auth_schema(cur)
-            cur.execute("SELECT password_hash FROM system_users WHERE id = %s AND is_active = TRUE", (user.get("id"),))
-            row = cur.fetchone()
-            if not row:
-                return jsonify({"error": "user_not_found"}), 404
-            if not check_password_hash(row[0], old_password):
-                return jsonify({"error": "旧密码不正确"}), 401
-            if check_password_hash(row[0], new_password):
-                return jsonify({"error": "新密码不能与旧密码相同"}), 400
-            cur.execute(
-                """
-                UPDATE system_users
-                SET password_hash = %s,
-                    must_change_password = FALSE,
-                    password_changed_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-                """,
-                (generate_password_hash(new_password), user.get("id")),
-            )
-            log_operation(cur, "change_password", "system_users", user.get("id"), {"username": user.get("username")})
-            conn.commit()
-            session["user"] = {
-                **user,
-                "mustChangePassword": False,
-            }
-            return jsonify({"ok": True, "mustChangePassword": False, **issue_auth_tokens(session["user"])})
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        return _deprecated_v1_auth_response("/api/v2/auth/change-password")
 
 
 

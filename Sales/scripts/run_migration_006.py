@@ -4,12 +4,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db import get_connection
-from api_v2.permission_service import (
-    MODULE_CATALOG,
-    ROLE_DEFAULT_ACTIONS,
-    ensure_permission_schema,
-    _default_scope_for_role,
-)
+from api_v2.permission_service import MODULE_CATALOG, ROLE_DEFAULT_ACTIONS, ensure_permission_schema, _default_scope_for_role
 
 
 def _matches(defaults, code, module_key):
@@ -50,14 +45,6 @@ try:
                     ON DUPLICATE KEY UPDATE scope_type = VALUES(scope_type)
                     """,
                     (role_id, module_key, scope),
-                )
-
-            cur.execute("DELETE FROM role_module_permissions WHERE role = %s", (role_code,))
-            for module_key, _, _ in MODULE_CATALOG:
-                granted = _matches(defaults, f"{module_key}:view", module_key)
-                cur.execute(
-                    "INSERT INTO role_module_permissions (role, module_key, granted) VALUES (%s, %s, %s)",
-                    (role_code, module_key, 1 if granted else 0),
                 )
 
     conn.commit()

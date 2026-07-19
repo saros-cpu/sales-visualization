@@ -16,87 +16,6 @@ from .permission_service import (
 )
 
 
-ROLES = ('admin', 'operator', 'auditor', 'viewer')
-
-MODULE_CATALOG = [
-    ('dashboard', '数据可视化', 10),
-    ('retail', '零售', 20),
-    ('wholesale', '批发', 30),
-    ('exchange', '汇率查询', 40),
-    ('train_entry', '数据录入', 50),
-    ('procurement', '采购查询', 60),
-    ('contracts', '合同管理', 70),
-    ('materials', '物资调拨', 80),
-    ('transfer_loss', '外运损耗', 90),
-    ('map', '3D 地图', 100),
-    ('knowledge', '知识库', 105),
-    ('users', '用户管理', 110),
-    ('aliases', '别名管理', 120),
-    ('weighing', '称重审核', 130),
-    ('audit_logs', '审计日志', 135),
-    ('settings', '设置', 140),
-]
-
-DEFAULT_ROLE_MODULES = {
-    'admin': tuple(key for key, _, _ in MODULE_CATALOG),
-    'operator': (
-        'dashboard', 'retail', 'wholesale', 'exchange', 'train_entry',
-        'procurement', 'contracts', 'materials', 'transfer_loss', 'map',
-        'knowledge', 'aliases', 'weighing', 'settings',
-    ),
-    'auditor': (
-        'dashboard', 'retail', 'wholesale', 'exchange', 'contracts',
-        'knowledge', 'aliases', 'weighing', 'map', 'settings',
-    ),
-    'viewer': ('dashboard', 'retail', 'wholesale', 'exchange', 'map', 'knowledge', 'settings'),
-}
-
-
-def _ensure_permission_catalog(cur):
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS app_modules (
-            id BIGINT PRIMARY KEY AUTO_INCREMENT,
-            module_key VARCHAR(64) NOT NULL UNIQUE,
-            module_name VARCHAR(128) NOT NULL,
-            parent_key VARCHAR(64) NULL,
-            sort_order INT NOT NULL DEFAULT 0,
-            is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            KEY idx_parent (parent_key)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    ''')
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS role_module_permissions (
-            id BIGINT PRIMARY KEY AUTO_INCREMENT,
-            role VARCHAR(64) NOT NULL,
-            module_key VARCHAR(64) NOT NULL,
-            granted BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uq_role_module (role, module_key),
-            KEY idx_role (role)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    ''')
-    for module_key, module_name, sort_order in MODULE_CATALOG:
-        cur.execute('''
-            INSERT INTO app_modules (module_key, module_name, sort_order, is_active)
-            VALUES (%s, %s, %s, TRUE)
-            ON DUPLICATE KEY UPDATE
-                module_name = VALUES(module_name),
-                sort_order = VALUES(sort_order),
-                is_active = TRUE
-        ''', (module_key, module_name, sort_order))
-
-    for role in ROLES:
-        granted = set(DEFAULT_ROLE_MODULES[role])
-        for module_key, _, _ in MODULE_CATALOG:
-            cur.execute('''
-                INSERT INTO role_module_permissions (role, module_key, granted)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE role = role
-            ''', (role, module_key, module_key in granted))
-
-
 def _ensure_user_role_column(cur):
     cur.execute("SHOW COLUMNS FROM system_users LIKE 'role'")
     row = cur.fetchone()
@@ -136,13 +55,16 @@ def _require_any(cur, permission_codes):
     return None, (jsonify({'code': 4003, 'message': 'forbidden', 'data': None}), 403)
 
 
-def _require_admin(cur):
-    user = _current_user(cur)
-    if not user:
-        return None, (jsonify({'code': 4001, 'message': 'unauthorized', 'data': None}), 401)
-    if user['role'] != 'admin':
-        return None, (jsonify({'code': 4003, 'message': 'forbidden', 'data': None}), 403)
-    return user['id'], None
+def _deprecated_permissions_api():
+    return jsonify({
+        'code': 4100,
+        'message': 'deprecated_permission_api',
+        'data': {
+            'successor': '/api/v2/organization/overview',
+            'updateRolePermissions': '/api/v2/organization/roles/<role_code>/permissions',
+            'updateRoleDataScopes': '/api/v2/organization/roles/<role_code>/data-scopes',
+        },
+    }), 410
 
 
 @bp_v2.route('/users', methods=['GET'])
@@ -305,101 +227,20 @@ def reset_password(user_id):
 
 
 @bp_v2.route('/users/<int:user_id>/permissions', methods=['PUT'])
-@jwt_required()
 def update_permissions(user_id):
-    data = request.get_json() or {}
-    permissions = data.get('permissions', [])
-
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            _, error = _require_any(cur, ['users:manage', 'roles:manage'])
-            if error:
-                return error
-            cur.execute('DELETE FROM user_module_permissions WHERE user_id = %s', (user_id,))
-            for perm in permissions:
-                cur.execute('''
-                    INSERT INTO user_module_permissions (user_id, module_key, can_view, can_edit)
-                    VALUES (%s, %s, %s, %s)
-                ''', (user_id, perm['moduleKey'], perm.get('canView', 1), perm.get('canEdit', 0)))
-            conn.commit()
-        return jsonify({'code': 0, 'message': 'success', 'data': None})
-    finally:
-        conn.close()
+    return _deprecated_permissions_api()
 
 
 @bp_v2.route('/users/permissions/modules', methods=['GET'])
-@jwt_required()
 def list_modules():
-    conn = get_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            _, error = _require_any(cur, ['users:manage', 'roles:manage'])
-            if error:
-                return error
-            _ensure_permission_catalog(cur)
-            conn.commit()
-            cur.execute('SELECT id, module_key, module_name FROM app_modules WHERE is_active = 1 ORDER BY sort_order, id')
-            rows = cur.fetchall()
-        data = [{'id': r['id'], 'moduleKey': r['module_key'], 'moduleName': r['module_name']} for r in rows]
-        return jsonify({'code': 0, 'message': 'success', 'data': data})
-    finally:
-        conn.close()
+    return _deprecated_permissions_api()
 
 
 @bp_v2.route('/users/permissions', methods=['GET'])
-@jwt_required()
 def list_role_permissions():
-    conn = get_connection()
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            _, error = _require_any(cur, ['users:manage', 'roles:manage'])
-            if error:
-                return error
-            _ensure_permission_catalog(cur)
-            conn.commit()
-            cur.execute('''
-                SELECT roles.role, m.module_key, COALESCE(r.granted, 0) AS granted
-                FROM (
-                    SELECT 'admin' AS role UNION ALL
-                    SELECT 'operator' UNION ALL
-                    SELECT 'auditor' UNION ALL
-                    SELECT 'viewer'
-                ) roles
-                JOIN app_modules m ON m.is_active = 1
-                LEFT JOIN role_module_permissions r
-                  ON r.role = roles.role AND r.module_key = m.module_key
-                ORDER BY m.sort_order, m.id
-            ''')
-            data = [{'role': r['role'], 'moduleKey': r['module_key'], 'granted': bool(r['granted'])} for r in cur.fetchall()]
-            return jsonify({'code': 0, 'message': 'success', 'data': data})
-    finally:
-        conn.close()
+    return _deprecated_permissions_api()
 
 
 @bp_v2.route('/users/permissions', methods=['PUT'])
-@jwt_required()
 def save_role_permissions():
-    data = request.get_json() or {}
-    permissions = data.get('permissions', [])
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            _, error = _require_any(cur, ['users:manage', 'roles:manage'])
-            if error:
-                return error
-            _ensure_permission_catalog(cur)
-            cur.execute('DELETE FROM role_module_permissions')
-            for perm in permissions:
-                role = perm.get('role')
-                module_key = perm.get('moduleKey')
-                if role not in ROLES or not module_key:
-                    continue
-                cur.execute(
-                    'INSERT INTO role_module_permissions (role, module_key, granted) VALUES (%s, %s, %s)',
-                    (role, module_key, 1 if perm.get('granted') else 0),
-                )
-            conn.commit()
-            return jsonify({'code': 0, 'message': 'success', 'data': None})
-    finally:
-        conn.close()
+    return _deprecated_permissions_api()

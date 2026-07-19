@@ -94,6 +94,12 @@ class AssistantBusinessEvalTests(unittest.TestCase):
             with self.subTest(case=case["id"], question=case["question"]):
                 self.assertTrue(is_action_request(case["question"]))
 
+    def test_mutating_cost_maintenance_request_is_rejected(self):
+        self.assertTrue(is_action_request("把购油价改成100"))
+        self.assertTrue(is_action_request("把汇率设置为7.8"))
+        self.assertFalse(is_action_request("进油价咋填"))
+        self.assertFalse(is_action_request("利润表能下不"))
+
     def test_clear_assistant_command_is_ui_command(self):
         self.assertTrue(is_clear_assistant_command("清空问答"))
         self.assertFalse(is_action_request("清空问答"))

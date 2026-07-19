@@ -277,9 +277,9 @@ export async function getAssistantStatus() {
     return {
       configured: true,
       provider: 'web-data-assistant',
-      model: 'legacy-rule-engine',
+      model: 'business-rule-engine',
       freeOnly: true,
-      legacyFallback: true,
+      ruleEngineFallback: true,
     };
   }
 }

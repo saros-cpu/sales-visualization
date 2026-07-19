@@ -15,13 +15,13 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `4.0.3`.
-- Current release code commit: the latest `feat: add profit accounting and wallpaper refresh catch-up` commit in `git log`.
+- Current released client version: `4.0.4`.
+- Current release code commit: the latest `fix: unify api and permission contracts` commit in `git log`.
 - Production public entry: `https://sales.example.com/`.
 - Production backup entry details are kept only in `docs/配置文档.md`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `https://sales.example.com/download/latest.yml`; fallback endpoint details are kept only in `docs/配置文档.md`.
-- Current installer: `SalesDesktop Setup 4.0.3.exe`.
+- Current installer: `SalesDesktop Setup 4.0.4.exe`.
 - Current wallpaper package: `SalesWallpaperEngine 0.2.3` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
 - The old web wallpaper package is retired and removed. Future wallpaper work must use `SalesWallpaperEngine`.
 - HTTPS certificate: enabled; certificate paths are kept only in `docs/配置文档.md`. HTTP remains active for compatibility.
@@ -126,18 +126,18 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.3.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.3.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%204.0.3.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.4.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.4.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%204.0.4.exe"
 ```
 
 ## CodeGraph Memory
 
 Current CodeGraph baseline:
 
-- Files: `372`
-- Nodes: `9,363`
-- Edges: `32,967`
+- Files: `373`
+- Nodes: `9,393`
+- Edges: `32,898`
 - DB size: `58.13 MB`
 - Status: `Index is up to date`
 

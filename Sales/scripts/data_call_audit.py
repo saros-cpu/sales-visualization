@@ -10,6 +10,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from flask_jwt_extended import create_access_token
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = ROOT.parent
@@ -48,9 +50,20 @@ def session_cookie() -> str:
 COOKIE = "session=" + session_cookie()
 
 
+def access_token() -> str:
+    with app.app_context():
+        return create_access_token(
+            identity="1",
+            additional_claims={"username": "health", "role": "admin", "mustChangePassword": False},
+        )
+
+
+AUTH_TOKEN = access_token()
+
+
 def request_json(path: str, method: str = "GET", payload: dict | None = None, timeout: int = 30):
     data = None
-    headers = {"Accept": "application/json", "Cookie": COOKIE}
+    headers = {"Accept": "application/json", "Cookie": COOKIE, "Authorization": f"Bearer {AUTH_TOKEN}"}
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -92,14 +105,15 @@ def check_get(results: list[Result], name: str, path: str, keys: tuple[str, ...]
 def check_post_question(results: list[Result], question: str, expected_period: str | None = None):
     try:
         status, payload, elapsed_ms = request_json(
-            "/api/data-assistant/query",
+            "/api/v2/assistant/query",
             method="POST",
-            payload={"question": question},
+            payload={"question": question, "useLlm": False},
             timeout=45,
         )
-        period = str(payload.get("periodLabel") or "")
-        ok = status == 200 and bool(payload.get("ok")) and (not expected_period or expected_period in period)
-        liters = ((payload.get("data") or {}).get("summary") or {}).get("totalLiters")
+        body = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        period = str(body.get("periodLabel") or "")
+        ok = status == 200 and bool(payload.get("code") == 0 or body.get("ok")) and (not expected_period or expected_period in period)
+        liters = ((body.get("data") or {}).get("summary") or {}).get("totalLiters")
         detail = f"period={period}, liters={liters}"
         add(results, f"数据问答：{question}", ok, elapsed_ms, detail)
     except HTTPError as exc:

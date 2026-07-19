@@ -25,7 +25,9 @@
       "route": "map_location",
       "domain": "map",
       "metric": "count",
-      "dimensions": ["station"]
+      "dimensions": [
+        "station"
+      ]
     }
   },
   {
@@ -35,7 +37,9 @@
     "expected": {
       "route": "map_location",
       "domain": "map",
-      "dimensions": ["station"],
+      "dimensions": [
+        "station"
+      ],
       "station": 2
     }
   },
@@ -57,7 +61,9 @@
       "route": "retail_ranking",
       "domain": "retail",
       "metric": "volume",
-      "dimensions": ["region"],
+      "dimensions": [
+        "region"
+      ],
       "periodStart": "2026-06-01"
     }
   },
@@ -69,7 +75,9 @@
       "route": "retail_ranking",
       "domain": "retail",
       "metric": "volume",
-      "dimensions": ["station"],
+      "dimensions": [
+        "station"
+      ],
       "periodStart": "2026-07-01"
     }
   },
@@ -81,8 +89,512 @@
       "route": "retail_summary",
       "domain": "retail",
       "metric": "volume",
-      "dimensions": ["month"],
+      "dimensions": [
+        "month"
+      ],
       "periodStart": "2026-06-01"
+    }
+  },
+  {
+    "id": "retail_profit_monthly",
+    "module": "零售分析 / 月度利润核算",
+    "question": "7月利润核算数据怎么看",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit",
+      "periodStart": "2026-07-01"
+    }
+  },
+  {
+    "id": "retail_profit_cost_items",
+    "module": "零售分析 / 利润核算成本维护",
+    "question": "利润核算成本和购油单价怎么维护",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit",
+      "metric": "amount"
+    }
+  },
+  {
+    "id": "colloquial_profit_plain",
+    "module": "AI助手 / 中式问法",
+    "question": "7月赚了没",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit",
+      "metric": "amount",
+      "periodStart": "2026-07-01"
+    }
+  },
+  {
+    "id": "colloquial_profit_loss",
+    "module": "AI助手 / 中式问法",
+    "question": "今年亏不亏",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit",
+      "metric": "amount",
+      "periodStart": "2026-01-01"
+    }
+  },
+  {
+    "id": "colloquial_profit_purchase_price",
+    "module": "AI助手 / 中式问法",
+    "question": "进油价咋填",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit",
+      "metric": "amount"
+    }
+  },
+  {
+    "id": "colloquial_profit_purchase_month",
+    "module": "AI助手 / 中式问法",
+    "question": "采购价按月维护",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit",
+      "metric": "amount",
+      "dimensions": [
+        "month"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_profit_report_download",
+    "module": "AI助手 / 中式问法",
+    "question": "利润表能下不",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit"
+    }
+  },
+  {
+    "id": "colloquial_retail_amount",
+    "module": "AI助手 / 中式问法",
+    "question": "这个月一共卖了多少钱",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "amount",
+      "periodStart": "2026-07-01"
+    }
+  },
+  {
+    "id": "colloquial_retail_volume_ranking",
+    "module": "AI助手 / 中式问法",
+    "question": "哪个站出油最多",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": [
+        "station"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_self_use_volume",
+    "module": "AI助手 / 中式问法",
+    "question": "自用油今年用了多少",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "metric": "volume",
+      "periodStart": "2026-01-01"
+    }
+  },
+  {
+    "id": "colloquial_self_use_station",
+    "module": "AI助手 / 中式问法",
+    "question": "哪个站用了多少自用油",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "metric": "volume",
+      "dimensions": [
+        "station"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_system_health",
+    "module": "AI助手 / 中式问法",
+    "question": "系统有没有毛病",
+    "expected": {
+      "route": "system_health_summary",
+      "domain": "system_health"
+    }
+  },
+  {
+    "id": "colloquial_dashboard_plain",
+    "module": "AI助手 / 中式问法",
+    "question": "首页大盘现在咋样",
+    "expected": {
+      "route": "dashboard_summary",
+      "domain": "dashboard"
+    }
+  },
+  {
+    "id": "colloquial_map_open_stations",
+    "module": "AI助手 / 中式问法",
+    "question": "现在开着的站有几家",
+    "expected": {
+      "route": "map_location",
+      "domain": "map",
+      "metric": "count",
+      "dimensions": [
+        "station"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_retail_year_volume",
+    "module": "AI助手 / 中式问法",
+    "question": "今年卖了多少升",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "volume",
+      "periodStart": "2026-01-01"
+    }
+  },
+  {
+    "id": "colloquial_retail_region_volume",
+    "module": "AI助手 / 中式问法",
+    "question": "哪个区域卖油最多",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": [
+        "region"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_retail_resource_volume",
+    "module": "AI助手 / 中式问法",
+    "question": "哪个油品最能卖",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": [
+        "resource"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_retail_yoy",
+    "module": "AI助手 / 中式问法",
+    "question": "今年比去年咋样",
+    "expected": {
+      "route": "retail_comparison",
+      "domain": "retail",
+      "metric": "amount",
+      "periodStart": "2026-01-01"
+    }
+  },
+  {
+    "id": "colloquial_retail_station_drop",
+    "module": "AI助手 / 中式问法",
+    "question": "最近哪家站掉量",
+    "expected": {
+      "route": "station_trend_anomaly",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": [
+        "station"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_retail_inventory",
+    "module": "AI助手 / 中式问法",
+    "question": "现在库存咋样",
+    "expected": {
+      "route": "retail_inventory",
+      "domain": "retail"
+    }
+  },
+  {
+    "id": "colloquial_retail_price",
+    "module": "AI助手 / 中式问法",
+    "question": "现在零售价咋样",
+    "expected": {
+      "route": "retail_price",
+      "domain": "retail"
+    }
+  },
+  {
+    "id": "colloquial_retail_resource_share",
+    "module": "AI助手 / 中式问法",
+    "question": "油品结构咋样",
+    "expected": {
+      "route": "retail_resource_share",
+      "domain": "retail",
+      "dimensions": [
+        "resource"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_self_use_company",
+    "module": "AI助手 / 中式问法",
+    "question": "公司自己用了多少油",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "metric": "volume"
+    }
+  },
+  {
+    "id": "colloquial_self_use_trend",
+    "module": "AI助手 / 中式问法",
+    "question": "自用油趋势给我看下",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "metric": "volume",
+      "dimensions": [
+        "date"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_wholesale_month",
+    "module": "AI助手 / 中式问法",
+    "question": "批发这月咋样",
+    "expected": {
+      "route": "wholesale_summary",
+      "domain": "wholesale",
+      "periodStart": "2026-07-01"
+    }
+  },
+  {
+    "id": "colloquial_wholesale_customer_purchase",
+    "module": "AI助手 / 中式问法",
+    "question": "哪个客户拿货最多",
+    "expected": {
+      "route": "wholesale_summary",
+      "domain": "wholesale",
+      "metric": "volume",
+      "dimensions": [
+        "customer"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_wholesale_destination",
+    "module": "AI助手 / 中式问法",
+    "question": "外运去哪最多",
+    "expected": {
+      "route": "wholesale_summary",
+      "domain": "wholesale",
+      "dimensions": [
+        "customer"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_procurement_month",
+    "module": "AI助手 / 中式问法",
+    "question": "这月进了多少货",
+    "expected": {
+      "route": "procurement_summary",
+      "domain": "procurement",
+      "metric": "tons",
+      "periodStart": "2026-07-01"
+    }
+  },
+  {
+    "id": "colloquial_exchange_today",
+    "module": "AI助手 / 中式问法",
+    "question": "今天汇率多少",
+    "expected": {
+      "route": "exchange_summary",
+      "domain": "exchange",
+      "periodStart": "2026-07-22"
+    }
+  },
+  {
+    "id": "colloquial_market_fuel",
+    "module": "AI助手 / 中式问法",
+    "question": "俄罗斯油价行情咋样",
+    "expected": {
+      "route": "market_summary",
+      "domain": "market"
+    }
+  },
+  {
+    "id": "colloquial_report_retail_download",
+    "module": "AI助手 / 中式问法",
+    "question": "零售日报在哪导",
+    "expected": {
+      "route": "report_center_summary",
+      "domain": "reports"
+    }
+  },
+  {
+    "id": "colloquial_accounting_complete",
+    "module": "AI助手 / 中式问法",
+    "question": "昨天吉方日报齐不齐",
+    "expected": {
+      "route": "accounting_report_status",
+      "domain": "accounting",
+      "periodStart": "2026-07-21"
+    }
+  },
+  {
+    "id": "colloquial_train_month_tons",
+    "module": "AI助手 / 中式问法",
+    "question": "火车这月进了多少吨",
+    "expected": {
+      "route": "train_entry_summary",
+      "domain": "train_entry",
+      "metric": "tons",
+      "periodStart": "2026-07-01"
+    }
+  },
+  {
+    "id": "colloquial_train_export_entry",
+    "module": "AI助手 / 中式问法",
+    "question": "火车外运录了没",
+    "expected": {
+      "route": "train_entry_summary",
+      "domain": "train_entry",
+      "metric": "count"
+    }
+  },
+  {
+    "id": "colloquial_contract_expiring",
+    "module": "AI助手 / 中式问法",
+    "question": "合同快到期了吗",
+    "expected": {
+      "route": "contract_summary",
+      "domain": "contract"
+    }
+  },
+  {
+    "id": "colloquial_material_inventory",
+    "module": "AI助手 / 中式问法",
+    "question": "物资还剩多少",
+    "expected": {
+      "route": "materials_summary",
+      "domain": "materials",
+      "metric": "count",
+      "dimensions": [
+        "material"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_material_transfer_approval",
+    "module": "AI助手 / 中式问法",
+    "question": "调拨单还有没审批",
+    "expected": {
+      "route": "material_transfer_summary",
+      "domain": "materials",
+      "metric": "count",
+      "dimensions": [
+        "status"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_transfer_loss_plain",
+    "module": "AI助手 / 中式问法",
+    "question": "损耗有没有数据",
+    "expected": {
+      "route": "transfer_loss_summary",
+      "domain": "transfer_loss",
+      "metric": "tons"
+    }
+  },
+  {
+    "id": "colloquial_weighing_audit",
+    "module": "AI助手 / 中式问法",
+    "question": "地磅还有没审核",
+    "expected": {
+      "route": "weighing_summary",
+      "domain": "weighing",
+      "metric": "count",
+      "dimensions": [
+        "status"
+      ]
+    }
+  },
+  {
+    "id": "colloquial_knowledge_scope",
+    "module": "AI助手 / 中式问法",
+    "question": "口径说明在哪",
+    "expected": {
+      "route": "knowledge_summary",
+      "domain": "knowledge"
+    }
+  },
+  {
+    "id": "colloquial_user_permission",
+    "module": "AI助手 / 中式问法",
+    "question": "谁有权限",
+    "expected": {
+      "route": "user_permission_summary",
+      "domain": "users"
+    }
+  },
+  {
+    "id": "colloquial_alias_unmatched",
+    "module": "AI助手 / 中式问法",
+    "question": "别名有没有没匹配",
+    "expected": {
+      "route": "alias_summary",
+      "domain": "alias"
+    }
+  },
+  {
+    "id": "colloquial_system_slow",
+    "module": "AI助手 / 中式问法",
+    "question": "系统卡不卡",
+    "expected": {
+      "route": "system_health_summary",
+      "domain": "system_health"
+    }
+  },
+  {
+    "id": "colloquial_audit_data_change",
+    "module": "AI助手 / 中式问法",
+    "question": "最近谁动了数据",
+    "expected": {
+      "route": "audit_log_summary",
+      "domain": "audit"
+    }
+  },
+  {
+    "id": "colloquial_audit_login",
+    "module": "AI助手 / 中式问法",
+    "question": "谁登录过",
+    "expected": {
+      "route": "audit_log_summary",
+      "domain": "audit"
+    }
+  },
+  {
+    "id": "colloquial_settings_version",
+    "module": "AI助手 / 中式问法",
+    "question": "客户端版本号多少",
+    "expected": {
+      "route": "settings_summary",
+      "domain": "settings"
+    }
+  },
+  {
+    "id": "colloquial_wallpaper_update",
+    "module": "AI助手 / 中式问法",
+    "question": "壁纸咋更新",
+    "expected": {
+      "route": "settings_summary",
+      "domain": "settings"
     }
   },
   {
@@ -113,7 +625,9 @@
     "expected": {
       "route": "retail_summary",
       "domain": "retail",
-      "dimensions": ["resource"],
+      "dimensions": [
+        "resource"
+      ],
       "resource": 106,
       "periodStart": "2026-01-01"
     }
@@ -143,7 +657,10 @@
     "expected": {
       "route": "retail_alert_summary",
       "domain": "retail_alert",
-      "dimensions": ["station", "status"]
+      "dimensions": [
+        "station",
+        "status"
+      ]
     }
   },
   {
@@ -163,7 +680,9 @@
     "expected": {
       "route": "self_use_summary",
       "domain": "self_use",
-      "dimensions": ["date"],
+      "dimensions": [
+        "date"
+      ],
       "visualRequested": true,
       "visualType": "line",
       "periodStart": "2026-01-01"
@@ -187,7 +706,9 @@
       "route": "wholesale_summary",
       "domain": "wholesale",
       "metric": "volume",
-      "dimensions": ["resource"]
+      "dimensions": [
+        "resource"
+      ]
     }
   },
   {
@@ -197,7 +718,9 @@
     "expected": {
       "route": "wholesale_summary",
       "domain": "wholesale",
-      "dimensions": ["customer"]
+      "dimensions": [
+        "customer"
+      ]
     }
   },
   {
@@ -229,7 +752,9 @@
       "route": "procurement_summary",
       "domain": "procurement",
       "metric": "tons",
-      "dimensions": ["supplier"],
+      "dimensions": [
+        "supplier"
+      ],
       "periodStart": "2026-07-01"
     }
   },
@@ -261,6 +786,15 @@
     "expected": {
       "route": "report_center_summary",
       "domain": "reports"
+    }
+  },
+  {
+    "id": "reports_profit_exports",
+    "module": "报表中心 / 利润核算",
+    "question": "报表中心能下载年度利润总表吗",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit"
     }
   },
   {
@@ -299,7 +833,9 @@
     "expected": {
       "route": "materials_summary",
       "domain": "materials",
-      "dimensions": ["material"]
+      "dimensions": [
+        "material"
+      ]
     }
   },
   {
@@ -310,7 +846,10 @@
       "route": "material_transfer_summary",
       "domain": "materials",
       "metric": "count",
-      "dimensions": ["status", "material"]
+      "dimensions": [
+        "status",
+        "material"
+      ]
     }
   },
   {
@@ -368,7 +907,9 @@
       "route": "weighing_summary",
       "domain": "weighing",
       "metric": "count",
-      "dimensions": ["status"],
+      "dimensions": [
+        "status"
+      ],
       "periodStart": "2026-07-01"
     }
   },
@@ -403,6 +944,15 @@
     "id": "settings",
     "module": "设置",
     "question": "客户端更新源和版本是多少",
+    "expected": {
+      "route": "settings_summary",
+      "domain": "settings"
+    }
+  },
+  {
+    "id": "wallpaper_refresh_catchup",
+    "module": "壁纸端",
+    "question": "壁纸端错过9点刷新为什么不用手动重启了",
     "expected": {
       "route": "settings_summary",
       "domain": "settings"

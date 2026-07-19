@@ -57,13 +57,6 @@ def main() -> int:
         for text in case.get("answerContains") or []:
             if str(text) not in answer:
                 failures.append({**result, "reason": f"answer_missing:{text}"})
-    legacy_resp = client.post(
-        "/api/data-assistant/query",
-        json={"question": "今年零售数据", "useLlm": False},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    if legacy_resp.headers.get("Deprecation") != "true":
-        failures.append({"id": "legacy_deprecation_header", "status": legacy_resp.status_code, "reason": "missing_deprecation_header"})
     stream_resp = client.post(
         "/api/v2/assistant/query/stream",
         json={"question": "今年自用油数据"},

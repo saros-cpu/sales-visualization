@@ -281,8 +281,11 @@ def ensure_station_status_schema(cur):
 
 def has_users(cur):
     ensure_auth_schema(cur)
-    cur.execute("SELECT COUNT(*) FROM system_users")
-    return bool(cur.fetchone()[0])
+    cur.execute("SELECT COUNT(*) AS user_count FROM system_users")
+    row = cur.fetchone()
+    if not row:
+        return False
+    return bool(_column_value(row, 0, "user_count"))
 
 
 def session_user():

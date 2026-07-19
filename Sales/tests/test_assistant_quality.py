@@ -17,6 +17,7 @@ from assistant_quality import (
     enrich_assistant_payload,
     evaluate_response_quality,
     has_required_permission,
+    required_permissions,
 )
 from routes_assistant import build_assistant_query_plan
 
@@ -70,6 +71,16 @@ class AssistantQualityTests(unittest.TestCase):
         self.assertEqual(result["agent"]["status"], "permission_denied")
         self.assertFalse(result["permission"]["allowed"])
         self.assertEqual(result["tables"], [])
+
+    def test_profit_summary_requires_admin_even_with_wildcard_permission(self):
+        plan = {"route": "profit_summary"}
+        retail_user = {"user": {"id": 7, "role": "viewer"}, "permissionCodes": ["retail:view", "retail:export"]}
+        wildcard_user = {"user": {"id": 8, "role": "viewer"}, "permissionCodes": ["*"]}
+
+        self.assertEqual(required_permissions(plan), ("admin",))
+        self.assertFalse(has_required_permission(retail_user, plan))
+        self.assertFalse(has_required_permission(wildcard_user, plan))
+        self.assertTrue(has_required_permission(admin_context(), plan))
 
     def test_query_spec_is_read_only_and_blocks_write_operations(self):
         plan = build_assistant_query_plan("6月采购按供应商排行", today=TODAY)

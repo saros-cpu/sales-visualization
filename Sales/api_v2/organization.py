@@ -377,16 +377,6 @@ def update_role_permissions(role_code):
                         INSERT INTO system_role_permissions (role_id, permission_id, granted)
                         VALUES (%s, %s, TRUE)
                     """, (role_id, perm["id"]))
-            cur.execute("DELETE FROM role_module_permissions WHERE role = %s", (role_code,))
-            modules = set()
-            for code in permission_codes:
-                if code.endswith(":view") and ":" in code:
-                    modules.add(code.split(":", 1)[0])
-            for module_key in modules:
-                cur.execute("""
-                    INSERT INTO role_module_permissions (role, module_key, granted)
-                    VALUES (%s, %s, TRUE)
-                """, (role_code, module_key))
             conn.commit()
             return jsonify({"code": 0, "message": "success", "data": None})
     finally:

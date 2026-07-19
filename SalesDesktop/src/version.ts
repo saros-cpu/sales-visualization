@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '4.0.3';
+export const VERSION = '4.0.4';
 export const BUILD_DATE = '2026-08-09';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '4.0.4',
+    date: '2026-08-09',
+    type: 'patch',
+    changes: [
+      '修复：Web、客户端和维护脚本统一使用 /api/v2/auth 与 /api/v2/assistant，旧认证和旧 AI 查询路径统一返回 410。',
+      '修复：权限维护统一走组织权限接口，旧用户权限接口只返回 410 废弃提示，不再读写旧模块权限表。',
+      '安全：利润核算页面、接口和 AI 助手 profit_summary 统一为管理员专属，普通零售查看权限不能绕过。',
+    ],
+  },
   {
     version: '4.0.3',
     date: '2026-08-09',

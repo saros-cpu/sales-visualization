@@ -364,7 +364,7 @@ def _conversation_context_search_text(context: dict[str, Any]) -> str:
     return " ".join(part for part in parts if part)
 
 
-def _legacy_assistant_query(
+def _execute_business_assistant_query(
     question: str,
     language: str | None,
     session_id: str | None = None,
@@ -429,7 +429,7 @@ def assistant_query():
         result = _record_and_attach(user_id, question, result)
         return jsonify({"code": 0, "message": "success", "data": result})
 
-    source_payload, status = _legacy_assistant_query(question, language, session_id, conversation_context, user_context)
+    source_payload, status = _execute_business_assistant_query(question, language, session_id, conversation_context, user_context)
     if status >= 400:
         result = {
             "ok": False,
@@ -547,7 +547,7 @@ def assistant_query_stream():
             yield _sse_event("completed", result)
             yield _sse_final()
             return
-        source_payload, status = _legacy_assistant_query(question, language, session_id, conversation_context, user_context)
+        source_payload, status = _execute_business_assistant_query(question, language, session_id, conversation_context, user_context)
         if status >= 400:
             yield _sse_event("error", {"code": status, "message": source_payload.get("error") or "assistant_source_query_failed"})
             yield _sse_final("error")

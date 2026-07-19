@@ -83,12 +83,14 @@ def login_if_requested(results: list[CheckResult], opener, base_url: str, userna
     try:
         status, payload, elapsed_ms = request_json(
             opener,
-            f"{base_url.rstrip('/')}/api/auth/login",
+            f"{base_url.rstrip('/')}/api/v2/auth/login",
             method="POST",
             payload={"username": username, "password": password},
             timeout=20,
         )
-        ok = status == 200 and bool(isinstance(payload, dict) and payload.get("ok"))
+        ok = status == 200 and bool(
+            isinstance(payload, dict) and (payload.get("ok") or payload.get("code") == 0)
+        )
         add_result(results, "登录态", ok, elapsed_ms, "登录成功" if ok else f"HTTP {status}")
         return ok
     except HTTPError as exc:
