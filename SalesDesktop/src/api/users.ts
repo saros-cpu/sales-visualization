@@ -1,4 +1,7 @@
 import client from './client';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface UserRecord {
   id: number; username: string; displayName: string; role: string;
@@ -8,7 +11,7 @@ export interface UserRecord {
 }
 
 export async function getUsers() {
-  const res = await client.get('/users');
+  const res = await client.get(v2(ApiPaths.users.list));
   return res.data;
 }
 
@@ -16,7 +19,7 @@ export async function createUser(data: {
   username: string; password: string; displayName?: string; role?: string;
   roleCodes?: string[]; departmentIds?: number[];
 }) {
-  const res = await client.post('/users', data);
+  const res = await client.post(v2(ApiPaths.users.list), data);
   return res.data;
 }
 
@@ -24,11 +27,11 @@ export async function updateUser(id: number, data: Partial<{
   displayName: string; role: string; roleCodes: string[];
   departmentIds: number[]; isActive: boolean;
 }>) {
-  const res = await client.put(`/users/${id}`, data);
+  const res = await client.put(v2(ApiPaths.users.item(id)), data);
   return res.data;
 }
 
 export async function resetPassword(id: number, password: string) {
-  const res = await client.put(`/users/${id}/reset-password`, { password });
+  const res = await client.put(v2(ApiPaths.users.resetPassword(id)), { password });
   return res.data;
 }

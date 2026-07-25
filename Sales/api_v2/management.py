@@ -18,6 +18,7 @@ from shared_utils import OILSTATION_ROOT
 from wholesale_service import summarize_wholesale_page
 from .assistant import ensure_ai_call_schema
 from .audit_logs import ensure_audit_schema
+from .authz import permission_required
 from .permission_service import ensure_permission_schema, has_permission, list_user_departments, list_user_roles
 from .system import _cache_items
 
@@ -423,15 +424,6 @@ def _department_codes(cur, user: dict[str, Any]) -> set[str]:
 
 def _forbidden():
     return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
-
-
-def _require_admin(cur) -> dict[str, Any] | tuple[Any, int]:
-    user = _current_user(cur)
-    if not user:
-        return jsonify({"code": 4001, "message": "unauthorized", "data": None}), 401
-    if user["role"] != "admin":
-        return _forbidden()
-    return user
 
 
 def ensure_management_schema(cur) -> None:
@@ -1292,14 +1284,12 @@ def cockpit():
 
 @bp_v2.route("/management/overview", methods=["GET"])
 @jwt_required()
+@permission_required("management:view")
 def management_overview():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_management_schema(cur)
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
             conn.commit()
             return jsonify({"code": 0, "message": "success", "data": {
                 "configs": _list_configs(cur),
@@ -1316,15 +1306,13 @@ def management_overview():
 
 @bp_v2.route("/management/configs/<path:config_key>", methods=["PUT"])
 @jwt_required()
+@permission_required("management:update")
 def update_config(config_key: str):
     payload = request.get_json() or {}
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_management_schema(cur)
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
             cur.execute("""
                 UPDATE system_configs
                 SET config_value = %s
@@ -1338,15 +1326,13 @@ def update_config(config_key: str):
 
 @bp_v2.route("/management/dictionary-items", methods=["POST"])
 @jwt_required()
+@permission_required("management:update")
 def create_dictionary_item():
     payload = request.get_json() or {}
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_management_schema(cur)
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
             cur.execute("""
                 INSERT INTO system_dictionary_items
                     (dict_type, item_code, label_zh, label_ru, value_json, sort_order, is_active)
@@ -1374,15 +1360,13 @@ def create_dictionary_item():
 
 @bp_v2.route("/management/dictionary-items/<int:item_id>", methods=["PUT"])
 @jwt_required()
+@permission_required("management:update")
 def update_dictionary_item(item_id: int):
     payload = request.get_json() or {}
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_management_schema(cur)
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
             cur.execute("""
                 UPDATE system_dictionary_items
                 SET label_zh = %s, label_ru = %s, value_json = %s, sort_order = %s, is_active = %s
@@ -1403,15 +1387,13 @@ def update_dictionary_item(item_id: int):
 
 @bp_v2.route("/management/cockpit/templates/<template_key>", methods=["PUT"])
 @jwt_required()
+@permission_required("management:update")
 def update_cockpit_template(template_key: str):
     payload = request.get_json() or {}
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             ensure_management_schema(cur)
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
             cur.execute("""
                 INSERT INTO dashboard_templates
                     (template_key, title_zh, title_ru, role_scope, config_json, is_active, sort_order)

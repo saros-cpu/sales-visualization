@@ -34,6 +34,10 @@ function defaultWeeklyReportRange() {
   return [lastWeekMonday, lastWeekMonday.add(6, 'day')] as [dayjs.Dayjs, dayjs.Dayjs];
 }
 
+function formatYearMonth(year: number, month?: number) {
+  return month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`;
+}
+
 export default function Station() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -42,12 +46,19 @@ export default function Station() {
   const { can } = useAuth();
   const canExport = can('retail:export');
   const { region, station } = useNameI18n();
-  const [ym, setYm] = useState(defaultRetailMonth);
+  const requestedMonth = searchParams.get('month') || '';
+  const [ym, setYm] = useState(requestedMonth || defaultRetailMonth);
   const [shopKey, setShopKey] = useState<number | null>(null);
   const [weeklyReportRange, setWeeklyReportRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(defaultWeeklyReportRange);
   const [weeklyReportLoading, setWeeklyReportLoading] = useState(false);
   const queryShopKey = Number(searchParams.get('shopKey'));
   const queryName = searchParams.get('name') || '';
+
+  useEffect(() => {
+    if (requestedMonth) {
+      setYm((prev) => (prev === requestedMonth ? prev : requestedMonth));
+    }
+  }, [requestedMonth]);
 
   const staQ = useApiQuery(['retail', 'stations', ym], () => getStations(ym));
   const detailQ = useApiQuery(
@@ -106,6 +117,7 @@ export default function Station() {
   const selectShopKey = (nextShopKey?: number | null) => {
     setShopKey(nextShopKey ?? null);
     const query = new URLSearchParams(searchParams);
+    query.set('month', ym);
     if (nextShopKey) {
       const selected = stations.find((s: any) => Number(s.shopKey) === Number(nextShopKey));
       query.set('shopKey', String(nextShopKey));
@@ -114,6 +126,18 @@ export default function Station() {
       query.delete('shopKey');
       query.delete('name');
     }
+    const suffix = query.toString();
+    navigate(`/retail/station${suffix ? `?${suffix}` : ''}`, { replace: true });
+  };
+
+  const changeMonth = (year: number, month?: number) => {
+    const nextYm = formatYearMonth(year, month);
+    setYm(nextYm);
+    const query = new URLSearchParams(searchParams);
+    query.set('month', nextYm);
+    if (shopKey) query.set('shopKey', String(shopKey));
+    const selected = stations.find((s: any) => Number(s.shopKey) === Number(shopKey));
+    if (selected?.name) query.set('name', selected.name);
     const suffix = query.toString();
     navigate(`/retail/station${suffix ? `?${suffix}` : ''}`, { replace: true });
   };
@@ -154,7 +178,8 @@ export default function Station() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <Space wrap>
-          <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
+          <Text type="secondary">{t('common.month')}</Text>
+          <PeriodPicker value={ym} onChange={changeMonth} picker="month" />
           <Select
             showSearch placeholder={t('retail.stationSelector')}
             value={shopKey} onChange={selectShopKey}

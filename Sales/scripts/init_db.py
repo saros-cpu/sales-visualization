@@ -123,7 +123,7 @@ def seed_retail_station_aliases(cur):
         ("26", "S-52", ["X-40", "S-52"]),
         ("24", "X-43", ["АЗС CTY-07 4", "CTY-07 4"]),
         ("5", "S-10", ["АЗС S-10", "АЗС S-10", "S-10", "S-10"]),
-        ("7", "X-47", ["X-44", "X-47"]),
+        ("27", "X-47", ["X-44", "X-47"]),
         ("1", "S-02", ["X-25", "X-37", "АЗС CTY-06", "CTY-06"]),
     ]
     for shop_key, standard_name, aliases in manual_aliases:

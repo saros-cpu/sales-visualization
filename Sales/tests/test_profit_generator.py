@@ -11,6 +11,7 @@ if str(OILSTATION_ROOT) not in sys.path:
     sys.path.insert(0, str(OILSTATION_ROOT))
 
 from endpoints.v1.retail.export.service import profit_generator as profit  # noqa: E402
+from constants import REPORT_HIDDEN_STATION_NOTE  # noqa: E402
 
 
 class ProfitGeneratorTests(unittest.TestCase):
@@ -50,6 +51,47 @@ class ProfitGeneratorTests(unittest.TestCase):
         self.assertEqual(by_product["АИ 80"]["I"], 50)
         self.assertEqual(by_product["АИ 92"]["H"], "АЙ92")
         self.assertEqual(by_product["АИ 92"]["I"], 54)
+
+    def test_month_sheet_hides_closed_station_rows_and_adds_note(self):
+        wb = Workbook()
+        context = {
+            "month": 7,
+            "stations": [
+                {
+                    "shopKey": 11,
+                    "name": "S-22\nSTN-21",
+                    "rows": [{"rk": 102, "product": "АИ 80", "D": 60, "H": "АЙ80", "I": 50}],
+                    "M": 100,
+                    "O": 10,
+                    "P": 5,
+                    "Q": 2,
+                    "n_rate": 0.3,
+                    "n_rks": [102],
+                    "diesel_rks": [],
+                },
+                {
+                    "shopKey": 1,
+                    "name": "S01\nS01",
+                    "rows": [{"rk": 102, "product": "АИ 80", "D": 60, "H": "АЙ80", "I": 50}],
+                    "M": 100,
+                    "O": 10,
+                    "P": 5,
+                    "Q": 2,
+                    "n_rate": 0.3,
+                    "n_rks": [102],
+                    "diesel_rks": [],
+                },
+            ],
+            "cMap": {(11, 102): 1, (1, 102): 1},
+            "eMap": {(11, 102): 60, (1, 102): 60},
+        }
+
+        total_row = profit._write_profit_sheet(wb.active, context)
+        ws = wb.active
+
+        self.assertTrue(bool(ws.row_dimensions[2].hidden))
+        self.assertFalse(bool(ws.row_dimensions[3].hidden))
+        self.assertEqual(ws.cell(row=total_row + 2, column=1).value, REPORT_HIDDEN_STATION_NOTE)
 
     def test_confirmed_month_purchase_prices_override_defaults(self):
         overrides = profit._load_month_purchase_overrides("2026-01", include_db=False)

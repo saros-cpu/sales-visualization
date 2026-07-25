@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Card, Select, Table } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { getContracts, Contract } from '@/api/contracts';
-import { getProductOptions, getEntityOptions } from '@/api/client';
+import { getWholesaleDetailFilterOptions } from '@/api/wholesale';
 
 export default function ContractView() {
   const { t } = useTranslation();
@@ -28,8 +28,12 @@ export default function ContractView() {
   }, [company, page]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { getProductOptions().then(setProductOptions); }, []);
-  useEffect(() => { getEntityOptions().then(setCustomerOptions); }, []);
+  useEffect(() => {
+    getWholesaleDetailFilterOptions().then((options) => {
+      setProductOptions(options.products || []);
+      setCustomerOptions(options.companies || []);
+    });
+  }, []);
 
   const columns = useMemo(() => [
     { title: t('common.contractNo'), dataIndex: 'contractNo', key: 'contractNo', width: 150 },

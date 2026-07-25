@@ -1,4 +1,7 @@
 import client from './client';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface MaterialCategory {
   id: number; category_code: string; name_zh: string; name_ru: string;
@@ -56,17 +59,17 @@ type TransferOrderCreateInput = Partial<TransferOrder> & {
 };
 
 export async function getCategories() {
-  const res = await client.get('/materials/categories');
+  const res = await client.get(v2(ApiPaths.materials.categories));
   return res.data;
 }
 
 export async function getDepots() {
-  const res = await client.get('/materials/depots');
+  const res = await client.get(v2(ApiPaths.materials.depots));
   return res.data;
 }
 
 export async function getMaterials() {
-  const res = await client.get('/materials');
+  const res = await client.get(v2(ApiPaths.materials.list));
   return res.data;
 }
 
@@ -80,17 +83,22 @@ export async function createMaterial(data: MaterialCreateInput) {
     unit: data.unit,
     unitPrice: data.unitPrice ?? data.unit_price,
   };
-  const res = await client.post('/materials', payload);
+  const res = await client.post(v2(ApiPaths.materials.list), payload);
+  return res.data;
+}
+
+export async function updateMaterial(id: number, data: Partial<Material>) {
+  const res = await client.put(v2(ApiPaths.materials.item(id)), data);
   return res.data;
 }
 
 export async function deleteMaterial(id: number) {
-  const res = await client.delete(`/materials/${id}`);
+  const res = await client.delete(v2(ApiPaths.materials.item(id)));
   return res.data;
 }
 
 export async function getInboundList(params: { page?: number; page_size?: number }) {
-  const res = await client.get('/materials/inbound', { params });
+  const res = await client.get(v2(ApiPaths.materials.inbound), { params });
   return res.data;
 }
 
@@ -106,12 +114,17 @@ export async function createInbound(data: InboundCreateInput) {
     invoiceNo: data.invoiceNo ?? data.invoice_no,
     remark: data.remark,
   };
-  const res = await client.post('/materials/inbound', payload);
+  const res = await client.post(v2(ApiPaths.materials.inbound), payload);
+  return res.data;
+}
+
+export async function updateInbound(id: number, data: Partial<InboundRecord>) {
+  const res = await client.put(v2(ApiPaths.materials.inboundItem(id)), data);
   return res.data;
 }
 
 export async function getTransferOrders(params: { status?: string; page?: number; page_size?: number }) {
-  const res = await client.get('/materials/orders', { params });
+  const res = await client.get(v2(ApiPaths.materials.orders), { params });
   return res.data;
 }
 
@@ -129,18 +142,23 @@ export async function createTransferOrder(data: TransferOrderCreateInput) {
     handlerName: data.handlerName ?? data.handler_name,
     remark: data.remark,
   };
-  const res = await client.post('/materials/orders', payload);
+  const res = await client.post(v2(ApiPaths.materials.orders), payload);
+  return res.data;
+}
+
+export async function updateTransferOrder(id: number, data: Partial<TransferOrder>) {
+  const res = await client.put(v2(ApiPaths.materials.order(id)), data);
   return res.data;
 }
 
 export async function updateOrderStatus(orderId: number, status: string) {
-  const res = await client.put(`/materials/orders/${orderId}/status`, { status });
+  const res = await client.put(v2(ApiPaths.materials.orderStatus(orderId)), { status });
   return res.data;
 }
 
 export async function getInventory(depotId?: number) {
   const params: Record<string, number> = {};
   if (depotId) params.depot_id = depotId;
-  const res = await client.get('/materials/inventory', { params });
+  const res = await client.get(v2(ApiPaths.materials.inventory), { params });
   return res.data;
 }

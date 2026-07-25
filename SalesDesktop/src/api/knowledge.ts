@@ -1,6 +1,9 @@
 import client from './client';
 import { API_HOST } from './http';
 import { downloadWithAuth } from './download';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface KnowledgeSpace {
   id: number;
@@ -90,7 +93,7 @@ export async function getKnowledgeBootstrap(): Promise<{
   canManage: boolean;
   canReindex: boolean;
 }> {
-  const res = await client.get('/knowledge/bootstrap');
+  const res = await client.get(v2(ApiPaths.knowledge.bootstrap));
   return res.data || { spaces: [], categories: [], canManage: false, canReindex: false };
 }
 
@@ -98,27 +101,27 @@ export async function getKnowledgeArticles(params: Record<string, any> = {}): Pr
   items: KnowledgeArticle[];
   total: number;
 }> {
-  const res = await client.get('/knowledge/articles', { params });
+  const res = await client.get(v2(ApiPaths.knowledge.articles()), { params });
   return res.data || { items: [], total: 0 };
 }
 
 export async function getKnowledgeArticle(id: number): Promise<KnowledgeArticle> {
-  const res = await client.get(`/knowledge/articles/${id}`);
+  const res = await client.get(v2(ApiPaths.knowledge.article(id)));
   return res.data;
 }
 
 export async function createKnowledgeArticle(payload: KnowledgeArticlePayload) {
-  const res = await client.post('/knowledge/articles', payload);
+  const res = await client.post(v2(ApiPaths.knowledge.articles()), payload);
   return res.data;
 }
 
 export async function updateKnowledgeArticle(id: number, payload: KnowledgeArticlePayload) {
-  const res = await client.put(`/knowledge/articles/${id}`, payload);
+  const res = await client.put(v2(ApiPaths.knowledge.article(id)), payload);
   return res.data;
 }
 
 export async function archiveKnowledgeArticle(id: number) {
-  const res = await client.delete(`/knowledge/articles/${id}`);
+  const res = await client.delete(v2(ApiPaths.knowledge.article(id)));
   return res.data;
 }
 
@@ -126,7 +129,7 @@ export async function uploadKnowledgeAttachment(articleId: number, file: File) {
   const token = localStorage.getItem('accessToken') || '';
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${API_HOST}/api/v2/knowledge/articles/${articleId}/attachments`, {
+  const res = await fetch(`${API_HOST}${ApiPaths.knowledge.articleAttachments(articleId)}`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: form,
@@ -146,15 +149,15 @@ export async function uploadKnowledgeAttachment(articleId: number, file: File) {
 
 export async function downloadKnowledgeAttachment(id: number, filename: string) {
   const token = localStorage.getItem('accessToken') || '';
-  await downloadWithAuth(`${API_HOST}/api/v2/knowledge/attachments/${id}`, filename, token);
+  await downloadWithAuth(`${API_HOST}${ApiPaths.knowledge.attachment(id)}`, filename, token);
 }
 
 export async function deleteKnowledgeAttachment(id: number) {
-  const res = await client.delete(`/knowledge/attachments/${id}`);
+  const res = await client.delete(v2(ApiPaths.knowledge.attachment(id)));
   return res.data;
 }
 
 export async function reindexKnowledgeAttachments(limit = 100) {
-  const res = await client.post('/knowledge/attachments/reindex', { limit });
+  const res = await client.post(v2(ApiPaths.knowledge.reindexAttachments), { limit });
   return res.data;
 }

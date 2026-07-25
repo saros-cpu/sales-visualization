@@ -1,4 +1,7 @@
 import client from './client';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface Contract {
   id: number; contractNo: string; appendixNo: string; signedDate: string;
@@ -18,7 +21,7 @@ export interface MonthlyVolume {
 }
 
 export async function getContracts(params?: { company?: string; sort_by?: string; sort_dir?: string; page?: number; page_size?: number }) {
-  const res = await client.get('/contracts', { params });
+  const res = await client.get(v2(ApiPaths.contracts.list(params)));
   return res.data as { items: Contract[]; total: number };
 }
 
@@ -28,7 +31,7 @@ export async function createContract(data: {
   effectiveEnd?: string; salesType?: string; quantityTons?: number;
   amountOriginal?: number; currency?: string; remark?: string;
 }) {
-  const res = await client.post('/contracts', data);
+  const res = await client.post(v2(ApiPaths.contracts.list()), data);
   return res.data;
 }
 
@@ -38,26 +41,26 @@ export async function batchCreateContracts(records: Array<{
   effectiveEnd?: string; salesType?: string; quantityTons?: number;
   amountOriginal?: number; currency?: string; remark?: string;
 }>) {
-  const res = await client.post('/contracts/batch', { records });
+  const res = await client.post(v2(ApiPaths.contracts.batch), { records });
   return res.data as { inserted: number; errors: Array<{ row: number; message: string; fields?: string[] }> };
 }
 
 export async function updateContract(id: number, data: Partial<Contract>) {
-  const res = await client.put(`/contracts/${id}`, data);
+  const res = await client.put(v2(ApiPaths.contracts.item(id)), data);
   return res.data;
 }
 
 export async function getContractExecution(id: number) {
-  const res = await client.get(`/contracts/${id}/execution`);
+  const res = await client.get(v2(ApiPaths.contracts.execution(id)));
   return res.data as { code: number; data: ContractExecution };
 }
 
 export async function deleteContract(id: number) {
-  const res = await client.delete(`/contracts/${id}`);
+  const res = await client.delete(v2(ApiPaths.contracts.item(id)));
   return res.data;
 }
 
 export async function getContractAutoVolume(id: number) {
-  const res = await client.get(`/contracts/${id}/auto-volume`);
+  const res = await client.get(v2(ApiPaths.contracts.autoVolume(id)));
   return res.data as { code: number; data: MonthlyVolume[] };
 }

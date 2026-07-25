@@ -23,7 +23,7 @@ EXPORT_DIR = Path(__file__).resolve().parent / "exports"
 CLASS_LABELS = {
     "export_wholesale": "出口批发",
     "local_wholesale": "本地批发",
-    "unknown": "待识别",
+    "unknown": "待识别批发",
     "transfer": "外运",
 }
 
@@ -249,7 +249,7 @@ def _make_wholesale_report(year, month=None):
     period = _period_label(year, month)
     title = f"批发{period}分析报告"
     cards = [
-        ("批发销售量", f"{_fmt(sales_tons, 3)} 吨", "出口批发 + 本地批发 + 待识别"),
+        ("批发销售量", f"{_fmt(sales_tons, 3)} 吨", "出口批发 + 本地批发 + 待识别批发"),
         ("批发销售金额", f"{_fmt(sales_amount, 2)} 元", "仅统计已匹配合同金额"),
         ("外运数量", f"{_fmt(transfer_tons, 3)} 吨", "外运只统计数量"),
         ("待复核", f"{_fmt(sum((data.get('review', {}).get('status', {}).get(k, {}).get('rows') or 0) for k in ('needs_review', 'unmatched')), 0)} 条", "合同、客户、油品或重复数据审核"),
@@ -284,7 +284,7 @@ def _make_wholesale_report(year, month=None):
     note = (
         f"<div class=\"note\">{period}批发销售量合计 {_fmt(sales_tons, 3)} 吨，"
         f"已计算合同金额 {_fmt(sales_amount, 2)} 元；外运 {_fmt(transfer_tons, 3)} 吨，仅做数量统计。"
-        "待识别数据先计入数量，不提前计算金额。</div>"
+        "待识别批发数据先计入数量，不提前计算金额。</div>"
     )
     sections = [
         ("一、经营概览", note),
@@ -298,8 +298,9 @@ def _make_wholesale_report(year, month=None):
         ("油品结构", [["分类", "油品", "吨数", "金额(元)"], *product_rows]),
         ("每日趋势", [["日期", "出口", "本地", "待审核", "外运", "金额(元)"], *daily_rows]),
     ]
-    html_content = _report_shell(title, "批发数据来自后台导入明细与合同匹配结果", cards, sections)
-    return title, _write_html_docx(title, html_content, title, "批发数据来自后台导入明细与合同匹配结果", docx_sections)
+    source_note = "批发数据按统一口径汇总：2026-06-01 前取称重生成明细，之后取上传或手工录入明细，并结合合同匹配结果。"
+    html_content = _report_shell(title, source_note, cards, sections)
+    return title, _write_html_docx(title, html_content, title, source_note, docx_sections)
 
 
 def _make_sales_report(year, month=None):
@@ -382,12 +383,13 @@ def _exchange_export(year, month=None):
     path = EXPORT_DIR / name
     df = pd.DataFrame(rows, columns=["日期", "美元/索姆(USD/KGS)", "人民币/索姆(CNY/KGS)", "索姆/人民币(KGS/CNY)", "数据来源", "获取时间"])
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        writer.book._fonts[0] = Font(name='Times New Roman', size=11)
         df.to_excel(writer, index=False, sheet_name="每日汇率")
         worksheet = writer.sheets["每日汇率"]
         black_side = Side(style="thin", color="000000")
         black_border = Border(left=black_side, right=black_side, top=black_side, bottom=black_side)
         center = Alignment(horizontal="center", vertical="center", wrap_text=False)
-        header_font = Font(bold=True)
+        header_font = Font(name='Times New Roman', bold=True)
         for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=worksheet.max_column):
             for cell in row:
                 cell.alignment = center

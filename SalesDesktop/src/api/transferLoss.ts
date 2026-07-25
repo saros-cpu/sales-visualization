@@ -1,4 +1,7 @@
 import client from './client';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface LossItem {
   route: string; route_code?: string;
@@ -11,11 +14,11 @@ export interface LossItem {
 }
 
 export async function getTransferLoss(params: { year?: number; quarter?: number }) {
-  const res = await client.get('/transfer/loss', { params });
+  const res = await client.get(v2(ApiPaths.transferLoss.list), { params });
   return res.data;
 }
 
 export async function getTransferLossYears() {
-  const res = await client.get('/transfer/loss/years');
+  const res = await client.get(v2(ApiPaths.transferLoss.years));
   return res.data as number[];
 }

@@ -1,4 +1,7 @@
 import client from './client';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface DepartmentRecord {
   id: number;
@@ -79,32 +82,32 @@ export interface OrganizationOverview {
 }
 
 export async function getOrganizationOverview() {
-  const res = await client.get('/organization/overview');
+  const res = await client.get(v2(ApiPaths.organization.overview));
   return res.data as OrganizationOverview;
 }
 
 export async function createDepartment(data: Partial<DepartmentRecord>) {
-  const res = await client.post('/organization/departments', data);
+  const res = await client.post(v2(ApiPaths.organization.departments), data);
   return res.data;
 }
 
 export async function updateDepartment(id: number, data: Partial<DepartmentRecord>) {
-  const res = await client.put(`/organization/departments/${id}`, data);
+  const res = await client.put(v2(ApiPaths.organization.department(id)), data);
   return res.data;
 }
 
 export async function createRole(data: Partial<RoleRecord>) {
-  const res = await client.post('/organization/roles', data);
+  const res = await client.post(v2(ApiPaths.organization.roles), data);
   return res.data;
 }
 
 export async function updateRole(id: number, data: Partial<RoleRecord>) {
-  const res = await client.put(`/organization/roles/${id}`, data);
+  const res = await client.put(v2(ApiPaths.organization.role(id)), data);
   return res.data;
 }
 
 export async function updateRolePermissions(roleCode: string, permissionCodes: string[]) {
-  const res = await client.put(`/organization/roles/${roleCode}/permissions`, { permissionCodes });
+  const res = await client.put(v2(ApiPaths.organization.rolePermissions(roleCode)), { permissionCodes });
   return res.data;
 }
 
@@ -118,6 +121,6 @@ export async function updateRoleDataScopes(
     resourceLabel?: string;
   }>,
 ) {
-  const res = await client.put(`/organization/roles/${roleCode}/data-scopes`, { scopes, resources });
+  const res = await client.put(v2(ApiPaths.organization.roleDataScopes(roleCode)), { scopes, resources });
   return res.data;
 }

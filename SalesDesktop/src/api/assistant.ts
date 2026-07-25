@@ -1,5 +1,10 @@
 import client from './client';
 import { API_HOST } from './http';
+import { ApiPaths } from '@shared/api-contracts';
+
+function v2Path(path: string) {
+  return path.replace(/^\/api\/v2/, '') || '/';
+}
 
 export interface AssistantTable {
   title?: string;
@@ -137,6 +142,7 @@ export interface AssistantResponse {
   diagnostics?: { status?: string; warnings?: string[]; insights?: string[]; nextChecks?: string[] };
   freshness?: { status?: string; periodLabel?: string; warnings?: string[]; sources?: string[] };
   conversationMemory?: Record<string, any>;
+  reportGuidance?: Record<string, any>;
   quality?: {
     status?: 'pass' | 'warn' | 'fail' | 'blocked' | string;
     score?: number;
@@ -183,17 +189,17 @@ export async function sendAssistantFeedback(payload: {
   quality?: AssistantResponse['quality'];
   agent?: AssistantResponse['agent'];
 }) {
-  const res = await client.post('/assistant/feedback', payload);
+  const res = await client.post(v2Path(ApiPaths.assistant.feedback), payload);
   return res.data;
 }
 
 export async function getAssistantTools() {
-  const res = await client.get('/assistant/tools');
+  const res = await client.get(v2Path(ApiPaths.assistant.tools));
   return res.data as { items: Array<Record<string, any>>; count: number };
 }
 
 export async function getAssistantQualityDashboard() {
-  const res = await client.get('/assistant/quality-dashboard');
+  const res = await client.get(v2Path(ApiPaths.assistant.qualityDashboard));
   return res.data as Record<string, any>;
 }
 
@@ -206,7 +212,7 @@ export async function streamAssistant(
   onEvent: (event: AssistantStreamEvent, data: any) => void,
 ) {
   const token = localStorage.getItem('accessToken');
-  const res = await fetch(`${API_HOST}/api/v2/assistant/query/stream`, {
+  const res = await fetch(`${API_HOST}${ApiPaths.assistant.queryStream}`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -258,17 +264,17 @@ export async function askAssistant(question: string, language: string, options: 
   const body = {
     question,
     language,
-    useLlm: true,
+    useLlm: false,
     sessionId: options.sessionId,
     conversationContext: options.conversationContext,
   };
-  const res = await client.post('/assistant/query', body);
+  const res = await client.post(v2Path(ApiPaths.assistant.query), body);
   return res.data as AssistantResponse;
 }
 
 export async function getAssistantStatus() {
   try {
-    const res = await client.get('/assistant/status');
+    const res = await client.get(v2Path(ApiPaths.assistant.status));
     return res.data;
   } catch (err: any) {
     const status = err?.response?.status;

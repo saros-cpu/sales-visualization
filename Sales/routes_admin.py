@@ -23,7 +23,7 @@ from pymysql.err import IntegrityError
 
 from shared_utils import (
     admin_required, log_operation, log_system_operation, session_user,
-    recalculate_all_wholesale, reconcile_wholesale_product_ids,
+    recalculate_all_wholesale, recalculate_wholesale_references, reconcile_wholesale_product_ids,
     record_automation_task, ensure_auth_schema, ensure_market_watch_schema,
     ensure_operation_log_schema, ensure_automation_task_schema,
     ensure_station_status_schema, PROJECT_ROOT, OILSTATION_ROOT,
@@ -38,20 +38,194 @@ from db import get_connection
 from import_helpers import (
     can_auto_approve_weigh_detail,
     classify_wholesale_movement,
+    format_lpg_remark,
+    get_or_create_customer,
     load_entity_lookup,
     load_product_lookup,
     lookup_entity,
+    lookup_product,
 )
 from retail_internal import open_oilstation
 from summary_service import available_periods, period_bounds
 from text_utils import clean_str, normalize_station_name, normalize_text, parse_date, parse_decimal
 from wholesale_service import exchange_rates
+from wholesale_source_policy import (
+    WHOLESALE_SOURCE_CUTOFF,
+    clamp_weighing_detail_range,
+)
 
 WEIGH_COLUMNS = ["序号", "编号", "卡号", "车号", "服务区域", "运输单位", "发货单位",
     "收货单位", "货名", "规格", "毛重", "皮重", "净重", "扣重", "实重",
     "单价", "金额", "过磅费", "毛重司磅员", "皮重司磅员",
     "毛重日期", "毛重时间", "皮重日期", "皮重时间", "备注",
     "发货车辆", "作废", "上传"]
+WEIGH_TEXT_COLUMNS = {
+    "编号", "卡号", "车号", "服务区域", "运输单位", "发货单位", "收货单位",
+    "货名", "规格", "毛重司磅员", "皮重司磅员", "毛重时间", "皮重时间",
+    "备注", "发货车辆",
+}
+
+CUSTOMER_TYPES = {"local_wholesale", "export_wholesale", "unknown"}
+WEIGH_SOURCE_STORAGE = "储运区"
+WEIGH_SOURCE_LPG = "液化气罐区"
+WEIGH_SOURCE_OPTIONS = (WEIGH_SOURCE_STORAGE, WEIGH_SOURCE_LPG)
+WEIGH_SOURCE_ALIASES = {
+    "": None,
+    "储运区": WEIGH_SOURCE_STORAGE,
+    "kj_weighing": WEIGH_SOURCE_STORAGE,
+    "storage_district": WEIGH_SOURCE_STORAGE,
+    "storagedistrict": WEIGH_SOURCE_STORAGE,
+    "液化气罐区": WEIGH_SOURCE_LPG,
+    "lpg": WEIGH_SOURCE_LPG,
+    "lpg_weighing": WEIGH_SOURCE_LPG,
+    "lpg_storage": WEIGH_SOURCE_LPG,
+}
+
+
+def _normalize_customer_type(value):
+    return value if value in CUSTOMER_TYPES else "unknown"
+
+
+def _json_text(column, key):
+    return f"NULLIF(JSON_UNQUOTE(JSON_EXTRACT({column}, '$.{key}')), '')"
+
+
+def _json_text_when_valid(column, key):
+    return f"CASE WHEN JSON_VALID({column}) THEN {_json_text(column, key)} ELSE NULL END"
+
+
+def _text_expr(expression):
+    return f"{expression} COLLATE utf8mb4_unicode_ci"
+
+
+def _null_text_expr():
+    return _text_expr("CAST(NULL AS CHAR)")
+
+
+def _kj_weigh_column_sql(alias="kj"):
+    cols = []
+    for col in WEIGH_COLUMNS:
+        source = f"{alias}.`{col}`"
+        if col == "毛重日期":
+            cols.append(f"COALESCE(NULLIF({source}, '0000-00-00 00:00:00'), {alias}.`皮重日期`) AS `{col}`")
+            continue
+        if col in WEIGH_TEXT_COLUMNS:
+            cols.append(f"{_text_expr(source)} AS `{col}`")
+        else:
+            cols.append(f"{source} AS `{col}`")
+    return ", ".join(cols)
+
+
+def _normalize_weigh_source_values(*values):
+    selected = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple, set)):
+            tokens = value
+        else:
+            tokens = str(value).split(",")
+        for token in tokens:
+            raw = str(token or "").strip()
+            key = raw.lower()
+            normalized = WEIGH_SOURCE_ALIASES.get(raw) or WEIGH_SOURCE_ALIASES.get(key)
+            if normalized and normalized not in selected:
+                selected.append(normalized)
+    return selected
+
+
+def _weigh_records_union_sql():
+    kj_cols = _kj_weigh_column_sql()
+    lpg_remark_text = _text_expr("NULLIF(lpg.remark, '')")
+    storage_source = _text_expr(f"'{WEIGH_SOURCE_STORAGE}'")
+    lpg_source = _text_expr(f"'{WEIGH_SOURCE_LPG}'")
+    return f"""
+        SELECT {storage_source} AS weigh_source, {kj_cols}, sync_date
+        FROM kj_weighing kj
+        WHERE (kj.`作废` IS NULL OR kj.`作废` = 0)
+        UNION ALL
+        SELECT
+            {lpg_source} AS weigh_source,
+            lpg.id AS `序号`,
+            {_text_expr('lpg.weigh_serial_no')} AS `编号`,
+            {_null_text_expr()} AS `卡号`,
+            {_text_expr('lpg.vehicle_no')} AS `车号`,
+            {_null_text_expr()} AS `服务区域`,
+            {_null_text_expr()} AS `运输单位`,
+            {_text_expr('lpg.sender_name')} AS `发货单位`,
+            {_text_expr('lpg.receiver_name')} AS `收货单位`,
+            {_text_expr('lpg.raw_product_name')} AS `货名`,
+            {_text_expr(_json_text_when_valid('lpg.remark', 'spec_or_trailer'))} AS `规格`,
+            lpg.gross_weight AS `毛重`,
+            lpg.tare_weight AS `皮重`,
+            lpg.net_weight AS `净重`,
+            NULL AS `扣重`,
+            lpg.net_weight AS `实重`,
+            NULL AS `单价`,
+            NULL AS `金额`,
+            NULL AS `过磅费`,
+            {_text_expr(_json_text_when_valid('lpg.remark', 'operator'))} AS `毛重司磅员`,
+            {_text_expr(_json_text_when_valid('lpg.remark', 'tare_operator'))} AS `皮重司磅员`,
+            lpg.business_date AS `毛重日期`,
+            {_text_expr(_json_text_when_valid('lpg.remark', 'gross_time'))} AS `毛重时间`,
+            {_json_text_when_valid('lpg.remark', 'tare_date')} AS `皮重日期`,
+            {_text_expr(_json_text_when_valid('lpg.remark', 'tare_time'))} AS `皮重时间`,
+            {lpg_remark_text} AS `备注`,
+            {_null_text_expr()} AS `发货车辆`,
+            0 AS `作废`,
+            NULL AS `上传`,
+            lpg.business_date AS sync_date
+        FROM lpg_weighing lpg
+    """
+
+
+def _split_filter_values(value):
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def _lookup_standard_name(lookup, value):
+    match = lookup_entity(lookup, value or "")
+    return match.get("standard_name") if match else None
+
+
+def _lookup_standard_product(lookup, value):
+    match = lookup_product(lookup, value or "")
+    return match.get("display_name") if match else None
+
+
+def _decorate_weigh_record(item, entity_lookup, product_lookup):
+    raw_sender = item.get("发货单位") or ""
+    raw_receiver = item.get("收货单位") or ""
+    raw_product = item.get("货名") or ""
+    standard_sender = _lookup_standard_name(entity_lookup, raw_sender)
+    standard_receiver = _lookup_standard_name(entity_lookup, raw_receiver)
+    standard_product = _lookup_standard_product(product_lookup, raw_product)
+    item["原发货单位"] = raw_sender
+    item["原收货单位"] = raw_receiver
+    item["原货名"] = raw_product
+    item["标准发货单位"] = standard_sender
+    item["标准收货单位"] = standard_receiver
+    item["标准货名"] = standard_product
+    item["发货单位显示"] = standard_sender or raw_sender
+    item["收货单位显示"] = standard_receiver or raw_receiver
+    item["货名显示"] = standard_product or raw_product
+    item["发货单位"] = item["发货单位显示"]
+    item["收货单位"] = item["收货单位显示"]
+    item["货名"] = item["货名显示"]
+    if item.get("weigh_source") == WEIGH_SOURCE_LPG:
+        item["备注"] = format_lpg_remark(item.get("备注"))
+    return item
+
+
+def _weigh_item_text(item, *keys):
+    return " ".join(str(item.get(key) or "") for key in keys).lower()
+
+
+def _matches_any_value(item, values, *keys):
+    if not values:
+        return True
+    candidates = {str(item.get(key) or "").strip() for key in keys}
+    return bool(candidates.intersection(values))
 
 
 def register_admin_routes(app):
@@ -479,7 +653,8 @@ def register_admin_routes(app):
             report_index = json.loads(report_index_path.read_text(encoding="utf-8-sig")) if report_index_path.exists() else {}
             report_item = report_index.get(report_ym) or {}
             report_file = report_item.get("file")
-            report_path = OILSTATION_ROOT / "exports" / report_file if report_file else None
+            report_stored_path = report_item.get("path") or report_file
+            report_path = OILSTATION_ROOT / "exports" / report_stored_path if report_stored_path else None
             if report_path and report_path.exists():
                 info = _health_file_info(report_path)
                 report_workbook.update({
@@ -1367,9 +1542,12 @@ def register_admin_routes(app):
         keyword = clean_str(request.args.get("keyword"))
         filters = []
         params = []
-        if customer_type:
-            filters.append("c.customer_type = %s")
-            params.append(customer_type)
+        if customer_type in CUSTOMER_TYPES:
+            if customer_type == "unknown":
+                filters.append("c.customer_type NOT IN ('local_wholesale', 'export_wholesale')")
+            else:
+                filters.append("c.customer_type = %s")
+                params.append(customer_type)
         if keyword:
             filters.append("c.standard_name LIKE %s")
             params.append(f"%{keyword}%")
@@ -1397,7 +1575,11 @@ def register_admin_routes(app):
                    AND d.standard_entity_name = c.standard_name
                 {where}
                 GROUP BY c.id, c.standard_name, c.customer_type, c.created_at, c.updated_at
-                ORDER BY c.updated_at DESC, c.created_at DESC, c.standard_name
+                ORDER BY
+                    CASE WHEN c.customer_type IN ('local_wholesale', 'export_wholesale') THEN 1 ELSE 0 END,
+                    c.updated_at DESC,
+                    c.created_at DESC,
+                    c.standard_name
                 LIMIT 500
                 """,
                 tuple(params),
@@ -1406,7 +1588,7 @@ def register_admin_routes(app):
                 {
                     "id": row[0],
                     "name": row[1],
-                    "customerType": row[2],
+                    "customerType": _normalize_customer_type(row[2]),
                     "createdAt": row[3].isoformat() if row[3] else None,
                     "updatedAt": row[4].isoformat() if row[4] else None,
                     "contractCount": int(row[5] or 0),
@@ -1425,7 +1607,7 @@ def register_admin_routes(app):
     def api_admin_save_customer():
         payload = request.get_json(force=True)
         name = clean_str(payload.get("name"))
-        customer_type = payload.get("customerType") if payload.get("customerType") in ("local_wholesale", "export_wholesale", "mixed", "unknown") else "unknown"
+        customer_type = payload.get("customerType") if payload.get("customerType") in CUSTOMER_TYPES else "unknown"
         if not name:
             return jsonify({"error": "客户名称必填"}), 400
         conn = get_connection()
@@ -1441,7 +1623,22 @@ def register_admin_routes(app):
                 """,
                 (name, customer_type, customer_id),
             )
-            recalculation = recalculate_all_wholesale(cur)
+            cur.execute(
+                """
+                INSERT INTO entity_aliases
+                    (entity_type, entity_code, standard_name, alias_name, normalized_alias, confidence, source)
+                VALUES ('wholesale_customer', %s, %s, %s, %s, 100, 'customer_maintenance')
+                ON DUPLICATE KEY UPDATE
+                    entity_type = 'wholesale_customer',
+                    entity_code = VALUES(entity_code),
+                    standard_name = VALUES(standard_name),
+                    alias_name = VALUES(alias_name),
+                    confidence = GREATEST(confidence, VALUES(confidence)),
+                    source = VALUES(source)
+                """,
+                (str(customer_id), name, name, normalize_text(name)),
+            )
+            recalculation = recalculate_wholesale_references(cur)
             log_operation(cur, "save_customer", "customers", customer_id, {"name": name, "customerType": customer_type})
             conn.commit()
             return jsonify({"ok": True, "id": customer_id, "recalculation": recalculation})
@@ -1566,7 +1763,7 @@ def register_admin_routes(app):
             )
             if entity_type == "wholesale_customer":
                 get_or_create_customer(cur, standard_name, "unknown")
-                recalculation = recalculate_all_wholesale(cur)
+                recalculation = recalculate_wholesale_references(cur)
             else:
                 recalculation = None
             log_operation(
@@ -2553,59 +2750,72 @@ def register_admin_routes(app):
             product = request.args.get("product", "").strip()
             date_from = request.args.get("dateFrom", "").strip()
             date_to = request.args.get("dateTo", "").strip()
-            source = request.args.get("source", "储运区").strip()
+            source = request.args.get("source", "").strip()
             col_sender = request.args.get("col_sender", "").strip()
             col_receiver = request.args.get("col_receiver", "").strip()
             col_product = request.args.get("col_product", "").strip()
+            col_source = request.args.get("col_source", "").strip()
 
-            weigh_table = "kj_weighing"  # 当前只有储运区表，液化气罐区接入后改为按 source 参数选择
             where = ["1=1"]
             params = []
             if vehicle:
-                where.append("车号 LIKE %s")
+                where.append("`车号` LIKE %s")
                 params.append(f"%{vehicle}%")
-            if entity:
-                where.append("(发货单位 LIKE %s OR 收货单位 LIKE %s)")
-                params.extend([f"%{entity}%", f"%{entity}%"])
-            if product:
-                where.append("货名 LIKE %s")
-                params.append(f"%{product}%")
             if date_from:
-                where.append("毛重日期 >= %s")
+                where.append("`毛重日期` >= %s")
                 params.append(date_from)
             if date_to:
-                where.append("毛重日期 <= %s")
+                where.append("`毛重日期` <= %s")
                 params.append(date_to)
-            if col_sender:
-                vals = [v.strip() for v in col_sender.split(",") if v.strip()]
-                if vals:
-                    placeholders = ",".join(["%s"] * len(vals))
-                    where.append(f"发货单位 IN ({placeholders})")
-                    params.extend(vals)
-            if col_receiver:
-                vals = [v.strip() for v in col_receiver.split(",") if v.strip()]
-                if vals:
-                    placeholders = ",".join(["%s"] * len(vals))
-                    where.append(f"收货单位 IN ({placeholders})")
-                    params.extend(vals)
-            if col_product:
-                vals = [v.strip() for v in col_product.split(",") if v.strip()]
-                if vals:
-                    placeholders = ",".join(["%s"] * len(vals))
-                    where.append(f"货名 IN ({placeholders})")
-                    params.extend(vals)
+            selected_sources = _normalize_weigh_source_values(source, col_source)
+            if selected_sources:
+                placeholders = ",".join(["%s"] * len(selected_sources))
+                where.append(f"weigh_source IN ({placeholders})")
+                params.extend(selected_sources)
 
             where_clause = " AND ".join(where)
-            cur.execute(f"SELECT COUNT(*) FROM {weigh_table} WHERE {where_clause}", params)
-            total = cur.fetchone()[0]
-
+            union_sql = _weigh_records_union_sql()
             col_names = WEIGH_COLUMNS + ["sync_date"]
-            cur.execute(f"SELECT {', '.join(col_names)} FROM {weigh_table} WHERE {where_clause} ORDER BY 序号 DESC LIMIT %s OFFSET %s", params + [size, offset])
+            select_cols = ", ".join(f"`{col}`" for col in col_names)
+            cur.execute(
+                f"""
+                SELECT weigh_source, {select_cols}
+                FROM ({union_sql}) combined
+                WHERE {where_clause}
+                ORDER BY `毛重日期` DESC, `序号` DESC
+                """,
+                params,
+            )
+            entity_lookup = load_entity_lookup(cur)
+            product_lookup = load_product_lookup(cur)
+            sender_values = set(_split_filter_values(col_sender))
+            receiver_values = set(_split_filter_values(col_receiver))
+            product_values = set(_split_filter_values(col_product))
             items = []
             for r in cur.fetchall():
-                item = dict(zip(col_names, r))
-                item["weigh_source"] = source
+                item = dict(zip(["weigh_source"] + col_names, r))
+                item = _decorate_weigh_record(item, entity_lookup, product_lookup)
+                if entity:
+                    text = _weigh_item_text(
+                        item,
+                        "发货单位显示", "收货单位显示", "标准发货单位", "标准收货单位",
+                        "原发货单位", "原收货单位",
+                    )
+                    if entity.lower() not in text:
+                        continue
+                if product:
+                    text = _weigh_item_text(item, "货名显示", "标准货名", "原货名")
+                    if product.lower() not in text:
+                        continue
+                if not _matches_any_value(item, sender_values, "发货单位显示", "标准发货单位", "原发货单位"):
+                    continue
+                if not _matches_any_value(item, receiver_values, "收货单位显示", "标准收货单位", "原收货单位"):
+                    continue
+                if not _matches_any_value(item, product_values, "货名显示", "标准货名", "原货名"):
+                    continue
                 items.append(item)
+            total = len(items)
+            items = items[offset:offset + size]
             return jsonify({"items": items, "total": total, "page": page, "size": size})
         finally:
             conn.close()
@@ -2616,21 +2826,36 @@ def register_admin_routes(app):
         conn = get_connection()
         try:
             cur = conn.cursor()
-            weigh_table = "kj_weighing"
-            cur.execute(f"""
-                SELECT
-                    COALESCE(GROUP_CONCAT(DISTINCT 发货单位 ORDER BY 发货单位 SEPARATOR '||'), ''),
-                    COALESCE(GROUP_CONCAT(DISTINCT 收货单位 ORDER BY 收货单位 SEPARATOR '||'), ''),
-                    COALESCE(GROUP_CONCAT(DISTINCT 货名 ORDER BY 货名 SEPARATOR '||'), '')
-                FROM {weigh_table}
-                WHERE (作废 IS NULL OR 作废 = 0)
-            """)
-            row = cur.fetchone()
+            union_sql = _weigh_records_union_sql()
+            col_names = ["发货单位", "收货单位", "货名"]
+            select_cols = ", ".join(f"`{col}`" for col in col_names)
+            cur.execute(
+                f"""
+                SELECT {select_cols}
+                FROM ({union_sql}) combined
+                """
+            )
+            entity_lookup = load_entity_lookup(cur)
+            product_lookup = load_product_lookup(cur)
+            sender_values = set()
+            receiver_values = set()
+            product_values = set()
+            for sender, receiver, raw_product in cur.fetchall():
+                sender_display = _lookup_standard_name(entity_lookup, sender) or sender
+                receiver_display = _lookup_standard_name(entity_lookup, receiver) or receiver
+                product_display = _lookup_standard_product(product_lookup, raw_product) or raw_product
+                if sender_display and str(sender_display).strip():
+                    sender_values.add(sender_display)
+                if receiver_display and str(receiver_display).strip():
+                    receiver_values.add(receiver_display)
+                if product_display and str(product_display).strip():
+                    product_values.add(product_display)
+
             return jsonify({
-                "sender": [x for x in (row[0] or "").split("||") if x],
-                "receiver": [x for x in (row[1] or "").split("||") if x],
-                "product": [x for x in (row[2] or "").split("||") if x],
-                "source": ["储运区"],
+                "sender": sorted(sender_values),
+                "receiver": sorted(receiver_values),
+                "product": sorted(product_values),
+                "source": list(WEIGH_SOURCE_OPTIONS),
             })
         finally:
             conn.close()
@@ -2641,15 +2866,44 @@ def register_admin_routes(app):
         conn = get_connection()
         try:
             cur = conn.cursor()
-            date_from = request.get_json(force=True).get("dateFrom", "").strip()
-            source = request.get_json(force=True).get("source", "储运区").strip()
+            payload = request.get_json(force=True)
+            date_from = payload.get("dateFrom", "").strip()
+            date_to = payload.get("dateTo", "").strip()
+            selected_sources = _normalize_weigh_source_values(payload.get("source", WEIGH_SOURCE_STORAGE)) or [WEIGH_SOURCE_STORAGE]
             if not date_from:
                 date_from = (date.today() - timedelta(days=7)).isoformat()
-            weigh_table = "kj_weighing"
-            where = ["sync_date >= %s", "(作废 IS NULL OR 作废 = 0)"]
-            params = [date_from]
+            try:
+                start_date = date.fromisoformat(date_from)
+                end_date = date.fromisoformat(date_to) if date_to else WHOLESALE_SOURCE_CUTOFF - timedelta(days=1)
+            except ValueError:
+                return jsonify({"ok": False, "error": "invalid_date"}), 400
+            effective_range = clamp_weighing_detail_range(start_date, end_date)
+            if effective_range is None:
+                return jsonify({
+                    "ok": True,
+                    "generated": 0,
+                    "skipped": 0,
+                    "autoEntityMappings": 0,
+                    "autoProductMappings": 0,
+                    "cutoffDate": WHOLESALE_SOURCE_CUTOFF.isoformat(),
+                    "message": "称重业务明细只生成 2026-06-01 之前的数据；之后请走上传或手工录入。",
+                })
+            start_date, end_date = effective_range
+            placeholders = ",".join(["%s"] * len(selected_sources))
+            where = ["`毛重日期` >= %s", "`毛重日期` <= %s", f"weigh_source IN ({placeholders})"]
+            params = [start_date, end_date, *selected_sources]
             col_names = WEIGH_COLUMNS + ["sync_date"]
-            cur.execute(f"SELECT {', '.join(col_names)} FROM {weigh_table} WHERE {' AND '.join(where)} ORDER BY 序号", params)
+            select_cols = ", ".join(f"`{col}`" for col in col_names)
+            union_sql = _weigh_records_union_sql()
+            cur.execute(
+                f"""
+                SELECT weigh_source, {select_cols}
+                FROM ({union_sql}) combined
+                WHERE {' AND '.join(where)}
+                ORDER BY `毛重日期`, `序号`
+                """,
+                params,
+            )
             rows = cur.fetchall()
             generated = 0
             skipped = 0
@@ -2658,7 +2912,8 @@ def register_admin_routes(app):
             entity_lookup = load_entity_lookup(cur)
             product_lookup = load_product_lookup(cur)
             for r in rows:
-                record = dict(zip(col_names, r))
+                row_source = r[0]
+                record = dict(zip(col_names, r[1:]))
                 raw_entity = (record.get("收货单位") or record.get("发货单位") or "").strip()
                 raw_product = (record.get("货名") or "").strip()
                 vehicle_no = (record.get("车号") or "").strip()
@@ -2676,6 +2931,18 @@ def register_admin_routes(app):
                     skipped += 1
                     continue
                 business_date = gross_date if gross_date else date.today()
+                row_number = int(record.get("序号", 0) or 0)
+                cur.execute(
+                    """
+                    SELECT id FROM wholesale_detail_records
+                    WHERE batch_id IS NULL AND weigh_source = %s AND source_row_number = %s
+                    LIMIT 1
+                    """,
+                    (row_source, row_number),
+                )
+                if cur.fetchone():
+                    skipped += 1
+                    continue
 
                 match = lookup_entity(entity_lookup, raw_entity)
                 entity_type = "unknown"
@@ -2720,6 +2987,8 @@ def register_admin_routes(app):
                 weigh_serial_no = str(record.get("编号") or "")
                 sender_name = (record.get("发货单位") or "").strip()
                 remark = (record.get("备注") or "").strip()
+                if row_source == WEIGH_SOURCE_LPG:
+                    remark = format_lpg_remark(remark)
                 classification = classify_wholesale_movement(
                     cur,
                     entity_lookup,
@@ -2732,7 +3001,6 @@ def register_admin_routes(app):
                 audit_status = "approved" if auto_approve else "pending"
                 match_status = "matched" if auto_approve else "unmatched"
 
-                row_number = int(record.get("序号", 0) or 0)
                 cur.execute("""
                     INSERT INTO wholesale_detail_records
                     (batch_id, source_row_number, business_date, raw_product_name, product_id, vehicle_no,
@@ -2741,7 +3009,7 @@ def register_admin_routes(app):
                     VALUES (NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (row_number, business_date, raw_product, product_id, vehicle_no,
                       weigh_serial_no, raw_entity, sender_name, entity_type, entity_code,
-                      standard_name, classification, weight_kg, match_status, audit_status, source, remark))
+                      standard_name, classification, weight_kg, match_status, audit_status, row_source, remark))
                 generated += 1
             conn.commit()
             return jsonify({

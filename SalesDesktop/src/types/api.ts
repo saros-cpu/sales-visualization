@@ -21,6 +21,8 @@ export type WholesaleClass =
   | 'transfer'
   | 'processing'
   | 'procurement';
+export type TransportMode = 'truck' | 'train';
+export type OperationMode = 'loading' | 'unloading';
 
 export interface CategoryCard {
   rows: number;
@@ -44,6 +46,18 @@ export interface ProductRanking {
   amountCny?: number;
   rows?: number;
   matchedRows?: number;
+  truckRows?: number;
+  truckTons?: number;
+  trainRows?: number;
+  trainTons?: number;
+  loadingTruckRows?: number;
+  loadingTruckTons?: number;
+  loadingTrainRows?: number;
+  loadingTrainTons?: number;
+  unloadingTruckRows?: number;
+  unloadingTruckTons?: number;
+  unloadingTrainRows?: number;
+  unloadingTrainTons?: number;
 }
 
 export interface CustomerRanking {
@@ -66,7 +80,35 @@ export interface DailyTrendPoint {
   localTons: number;
   pendingTons: number;
   transferTons: number;
+  processingTons?: number;
+  procurementTons?: number;
   amountCny: number;
+}
+
+export interface MonthlyTrendPoint extends Omit<DailyTrendPoint, 'date'> {
+  month: string;
+}
+
+export interface WholesaleDataSourceTotal {
+  rows?: number;
+  tons?: number;
+  rawRows?: number;
+  rawTons?: number;
+  firstDate?: string | null;
+  lastDate?: string | null;
+  firstRawDate?: string | null;
+  lastRawDate?: string | null;
+  tableExists?: boolean;
+  label?: string;
+  table?: string;
+}
+
+export interface WholesaleSourcePolicy {
+  cutoff: string;
+  beforeCutoff?: string;
+  fromCutoff?: string;
+  beforeCutoffLabel?: string;
+  fromCutoffLabel?: string;
 }
 
 export interface WholesaleReview {
@@ -77,13 +119,25 @@ export interface WholesaleReview {
 export interface WholesalePageData {
   period: { year: number; month?: number };
   cards: Record<string, CategoryCard>;
+  transportSummary?: Record<TransportMode, CategoryCard>;
+  operationTransportSummary?: Record<OperationMode, Record<TransportMode, CategoryCard>>;
   comparison?: Record<string, WholesaleCardComparison>;
   productRankings: Record<string, ProductRanking[]>;
   customerRankings: Record<string, CustomerRanking[]>;
   transferSummary: TransferSummary;
   dailyTrend: DailyTrendPoint[];
+  monthlyTrend?: MonthlyTrendPoint[];
   issues: { id: number; type: string; date: string; message: string; severity: string }[];
   review?: WholesaleReview;
+  sourcePolicy?: WholesaleSourcePolicy;
+  dataCompleteness?: {
+    businessDetail?: Record<string, number | string | null>;
+    weighingGeneratedDetail?: { total?: WholesaleDataSourceTotal; sources?: Record<string, WholesaleDataSourceTotal> };
+    uploadedOrManualDetail?: WholesaleDataSourceTotal;
+    weighingRawSources?: Record<string, WholesaleDataSourceTotal>;
+    [key: string]: unknown;
+  };
+  dataQualityWarnings?: string[];
 }
 
 // ---- 数据录入 ----

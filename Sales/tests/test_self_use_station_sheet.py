@@ -12,6 +12,7 @@ if str(OILSTATION_ROOT) not in sys.path:
     sys.path.insert(0, str(OILSTATION_ROOT))
 
 from endpoints.v1.retail.export.controller import _write_self_use_station_sheet
+from constants import REPORT_HIDDEN_STATION_NOTE
 
 
 def _styles():
@@ -113,6 +114,45 @@ class SelfUseStationSheetTests(unittest.TestCase):
         self.assertIn("G2:G3", merged_ranges)
         self.assertNotIn("D2:D4", merged_ranges)
         self.assertNotIn("G2:G4", merged_ranges)
+
+    def test_station_sheet_hides_closed_station_blocks_and_adds_note(self):
+        wb = Workbook()
+        records = [
+            {
+                "shopKey": 11,
+                "stationName": "STN-21",
+                "stationShort": "S-22",
+                "plateNumber": "CAR-1",
+                "productName": "AI-92",
+                "volume": 10,
+                "mass": 7,
+                "amount": 100,
+                "personKey": 9999,
+                "personGroup": 1,
+                "selfUseNumber": 0,
+            },
+            {
+                "shopKey": 1,
+                "stationName": "Station 1",
+                "stationShort": "AZS-1",
+                "plateNumber": "CAR-2",
+                "productName": "AI-92",
+                "volume": 4,
+                "mass": 2.8,
+                "amount": 40,
+                "personKey": 9999,
+                "personGroup": 1,
+                "selfUseNumber": 0,
+            },
+        ]
+
+        ws = _write_self_use_station_sheet(wb, records, _styles())
+
+        self.assertFalse(bool(ws.row_dimensions[2].hidden))
+        self.assertFalse(bool(ws.row_dimensions[3].hidden))
+        self.assertTrue(bool(ws.row_dimensions[4].hidden))
+        self.assertTrue(bool(ws.row_dimensions[5].hidden))
+        self.assertEqual(ws.cell(row=7, column=1).value, REPORT_HIDDEN_STATION_NOTE)
 
 
 if __name__ == "__main__":

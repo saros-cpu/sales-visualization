@@ -12,7 +12,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, verify_jwt_in_request
 from db import get_connection
 from text_utils import parse_date, parse_decimal
 from calculations import recalculate_wholesale_batch
-from import_helpers import load_product_lookup, lookup_product
+from import_helpers import classify_wholesale_movement, load_entity_lookup, load_product_lookup, lookup_entity, lookup_product
 
 REFRESH_CACHE_STATUS = {
     "running": False,
@@ -320,13 +320,39 @@ def admin_required(fn):
 
     return wrapper
 
+def admin_or_permission(permission_code: str):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user = session_user()
+            if user and user.get("role") == "admin":
+                return fn(*args, **kwargs)
+            jwt_identity = None
+            try:
+                verify_jwt_in_request(optional=True)
+                jwt_identity = get_jwt_identity()
+                if jwt_identity is not None and (get_jwt() or {}).get("role") == "admin":
+                    return fn(*args, **kwargs)
+            except Exception:
+                pass
+            if jwt_identity is None:
+                return jsonify({"error": "admin_required"}), 403
+            # Function-level import avoids the shared_utils <-> api_v2 package cycle.
+            from api_v2.authz import permission_required
+            return permission_required(permission_code)(fn)(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
 def recalculate_all_wholesale(cur):
     cur.execute(
         """
-        SELECT id
-        FROM import_batches
-        WHERE source_type IN ('export_sales_excel', 'manual')
-          AND status = 'imported'
+        SELECT DISTINCT b.id
+        FROM import_batches b
+        JOIN wholesale_detail_records d ON d.batch_id = b.id
+        WHERE b.status = 'imported'
+        ORDER BY b.id
         """
     )
     total = {"matched": 0, "unmatched": 0, "missing_rates": 0}
@@ -335,6 +361,116 @@ def recalculate_all_wholesale(cur):
         for key in total:
             total[key] += result[key]
     return total
+
+def reclassify_weigh_wholesale_from_references(cur):
+    entity_lookup = load_entity_lookup(cur)
+    cur.execute(
+        """
+        SELECT id, raw_entity_name, sender_name, classification
+        FROM wholesale_detail_records
+        WHERE batch_id IS NULL
+          AND classification IN ('local_wholesale', 'export_wholesale', 'unknown')
+        """
+    )
+    rows = cur.fetchall()
+    updated = 0
+    classification_cache = {}
+    for row in rows:
+        detail_id = _column_value(row, 0, "id")
+        raw_entity_name = _column_value(row, 1, "raw_entity_name")
+        sender_name = _column_value(row, 2, "sender_name")
+        current = _column_value(row, 3, "classification")
+        classification_key = (raw_entity_name or "", sender_name or "")
+        next_classification = classification_cache.get(classification_key)
+        if next_classification is None:
+            next_classification = classify_wholesale_movement(
+                cur,
+                entity_lookup,
+                raw_entity_name,
+                sender_name=sender_name,
+                current="unknown",
+            )
+            classification_cache[classification_key] = next_classification
+        if not next_classification:
+            next_classification = "unknown"
+        if next_classification != current:
+            cur.execute(
+                """
+                UPDATE wholesale_detail_records
+                SET classification = %s
+                WHERE id = %s
+                """,
+                (next_classification, detail_id),
+            )
+            updated += 1
+    return {"scanned": len(rows), "updated": updated}
+
+
+def reconcile_wholesale_entity_references(cur):
+    entity_lookup = load_entity_lookup(cur)
+    cur.execute(
+        """
+        SELECT id, raw_entity_name, sender_name, entity_type, entity_code,
+               standard_entity_name, classification
+        FROM wholesale_detail_records
+        WHERE raw_entity_name IS NOT NULL
+          AND TRIM(raw_entity_name) <> ''
+        """
+    )
+    rows = cur.fetchall()
+    updated = 0
+    classification_cache = {}
+    for row in rows:
+        detail_id = _column_value(row, 0, "id")
+        raw_name = _column_value(row, 1, "raw_entity_name")
+        sender_name = _column_value(row, 2, "sender_name")
+        old_type = _column_value(row, 3, "entity_type")
+        old_code = _column_value(row, 4, "entity_code")
+        old_name = _column_value(row, 5, "standard_entity_name")
+        old_classification = _column_value(row, 6, "classification")
+        entity = lookup_entity(entity_lookup, raw_name)
+        if not entity:
+            continue
+        classification_key = (raw_name or "", sender_name or "")
+        next_classification = classification_cache.get(classification_key)
+        if next_classification is None:
+            next_classification = classify_wholesale_movement(
+                cur,
+                entity_lookup,
+                raw_name,
+                sender_name=sender_name,
+                current=old_classification,
+            )
+            classification_cache[classification_key] = next_classification
+        new_values = (
+            entity["entity_type"],
+            entity["entity_code"],
+            entity["standard_name"],
+            next_classification or old_classification,
+        )
+        if new_values == (old_type, old_code, old_name, old_classification):
+            continue
+        cur.execute(
+            """
+            UPDATE wholesale_detail_records
+            SET entity_type = %s,
+                entity_code = %s,
+                standard_entity_name = %s,
+                classification = %s
+            WHERE id = %s
+            """,
+            (*new_values, detail_id),
+        )
+        updated += 1
+    return {"scanned": len(rows), "updated": updated}
+
+
+def recalculate_wholesale_references(cur):
+    recalculation = {"entityReferences": reconcile_wholesale_entity_references(cur)}
+    recalculation.update(recalculate_all_wholesale(cur))
+    recalculation["weighReclassification"] = reclassify_weigh_wholesale_from_references(cur)
+    return recalculation
+
 
 def reconcile_wholesale_product_ids(cur):
     product_lookup = load_product_lookup(cur)

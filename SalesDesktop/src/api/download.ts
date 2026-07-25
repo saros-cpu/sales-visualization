@@ -5,12 +5,39 @@ async function getFreshToken(preferredToken?: string) {
   return refreshed || preferredToken || localStorage.getItem('accessToken') || '';
 }
 
+type ElectronDownloadResult =
+  {
+    ok: boolean;
+    filePath?: string;
+    error?: string;
+    message?: string;
+    status?: number;
+    statusText?: string;
+    bodyPreview?: string;
+    canceled?: boolean;
+  };
+
 export async function downloadWithAuth(url: string, filename: string, token?: string) {
   const authToken = await getFreshToken(token);
   if (window.electronAPI?.downloadFile) {
-    const ok = await window.electronAPI.downloadFile(url, filename, authToken);
-    if (!ok) throw new Error('download cancelled');
-    return;
+    const result = await window.electronAPI.downloadFile(url, filename, authToken) as ElectronDownloadResult | boolean | null;
+    if (typeof result === 'object' && result !== null) {
+      if (result.ok) return;
+      if (result.canceled) {
+        throw new Error('下载已取消');
+      }
+      const parts = [
+        result.message,
+        result.error,
+        result.status ? `HTTP ${result.status}` : '',
+        result.bodyPreview,
+      ].filter(Boolean);
+      throw new Error(parts.join(' | ') || '下载失败');
+    }
+    if (result === true) return;
+    if (result === false || result == null) {
+      throw new Error('下载已取消');
+    }
   }
 
   const headers: Record<string, string> = {};
@@ -22,7 +49,7 @@ export async function downloadWithAuth(url: string, filename: string, token?: st
       res = await fetch(url, { headers: { Authorization: `Bearer ${retryToken}` } });
     }
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
 
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);

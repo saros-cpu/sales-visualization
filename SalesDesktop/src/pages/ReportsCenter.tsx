@@ -5,6 +5,7 @@ import { FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useTranslation } from 'react-i18next';
 import {
+  downloadDailyBriefingReport,
   downloadMonthlyReport,
   downloadProfitReport,
   downloadProfitYearReport,
@@ -62,6 +63,7 @@ export default function ReportsCenter() {
   const { year, setYear, yearOptions } = useRetailYears(now.year());
   const [month, setMonth] = useState(now.month() + 1);
   const [range, setRange] = useState<[Dayjs, Dayjs]>([now.subtract(6, 'day'), now]);
+  const [reportDay, setReportDay] = useState<Dayjs>(now);
   const [running, setRunning] = useState('');
 
   const isAdmin = user?.role === 'admin';
@@ -109,6 +111,17 @@ export default function ReportsCenter() {
             onChange={setYear}
           />
           <Select style={{ width: 120 }} value={month} options={monthOptions} onChange={setMonth} />
+          <span>{t('reportsCenter.reportDate')}</span>
+          <DatePicker
+            value={reportDay}
+            allowClear={false}
+            disabledDate={(current) => (
+              !!current && (current.isBefore(dayjs('2023-01-01'), 'day') || current.isAfter(now, 'day'))
+            )}
+            onChange={(value) => {
+              if (value) setReportDay(value);
+            }}
+          />
           <span>{t('reportsCenter.range')}</span>
           <RangePicker
             value={range}
@@ -182,6 +195,17 @@ export default function ReportsCenter() {
               const { dateFrom, dateTo } = rangeValues();
               return downloadRetailRangeReport(dateFrom, dateTo);
             })}
+          />
+        </Col>
+        <Col xs={24} md={12} xl={8}>
+          <ReportCard
+            title={t('reportsCenter.dailyBriefingTitle')}
+            desc={t('reportsCenter.dailyBriefingDesc')}
+            icon={<FileExcelOutlined />}
+            runLabel={t('reportsCenter.run')}
+            disabled={!canRetailExport}
+            loading={running === 'daily-briefing'}
+            onRun={() => run('daily-briefing', () => downloadDailyBriefingReport(reportDay.format('YYYY-MM-DD'), true))}
           />
         </Col>
         <Col xs={24} md={12} xl={8}>

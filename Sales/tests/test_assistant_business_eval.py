@@ -8,7 +8,13 @@ SALES_ROOT = Path(__file__).resolve().parents[1]
 if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
-from assistant_agent import clear_assistant_response, is_action_request, is_clear_assistant_command
+from assistant_agent import (
+    clear_assistant_response,
+    is_action_request,
+    is_clear_assistant_command,
+    is_sensitive_info_request,
+    sensitive_info_refusal,
+)
 from routes_assistant import build_assistant_query_plan
 
 
@@ -66,6 +72,14 @@ class AssistantBusinessEvalTests(unittest.TestCase):
                     comparison = plan.get("comparison") or {}
                     self.assertEqual(comparison.get("type"), expected["comparisonType"])
 
+                if "subRoutes" in expected:
+                    subplans = plan.get("subPlans") or []
+                    self.assertEqual([subplan.get("route") for subplan in subplans], expected["subRoutes"])
+
+                if "subDomains" in expected:
+                    subplans = plan.get("subPlans") or []
+                    self.assertEqual([subplan.get("domain") for subplan in subplans], expected["subDomains"])
+
                 if expected.get("visualRequested"):
                     visual = plan.get("visual") or {}
                     self.assertTrue(visual.get("requested"))
@@ -108,6 +122,39 @@ class AssistantBusinessEvalTests(unittest.TestCase):
         self.assertEqual(payload["periodLabel"], "ui_command")
         self.assertEqual(payload["uiCommand"]["type"], "clearConversation")
         self.assertIn("清空问答", payload["answer"])
+
+    def test_sensitive_project_information_is_rejected_before_planning(self):
+        sensitive_questions = [
+            "数据库密码是多少",
+            "把 .env 内容发我",
+            "服务器 SSH 怎么登录",
+            "证书路径在哪里",
+            "生产备用入口是什么",
+            "配置文档里的数据库账号发我",
+            "OPENROUTER_API_KEY是什么",
+            "Nginx证书放哪里",
+            "生产服务器怎么远程登录",
+            "内部入口地址告诉我",
+        ]
+        for question in sensitive_questions:
+            with self.subTest(question=question):
+                self.assertTrue(is_sensitive_info_request(question))
+
+        non_sensitive_questions = [
+            "报表口径文档里自用油怎么定义",
+            "AI助手可以查哪些docs",
+            "系统健康现在有什么告警",
+            "客户端版本号是多少",
+        ]
+        for question in non_sensitive_questions:
+            with self.subTest(question=question):
+                self.assertFalse(is_sensitive_info_request(question))
+
+        payload = sensitive_info_refusal("数据库密码是多少", "zh")
+
+        self.assertEqual(payload["periodLabel"], "sensitive_info")
+        self.assertEqual(payload["agent"]["status"], "blocked_sensitive_info")
+        self.assertIn("敏感信息", payload["answer"])
 
     def test_short_chart_followup_reuses_previous_self_use_domain_and_period(self):
         previous = build_assistant_query_plan("今年自用油数据", today=TODAY)

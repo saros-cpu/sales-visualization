@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Row, Col, Tabs, Card, Statistic } from 'antd';
+import { Row, Col, Tabs, Card, Statistic, Space, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
@@ -25,6 +25,7 @@ const REGION_COLORS: Record<string, string> = {
   CTY-30: '#ef5350', chu: '#00e5a0', CTY-29: '#a78bfa',
   CTY-33: '#ffa726', CTY-31: '#00d4ff', CTY-35: '#66bb6a',
 };
+const { Text } = Typography;
 
 function normalizeRegionKey(value?: string | null) {
   const raw = String(value || '').trim();
@@ -40,12 +41,17 @@ function numeric(value: unknown) {
   return Number.isFinite(next) ? next : 0;
 }
 
+function formatYearMonth(year: number, month?: number) {
+  return month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`;
+}
+
 export default function Region() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { region, station, product } = useNameI18n();
-  const [ym, setYm] = useState(defaultRetailMonth);
+  const requestedMonth = searchParams.get('month') || '';
+  const [ym, setYm] = useState(requestedMonth || defaultRetailMonth);
 
   const regQ = useApiQuery(['retail', 'regions', ym], () => getRegions(ym));
   const staQ = useApiQuery(['retail', 'stations', ym], () => getStations(ym));
@@ -63,6 +69,12 @@ export default function Region() {
 
   const [activeRegion, setActiveRegion] = useState('');
   const requestedRegion = normalizeRegionKey(searchParams.get('region'));
+
+  useEffect(() => {
+    if (requestedMonth) {
+      setYm((prev) => (prev === requestedMonth ? prev : requestedMonth));
+    }
+  }, [requestedMonth]);
 
   useEffect(() => {
     if (regionKeys.length === 0) return;
@@ -113,17 +125,42 @@ export default function Region() {
     return Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
   }, [dailyQ.data, activeRegion, stations]);
 
+  const changeMonth = (year: number, month?: number) => {
+    const nextYm = formatYearMonth(year, month);
+    setYm(nextYm);
+    const query = new URLSearchParams(searchParams);
+    query.set('month', nextYm);
+    if (activeRegion) query.set('region', activeRegion);
+    navigate(`/retail/region?${query.toString()}`, { replace: true });
+  };
+
+  const stationUrl = (shopKey?: number, stationName?: string) => {
+    const query = new URLSearchParams();
+    if (shopKey) query.set('shopKey', String(shopKey));
+    if (stationName) query.set('name', stationName);
+    query.set('from', 'region');
+    query.set('region', activeRegion);
+    query.set('month', ym);
+    return `/retail/station?${query.toString()}`;
+  };
+
   return (
     <div>
-      <PeriodPicker value={ym} onChange={(y, m) => setYm(m ? `${y}-${String(m).padStart(2, '0')}` : `${y}`)} picker="month" />
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Text type="secondary">{t('common.month')}</Text>
+        <PeriodPicker value={ym} onChange={changeMonth} picker="month" />
+      </Space>
       <Tabs
         activeKey={activeRegion || (regionKeys[0] ?? '')}
         onChange={(key) => {
           setActiveRegion(key);
-          navigate(`/retail/region?region=${encodeURIComponent(key)}`, { replace: true });
+          const query = new URLSearchParams(searchParams);
+          query.set('region', key);
+          query.set('month', ym);
+          navigate(`/retail/region?${query.toString()}`, { replace: true });
         }}
         items={regionKeys.map((k) => ({ key: k, label: region(k) }))}
-        style={{ marginTop: 16 }}
+        style={{ marginTop: 0 }}
       />
       {regionData && (
         <>
@@ -152,8 +189,8 @@ export default function Region() {
                 onClick={() => navigate('/retail/resource')}
               />
             </Col>
-            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
-            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate('/retail/station')}><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate(stationUrl())}><Statistic title={t('retail.activeShops')} value={`${regionData.activeCount}/${regionData.stationCount}`} /></Card></Col>
+            <Col xs={12} lg={6}><Card size="small" className="kpi-card-clickable" onClick={() => navigate(stationUrl())}><Statistic title={t('retail.cardRatio')} value={regionData.amount > 0 ? `${Math.round((regionData.card / regionData.amount) * 100)}%` : '-'} /></Card></Col>
           </Row>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col span={24}>
@@ -200,12 +237,7 @@ export default function Region() {
                 }}
                 onEvents={{ click: (params: any) => {
                   const item = params?.data || {};
-                  const query = new URLSearchParams();
-                  if (item.shopKey) query.set('shopKey', String(item.shopKey));
-                  if (item.stationName || params?.name) query.set('name', String(item.stationName || params.name));
-                  query.set('from', 'region');
-                  query.set('region', activeRegion);
-                  navigate(`/retail/station?${query.toString()}`);
+                  navigate(stationUrl(item.shopKey, item.stationName || params?.name));
                 } }}
               />
             </Col>

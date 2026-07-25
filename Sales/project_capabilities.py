@@ -267,6 +267,12 @@ PROJECT_ASSISTANT_CAPABILITIES: list[dict[str, Any]] = [
         "expected": {"route": "report_center_summary", "domain": "reports"},
     },
     {
+        "id": "colloquial_report_daily_briefing_download",
+        "module": "AI助手 / 中式问法",
+        "question": "每日汇报表在哪下",
+        "expected": {"route": "report_center_summary", "domain": "reports"},
+    },
+    {
         "id": "colloquial_accounting_complete",
         "module": "AI助手 / 中式问法",
         "question": "昨天吉方日报齐不齐",

@@ -10,6 +10,7 @@ if str(SALES_ROOT) not in sys.path:
 
 from assistant_quality import (
     build_data_freshness,
+    build_data_source_contract,
     build_knowledge_references,
     build_permission_refusal,
     build_query_spec,
@@ -19,7 +20,8 @@ from assistant_quality import (
     has_required_permission,
     required_permissions,
 )
-from routes_assistant import build_assistant_query_plan
+from assistant_agent import sensitive_info_refusal
+from routes_assistant import assistant_tool_catalog, build_assistant_query_plan
 
 
 TODAY = date(2026, 7, 22)
@@ -56,6 +58,19 @@ class AssistantQualityTests(unittest.TestCase):
                 self.assertIn(enriched["quality"]["status"], {"pass", "warn"})
                 self.assertIn("querySpec", enriched)
                 self.assertIn("diagnostics", enriched)
+                if "expectedRoute" in case:
+                    self.assertEqual(enriched["querySpec"]["route"], case["expectedRoute"])
+                contract = enriched["querySpec"].get("dataSourceContract") or {}
+                if "expectedDataSource" in case:
+                    self.assertEqual(contract.get("dataSource"), case["expectedDataSource"])
+                if "expectedSourceKind" in case:
+                    self.assertEqual(contract.get("sourceKind"), case["expectedSourceKind"])
+                if "expectedSnapshotNeed" in case:
+                    self.assertEqual(contract.get("snapshotNeed"), case["expectedSnapshotNeed"])
+                if "expectedSnapshotApplies" in case:
+                    self.assertEqual((contract.get("snapshotPolicy") or {}).get("applies"), case["expectedSnapshotApplies"])
+                if "expectedUsesExistingSnapshots" in case:
+                    self.assertEqual(contract.get("usesExistingSnapshots"), case["expectedUsesExistingSnapshots"])
                 for expected_text in case["answerContains"]:
                     self.assertIn(expected_text, enriched["answer"])
                 self.assertGreaterEqual(len(enriched.get("tables") or []), case.get("minTables", 0))
@@ -90,7 +105,66 @@ class AssistantQualityTests(unittest.TestCase):
         self.assertIn("aggregate", spec["allowedOperations"])
         self.assertIn("update", spec["blockedOperations"])
         self.assertIn("approve", spec["blockedOperations"])
+        self.assertIn("restart", spec["blockedOperations"])
+        self.assertIn("deploy", spec["blockedOperations"])
+        self.assertIn("modify_code", spec["blockedOperations"])
+        self.assertTrue(spec["dataSourceContract"]["readOnly"])
+        self.assertFalse(spec["dataSourceContract"]["mutationAllowed"])
+        self.assertEqual(spec["dataSourceContract"]["sourceKind"], "permission_scoped_readonly_records")
+        self.assertFalse(spec["snapshotPolicy"]["applies"])
         self.assertIn("procurement:view", spec["requiredPermissions"])
+
+    def test_all_registered_assistant_tools_are_read_only(self):
+        tools = assistant_tool_catalog()
+
+        self.assertGreater(len(tools), 10)
+        for route, tool in tools.items():
+            with self.subTest(route=route):
+                self.assertTrue(tool.get("readOnly"))
+                self.assertFalse(tool.get("canWrite"))
+                self.assertEqual(tool.get("mode"), "read_only")
+                self.assertTrue(tool.get("dataSource"))
+                self.assertIsInstance(tool.get("dataSourceContract"), dict)
+                self.assertTrue(tool["dataSourceContract"].get("readOnly"))
+                self.assertTrue(tool["dataSourceContract"].get("snapshotNeed"))
+                self.assertTrue(tool["dataSourceContract"].get("answerability"))
+                self.assertTrue(tool["dataSourceContract"].get("note"))
+
+    def test_retail_query_spec_exposes_snapshot_data_source(self):
+        plan = build_assistant_query_plan("7月柴油哪个站卖得最多", today=TODAY)
+        spec = build_query_spec(plan, admin_context())
+
+        self.assertEqual(spec["dataSource"], "retail_snapshots")
+        self.assertEqual(spec["dataSourceContract"]["sourceKind"], "confirmed_snapshot")
+        self.assertTrue(spec["dataSourceContract"]["answerFromExistingSnapshots"])
+        self.assertTrue(spec["snapshotPolicy"]["applies"])
+        self.assertIn("confirmed_snapshots", spec["snapshotPolicy"]["allowedSources"])
+        self.assertIn("runtime_restart", spec["snapshotPolicy"]["forbiddenSources"])
+
+    def test_data_source_contract_marks_snapshot_gaps(self):
+        procurement = build_data_source_contract({"tool": {"dataSource": "wholesale_detail_records"}})
+        transfer_loss = build_data_source_contract({"tool": {"dataSource": "transfer_loss"}})
+        self_use = build_data_source_contract({"tool": {"dataSource": "self_use_report24_snapshots"}})
+        wholesale = build_data_source_contract({"tool": {"dataSource": "wholesale_snapshots"}})
+        combined = build_data_source_contract({"tool": {"dataSource": "combined_snapshots"}})
+
+        self.assertEqual(procurement["snapshotNeed"], "recommended_for_high_frequency_rankings")
+        self.assertEqual(procurement["answerability"], "answer_now_from_readonly_records")
+        self.assertEqual(transfer_loss["snapshotNeed"], "recommended_for_cross_source_analysis")
+        self.assertEqual(self_use["snapshotNeed"], "not_required_for_current_assistant")
+        self.assertFalse(self_use["snapshotPolicy"]["applies"])
+        self.assertEqual(wholesale["snapshotNeed"], "optional_for_repeat_leadership_queries")
+        self.assertFalse(wholesale["snapshotPolicy"]["applies"])
+        self.assertEqual(combined["snapshotNeed"], "not_required_for_current_assistant")
+        self.assertTrue(combined["usesExistingSnapshots"])
+        self.assertFalse(combined["snapshotPolicy"]["applies"])
+
+    def test_sensitive_info_refusal_counts_as_guarded_quality(self):
+        payload = sensitive_info_refusal("数据库密码是多少", "zh")
+        quality = evaluate_response_quality(payload, admin_context())
+
+        self.assertEqual(quality["status"], "pass")
+        self.assertTrue(any(item["code"] == "sensitive_info_refusal" for item in quality["checks"]))
 
     def test_knowledge_snippets_are_numbered_references(self):
         refs = build_knowledge_references([
@@ -180,6 +254,44 @@ class AssistantQualityTests(unittest.TestCase):
         self.assertEqual(freshness["status"], "partial")
         self.assertTrue(freshness["warnings"])
         self.assertIn("source:snapshot", freshness["sources"])
+
+    def test_freshness_reads_retail_snapshot_metadata(self):
+        plan = build_assistant_query_plan("7月零售数据", today=TODAY)
+        freshness = build_data_freshness({
+            "assistantPlan": plan,
+            "data": {
+                "snapshot": {
+                    "type": "retail_monthly",
+                    "periodKey": "2026-07",
+                    "confirmed": True,
+                    "readOnly": True,
+                    "updatedAt": "2026-08-01 08:00:00",
+                },
+                "summary": {"queryStart": "2026-07-01", "queryEnd": "2026-08-01"},
+            },
+        })
+
+        self.assertIn("snapshot:retail_monthly:2026-07", freshness["sources"])
+        self.assertIn("snapshot.confirmed:True", freshness["sources"])
+        self.assertIn("queryEnd:2026-08-01", freshness["sources"])
+
+    def test_freshness_reads_query_spec_data_source_contract(self):
+        plan = build_assistant_query_plan("DemoDepotNorth在哪里", today=TODAY)
+        spec = build_query_spec(plan, admin_context())
+        freshness = build_data_freshness({"assistantPlan": plan, "querySpec": spec, "data": {}})
+
+        self.assertIn("contract.source:map_station_depot_coordinates", freshness["sources"])
+        self.assertIn("contract.kind:project_reference_catalog", freshness["sources"])
+
+    def test_knowledge_query_spec_uses_published_documents(self):
+        plan = build_assistant_query_plan("技术方案里AI助手数据来源怎么写的", today=TODAY)
+        spec = build_query_spec(plan, admin_context())
+
+        self.assertEqual(plan["route"], "knowledge_summary")
+        self.assertEqual(spec["dataSource"], "knowledge_base")
+        self.assertEqual(spec["dataSourceContract"]["sourceKind"], "published_knowledge")
+        self.assertTrue(spec["dataSourceContract"]["answerFromPublishedKnowledge"])
+        self.assertFalse(spec["snapshotPolicy"]["applies"])
 
     def test_report_guidance_exposes_original_report_boundary(self):
         plan = build_assistant_query_plan("今年自用油数据", today=TODAY)

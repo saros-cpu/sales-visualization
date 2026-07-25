@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatRetailTons, retailTonsOf } from './retailMetrics';
+import { formatRetailLitersKpiParts, formatRetailSomKpiParts, formatRetailTons, retailTonsOf } from './retailMetrics';
 
 describe('retail metric helpers', () => {
   it('prefers explicit retail tons over mass fallback', () => {
@@ -16,5 +16,11 @@ describe('retail metric helpers', () => {
 
   it('formats retail tons with three decimals by default', () => {
     expect(formatRetailTons(1.2)).toMatch(/^1[.,]200$/);
+  });
+
+  it('shares KPI amount and volume parts with web retail pages', () => {
+    expect(formatRetailSomKpiParts(12000)).toEqual({ value: '1.2', unit: '万索姆' });
+    expect(formatRetailLitersKpiParts(34000)).toEqual({ value: '3.4', unit: '万L' });
+    expect(formatRetailSomKpiParts(1200000, 'ru').unit).toBe('млн сом');
   });
 });

@@ -45,6 +45,16 @@ class StationMapInventoryCapacityTests(unittest.TestCase):
         self.assertEqual(_infer_fuelbalance_resource_key(6, 0, "0", 81.9, 3), 103)
         self.assertEqual(_infer_fuelbalance_resource_key(30, 0, "Àè 80", 68.0, 1), 102)
         self.assertEqual(_infer_fuelbalance_resource_key(30, 0, "Àè 92", 83.3, 2), 103)
+        self.assertEqual(_infer_fuelbalance_resource_key(19, 0, "ÃÀÇ", 45.9, 4), 108)
+        self.assertEqual(_infer_fuelbalance_resource_key(22, 0, "ÃÀÇ", 47.8, 4), 108)
+        self.assertEqual(_infer_fuelbalance_resource_key(24, 0, "ÃÀÇ", 47.8, 4), 108)
+        self.assertEqual(_infer_fuelbalance_resource_key(28, 0, "ÃÀÇ", 46.8, 6), 108)
+        self.assertEqual(_infer_fuelbalance_resource_key(29, 0, "ÃÀÇ", 47.0, 4), 108)
+        self.assertEqual(_infer_fuelbalance_resource_key(19, 102, "0", 74.0, 1), 102)
+        self.assertEqual(_infer_fuelbalance_resource_key(28, 0, "ÀÈ 80", 72.0, 1), 102)
+        self.assertEqual(_infer_fuelbalance_resource_key(1, 0, "0", 72.0), 102)
+        self.assertEqual(_infer_fuelbalance_resource_key(1, 0, "0", 74.0), 102)
+        self.assertEqual(_infer_fuelbalance_resource_key(1, 0, "0", 88.0), 103)
 
     def test_fuelbalance_capacity_uses_latest_tank_rows_without_duplication(self):
         rows = [
@@ -54,6 +64,8 @@ class StationMapInventoryCapacityTests(unittest.TestCase):
             (5, 5, 108, "ÃÀÇ", 41.9, 24648.0),
             (28, 4, 0, "ÄÒ -15", 96.8, 40000.0),
             (28, 5, 0, "ÄÒ -35", 100.0, 40000.0),
+            (19, 4, 0, "ÃÀÇ", 47.8, 15000.0),
+            (29, 4, 0, "ÃÀÇ", 47.0, 20000.0),
         ]
 
         result = _fuelbalance_capacity_by_resource_from_rows(rows)
@@ -63,6 +75,8 @@ class StationMapInventoryCapacityTests(unittest.TestCase):
         self.assertEqual(result[(5, 108)], 24648.0)
         self.assertEqual(result[(28, 106)], 40000.0)
         self.assertEqual(result[(28, 110)], 40000.0)
+        self.assertEqual(result[(19, 108)], 15000.0)
+        self.assertEqual(result[(29, 108)], 20000.0)
 
     def test_fuelbalance_capacity_uses_observed_tank_fallback_and_filters_station_30_diesel(self):
         rows = [

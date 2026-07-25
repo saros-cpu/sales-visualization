@@ -573,6 +573,16 @@
     }
   },
   {
+    "id": "report_daily_briefing_export",
+    "question": "每日汇报表在哪下",
+    "expected": {
+      "route": "report_center_summary",
+      "domain": "reports",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
     "id": "train_entry_today_records",
     "question": "火车外运录入今天有哪些记录",
     "expected": {
@@ -585,6 +595,520 @@
   {
     "id": "settings_client_version",
     "question": "当前客户端版本是多少",
+    "expected": {
+      "route": "settings_summary",
+      "domain": "settings",
+      "metric": "status",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_single_day_volume",
+    "question": "2026年6月15日零售销量",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "volume",
+      "periodStart": "2026-06-15",
+      "periodEnd": "2026-06-16",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_last_year_month_resource_amount_rank",
+    "question": "去年6月各油品销售额排行",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "amount",
+      "dimensions": ["resource"],
+      "periodStart": "2025-06-01",
+      "periodEnd": "2025-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_q2_region_amount_rank",
+    "question": "26年二季度哪个区域销售额最高",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "amount",
+      "dimensions": ["region"],
+      "periodStart": "2026-04-01",
+      "periodEnd": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_month_resource_share",
+    "question": "本月各油品占比",
+    "expected": {
+      "route": "retail_resource_share",
+      "domain": "retail",
+      "metric": "amount",
+      "dimensions": ["resource"],
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_rolling_three_month_resource_amount_rank",
+    "question": "过去三个月油品营业额排行",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "amount",
+      "dimensions": ["resource"],
+      "periodStart": "2026-04-22",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_diesel_station_rank_current_month",
+    "question": "7月柴油哪个站卖得最多",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": ["resource", "station"],
+      "periodStart": "2026-07-01",
+      "resource": 106,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "retail_diesel_amount_month",
+    "question": "6月柴油销售额多少",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "amount",
+      "dimensions": ["resource"],
+      "periodStart": "2026-06-01",
+      "periodEnd": "2026-07-01",
+      "resource": 106,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_region_top_july",
+    "question": "老板问7月哪个区域卖得最多",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": ["region"],
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_mtd_amount_yoy",
+    "question": "本月营业额比去年同期怎么样",
+    "expected": {
+      "route": "retail_comparison",
+      "domain": "retail",
+      "metric": "amount",
+      "periodStart": "2026-07-01",
+      "comparisonType": "year_over_year",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_resource_92_ytd",
+    "question": "今年92号卖了多少",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": ["resource"],
+      "periodStart": "2026-01-01",
+      "resource": 103,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_self_use_station_ytd",
+    "question": "今年哪个站自用油最多",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "metric": "volume",
+      "dimensions": ["station"],
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_profit_july",
+    "question": "7月利润赚了多少钱",
+    "expected": {
+      "route": "profit_summary",
+      "domain": "profit",
+      "metric": "amount",
+      "periodStart": "2026-07-01",
+      "periodEnd": "2026-08-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_diesel_inventory_now",
+    "question": "现在柴油库存还有多少",
+    "expected": {
+      "route": "retail_inventory",
+      "domain": "retail",
+      "metric": "amount",
+      "dimensions": ["resource", "depot"],
+      "resource": 106,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_exchange_today",
+    "question": "今天汇率多少",
+    "expected": {
+      "route": "exchange_summary",
+      "domain": "exchange",
+      "metric": "amount",
+      "periodStart": "2026-07-22",
+      "periodEnd": "2026-07-23",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_transfer_loss_ytd",
+    "question": "今年调拨损耗最大的是哪里",
+    "expected": {
+      "route": "transfer_loss_summary",
+      "domain": "transfer_loss",
+      "metric": "tons",
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_retail_wholesale_total_ytd",
+    "question": "今年零售和批发合计销售数据",
+    "expected": {
+      "route": "combined_summary",
+      "domain": "combined",
+      "metric": "amount",
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_retail_self_use_separate_ytd",
+    "question": "今年零售和自用油分别多少",
+    "expected": {
+      "route": "compound_query",
+      "intent": "compound",
+      "subRoutes": ["retail_summary", "self_use_summary"],
+      "subDomains": ["retail", "self_use"],
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_profit_retail_volume_july",
+    "question": "7月利润和零售销量一起看",
+    "expected": {
+      "route": "compound_query",
+      "intent": "compound",
+      "subRoutes": ["profit_summary", "retail_summary"],
+      "subDomains": ["profit", "retail"],
+      "periodStart": "2026-07-01",
+      "periodEnd": "2026-08-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_procurement_wholesale_tons_month",
+    "question": "本月采购和批发分别多少吨",
+    "expected": {
+      "route": "compound_query",
+      "intent": "compound",
+      "metric": "tons",
+      "subRoutes": ["procurement_summary", "wholesale_summary"],
+      "subDomains": ["procurement", "wholesale"],
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "knowledge_report_scope_doc",
+    "question": "报表口径文档里自用油怎么定义",
+    "expected": {
+      "route": "knowledge_summary",
+      "domain": "knowledge",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "knowledge_project_docs",
+    "question": "AI助手可以查哪些docs",
+    "expected": {
+      "route": "knowledge_summary",
+      "domain": "knowledge",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "knowledge_assistant_data_sources",
+    "question": "技术方案里AI助手数据来源怎么写的",
+    "expected": {
+      "route": "knowledge_summary",
+      "domain": "knowledge",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_month_amount_plain",
+    "question": "这个月一共卖了多少钱",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "amount",
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_yesterday_retail_volume",
+    "question": "昨天零售卖了多少升",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "volume",
+      "periodStart": "2026-07-21",
+      "periodEnd": "2026-07-22",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_today_retail_amount",
+    "question": "今天零售销售额多少",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "amount",
+      "periodStart": "2026-07-22",
+      "periodEnd": "2026-07-23",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_july_station_amount_top",
+    "question": "7月哪个加油站营业额最高",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "intent": "ranking",
+      "metric": "amount",
+      "dimensions": ["station"],
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_q2_resource_volume_rank",
+    "question": "二季度哪个油品销量最高",
+    "expected": {
+      "route": "retail_ranking",
+      "domain": "retail",
+      "intent": "ranking",
+      "metric": "volume",
+      "dimensions": ["resource"],
+      "periodStart": "2026-04-01",
+      "periodEnd": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_half_year_region_volume",
+    "question": "上半年各区域卖了多少升",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": ["region"],
+      "periodStart": "2026-01-01",
+      "periodEnd": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_last_month_yoy_amount",
+    "question": "上个月营业额同比怎么样",
+    "expected": {
+      "route": "retail_comparison",
+      "domain": "retail",
+      "metric": "amount",
+      "periodStart": "2026-06-01",
+      "periodEnd": "2026-07-01",
+      "comparisonType": "year_over_year",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_year_diesel_volume",
+    "question": "今年柴油卖了多少升",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "volume",
+      "dimensions": ["resource"],
+      "periodStart": "2026-01-01",
+      "resource": 106,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_95_month_amount",
+    "question": "本月95号销售额",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "metric": "amount",
+      "dimensions": ["resource"],
+      "periodStart": "2026-07-01",
+      "resource": 104,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_inventory_station",
+    "question": "2号站现在库存多少",
+    "expected": {
+      "route": "retail_inventory",
+      "domain": "retail",
+      "metric": "amount",
+      "dimensions": ["station"],
+      "station": 2,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_density_diesel",
+    "question": "柴油现在密度是多少",
+    "expected": {
+      "route": "density_summary",
+      "domain": "density",
+      "metric": "amount",
+      "dimensions": ["resource"],
+      "resource": 106,
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_self_use_month_station",
+    "question": "本月哪个站自用油最多",
+    "expected": {
+      "route": "self_use_summary",
+      "domain": "self_use",
+      "metric": "volume",
+      "dimensions": ["station"],
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_wholesale_month_customer",
+    "question": "本月批发客户排行",
+    "expected": {
+      "route": "wholesale_summary",
+      "domain": "wholesale",
+      "intent": "ranking",
+      "metric": "amount",
+      "dimensions": ["customer"],
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_procurement_resource_rank",
+    "question": "今年采购油品排行",
+    "expected": {
+      "route": "procurement_summary",
+      "domain": "procurement",
+      "intent": "ranking",
+      "metric": "tons",
+      "dimensions": ["resource"],
+      "periodStart": "2026-01-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_weighing_vehicle_month",
+    "question": "本月称重按车辆看",
+    "expected": {
+      "route": "weighing_summary",
+      "domain": "weighing",
+      "metric": "tons",
+      "dimensions": ["vehicle"],
+      "periodStart": "2026-07-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_contract_expiring",
+    "question": "快到期合同有哪些",
+    "expected": {
+      "route": "contract_summary",
+      "domain": "contract",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_material_pending",
+    "question": "物资调拨还有多少待审批",
+    "expected": {
+      "route": "material_transfer_summary",
+      "domain": "materials",
+      "intent": "status",
+      "metric": "count",
+      "dimensions": ["status", "material"],
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_train_today",
+    "question": "今天火车入库有多少吨",
+    "expected": {
+      "route": "train_entry_summary",
+      "domain": "train_entry",
+      "metric": "tons",
+      "periodStart": "2026-07-22",
+      "periodEnd": "2026-07-23",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_market_russia",
+    "question": "俄罗斯行情现在怎么看",
+    "expected": {
+      "route": "market_summary",
+      "domain": "market",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_audit_recent",
+    "question": "最近谁改过数据",
+    "expected": {
+      "route": "audit_log_summary",
+      "domain": "audit",
+      "metric": "count",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "leadership_settings_version",
+    "question": "现在客户端版本号是多少",
     "expected": {
       "route": "settings_summary",
       "domain": "settings",

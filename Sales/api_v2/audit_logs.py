@@ -486,6 +486,7 @@ def export_audit_logs():
         conn.close()
 
     wb = Workbook()
+    wb._fonts[0] = Font(name='Times New Roman', size=11)
     ws = wb.active
     ws.title = "审计日志"
     headers = [
@@ -515,7 +516,7 @@ def export_audit_logs():
         ])
 
     header_fill = PatternFill("solid", fgColor="D9EAF7")
-    header_font = Font(bold=True)
+    header_font = Font(name='Times New Roman', bold=True)
     wrap = Alignment(vertical="top", wrap_text=True)
     widths = [21, 18, 18, 18, 18, 16, 16, 10, 44, 18, 10, 10, 12, 18, 48, 70]
     for cell in ws[1]:

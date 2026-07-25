@@ -24,7 +24,7 @@ from pymysql.err import IntegrityError
 from werkzeug.utils import secure_filename
 
 from shared_utils import (
-    admin_required, log_operation,
+    admin_or_permission, admin_required, log_operation,
     ensure_market_watch_schema, ensure_operation_log_schema,
     ensure_station_status_schema, review_detail_rows, review_issue_rows,
     recalculate_all_wholesale, record_automation_task,
@@ -37,14 +37,17 @@ from calculations import recalculate_wholesale_batch
 from config import NBKR_DAILY_XML_URL
 from db import get_connection
 from import_helpers import (
+    classify_wholesale_movement,
+    detail_transport_mode,
     get_or_create_customer, load_entity_lookup, load_product_lookup,
     lookup_entity, lookup_product,
 )
 from scripts.import_contracts import import_contracts
-from scripts.import_wholesale_excel import SHEET_DETAIL, import_wholesale
+from scripts.import_wholesale_excel import SHEET_DETAIL, import_wholesale, import_wholesale_single_sheet
 from summary_service import available_periods, period_bounds, summarize_combined, summarize_wholesale
 from text_utils import clean_str, normalize_station_name, parse_date, parse_decimal
 from wholesale_service import exchange_rates, summarize_wholesale_page
+from wholesale_source_policy import detail_source_policy_clause, detail_source_policy_params
 from retail_internal import open_oilstation
 
 
@@ -883,6 +886,8 @@ def register_data_routes(app):
 
 
     def upload_type_label(upload_type):
+        if upload_type == "wholesale-detail-single":
+            return "批发明细单表"
         return "外运外销表" if upload_type == "wholesale" else "合同登记表"
 
 
@@ -1260,7 +1265,7 @@ def register_data_routes(app):
 
 
     @app.route("/api/import/upload", methods=["POST"])
-    @admin_required
+    @admin_or_permission("wholesale_entry:create")
     def api_import_upload():
         file = request.files.get("file")
         if not file or not file.filename:
@@ -1272,15 +1277,15 @@ def register_data_routes(app):
             file.save(tmp.name)
             saved_path = tmp.name
         try:
-            upload_type = detect_upload_type(saved_path)
-            if upload_type == "wholesale":
-                batch_id = import_wholesale(saved_path)
+            if request.form.get("uploadType") == "wholesale-detail-single":
+                upload_type = "wholesale-detail-single"
+                batch_id = import_wholesale_single_sheet(saved_path)
                 recalc = None
                 conn = get_connection()
                 try:
                     cur = conn.cursor()
                     cur.execute("UPDATE import_batches SET original_filename = %s WHERE id = %s", (file.filename, batch_id))
-                    log_operation(cur, "upload_wholesale_excel", "import_batches", batch_id, {"filename": file.filename})
+                    log_operation(cur, "upload_wholesale_detail_single", "import_batches", batch_id, {"filename": file.filename})
                     conn.commit()
                 except Exception:
                     conn.rollback()
@@ -1288,19 +1293,35 @@ def register_data_routes(app):
                 finally:
                     conn.close()
             else:
-                batch_id = import_contracts(saved_path)
-                conn = get_connection()
-                try:
-                    cur = conn.cursor()
-                    cur.execute("UPDATE import_batches SET original_filename = %s WHERE id = %s", (file.filename, batch_id))
-                    recalc = recalculate_all_wholesale(cur)
-                    log_operation(cur, "upload_contract_excel", "import_batches", batch_id, {"filename": file.filename})
-                    conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
-                finally:
-                    conn.close()
+                upload_type = detect_upload_type(saved_path)
+                if upload_type == "wholesale":
+                    batch_id = import_wholesale(saved_path)
+                    recalc = None
+                    conn = get_connection()
+                    try:
+                        cur = conn.cursor()
+                        cur.execute("UPDATE import_batches SET original_filename = %s WHERE id = %s", (file.filename, batch_id))
+                        log_operation(cur, "upload_wholesale_excel", "import_batches", batch_id, {"filename": file.filename})
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        raise
+                    finally:
+                        conn.close()
+                else:
+                    batch_id = import_contracts(saved_path)
+                    conn = get_connection()
+                    try:
+                        cur = conn.cursor()
+                        cur.execute("UPDATE import_batches SET original_filename = %s WHERE id = %s", (file.filename, batch_id))
+                        recalc = recalculate_all_wholesale(cur)
+                        log_operation(cur, "upload_contract_excel", "import_batches", batch_id, {"filename": file.filename})
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        raise
+                    finally:
+                        conn.close()
             return jsonify({
                 "ok": True,
                 "batchId": batch_id,
@@ -1313,7 +1334,7 @@ def register_data_routes(app):
 
 
     @app.route("/api/manual/wholesale-detail", methods=["POST"])
-    @admin_required
+    @admin_or_permission("wholesale_entry:create")
     def api_manual_wholesale_detail():
         payload = request.get_json(force=True)
         business_date = parse_date(payload.get("businessDate"))
@@ -1322,8 +1343,11 @@ def register_data_routes(app):
         raw_entity = clean_str(payload.get("entityName"))
         classification = payload.get("classification") or "unknown"
         weight_kg = parse_decimal(payload.get("weightKg"))
-        if classification not in ("local_wholesale", "export_wholesale", "transfer", "processing", "procurement", "unknown"):
+        transport_mode = payload.get("transportMode")
+        if classification not in ("local_wholesale", "export_wholesale", "transfer", "processing", "procurement", "other", "unknown"):
             classification = "unknown"
+        if transport_mode not in ("truck", "train"):
+            transport_mode = None
         if not business_date or not raw_entity or weight_kg is None or (not raw_product and not product_code):
             return jsonify({"error": "日期、油品、客户/去向、重量必填"}), 400
         conn = get_connection()
@@ -1338,27 +1362,41 @@ def register_data_routes(app):
                     raw_product = raw_product or row[1]
             if not product:
                 product = lookup_product(load_product_lookup(cur), raw_product)
-            entity = lookup_entity(load_entity_lookup(cur), raw_entity)
+            entity_lookup = load_entity_lookup(cur)
+            sender_name = clean_str(payload.get("senderName"))
+            vehicle_no = clean_str(payload.get("vehicleNo"))
+            weigh_serial_no = clean_str(payload.get("weighSerialNo"))
+            remark = clean_str(payload.get("remark"))
+            entity = lookup_entity(entity_lookup, raw_entity)
+            if classification == "unknown":
+                classification = classify_wholesale_movement(
+                    cur,
+                    entity_lookup,
+                    raw_entity,
+                    sender_name=sender_name,
+                    current=classification,
+                )
+            if classification == "processing" or transport_mode is None:
+                transport_mode = detail_transport_mode(classification, vehicle_no, weigh_serial_no, remark)
             if classification in ("local_wholesale", "export_wholesale", "unknown"):
                 get_or_create_customer(cur, raw_entity, classification if classification != "unknown" else "unknown")
             batch_id = create_manual_batch(cur, "Manual wholesale detail entry.", business_date)
-            match_status = "matched" if classification in ("transfer", "processing", "procurement") else "unmatched"
-            weigh_serial_no = clean_str(payload.get("weighSerialNo"))
-            sender_name = clean_str(payload.get("senderName"))
+            match_status = "matched" if classification in ("transfer", "processing", "procurement", "other") else "unmatched"
             cur.execute(
                 """
                 INSERT INTO wholesale_detail_records
                     (batch_id, source_row_number, business_date, raw_product_name, product_id,
                      vehicle_no, weigh_serial_no, raw_entity_name, sender_name, entity_type,
-                     entity_code, standard_entity_name, classification, weight_kg, remark, match_status)
-                VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     entity_code, standard_entity_name, classification, weight_kg, remark, match_status,
+                     transport_mode)
+                VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     batch_id,
                     business_date,
                     raw_product,
                     product["id"] if product else None,
-                    clean_str(payload.get("vehicleNo")),
+                    vehicle_no,
                     weigh_serial_no,
                     raw_entity,
                     sender_name,
@@ -1367,8 +1405,9 @@ def register_data_routes(app):
                     entity["standard_name"] if entity else None,
                     classification,
                     weight_kg,
-                    clean_str(payload.get("remark")),
+                    remark,
                     match_status,
+                    transport_mode,
                 ),
             )
             if not product:
@@ -1386,7 +1425,12 @@ def register_data_routes(app):
                 "manual_wholesale_detail",
                 "import_batches",
                 batch_id,
-                {"businessDate": business_date.isoformat(), "classification": classification, "entityName": raw_entity},
+                {
+                    "businessDate": business_date.isoformat(),
+                    "classification": classification,
+                    "entityName": raw_entity,
+                    "transportMode": transport_mode,
+                },
             )
             conn.commit()
             return jsonify({"ok": True, "batchId": batch_id, "recalculation": result})
@@ -1505,26 +1549,65 @@ def register_data_routes(app):
         year = int(parts[0])
         month = int(parts[1]) if len(parts) > 1 else None
         start, end = period_bounds(year, month)
+        source_policy = detail_source_policy_clause("d")
         conn = get_connection()
         try:
             cur = conn.cursor()
-            cur.execute("""
-                SELECT d.business_date, d.raw_product_name, d.weigh_serial_no,
-                       d.vehicle_no, d.sender_name, d.raw_entity_name,
-                       d.weight_kg, d.remark
+            cur.execute(f"""
+                SELECT d.business_date,
+                       COALESCE(NULLIF(p.display_name, ''), d.raw_product_name) AS product_name,
+                       d.weigh_serial_no,
+                       d.vehicle_no,
+                       d.sender_name,
+                       COALESCE(NULLIF(d.standard_entity_name, ''), d.raw_entity_name) AS entity_name,
+                       d.weight_tons,
+                       d.classification,
+                       d.transport_mode,
+                       CASE
+                         WHEN d.batch_id IS NULL THEN COALESCE(NULLIF(d.weigh_source, ''), 'weighing')
+                         WHEN b.note LIKE 'Imported %% wholesale detail rows from single sheet.%%'
+                           THEN 'wholesale_detail_single'
+                         WHEN b.source_type = 'contract_excel'
+                           THEN 'wholesale_detail_single'
+                         ELSE COALESCE(b.source_type, 'manual')
+                       END AS display_source_type,
+                       d.remark
                 FROM wholesale_detail_records d
-                WHERE d.batch_id IS NULL AND d.business_date >= %s AND d.business_date < %s
+                LEFT JOIN products p ON p.id = d.product_id
+                LEFT JOIN import_batches b ON b.id = d.batch_id
+                WHERE d.business_date >= %s AND d.business_date < %s
+                  AND {source_policy}
                 ORDER BY d.business_date, d.id
-            """, (start, end))
+            """, (start, end, *detail_source_policy_params()))
             rows = cur.fetchall()
             import io
             from openpyxl import Workbook
+            from openpyxl.styles import Font
             wb = Workbook()
+            wb._fonts[0] = Font(name='Times New Roman', size=11)
             ws = wb.active
-            ws.title = "称重批发明细"
-            headers = ["序号", "入厂日期", "油品名称", "磅单号", "车号",
-                       "油品所属公司", "供应商/客户", "过磅重量", "备注"]
+            ws.title = "明细表"
+            headers = ["序号", "日期", "油品名称", "磅单号", "车号",
+                       "发货单位", "收货单位", "重量(吨)", "分类", "运输方式", "数据来源", "备注"]
             ws.append(headers)
+            classification_labels = {
+                "local_wholesale": "本地批发",
+                "export_wholesale": "出口批发",
+                "transfer": "外运",
+                "processing": "代加工",
+                "procurement": "采购",
+                "unknown": "待识别批发",
+                "other": "其他",
+            }
+            transport_labels = {"truck": "汽车", "train": "火车"}
+            source_labels = {
+                "weighing": "称重生成",
+                "manual": "手工录入",
+                "manual_entry": "手工录入",
+                "contract_excel": "明细表上传",
+                "wholesale_detail_single": "明细表上传",
+                "train_entry": "火车录入",
+            }
             for idx, r in enumerate(rows, 1):
                 ws.append([
                     idx,
@@ -1532,14 +1615,17 @@ def register_data_routes(app):
                     r[1] or "", r[2] or "", r[3] or "",
                     r[4] or "", r[5] or "",
                     _round_half_up(r[6], 3) if r[6] else 0,
-                    r[7] or "",
+                    classification_labels.get(r[7], r[7] or ""),
+                    transport_labels.get(r[8], r[8] or ""),
+                    source_labels.get(r[9], r[9] or ""),
+                    r[10] or "",
                 ])
                 ws.cell(row=idx + 1, column=8).number_format = "#,##0.000"
             output = io.BytesIO()
             wb.save(output)
             output.seek(0)
             from flask import send_file
-            return send_file(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", as_attachment=True, download_name=f"称重批发明细_{year_month}.xlsx")
+            return send_file(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", as_attachment=True, download_name=f"明细表_{year_month}.xlsx")
         finally:
             conn.close()
 
@@ -1599,7 +1685,6 @@ def register_data_routes(app):
         product = request.args.get("product", "").strip()
         classification = request.args.get("classification", "").strip()
         matchStatus = request.args.get("matchStatus", "").strip()
-        auditStatus = request.args.get("auditStatus", "").strip()
         col_product = request.args.get("col_product", "").strip()
         col_sender = request.args.get("col_sender", "").strip()
         col_receiver = request.args.get("col_receiver", "").strip()
@@ -1622,9 +1707,6 @@ def register_data_routes(app):
         if matchStatus:
             where.append("d.match_status = %s")
             params.append(matchStatus)
-        if auditStatus:
-            where.append("d.audit_status = %s")
-            params.append(auditStatus)
         if col_product:
             vals = [v.strip() for v in col_product.split(",") if v.strip()]
             if vals:
@@ -1660,7 +1742,7 @@ def register_data_routes(app):
                        COALESCE(NULLIF(p.display_name, ''), d.raw_product_name) AS display_product_name,
                        COALESCE(NULLIF(d.standard_entity_name, ''), d.raw_entity_name) AS display_entity_name,
                        d.classification, d.weight_kg, d.weight_tons,
-                       d.match_status, d.audit_status, d.weigh_source, d.remark, d.created_at
+                       d.match_status, d.weigh_source, d.remark, d.created_at
                 FROM wholesale_detail_records d
                 LEFT JOIN products p ON p.id = d.product_id
                 WHERE {' AND '.join(where)}
@@ -1674,8 +1756,8 @@ def register_data_routes(app):
                 "standardEntityName": r[8], "displayEntityName": r[10],
                 "classification": r[11], "weightKg": float(r[12]) if r[12] else 0,
                 "weightTons": float(r[13]) if r[13] else 0, "matchStatus": r[14],
-                "auditStatus": r[15], "weighSource": r[16],
-                "remark": r[17] or "", "createdAt": r[18].isoformat() if r[18] else None,
+                "weighSource": r[15],
+                "remark": r[16] or "", "createdAt": r[17].isoformat() if r[17] else None,
             } for r in cur.fetchall()]
             return jsonify({"items": items})
         finally:

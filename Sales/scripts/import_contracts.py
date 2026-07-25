@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 import sys
 
@@ -23,6 +24,7 @@ from text_utils import clean_str, parse_date, parse_decimal
 
 MAIN_SHEET_INDEX = 0
 DATA_START_ROW = 3
+NUMERIC_PRODUCT_NOISE_RE = re.compile(r"^[0-9]+(?:[.,][0-9]+)?$")
 
 
 def classify_sales_type(remark):
@@ -34,6 +36,13 @@ def classify_sales_type(remark):
     if "服务" in text or "УСЛУГ" in text:
         return "internal"
     return "unknown"
+
+
+def is_numeric_product_noise(value):
+    text = (clean_str(value) or "").replace(" ", "")
+    if not NUMERIC_PRODUCT_NOISE_RE.fullmatch(text):
+        return False
+    return "." in text or "," in text or len(text) > 3
 
 
 def import_contracts(path):
@@ -54,6 +63,7 @@ def import_contracts(path):
 
         imported = 0
         unknown_products = 0
+        skipped_product_noise = 0
         for row_idx in range(DATA_START_ROW, len(df)):
             row = df.iloc[row_idx].tolist()
             store_raw_row(cur, batch_id, sheet_name, row_idx + 1, row)
@@ -62,6 +72,9 @@ def import_contracts(path):
             contract_no = clean_str(row[3] if len(row) > 3 else None)
             raw_product = clean_str(row[9] if len(row) > 9 else None)
             if not customer or not contract_no or not raw_product:
+                continue
+            if is_numeric_product_noise(raw_product):
+                skipped_product_noise += 1
                 continue
 
             remark = clean_str(row[17] if len(row) > 17 else None)
@@ -117,7 +130,11 @@ def import_contracts(path):
             SET status = 'imported', imported_at = CURRENT_TIMESTAMP, note = %s
             WHERE id = %s
             """,
-            (f"Imported {imported} contracts; unknown products: {unknown_products}.", batch_id),
+            (
+                f"Imported {imported} contracts; unknown products: {unknown_products}; "
+                f"skipped numeric product noise: {skipped_product_noise}.",
+                batch_id,
+            ),
         )
         conn.commit()
         print(f"contract import complete: batch={batch_id}, rows={imported}, unknown_products={unknown_products}")

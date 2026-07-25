@@ -1,6 +1,9 @@
 import client from './client';
 import { API_HOST } from './http';
 import { downloadWithAuth } from './download';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface AuditLogRecord {
   id: number;
@@ -50,7 +53,7 @@ export interface AuditLogResult {
 }
 
 export async function getAuditLogs(params: AuditLogQuery) {
-  const res = await client.get('/audit-logs', { params });
+  const res = await client.get(v2(ApiPaths.auditLogs.list), { params });
   return res.data as AuditLogResult;
 }
 
@@ -62,8 +65,7 @@ export async function exportAuditLogs(params: AuditLogQuery) {
       search.set(key, String(value));
     }
   });
-  const query = search.toString();
-  const url = `${API_HOST}/api/v2/audit-logs/export${query ? `?${query}` : ''}`;
+  const url = `${API_HOST}${ApiPaths.auditLogs.export(Object.fromEntries(search.entries()))}`;
   const filename = `审计日志_${new Date().toISOString().slice(0, 10)}.xlsx`;
   await downloadWithAuth(url, filename, token);
 }

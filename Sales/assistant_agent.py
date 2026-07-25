@@ -14,7 +14,37 @@ from settings import get_settings
 
 SENSITIVE_KEYS = (
     "password", "token", "secret", "authorization", "credential",
-    "api_key", "apikey", "file_path", "filepath", "local_path",
+    "api_key", "apikey", "access_token", "refresh_token", "private_key",
+    "connection_string", "dsn", "certificate", "cert", "ssh", "file_path",
+    "filepath", "local_path",
+)
+
+SENSITIVE_DISCLOSURE_KEYWORDS = (
+    "password", "passwd", "pwd", "api key", "apikey", "token", "secret",
+    "private key", "connection string", "dsn", ".env", "ssh",
+    "api_key", "openrouter_api_key", "local_llm_api_key",
+    "\u5bc6\u7801", "\u53e3\u4ee4", "\u5bc6\u94a5", "\u79c1\u94a5",
+    "\u8fde\u63a5\u4e32", "\u8fde\u63a5\u5b57\u7b26\u4e32",
+    "\u6570\u636e\u5e93\u5bc6\u7801", "\u8bc1\u4e66\u8def\u5f84",
+    "\u5907\u7528\u5165\u53e3", "\u5907\u4efd\u5165\u53e3",
+    "\u5185\u90e8\u5730\u5740", "\u540e\u53f0\u5730\u5740",
+)
+
+SENSITIVE_CONTEXT_KEYWORDS = (
+    "database", "mysql", "server", "production", "certificate", "config",
+    "login", "ssh", "env",
+    "\u6570\u636e\u5e93", "\u751f\u4ea7", "\u670d\u52a1\u5668",
+    "\u8bc1\u4e66", "\u914d\u7f6e", "\u914d\u7f6e\u6587\u6863",
+    "\u767b\u5f55", "\u8fdc\u7a0b", "\u5185\u7f51", "\u5165\u53e3",
+)
+
+SENSITIVE_REQUEST_VERBS = (
+    "show", "tell", "give", "send", "view", "open", "where", "what",
+    "\u53d1\u6211", "\u7ed9\u6211", "\u544a\u8bc9", "\u67e5\u770b",
+    "\u5c55\u793a", "\u6253\u5f00", "\u5728\u54ea", "\u54ea\u91cc",
+    "\u662f\u4ec0\u4e48", "\u591a\u5c11", "\u600e\u4e48\u767b\u5f55",
+    "\u600e\u4e48\u8fde\u63a5", "\u600e\u4e48\u8fdc\u7a0b",
+    "\u5982\u4f55\u767b\u5f55", "\u5982\u4f55\u8fde\u63a5", "\u5982\u4f55\u8fdc\u7a0b",
 )
 
 ACTION_PATTERNS = (
@@ -83,6 +113,17 @@ def is_clear_assistant_command(question: str | None) -> bool:
     return bool(text) and any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in CLEAR_ASSISTANT_PATTERNS)
 
 
+def is_sensitive_info_request(question: str | None) -> bool:
+    text = (question or "").strip().lower()
+    if not text:
+        return False
+    if any(keyword in text for keyword in SENSITIVE_DISCLOSURE_KEYWORDS):
+        return True
+    has_sensitive_context = any(keyword in text for keyword in SENSITIVE_CONTEXT_KEYWORDS)
+    asks_to_disclose = any(keyword in text for keyword in SENSITIVE_REQUEST_VERBS)
+    return has_sensitive_context and asks_to_disclose
+
+
 def clear_assistant_response(question: str, language: str | None = None) -> dict[str, Any]:
     lang = detect_language(question, language)
     answer = (
@@ -116,6 +157,23 @@ def read_only_refusal(question: str, language: str | None = None) -> dict[str, A
         "answer": answer,
         "tables": [],
         "agent": _agent_meta("blocked_action_request", llm_used=False),
+    }
+
+
+def sensitive_info_refusal(question: str, language: str | None = None) -> dict[str, Any]:
+    lang = detect_language(question, language)
+    answer = (
+        "Я не раскрываю чувствительные сведения проекта: пароли, ключи, токены, строки подключения, сертификаты, способы входа на серверы или внутренние адреса. Могу объяснить безопасный порядок доступа или помочь с обычными вопросами по данным и документации."
+        if lang == "ru"
+        else "这个问题涉及项目敏感信息，我不能提供账号、密码、密钥、Token、连接串、证书、服务器登录方式或内部入口。可以帮你说明授权查看流程，也可以继续回答销售数据、指标口径和docs中的非敏感内容。"
+    )
+    return {
+        "ok": True,
+        "question": question,
+        "periodLabel": "sensitive_info",
+        "answer": answer,
+        "tables": [],
+        "agent": _agent_meta("blocked_sensitive_info", llm_used=False),
     }
 
 

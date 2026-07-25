@@ -98,7 +98,26 @@ declare global {
     };
     electronAPI?: {
       platform: string;
-      downloadFile: (url: string, filename: string, token?: string) => Promise<boolean>;
+      downloadFile: (
+        url: string,
+        filename: string,
+        token?: string,
+      ) => Promise<
+        | boolean
+        | {
+          ok: true;
+          filePath?: string;
+        }
+        | {
+          ok: false;
+          error?: string;
+          message?: string;
+          status?: number;
+          statusText?: string;
+          bodyPreview?: string;
+          canceled?: boolean;
+        }
+      >;
       openExternal: (url: string) => Promise<void>;
       resolveAppClose?: (action: AppCloseAction) => Promise<boolean>;
       onAppCloseRequested?: (callback: () => void) => () => void;

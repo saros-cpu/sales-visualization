@@ -1,4 +1,7 @@
 import client from './client';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface KpiDefinition {
   key: string;
@@ -114,7 +117,7 @@ export interface DepartmentOption {
 }
 
 export async function getCockpit(lang?: string) {
-  const res = await client.get('/cockpit', { params: { lang } });
+  const res = await client.get(v2(ApiPaths.management.cockpit), { params: { lang } });
   return res.data as {
     templates: CockpitTemplate[];
     metrics: Record<string, KpiMetricValue>;
@@ -132,7 +135,7 @@ export async function getCockpit(lang?: string) {
 }
 
 export async function getManagementOverview() {
-  const res = await client.get('/management/overview');
+  const res = await client.get(v2(ApiPaths.management.overview));
   return res.data as {
     configs: SystemConfigItem[];
     dictionaryItems: DictionaryItem[];
@@ -145,20 +148,20 @@ export async function getManagementOverview() {
 }
 
 export async function updateSystemConfig(configKey: string, configValue: string) {
-  const res = await client.put(`/management/configs/${encodeURIComponent(configKey)}`, { configValue });
+  const res = await client.put(v2(ApiPaths.management.config(configKey)), { configValue });
   return res.data;
 }
 
 export async function saveDictionaryItem(item: DictionaryItem) {
   const payload = { ...item, isActive: item.isActive !== false };
   const res = item.id
-    ? await client.put(`/management/dictionary-items/${item.id}`, payload)
-    : await client.post('/management/dictionary-items', payload);
+    ? await client.put(v2(ApiPaths.management.dictionaryItem(item.id)), payload)
+    : await client.post(v2(ApiPaths.management.dictionaryItems), payload);
   return res.data;
 }
 
 export async function saveCockpitTemplate(template: CockpitTemplate) {
-  const res = await client.put(`/management/cockpit/templates/${template.templateKey}`, template);
+  const res = await client.put(v2(ApiPaths.management.cockpitTemplate(template.templateKey)), template);
   return res.data;
 }
 
@@ -206,12 +209,12 @@ export interface ProfitPurchasePricesPayload {
 }
 
 export async function getProfitCostTypes() {
-  const res = await client.get('/profit/cost-types');
+  const res = await client.get(v2(ApiPaths.management.profitCostTypes));
   return res.data as ProfitCostType[];
 }
 
 export async function getProfitCostItems(month: string) {
-  const res = await client.get('/profit/cost-items', { params: { month } });
+  const res = await client.get(v2(ApiPaths.management.profitCostItems), { params: { month } });
   return res.data as ProfitCostItemsPayload;
 }
 
@@ -219,12 +222,12 @@ export async function saveProfitCostItems(
   month: string,
   items: Array<{ shopKey: number; costType: string; value: number | null }>,
 ) {
-  const res = await client.put('/profit/cost-items', { month, items });
+  const res = await client.put(v2(ApiPaths.management.profitCostItems), { month, items });
   return res.data as { month: string; saved: number; deleted: number };
 }
 
 export async function getProfitPurchasePrices(month: string) {
-  const res = await client.get('/profit/purchase-prices', { params: { month } });
+  const res = await client.get(v2(ApiPaths.management.profitPurchasePrices), { params: { month } });
   return res.data as ProfitPurchasePricesPayload;
 }
 
@@ -232,6 +235,27 @@ export async function saveProfitPurchasePrices(
   month: string,
   items: Array<{ shopKey: number; resourceKey: number; purchaseProduct?: string; purchasePrice: number | null }>,
 ) {
-  const res = await client.put('/profit/purchase-prices', { month, items });
+  const res = await client.put(v2(ApiPaths.management.profitPurchasePrices), { month, items });
   return res.data as { month: string; saved: number; deleted: number };
+}
+
+export interface WholesaleBriefingPriceRow {
+  productKey: number;
+  labelZh: string;
+  labelRu: string;
+  largePrice: number | null;
+  retailPrice: number | null;
+  updatedAt?: string | null;
+}
+
+export async function getWholesaleBriefingPrices() {
+  const res = await client.get(v2(ApiPaths.management.profitWholesaleBriefingPrices));
+  return res.data as { items: WholesaleBriefingPriceRow[] };
+}
+
+export async function saveWholesaleBriefingPrices(
+  items: Array<{ productKey: number; largePrice: number | null; retailPrice: number | null }>,
+) {
+  const res = await client.put(v2(ApiPaths.management.profitWholesaleBriefingPrices), { items });
+  return res.data as { saved: number; deleted: number };
 }

@@ -40,10 +40,14 @@ interface ExcelTableProps<T extends { id: number }> {
   onDelete?: (ids: number[]) => Promise<void>;
   onSelectionChange?: (ids: number[]) => void;
   validateRow?: (row: Partial<T>, rowIndex: number) => Record<string, string>;
+  isCellEditable?: (record: T, column: ColumnDefinition<T>) => boolean;
   initialNewRow?: () => Partial<T>;
   draftKey?: string;
   rowHeight?: number;
   height?: number | string;
+  autoFitColumns?: boolean;
+  autoFitMinWidth?: number;
+  autoFitMaxWidth?: number;
   onKeyDown?: (e: KeyboardEvent) => void;
   pagination?: false | {
     current: number;
@@ -65,6 +69,41 @@ function isBlankRecord(record: Record<string, any>, editableKeys: string[]) {
   });
 }
 
+let measureCanvas: HTMLCanvasElement | null = null;
+
+function nodeToText(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(nodeToText).filter(Boolean).join(' ');
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    if (node.type === 'br') return '\n';
+    return nodeToText(node.props.children);
+  }
+  return '';
+}
+
+function fallbackTextWidth(text: string) {
+  return Array.from(text).reduce((sum, char) => sum + (char.charCodeAt(0) > 255 ? 14 : 7), 0);
+}
+
+function measureTextWidth(text: string) {
+  const lines = String(text || '--')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const targets = lines.length ? lines : ['--'];
+
+  if (typeof document === 'undefined') {
+    return Math.max(...targets.map(fallbackTextWidth));
+  }
+
+  measureCanvas ||= document.createElement('canvas');
+  const context = measureCanvas.getContext('2d');
+  if (!context) return Math.max(...targets.map(fallbackTextWidth));
+  context.font = '14px "Microsoft YaHei", "Segoe UI", Arial, sans-serif';
+  return Math.max(...targets.map((line) => context.measureText(line).width));
+}
+
 const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>(
   props: ExcelTableProps<T>,
   ref: React.Ref<ExcelTableHandle>,
@@ -82,9 +121,13 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     onDelete,
     onSelectionChange,
     validateRow,
+    isCellEditable,
     initialNewRow,
     draftKey,
     height,
+    autoFitColumns = false,
+    autoFitMinWidth = 88,
+    autoFitMaxWidth = 560,
     onKeyDown,
     pagination,
   } = props;
@@ -95,8 +138,43 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
   const nextTempId = useRef(-1);
   const loadedDraft = useRef(false);
 
-  const editableColumns = useMemo(() => columns.filter(col => col.editable && !col.readOnly), [columns]);
+  const autoFitDataSource = useMemo(() => {
+    if (!pagination) return dataSource;
+    const current = Math.max(Number(pagination.current || 1), 1);
+    const pageSize = Math.max(Number(pagination.pageSize || dataSource.length || 1), 1);
+    const start = (current - 1) * pageSize;
+    return dataSource.slice(start, start + pageSize);
+  }, [dataSource, pagination]);
+
+  const columnsForLayout = useMemo(() => {
+    if (!autoFitColumns) return columns;
+    return columns.map((col) => {
+      const field = String(col.dataIndex);
+      const widest = autoFitDataSource.reduce((maxWidth, record, index) => {
+        const rawValue = (record as Record<string, any>)[field];
+        let rendered: React.ReactNode = rawValue;
+        try {
+          rendered = col.render ? col.render(rawValue, record, index) : rawValue;
+        } catch {
+          rendered = rawValue;
+        }
+        const text = nodeToText(rendered) || nodeToText(rawValue) || '--';
+        return Math.max(maxWidth, measureTextWidth(text));
+      }, measureTextWidth(col.title));
+      const padded = Math.ceil(widest + 34);
+      const baseWidth = typeof col.width === 'number' ? col.width : 0;
+      const withMin = Math.max(padded, autoFitMinWidth, baseWidth);
+      const width = autoFitMaxWidth > 0 ? Math.min(withMin, autoFitMaxWidth) : withMin;
+      return { ...col, width };
+    });
+  }, [autoFitColumns, autoFitDataSource, autoFitMaxWidth, autoFitMinWidth, columns]);
+
+  const editableColumns = useMemo(() => columnsForLayout.filter(col => col.editable && !col.readOnly), [columnsForLayout]);
   const editableKeys = useMemo(() => editableColumns.map(col => String(col.dataIndex)), [editableColumns]);
+  const horizontalScrollWidth = useMemo(() => {
+    const total = columnsForLayout.reduce((sum, col) => sum + (typeof col.width === 'number' ? col.width : 0), 0);
+    return total > 0 ? Math.max(total, 960) : 'max-content';
+  }, [columnsForLayout]);
   const editDataRef = useRef(editData);
   editDataRef.current = editData;
   const canDeleteRows = Boolean(canDelete ?? isAdmin);
@@ -105,11 +183,11 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
 
   const makeBlankRow = useCallback(() => {
     const row: any = { id: nextTempId.current--, ...(initialNewRow?.() || {}) };
-    columns.forEach((col) => {
+    columnsForLayout.forEach((col) => {
       if (col.editable && row[col.dataIndex as string] === undefined) row[col.dataIndex as string] = '';
     });
     return row as T;
-  }, [columns, initialNewRow]);
+  }, [columnsForLayout, initialNewRow]);
 
   const handleAddNew = useCallback(() => {
     const row = makeBlankRow();
@@ -277,7 +355,7 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     changes.forEach((change) => {
       const rowIndex = dataSource.findIndex(row => row.id === change.id);
       const row = { ...(dataSource.find(r => r.id === change.id) || {}), ...change.data };
-      columns.forEach((col) => {
+      columnsForLayout.forEach((col) => {
         if (!col.required) return;
         const field = String(col.dataIndex);
         const value = (row as any)[field];
@@ -292,7 +370,7 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     });
     setCellErrors(errors);
     return errors;
-  }, [columns, dataSource, t, validateRow]);
+  }, [columnsForLayout, dataSource, t, validateRow]);
 
   const saveAllChanges = useCallback(async () => {
     const changes = buildChanges();
@@ -345,9 +423,12 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     const field = String(col.dataIndex);
     const current = editDataRef.current[record.id]?.[field] ?? value ?? '';
     const error = cellErrors[cellKey(record.id, field)];
+    const editorStyle: React.CSSProperties = { width: '100%' };
+    if (col.align) editorStyle.textAlign = col.align;
+    const cellStyle: React.CSSProperties | undefined = col.align ? { textAlign: col.align } : undefined;
     const commonProps = {
       size: 'small' as const,
-      style: { width: '100%' },
+      style: editorStyle,
       status: error ? 'error' as const : undefined,
       onPaste: (event: React.ClipboardEvent) => handlePaste(event, rowIndex, colIndex),
       onKeyDown: (event: React.KeyboardEvent) => {
@@ -371,20 +452,32 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
       }
       return <Input value={current ?? ''} type={col.editorType === 'number' ? 'number' : 'text'} placeholder={col.placeholder} onChange={(e) => updateCell(record.id, field, e.target.value)} {...commonProps} />;
     })();
-    return <div data-excel-cell={cellKey(record.id, field)}>{error ? <Tooltip title={error}>{editor}</Tooltip> : editor}</div>;
+    return <div data-excel-cell={cellKey(record.id, field)} style={cellStyle}>{error ? <Tooltip title={error}>{editor}</Tooltip> : editor}</div>;
   };
 
-  const columnsWithRender = useMemo(() => columns.map(col => ({
+  const columnsWithRender = useMemo(() => columnsForLayout.map(col => ({
     ...col,
     render: (value: any, record: T, index: number) => {
-      if (col.editable && editing && !col.readOnly) {
+      if (col.editable && editing && !col.readOnly && (isCellEditable?.(record, col) ?? true)) {
         const colIndex = editableColumns.findIndex(item => String(item.dataIndex) === String(col.dataIndex));
         return renderEditor(record, index, col, colIndex, value);
       }
       if (col.render) return col.render(value, record, index);
       return value || '-';
     },
-  })) as ColumnsType<T>, [columns, editing, editableColumns, cellErrors, editData]);
+  })) as ColumnsType<T>, [columnsForLayout, editing, editableColumns, cellErrors, editData, isCellEditable]);
+
+  const rowSelection = useMemo(() => {
+    if (!canDeleteRows && !onSelectionChange) return undefined;
+    return {
+      selectedRowKeys,
+      onChange: (keys: React.Key[]) => {
+        setSelectedRowKeys(keys);
+        onSelectionChange?.(keys.map(k => Number(k)));
+      },
+      getCheckboxProps: () => ({ disabled: !editing && !canDeleteRows }),
+    };
+  }, [canDeleteRows, editing, onSelectionChange, selectedRowKeys]);
 
   return (
     <Table
@@ -394,15 +487,8 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
       size="middle"
       bordered
       pagination={pagination ?? false}
-      rowSelection={{
-        selectedRowKeys,
-        onChange: (keys) => {
-          setSelectedRowKeys(keys);
-          onSelectionChange?.(keys.map(k => Number(k)));
-        },
-        getCheckboxProps: () => ({ disabled: !editing && !canDeleteRows }),
-      }}
-      scroll={height ? { x: 'max-content', y: height } : { x: 'max-content' }}
+      rowSelection={rowSelection}
+      scroll={height ? { x: horizontalScrollWidth, y: height } : { x: horizontalScrollWidth }}
       rowClassName={(record) => selectedRowKeys.includes(record.id) ? 'excel-selected-row' : ''}
     />
   );

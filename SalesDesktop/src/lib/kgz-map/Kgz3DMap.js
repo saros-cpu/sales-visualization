@@ -111,31 +111,68 @@ function hasTimePart(value) {
   return /\d{1,2}:\d{2}/.test(String(value || ''));
 }
 
-function stationTimeRows(point) {
+const MAP_TOOLTIP_I18N = {
+  zh: {
+    inventoryDate: '库存日期',
+    inventorySnapshot: '库存快照',
+    currentInventory: '当前库存',
+    inventoryNotReturned: '库存未返回：公开模式或未配置授权 token',
+    fuelInventory: '油品库存 / 零售价',
+    notReturned: '未返回',
+    status: '状态：',
+    businessPoint: '业务点位',
+    operating: '在营',
+    stopped: '停业',
+    renovation: '装修',
+    attention: '关注',
+    abnormal: '异常',
+  },
+  ru: {
+    inventoryDate: 'Дата запаса',
+    inventorySnapshot: 'Снимок запаса',
+    currentInventory: 'Текущий запас',
+    inventoryNotReturned: 'Запас не получен: публичный режим или токен не настроен',
+    fuelInventory: 'Запас топлива / Розничная цена',
+    notReturned: 'Нет данных',
+    status: 'Статус: ',
+    businessPoint: 'Бизнес-точка',
+    operating: 'Работает',
+    stopped: 'Остановлен',
+    renovation: 'На ремонте',
+    attention: 'Внимание',
+    abnormal: 'Неисправность',
+  },
+};
+
+function t(lang, key) {
+  return (MAP_TOOLTIP_I18N[lang] || MAP_TOOLTIP_I18N.zh)[key];
+}
+
+function stationTimeRows(point, lang) {
   if (point.type !== 'station') return '';
   const dataAsOf = formatDateTimeText(point.inventoryAsOf);
   const snapshotGeneratedAt = formatDateTimeText(point.snapshotGeneratedAt);
   const dataRow = dataAsOf && !hasTimePart(dataAsOf)
-    ? `<span class="kgz-map-tooltip-muted">库存日期：${escapeHtml(dataAsOf)}</span>`
+    ? `<span class="kgz-map-tooltip-muted">${t(lang, 'inventoryDate')}：${escapeHtml(dataAsOf)}</span>`
     : '';
   const snapshotRow = snapshotGeneratedAt
-    ? `<span class="kgz-map-tooltip-muted">库存快照：${escapeHtml(snapshotGeneratedAt)}</span>`
+    ? `<span class="kgz-map-tooltip-muted">${t(lang, 'inventorySnapshot')}：${escapeHtml(snapshotGeneratedAt)}</span>`
     : dataAsOf
-      ? `<span class="kgz-map-tooltip-muted">库存快照：${escapeHtml(dataAsOf)}</span>`
-    : '';
+      ? `<span class="kgz-map-tooltip-muted">${t(lang, 'inventorySnapshot')}：${escapeHtml(dataAsOf)}</span>`
+      : '';
   return `${dataRow}${snapshotRow}`;
 }
 
-function stationStatusText(point) {
+function stationStatusText(point, lang) {
   const label = String(point.statusLabel || '').trim();
   const reason = String(point.closedReason || point.statusNote || '').trim();
   if (label && !['normal', 'closed', 'warning', 'warn'].includes(label.toLowerCase())) return label;
-  if (reason.includes('装修')) return '装修';
-  if (reason.includes('停业')) return '停业';
-  if (point.status === 'closed') return '停业';
-  if (point.status === 'warning') return '关注';
-  if (point.status && point.status !== 'normal') return '异常';
-  return '在营';
+  if (reason.includes('装修')) return t(lang, 'renovation');
+  if (reason.includes('停业')) return t(lang, 'stopped');
+  if (point.status === 'closed') return t(lang, 'stopped');
+  if (point.status === 'warning') return t(lang, 'attention');
+  if (point.status && point.status !== 'normal') return t(lang, 'abnormal');
+  return t(lang, 'operating');
 }
 
 function disposeMaterial(material) {
@@ -246,24 +283,24 @@ function preparePointEntries(points = []) {
   return entries;
 }
 
-function stationInventoryRows(point) {
+function stationInventoryRows(point, lang) {
   if (point.type !== 'station') return '';
   const inventoryValue = point.inventory ?? point.currentInventory;
   const hasInventory = inventoryValue !== undefined && inventoryValue !== null && Number.isFinite(Number(inventoryValue));
   if (hasInventory) {
     const percent = formatOptionalPercent(point.inventoryFillPercent);
-    return `<span>当前库存：${formatNumber(inventoryValue, 2)} L${percent ? ` · ${percent}` : ''}</span>`;
+    return `<span>${t(lang, 'currentInventory')}：${formatNumber(inventoryValue, 2)} L${percent ? ` · ${percent}` : ''}</span>`;
   }
-  return '<span class="kgz-map-tooltip-muted">库存未返回：公开模式或未配置授权 token</span>';
+  return `<span class="kgz-map-tooltip-muted">${t(lang, 'inventoryNotReturned')}</span>`;
 }
 
-function fuelDetailRows(point) {
+function fuelDetailRows(point, lang) {
   const rows = Array.isArray(point.inventoryByResource) ? point.inventoryByResource : [];
   if (!rows.length) return '';
   return `<div class="kgz-map-tooltip-section">
-    <b>油品库存 / 零售价</b>
+    <b>${t(lang, 'fuelInventory')}</b>
     ${rows.slice(0, 6).map((item) => {
-      const price = item.price == null ? '未返回' : `${formatNumber(item.price, 2)} 索姆/L`;
+      const price = item.price == null ? t(lang, 'notReturned') : `${formatNumber(item.price, 2)} ${lang === 'ru' ? 'сом/L' : '索姆/L'}`;
       const capacity = Number(item.capacity);
       const fillPercent = formatOptionalPercent(item.fillPercent);
       const fillText = Number.isFinite(capacity) && capacity > 0
@@ -619,7 +656,8 @@ export class Kgz3DMap {
 
   constructor(container, options) {
     this.container = container;
-    this.options = options;
+    this.options = options || {};
+    this.lang = this.options.lang === 'ru' ? 'ru' : 'zh';
     this.regionMeshes = [];
     this.pointMeshes = [];
     this.regionById = new Map();
@@ -1038,6 +1076,13 @@ export class Kgz3DMap {
     this.setPoints(points);
   }
 
+  setLang(lang) {
+    this.lang = lang === 'ru' ? 'ru' : 'zh';
+    if (this.hoveredPoint && this.lastHoverEvent) {
+      this.setPointHover(this.hoveredPoint, this.lastHoverEvent);
+    }
+  }
+
   buildLegend(features) {
     if (!this.options.showLegend) return;
     const legend = document.createElement('div');
@@ -1243,6 +1288,7 @@ export class Kgz3DMap {
 
   setPointHover(mesh, event) {
     this.clearRegionHover();
+    this.lastHoverEvent = event;
     if (this.hoveredPoint !== mesh) {
       this.clearPointHover();
       this.hoveredPoint = mesh;
@@ -1256,10 +1302,10 @@ export class Kgz3DMap {
     const point = mesh.userData.point || {};
     const subtitle = point.labelSubtitle || point.short || point.type || '';
     const region = point.region ? `<span>${escapeHtml(point.region)}</span>` : '';
-    const status = point.type === 'station' || point.status ? `<span>状态：${escapeHtml(stationStatusText(point))}</span>` : '';
-    const inventory = stationInventoryRows(point);
-    const timeRows = stationTimeRows(point);
-    this.tooltip.innerHTML = `<strong>${escapeHtml(point.label || point.name || '业务点位')}</strong>${subtitle ? `<span>${escapeHtml(subtitle)}</span>` : ''}${region}${status}${inventory}${fuelDetailRows(point)}${timeRows}`;
+    const status = point.type === 'station' || point.status ? `<span>${t(this.lang, 'status')}${escapeHtml(stationStatusText(point, this.lang))}</span>` : '';
+    const inventory = stationInventoryRows(point, this.lang);
+    const timeRows = stationTimeRows(point, this.lang);
+    this.tooltip.innerHTML = `<strong>${escapeHtml(point.label || point.name || t(this.lang, 'businessPoint'))}</strong>${subtitle ? `<span>${escapeHtml(subtitle)}</span>` : ''}${region}${status}${inventory}${fuelDetailRows(point, this.lang)}${timeRows}`;
     this.positionTooltip(event.offsetX, event.offsetY);
     this.tooltip.classList.add('visible');
     this.renderer.domElement.style.cursor = 'pointer';

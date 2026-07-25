@@ -2,41 +2,75 @@ from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api_v2 import bp_v2
 from .authz import permission_required
-from services.weighing_service import batch_review_weighing, get_weighing_list, verify_weighing
+from services.weighing_service import (
+    batch_review_weighing,
+    get_weighing_filter_options,
+    get_weighing_list,
+    verify_weighing,
+)
 import pymysql
 from db import get_connection
-from datetime import datetime
+from datetime import date, datetime, timedelta
+
+
+def _parse_date_arg(name: str, default: date) -> date:
+    value = request.args.get(name)
+    if not value:
+        return default
+    return datetime.strptime(value, '%Y-%m-%d').date()
+
+
+def _split_csv_arg(*names: str) -> list[str] | None:
+    for name in names:
+        value = request.args.get(name)
+        if value:
+            return [part.strip() for part in value.split(',') if part.strip()]
+    return None
 
 
 @bp_v2.route('/weighing/list', methods=['GET'])
 @jwt_required()
 @permission_required('weighing:view')
 def weighing_list():
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
+    date_from = _parse_date_arg('date_from', date.today() - timedelta(days=7))
+    date_to = _parse_date_arg('date_to', date.today())
     vehicle_no = request.args.get('vehicle_no')
     status = request.args.get('status')
     classification = request.args.get('classification')
+    product_name = request.args.get('product_name')
+    entity_name = request.args.get('entity_name')
     source = request.args.get('source')
+    sender_names = _split_csv_arg('sender_names', 'col_sender')
+    receiver_names = _split_csv_arg('receiver_names', 'col_receiver')
+    product_names = _split_csv_arg('product_names', 'col_product')
     page = int(request.args.get('page', 1))
     page_size = int(request.args.get('page_size', 50))
 
-    if not date_from:
-        from datetime import date, timedelta
-        date_from = str(date.today() - timedelta(days=7))
-    if not date_to:
-        date_to = str(date.today())
-
     result = get_weighing_list(
-        date_from=datetime.strptime(date_from, '%Y-%m-%d').date(),
-        date_to=datetime.strptime(date_to, '%Y-%m-%d').date(),
+        date_from=date_from,
+        date_to=date_to,
         vehicle_no=vehicle_no,
         status=status,
         classification=classification,
+        product_name=product_name,
+        entity_name=entity_name,
         source=source,
+        sender_names=sender_names,
+        receiver_names=receiver_names,
+        product_names=product_names,
         page=page,
         page_size=page_size,
     )
+    return jsonify({'code': 0, 'message': 'success', 'data': result})
+
+
+@bp_v2.route('/weighing/filter-options', methods=['GET'])
+@jwt_required()
+@permission_required('weighing:view')
+def weighing_filter_options():
+    date_from = _parse_date_arg('date_from', date(2000, 1, 1))
+    date_to = _parse_date_arg('date_to', date.today())
+    result = get_weighing_filter_options(date_from=date_from, date_to=date_to)
     return jsonify({'code': 0, 'message': 'success', 'data': result})
 
 

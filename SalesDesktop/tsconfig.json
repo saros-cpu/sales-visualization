@@ -15,8 +15,11 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "paths": { "@/*": ["./src/*"] },
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared/*": ["../shared/*"]
+    },
     "baseUrl": "."
   },
-  "include": ["src"]
+  "include": ["src", "../shared/**/*.d.ts"]
 }

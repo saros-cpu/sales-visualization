@@ -1,11 +1,16 @@
 import axios from 'axios';
 import { API_HOST } from './http';
 import { downloadWithAuth } from './download';
+import { ApiPaths } from '@shared/api-contracts';
 
 const client = axios.create({
   baseURL: `${API_HOST}/api`,
   timeout: 15000,
 });
+
+function corePath(path: string) {
+  return path.replace(/^\/api/, '') || '/';
+}
 
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem('accessToken');
@@ -41,18 +46,17 @@ export interface CurrentExchange {
 }
 
 export async function getCurrentExchange(): Promise<CurrentExchange> {
-  const res = await client.get('/home/exchange-current');
+  const res = await client.get(corePath(ApiPaths.exchange.current));
   return res.data;
 }
 
 export async function getExchangeRates(year: number, month: number): Promise<ExchangeRatesResponse> {
-  const res = await client.get('/exchange-rates', { params: { year, month } });
+  const res = await client.get(corePath(ApiPaths.exchange.rates({ year, month })));
   return res.data;
 }
 
 export async function exportExchangeRates(year: number, month: number) {
   const token = localStorage.getItem('accessToken') || '';
-  const params = new URLSearchParams({ year: String(year), month: String(month) });
-  const url = `${API_HOST}/api/export/exchange-rates?${params}`;
+  const url = `${API_HOST}${ApiPaths.reports.exchangeRates({ year, month })}`;
   await downloadWithAuth(url, `汇率快照${year}年${month}月.xlsx`, token);
 }

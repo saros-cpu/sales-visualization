@@ -20,7 +20,8 @@ import pymysql
 
 from api_v2 import bp_v2
 from db import get_connection
-from .management import _require_admin
+from .authz import permission_required
+from .management import _current_user
 
 
 COST_TYPES: list[dict[str, Any]] = [
@@ -41,6 +42,16 @@ RESOURCE_NAMES = {
     109: "Д/Т",
     110: "ДТ -35",
 }
+
+WHOLESALE_BRIEFING_PRODUCTS = [
+    {"productKey": 5, "labelZh": "95#汽油", "labelRu": "Бензин АИ-95"},
+    {"productKey": 6, "labelZh": "92#汽油", "labelRu": "Бензин АИ-92"},
+    {"productKey": 7, "labelZh": "80#汽油", "labelRu": "Бензин АИ-80"},
+    {"productKey": 8, "labelZh": "柴油", "labelRu": "Дизельное топливо"},
+    {"productKey": 9, "labelZh": "催化柴油", "labelRu": "Печное топливо"},
+    {"productKey": 10, "labelZh": "油浆", "labelRu": "Топочный мазут"},
+    {"productKey": 11, "labelZh": "液化气", "labelRu": "Сжиженный газ (СПБТ)"},
+]
 
 PROFIT_CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "profit_station_config.json"
@@ -130,6 +141,17 @@ def ensure_profit_schema(cur) -> None:
             generated_at  TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uq_profit_report_snapshot (snapshot_type, period_key),
             KEY idx_period (period_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS wholesale_briefing_prices (
+            id           BIGINT PRIMARY KEY AUTO_INCREMENT,
+            product_key  INT NOT NULL,
+            large_price  DECIMAL(14,2) NULL,
+            retail_price DECIMAL(14,2) NULL,
+            updated_by   BIGINT NULL,
+            updated_at   TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_wholesale_briefing_product (product_key)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """)
 
@@ -292,6 +314,7 @@ def profit_cost_types():
 
 @bp_v2.route("/profit/cost-items", methods=["GET"])
 @jwt_required()
+@permission_required("profit:view")
 def list_profit_cost_items():
     month = _month_year(request.args.get("month") or "")
     if not month:
@@ -299,9 +322,6 @@ def list_profit_cost_items():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
             ensure_profit_schema(cur)
             stations = _build_station_grid(cur, month)
             conn.commit()
@@ -316,6 +336,7 @@ def list_profit_cost_items():
 
 @bp_v2.route("/profit/cost-items", methods=["PUT"])
 @jwt_required()
+@permission_required("profit:cost_update")
 def upsert_profit_cost_items():
     payload = request.get_json() or {}
     month = _month_year(str(payload.get("month") or ""))
@@ -325,9 +346,7 @@ def upsert_profit_cost_items():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
+            user = _current_user(cur)
             ensure_profit_schema(cur)
             upserts = []
             deletes = []
@@ -347,7 +366,7 @@ def upsert_profit_cost_items():
                     value = round(float(raw_value), 2)
                 except (TypeError, ValueError):
                     continue
-                upserts.append((month, shop_key, cost_type, value, admin["id"]))
+                upserts.append((month, shop_key, cost_type, value, user["id"]))
             if deletes:
                 cur.executemany("""
                     DELETE FROM profit_cost_items
@@ -373,6 +392,7 @@ def upsert_profit_cost_items():
 
 @bp_v2.route("/profit/purchase-prices", methods=["GET"])
 @jwt_required()
+@permission_required("profit:view")
 def list_profit_purchase_prices():
     month = _month_year(request.args.get("month") or "")
     if not month:
@@ -380,9 +400,6 @@ def list_profit_purchase_prices():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
             ensure_profit_schema(cur)
             stations = _build_purchase_price_grid(cur, month)
             conn.commit()
@@ -397,6 +414,7 @@ def list_profit_purchase_prices():
 
 @bp_v2.route("/profit/purchase-prices", methods=["PUT"])
 @jwt_required()
+@permission_required("profit:purchase_price_update")
 def upsert_profit_purchase_prices():
     payload = request.get_json() or {}
     month = _month_year(str(payload.get("month") or ""))
@@ -406,9 +424,7 @@ def upsert_profit_purchase_prices():
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            admin = _require_admin(cur)
-            if isinstance(admin, tuple):
-                return admin
+            user = _current_user(cur)
             ensure_profit_schema(cur)
             upserts = []
             deletes = []
@@ -427,7 +443,7 @@ def upsert_profit_purchase_prices():
                 except (TypeError, ValueError):
                     continue
                 purchase_name = str(raw.get("purchaseProduct") or "").strip() or None
-                upserts.append((month, shop_key, resource_key, purchase_name, purchase_price, admin["id"]))
+                upserts.append((month, shop_key, resource_key, purchase_name, purchase_price, user["id"]))
             if deletes:
                 cur.executemany("""
                     DELETE FROM profit_purchase_prices
@@ -450,6 +466,104 @@ def upsert_profit_purchase_prices():
                 "code": 0,
                 "message": "success",
                 "data": {"month": month, "saved": len(upserts), "deleted": len(deletes)},
+            })
+    finally:
+        conn.close()
+
+
+@bp_v2.route("/profit/wholesale-briefing-prices", methods=["GET"])
+@jwt_required()
+@permission_required("profit:wholesale_price_update")
+def list_wholesale_briefing_prices():
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            ensure_profit_schema(cur)
+            cur.execute("""
+                SELECT product_key, large_price, retail_price, updated_at
+                FROM wholesale_briefing_prices
+                ORDER BY product_key
+            """)
+            rows = cur.fetchall()
+            maintained: dict[int, dict[str, Any]] = {}
+            for row in rows:
+                maintained[int(row["product_key"])] = row
+            items = []
+            for product in WHOLESALE_BRIEFING_PRODUCTS:
+                key = product["productKey"]
+                row = maintained.get(key) or {}
+                items.append({
+                    "productKey": key,
+                    "labelZh": product["labelZh"],
+                    "labelRu": product["labelRu"],
+                    "largePrice": float(row["large_price"]) if row.get("large_price") is not None else None,
+                    "retailPrice": float(row["retail_price"]) if row.get("retail_price") is not None else None,
+                    "updatedAt": row["updated_at"].isoformat(sep=" ") if row.get("updated_at") else None,
+                })
+            conn.commit()
+            return jsonify({"code": 0, "message": "success", "data": {"items": items}})
+    finally:
+        conn.close()
+
+
+@bp_v2.route("/profit/wholesale-briefing-prices", methods=["PUT"])
+@jwt_required()
+@permission_required("profit:wholesale_price_update")
+def upsert_wholesale_briefing_prices():
+    payload = request.get_json() or {}
+    raw_items = payload.get("items") or []
+    valid_keys = {p["productKey"] for p in WHOLESALE_BRIEFING_PRODUCTS}
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            user = _current_user(cur)
+            ensure_profit_schema(cur)
+            upserts = []
+            deletes = []
+            for raw in raw_items:
+                try:
+                    product_key = int(raw.get("productKey"))
+                except (TypeError, ValueError):
+                    continue
+                if product_key not in valid_keys:
+                    continue
+                large_price = None
+                retail_price = None
+                raw_large = raw.get("largePrice")
+                if raw_large is not None and not (isinstance(raw_large, str) and not raw_large.strip()):
+                    try:
+                        large_price = round(float(raw_large), 2)
+                    except (TypeError, ValueError):
+                        continue
+                raw_retail = raw.get("retailPrice")
+                if raw_retail is not None and not (isinstance(raw_retail, str) and not raw_retail.strip()):
+                    try:
+                        retail_price = round(float(raw_retail), 2)
+                    except (TypeError, ValueError):
+                        continue
+                if large_price is None and retail_price is None:
+                    deletes.append((product_key,))
+                    continue
+                upserts.append((product_key, large_price, retail_price, user["id"]))
+            if deletes:
+                cur.executemany("""
+                    DELETE FROM wholesale_briefing_prices WHERE product_key = %s
+                """, deletes)
+            if upserts:
+                cur.executemany("""
+                    INSERT INTO wholesale_briefing_prices
+                        (product_key, large_price, retail_price, updated_by)
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        large_price = VALUES(large_price),
+                        retail_price = VALUES(retail_price),
+                        updated_by = VALUES(updated_by)
+                """, upserts)
+            conn.commit()
+            return jsonify({
+                "code": 0,
+                "message": "success",
+                "data": {"saved": len(upserts), "deleted": len(deletes)},
             })
     finally:
         conn.close()

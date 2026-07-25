@@ -21,13 +21,30 @@ from assistant_agent import (
     enhance_assistant_response,
     is_action_request,
     is_clear_assistant_command,
+    is_sensitive_info_request,
     read_only_refusal,
+    sensitive_info_refusal,
 )
 from db import get_connection
 from routes_assistant import assistant_tool_catalog, build_assistant_query_plan, execute_assistant_query_payload
 from settings import get_settings
 from .knowledge import search_knowledge_snippets
 from .permission_service import get_effective_auth
+
+
+RULE_ENGINE_FAST_PATH_ROUTES = frozenset({
+    "accounting_report_status",
+    "alias_summary",
+    "dashboard_summary",
+    "density_summary",
+    "knowledge_summary",
+    "map_location",
+    "report_center_summary",
+    "settings_summary",
+    "station_status",
+    "system_health_summary",
+    "user_permission_summary",
+})
 
 
 def ensure_ai_call_schema(cur) -> None:
@@ -382,6 +399,41 @@ def _execute_business_assistant_query(
     return result if isinstance(result, dict) else {"ok": False, "answer": str(result)}, int(status or 200)
 
 
+def _business_rule_agent(model: str = "assistant-rule-engine", status: str = "ok") -> dict[str, Any]:
+    return {
+        "mode": "read_only",
+        "provider": "business-rule-engine",
+        "model": model,
+        "llmUsed": False,
+        "status": status,
+        "canModifyCode": False,
+        "canModifyFiles": False,
+        "canModifyBusinessData": False,
+    }
+
+
+def _should_use_rule_engine_fast_path(source_payload: dict[str, Any], use_llm: bool) -> bool:
+    if not use_llm:
+        return True
+    plan = source_payload.get("assistantPlan") if isinstance(source_payload.get("assistantPlan"), dict) else {}
+    return str(plan.get("route") or "") in RULE_ENGINE_FAST_PATH_ROUTES
+
+
+def _finalize_rule_engine_response(
+    user_id: int | None,
+    question: str,
+    source_payload: dict[str, Any],
+    user_context: dict[str, Any],
+    *,
+    model: str = "assistant-fast-path",
+) -> dict[str, Any]:
+    result = dict(source_payload)
+    result["sourceAnswer"] = str(source_payload.get("answer") or "")
+    result["agent"] = _business_rule_agent(model=model)
+    result = enrich_assistant_payload(result, user_context)
+    return _record_and_attach(user_id, question, result)
+
+
 def _knowledge_reference_text(references: list[dict[str, Any]], language: str | None) -> str:
     if not references:
         return ""
@@ -413,6 +465,11 @@ def assistant_query():
     user_context = _user_context(user_id)
     if is_clear_assistant_command(question):
         result = clear_assistant_response(question, language)
+        result = enrich_assistant_payload(result, user_context)
+        result = _record_and_attach(user_id, question, result)
+        return jsonify({"code": 0, "message": "success", "data": result})
+    if is_sensitive_info_request(question):
+        result = sensitive_info_refusal(question, language)
         result = enrich_assistant_payload(result, user_context)
         result = _record_and_attach(user_id, question, result)
         return jsonify({"code": 0, "message": "success", "data": result})
@@ -470,6 +527,16 @@ def assistant_query():
         source_payload["sessionId"] = session_id
     if conversation_context:
         source_payload["conversationContext"] = conversation_context
+
+    if _should_use_rule_engine_fast_path(source_payload, use_llm):
+        result = _finalize_rule_engine_response(
+            user_id,
+            question,
+            source_payload,
+            user_context,
+            model="assistant-fast-path" if use_llm else "assistant-rule-engine",
+        )
+        return jsonify({"code": 0, "message": "success", "data": result})
 
     knowledge_snippets: list[dict[str, Any]] = []
     try:
@@ -529,6 +596,12 @@ def assistant_query_stream():
         yield _sse_event("started", {"question": question})
         if is_clear_assistant_command(question):
             result = enrich_assistant_payload(clear_assistant_response(question, language), user_context)
+            result = _record_and_attach(user_id, question, result)
+            yield _sse_event("completed", result)
+            yield _sse_final()
+            return
+        if is_sensitive_info_request(question):
+            result = enrich_assistant_payload(sensitive_info_refusal(question, language), user_context)
             result = _record_and_attach(user_id, question, result)
             yield _sse_event("completed", result)
             yield _sse_final()

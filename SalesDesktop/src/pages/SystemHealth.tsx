@@ -39,6 +39,18 @@ function formatBytes(value?: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function noWrapText(value: unknown) {
+  const text = value === undefined || value === null || value === '' ? '-' : String(value);
+  return <span style={{ whiteSpace: 'nowrap' }}>{text}</span>;
+}
+
+function formatDateTime(value: unknown) {
+  const text = value === undefined || value === null || value === '' ? '' : String(value);
+  if (!text) return '-';
+  const parsed = dayjs(text);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : text;
+}
+
 function accountingFailedItemText(item: any) {
   const stationNo = item?.stationNo || item?.station?.stationNo || (item?.shopKey ? String(item.shopKey).padStart(3, '0') : '');
   const station = stationNo ? `${stationNo}号站` : '';
@@ -76,8 +88,6 @@ export default function SystemHealth() {
   const accountingFailedItems = asArray<any>(accounting.failedItems);
   const cacheItems = asArray<any>(cache.items);
   const profitCacheItems = cacheItems.filter((item) => String(item?.key || '').startsWith('profit_'));
-  const profitMonthSnapshot = profitCacheItems.find((item) => item?.key === 'profit_month');
-  const profitYearSnapshot = profitCacheItems.find((item) => item?.key === 'profit_year');
   const profitSnapshotOk = profitCacheItems.length > 0 && profitCacheItems.every((item) => item?.exists && item?.valid);
   const profitSnapshotMissing = profitCacheItems.filter((item) => !item?.exists || !item?.valid).length;
   const apiRecent = asArray<any>(api.recent);
@@ -307,35 +317,18 @@ export default function SystemHealth() {
             label: t('systemHealth.cache'),
             children: (
               <Space direction="vertical" style={{ width: '100%' }} size={16}>
-                <KpiGrid items={[
-                  {
-                    key: 'profitMonth',
-                    title: t('systemHealth.profitMonthSnapshot'),
-                    value: profitMonthSnapshot?.exists && profitMonthSnapshot?.valid ? t('common.ok') : t('common.failed'),
-                    tone: profitMonthSnapshot?.exists && profitMonthSnapshot?.valid ? 'success' : 'warning',
-                    statusText: profitMonthSnapshot?.updatedAt || '-',
-                    span: 6,
-                  },
-                  {
-                    key: 'profitYear',
-                    title: t('systemHealth.profitYearSnapshot'),
-                    value: profitYearSnapshot?.exists && profitYearSnapshot?.valid ? t('common.ok') : t('common.failed'),
-                    tone: profitYearSnapshot?.exists && profitYearSnapshot?.valid ? 'success' : 'warning',
-                    statusText: profitYearSnapshot?.updatedAt || '-',
-                    span: 6,
-                  },
-                ]} />
                 <Table
                   size="small"
                   rowKey="key"
                   dataSource={cacheItems}
                   pagination={false}
+                  scroll={{ x: 820 }}
                   columns={[
-                    { title: t('systemHealth.cacheItem'), dataIndex: 'label', width: 180 },
+                    { title: t('systemHealth.cacheItem'), dataIndex: 'label', width: 180, render: noWrapText },
                     { title: t('common.status'), dataIndex: 'valid', width: 100, render: (_: any, row: any) => <Tag color={row?.exists && row?.valid ? 'green' : 'red'}>{row?.exists && row?.valid ? t('common.ok') : t('common.failed')}</Tag> },
-                    { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 170 },
-                    { title: t('systemHealth.size'), dataIndex: 'size', width: 100 },
-                    { title: t('systemHealth.error'), dataIndex: 'error', render: (v: any, row: any) => v || textList(row?.missingKeys).join(', ') || '-' },
+                    { title: t('systemHealth.updatedAt'), dataIndex: 'updatedAt', width: 180, render: (v: any) => noWrapText(formatDateTime(v)) },
+                    { title: t('systemHealth.size'), dataIndex: 'size', width: 110, render: (v: number) => noWrapText(formatBytes(v)) },
+                    { title: t('systemHealth.error'), dataIndex: 'error', width: 250, render: (v: any, row: any) => noWrapText(v || textList(row?.missingKeys).join(', ') || '-') },
                   ]}
                 />
               </Space>

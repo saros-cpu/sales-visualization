@@ -5,7 +5,7 @@ import { PlusOutlined, SaveOutlined, CloseOutlined, ClearOutlined } from '@ant-d
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { batchCreateContracts } from '@/api/contracts';
-import { getProductOptions, getEntityOptions } from '@/api/client';
+import { getWholesaleDetailFilterOptions } from '@/api/wholesale';
 import { useAuth } from '@/contexts/AuthContext';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
 import { KpiGrid } from '@/components/ui/KpiCard';
@@ -37,8 +37,12 @@ export default function ContractAdd() {
   const [productOptions, setProductOptions] = useState<{ value: string; label: string }[]>([]);
   const [customerOptions, setCustomerOptions] = useState<{ value: string; label: string }[]>([]);
 
-  useEffect(() => { getProductOptions().then(setProductOptions); }, []);
-  useEffect(() => { getEntityOptions().then(setCustomerOptions); }, []);
+  useEffect(() => {
+    getWholesaleDetailFilterOptions().then((options) => {
+      setProductOptions(options.products || []);
+      setCustomerOptions(options.companies || []);
+    });
+  }, []);
 
   const handleAddNew = useCallback((row: any) => {
     setRows(prev => [...prev, row as ContractDraft]);

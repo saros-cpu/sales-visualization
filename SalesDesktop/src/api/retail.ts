@@ -1,6 +1,8 @@
 import { createApi } from './http';
+import { ApiPaths } from '@shared/api-contracts';
 
 const api = createApi('/api');
+const core = (path: string) => path.replace(/^\/api/, '');
 
 interface StationData {
   shopKey: number; name: string; short: string; region: string;
@@ -84,69 +86,74 @@ export interface ResourceYearlyData {
 }
 
 export async function getDashboardYearly(year: number) {
-  const res = await api.get('/dashboard/yearly', { params: { year } });
+  const res = await api.get(core(ApiPaths.retail.dashboardYearly(year)));
   return res.data as DashboardYearlyData;
 }
 
 export async function getMonthly(yearMonth: string) {
-  const res = await api.get(`/monthly/${yearMonth}`);
+  const res = await api.get(core(ApiPaths.retail.monthly(yearMonth)));
   return res.data as MonthlyData;
 }
 
 export async function getStations(yearMonth: string) {
-  const res = await api.get(`/stations/${yearMonth}`);
+  const res = await api.get(core(ApiPaths.retail.stations(yearMonth)));
   return res.data;
 }
 
 export async function getStationMonthly(yearMonth: string, shopKey: number) {
-  const res = await api.get(`/station/${yearMonth}/${shopKey}`);
+  const res = await api.get(core(ApiPaths.retail.station(yearMonth, shopKey)));
   return res.data as StationMonthlyData;
 }
 
 export async function getRegions(yearMonth: string) {
-  const res = await api.get(`/regions/${yearMonth}`);
+  const res = await api.get(core(ApiPaths.retail.regions(yearMonth)));
   return res.data as RegionsData;
 }
 
 export async function getDaily(yearMonth: string) {
-  const res = await api.get(`/daily/${yearMonth}`);
+  const res = await api.get(core(ApiPaths.retail.daily(yearMonth)));
   return res.data as DailyDataResponse;
 }
 
 export async function getResourcesYearly(year: number, month?: number) {
   const params: Record<string, number> = { year };
   if (month) params.month = month;
-  const res = await api.get('/resources/yearly', { params });
+  const res = await api.get(core(ApiPaths.retail.resourcesYearly(params)));
   return res.data as ResourceYearlyData;
 }
 
 export async function getKpi() {
-  const res = await api.get('/kpi');
+  const res = await api.get(core(ApiPaths.retail.kpi));
   return res.data;
 }
 
 export async function getStationMapDetails() {
-  const res = await api.get('/station-map-details');
+  const res = await api.get(core(ApiPaths.retail.stationMapDetails));
+  return res.data;
+}
+
+export async function getMapStations() {
+  const res = await api.get(core(ApiPaths.map.stations));
   return res.data;
 }
 
 export async function getKpiYearly(year: number) {
-  const res = await api.get('/kpi/yearly', { params: { year } });
+  const res = await api.get(core(ApiPaths.retail.kpiYearly(year, undefined)));
   return res.data;
 }
 
 export async function getYears() {
-  const res = await api.get('/years');
+  const res = await api.get(core(ApiPaths.retail.years));
   return res.data as string[];
 }
 
 export async function getMonths() {
-  const res = await api.get('/months');
+  const res = await api.get(core(ApiPaths.retail.months));
   return res.data as string[];
 }
 
 export async function getStationStatuses() {
-  const res = await api.get('/retail/station-statuses');
+  const res = await api.get(core(ApiPaths.retail.stationStatuses));
   return res.data?.items ?? res.data;
 }
 
@@ -179,7 +186,7 @@ export interface SelfUseData {
 }
 
 export async function getSelfUse(yearMonth: string) {
-  const res = await api.get(`/retail/self-use/${yearMonth}`);
+  const res = await api.get(core(ApiPaths.retail.selfUseMonth(yearMonth)));
   return res.data as SelfUseData;
 }
 
@@ -197,6 +204,6 @@ export interface SelfUseRangeData {
 }
 
 export async function getSelfUseByRange(date_from: string, date_to: string) {
-  const res = await api.get('/retail/self-use', { params: { date_from, date_to } });
+  const res = await api.get(core(ApiPaths.retail.selfUseRange(date_from, date_to)));
   return res.data as SelfUseRangeData;
 }

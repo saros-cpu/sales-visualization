@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons';
 import { Spin, Alert, Button, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
-import client from '@/api/client';
-import { API_HOST } from '@/api/http';
+import { getMapStations, getStationMapDetails } from '@/api/retail';
 import { mountHomeMap } from '@/lib/kgz-map/kgz-map-entry';
+import { localizeMapPoint } from '@shared/map-labels';
 import '@/lib/kgz-map/kgz-map.css';
 import { useAuth } from '@/contexts/AuthContext';
 import { mapRoleVisibleTypes } from '@/config/mapRoles';
@@ -97,11 +96,12 @@ function normalizeDepotMarker(depot: any) {
 }
 
 export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const frameRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const mapDataRef = useRef<any>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
@@ -148,15 +148,12 @@ export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) 
       setLoading(true);
       setError('');
       try {
-        const token = localStorage.getItem('accessToken') || '';
-        const detailHeaders: Record<string, string> = {};
-        if (token) detailHeaders['Authorization'] = `Bearer ${token}`;
         const [mapRes, detailRes] = await Promise.all([
-          client.get('/map/stations'),
-          axios.get(`${API_HOST}/api/station-map-details`, { headers: detailHeaders }).catch(() => null),
+          getMapStations(),
+          getStationMapDetails().catch(() => null),
         ]);
-        const data = mapRes.data?.data || mapRes.data;
-        const detailPayload = detailRes?.data || {};
+        const data = mapRes?.data || mapRes;
+        const detailPayload = detailRes || {};
         const details = detailPayload.items || [];
         const detailMap = new Map(details.map((d: any) => [Number(d.shopKey), d]));
 
@@ -188,17 +185,21 @@ export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) 
             inventoryZeroReason: detail.inventoryZeroReason || '',
           };
         });
-        const stations = visibleTypes.includes('station') ? allStations : [];
+        const mapLang = i18n.language?.startsWith('ru') ? 'ru' : 'zh';
+        const stations = visibleTypes.includes('station') ? allStations.map((p) => localizeMapPoint(p, mapLang)) : [];
         const allDepots = ensureCoreDepots(data.depots || []).map(normalizeDepotMarker);
-        const depots = visibleTypes.includes('depot') ? allDepots : [];
+        const depots = visibleTypes.includes('depot') ? allDepots.map((p) => localizeMapPoint(p, mapLang)) : [];
         const allCustomers = (data.customers || []).map((c: any) => ({ ...c, type: 'wholesale_customer', size: 0.35 }));
         const customers = visibleTypes.includes('customer') ? allCustomers : [];
+
+        mapDataRef.current = { allStations, allDepots, allCustomers, visibleTypes };
 
         const basePath = resolveKgzDataPath();
         const instance = await mountHomeMap(el, { depots, stations, customers }, {
           basePath,
           showRoadPanel: false, showLakeLabels: true, showCities: true,
           showRegionLabels: false, showLegend: false,
+          lang: mapLang,
           initialCamera: {
             cameraX: -0.08,
             cameraY: 30.54,
@@ -230,6 +231,19 @@ export default function KgzMap({ height = 'calc(100vh - 112px)' }: KgzMapProps) 
       mapInstanceRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const instance = mapInstanceRef.current;
+    const data = mapDataRef.current;
+    if (!instance || !data) return;
+    const lang = i18n.language?.startsWith('ru') ? 'ru' : 'zh';
+    const { allStations, allDepots, allCustomers, visibleTypes } = data;
+    const stations = visibleTypes.includes('station') ? allStations.map((p: any) => localizeMapPoint(p, lang)) : [];
+    const depots = visibleTypes.includes('depot') ? allDepots.map((p: any) => localizeMapPoint(p, lang)) : [];
+    const customers = visibleTypes.includes('customer') ? allCustomers : [];
+    instance.setLang(lang);
+    instance.updateLayers({ depots, stations, customers });
+  }, [i18n.language]);
 
   return (
     <div ref={frameRef} className="sales-map-frame" style={{ position: 'relative', width: '100%', height, background: '#111', borderRadius: 8, overflow: 'hidden' }}>

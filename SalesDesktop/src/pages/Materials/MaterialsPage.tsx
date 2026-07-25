@@ -2,12 +2,11 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Card, Tabs, Button, Space, message, Select, Table, Popconfirm } from 'antd';
 import { PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import client from '@/api/client';
 import {
-  getCategories, getMaterials, createMaterial, deleteMaterial, Material, MaterialCategory,
+  getCategories, getMaterials, createMaterial, updateMaterial, deleteMaterial, Material, MaterialCategory,
   getDepots, DepotOption,
-  getInboundList, createInbound, InboundRecord,
-  getTransferOrders, createTransferOrder, updateOrderStatus, TransferOrder,
+  getInboundList, createInbound, updateInbound, InboundRecord,
+  getTransferOrders, createTransferOrder, updateTransferOrder, updateOrderStatus, TransferOrder,
   getInventory, InventoryItem,
 } from '@/api/materials';
 import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
@@ -64,10 +63,6 @@ function MaterialDictTab() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const updateMaterial = async (id: number, data: Partial<Material>) => {
-    await client.put(`/materials/${id}`, data);
   };
 
   const handleAddNew = useCallback((row: any) => {
@@ -306,10 +301,6 @@ function InboundTab() {
     }
   };
 
-  const updateInbound = async (id: number, data: Partial<InboundRecord>) => {
-    await client.put(`/materials/inbound/${id}`, data);
-  };
-
   const handleAddNew = useCallback((row: any) => {
     setData(prev => [...prev, row as InboundRecord]);
   }, []);
@@ -505,10 +496,6 @@ function TransferOrdersTab() {
       if (field === 'status') await updateOrderStatus(id, value);
       else await updateTransferOrder(id, { [field]: value });
     }
-  };
-
-  const updateTransferOrder = async (id: number, data: Partial<TransferOrder>) => {
-    await client.put(`/materials/orders/${id}`, data);
   };
 
   const handleAddNew = useCallback((row: any) => {

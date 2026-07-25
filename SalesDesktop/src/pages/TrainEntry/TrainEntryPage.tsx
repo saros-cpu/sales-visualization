@@ -1,310 +1,502 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Card, Space, DatePicker, Button, message, Popconfirm } from 'antd';
-import { SearchOutlined, UploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Card, DatePicker, Space, Tabs, message } from 'antd';
+import { ClearOutlined, DownloadOutlined, EditOutlined, PlusOutlined, SaveOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import readXlsxFile from 'read-excel-file/browser';
-import { getTrainEntryList, updateTrainEntry, deleteTrainEntry, batchCreateTrainEntry, TrainEntryRecord } from '@/api/trainEntry';
-import { getProductOptions, getEntityOptions } from '@/api/client';
-import ExcelTable, { ExcelTableHandle } from '@/components/common/ExcelTable';
+import { uploadWholesaleDetailXlsx, manualCreateWholesaleDetail, updateWholesaleDetail } from '@/api/trainEntry';
+import type { ManualWholesaleDetailPayload } from '@/api/trainEntry';
+import { downloadWholesaleDetailsExport, getWholesaleDetails, getWholesaleDetailFilterOptions, type WholesaleItem } from '@/api/wholesale';
+import ExcelTable, { type ColumnDefinition, type ExcelTableHandle } from '@/components/common/ExcelTable';
 import { KpiGrid } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 
 const { RangePicker } = DatePicker;
+const ENTRY_PAGE_SIZE = 50;
+
+interface EntryRow {
+  id: number;
+  businessDate: string;
+  transportMode: string;
+  weighSerialNo: string;
+  productName: string;
+  rawProductName?: string;
+  standardProductName?: string;
+  vehicleNo: string;
+  senderName: string;
+  standardSenderName?: string;
+  entityName: string;
+  rawEntityName?: string;
+  standardEntityName?: string;
+  classification: string;
+  weightKg: number | string;
+  weightTons?: number;
+  sourceType?: string;
+  sourceRowNumber?: number | string | null;
+  matchStatus?: string;
+  importBatchId?: number | string | null;
+  remark: string;
+  createdAt?: string;
+}
+
+type CustomerOption = { value: string; label: string; customerType?: string };
 
 export default function TrainEntryPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
-  const canCreate = can('train_entry:create');
-  const canUpdate = can('train_entry:update');
-  const canDelete = can('train_entry:delete');
-  const canEdit = canCreate || canUpdate;
-  const [data, setData] = useState<TrainEntryRecord[]>([]);
+  const canEntry = can('wholesale_entry:create');
+  const canUpdate = can('wholesale_entry:update');
+  const entryTableRef = useRef<ExcelTableHandle>(null);
+  const maintenanceTableRef = useRef<ExcelTableHandle>(null);
+  const [data, setData] = useState<EntryRow[]>([]);
+  const [draftRows, setDraftRows] = useState<EntryRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('month'), dayjs()]);
+  const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [productOpts, setProductOpts] = useState<{value: string; label: string}[]>([]);
-  const [entityOpts, setEntityOpts] = useState<{value: string; label: string}[]>([]);
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [uploadRecords, setUploadRecords] = useState<any[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const tableRef = useRef<ExcelTableHandle>(null);
+  const [activeTab, setActiveTab] = useState<'entry' | 'maintenance'>('entry');
+  const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('month'), dayjs()]);
+  const [productOpts, setProductOpts] = useState<{ value: string; label: string }[]>([]);
+  const [customerOpts, setCustomerOpts] = useState<CustomerOption[]>([]);
+
+  const processingSenderValues = useMemo(() => new Set([
+    'Р‘РђР™Р­Р›Р¬-Р—',
+    'OcOO  вЂњРЎРїРµРєС‚СЂСѓРј РџРµС‚СЂРѕР»РµСѓРјвЂќ',
+    'РћРЎРћРћ "РђР РўР­Р›Р¬  Р“Р РЈРџРџ"',
+    'Р‘РµС‚С‚Р° РўСЂРµР№Рґ',
+    'РћСЃРћРћ "РџСЂРѕРјРµС‚РµР№"',
+  ]), []);
+
+  const senderOptions = useMemo(() => [
+    {
+      value: 'дё­е¤§дё­е›ЅзџіжІ№е…¬еЏё / РћСЃРћРћ Р§Р°Р№РЅР° РџРµС‚СЂРѕР»СЊ РљРѕРјРїР°РЅРё Р”Р¶СѓРЅРґР°',
+      label: t('wholesaleEntry.senderZd'),
+    },
+    {
+      value: 'жІ№ж°”е…¬еЏё / РћСЃРћРћ РљС‹СЂРіС‹Р·СЃРєР°СЏ РїСЂРѕРјС‹С€Р»РµРЅРЅР°СЏ РєРѕРјРїР°РЅРёСЏ РЅРµС„С‚СЊ Рё РіР°Р· (РљРџРљ)',
+      label: t('wholesaleEntry.senderCustomerSAbbr'),
+    },
+    { value: 'Р‘РђР™Р­Р›Р¬-Р—', label: t('wholesaleEntry.senderCustomerH') },
+    { value: 'OcOO  вЂњРЎРїРµРєС‚СЂСѓРј РџРµС‚СЂРѕР»РµСѓРјвЂќ', label: t('wholesaleEntry.senderCustomerF') },
+    { value: 'РћРЎРћРћ "РђР РўР­Р›Р¬  Р“Р РЈРџРџ"', label: t('wholesaleEntry.senderCustomerE') },
+    { value: 'Р‘РµС‚С‚Р° РўСЂРµР№Рґ', label: t('wholesaleEntry.senderCustomerG') },
+    { value: 'РћСЃРћРћ "РџСЂРѕРјРµС‚РµР№"', label: t('wholesaleEntry.senderCustomerJ') },
+  ], [t]);
+
+  const transportOptions = useMemo(() => [
+    { value: 'truck', label: t('transport.truck') },
+    { value: 'train', label: t('transport.train') },
+  ], [t]);
+
+  const classificationOptions = useMemo(() => [
+    { value: 'unknown', label: t('wholesale.unknown') },
+    { value: 'local_wholesale', label: t('wholesale.local_wholesale') },
+    { value: 'export_wholesale', label: t('wholesale.export_wholesale') },
+    { value: 'transfer', label: t('wholesale.transferClass') },
+    { value: 'processing', label: t('wholesale.processing') },
+    { value: 'procurement', label: t('wholesale.procurement') },
+  ], [t]);
+
+  const mapItem = (item: WholesaleItem): EntryRow => {
+    const numericId = Number(item.sourceId ?? item.id);
+    const weightKg = Number(item.weightKg ?? (Number(item.weightTons || 0) * 1000));
+    return {
+      id: Number.isFinite(numericId) ? numericId : Number(item.id),
+      businessDate: item.businessDate,
+      transportMode: item.transportMode || 'truck',
+      weighSerialNo: item.weighSerialNo || '',
+      productName: item.rawProductName || item.productName || '',
+      rawProductName: item.rawProductName,
+      standardProductName: item.standardProductName,
+      vehicleNo: item.vehicleNo || '',
+      senderName: item.senderName || '',
+      standardSenderName: item.standardSenderName,
+      entityName: item.rawEntityName || item.entityName || '',
+      rawEntityName: item.rawEntityName,
+      standardEntityName: item.standardEntityName,
+      classification: item.classification || 'unknown',
+      weightKg: Number.isFinite(weightKg) ? weightKg : '',
+      weightTons: Number(item.weightTons || 0),
+      sourceType: item.sourceType || item.weighSource,
+      sourceRowNumber: item.sourceRowNumber,
+      matchStatus: item.matchStatus,
+      importBatchId: item.importBatchId,
+      remark: item.remark || '',
+      createdAt: item.createdAt,
+    };
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getTrainEntryList({
+      const res = await getWholesaleDetails({
+        data_source: 'uploaded',
         date_from: dates[0].format('YYYY-MM-DD'),
         date_to: dates[1].format('YYYY-MM-DD'),
-        page: 1, page_size: 1000,
+        page: 1,
+        page_size: 2000,
       });
-      setData(res?.items ?? []);
-      setTotal(res?.total ?? 0);
-    } finally { setLoading(false); }
+      const items = Array.isArray(res?.items) ? res.items : [];
+      setData(items.map(mapItem));
+      setTotal(Number(res?.total ?? items.length));
+      setPage(1);
+    } finally {
+      setLoading(false);
+    }
   }, [dates]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
-    getProductOptions().then(setProductOpts);
-    getEntityOptions().then(setEntityOpts);
+    getWholesaleDetailFilterOptions().then((options) => {
+      setProductOpts(options.products || []);
+      const customerList = (Array.isArray(options.companies) ? options.companies : [])
+        .map((item: any) => ({
+          value: String(item.value || ''),
+          label: String(item.label || ''),
+          customerType: item.customerType,
+        }))
+        .filter((item) => item.value);
+      customerList.sort((a, b) => a.label.localeCompare(b.label));
+      setCustomerOpts(customerList);
+    });
   }, []);
 
-  const handleBatchSave = async (changes: Array<{ id: number; data: Partial<TrainEntryRecord> }>) => {
-    const updates: Array<{ id: number; data: Partial<TrainEntryRecord> }> = [];
-    const creates: Array<Partial<TrainEntryRecord>> = [];
-
-    for (const change of changes) {
-      if (change.id > 0) {
-        updates.push(change);
-      } else {
-        creates.push(change.data);
-      }
-    }
-    if ((creates.length > 0 && !canCreate) || (updates.length > 0 && !canUpdate)) {
-      message.error(t('common.noPermission'));
-      return;
-    }
-
-    setSaving(true);
-    try {
-      if (creates.length > 0) {
-        await batchCreateTrainEntry(creates);
-      }
-      for (const u of updates) {
-        await updateTrainEntry(u.id, u.data);
-      }
-      message.success(`${t('common.save')} ${t('common.success')}`);
-      setEditing(false);
-      fetchData();
-    } catch {
-      message.error(t('common.saveFailed'));
-    } finally {
-      setSaving(false);
-    }
+  const sourceLabel = (value?: string) => t(`wholesale.sources.${value || 'unknown'}`, { defaultValue: value || '--' });
+  const matchStatusLabel = (value?: string) => t(`common.${value || 'unknown'}`, { defaultValue: value || '--' });
+  const displayCustomerName = (raw?: string, standard?: string) => {
+    return standard || raw || '--';
   };
-
-  const handleRealTimeSave = async (id: number, field: string, value: any) => {
-    if (id > 0 && !canUpdate) return;
-    setData(prev => prev.map(r =>
-      r.id === id ? { ...r, [field]: value } : r
-    ));
-
-    if (id > 0) {
-      await updateTrainEntry(id, { [field]: value });
-    }
+  const displayProductName = (raw?: string, standard?: string) => {
+    const value = standard || raw || '--';
+    return <span>{value}</span>;
   };
-
-  const handleAddNew = useCallback((row: any) => {
-    setData(prev => [...prev, row as TrainEntryRecord]);
-  }, []);
-
-  const handleDeleteRows = async (ids: number[]) => {
-    if (!canDelete) {
-      message.error(t('common.noPermission'));
-      return;
-    }
-    const savedIds = ids.filter(id => id > 0);
-    try {
-      for (const id of savedIds) {
-        await deleteTrainEntry(id);
-      }
-      setData(prev => prev.filter(row => !ids.includes(row.id)));
-      setSelectedIds([]);
-      if (savedIds.length > 0) fetchData();
-    } catch {
-      message.error(t('common.deleteFailedRetry'));
-      throw new Error('delete_failed');
-    }
-  };
-
-  const classifyOilFlow = useCallback((record: Partial<TrainEntryRecord>) => {
-    const sender = String(record.senderName || '').trim();
-    const receiver = String(record.receiverName || '').trim();
-    const text = `${sender} ${receiver}`;
-    const internalWords = ['油库', '加油站', '仓库', 'ProductTeam', '物流管理部', 'CUSTOMER-S-АББР', 'Example'];
-    const senderInternal = internalWords.some(word => sender.includes(word));
-    const receiverInternal = internalWords.some(word => receiver.includes(word));
-    if (senderInternal && receiverInternal) return { type: '外运', result: '内部单位之间油品流转，系统按外运识别' };
-    if (/供应|采购|炼厂|завод|постав/i.test(text)) return { type: '采购', result: '按发货单位/收货单位识别为采购' };
-    if (/客户|出口|销售|покуп|client/i.test(text)) return { type: '批发', result: '按收货单位识别为批发销售' };
-    return { type: '待确认', result: '单位匹配不明确，保存前请核对' };
-  }, []);
-
-  const validateRow = useCallback((row: Partial<TrainEntryRecord>) => {
-    const errors: Record<string, string> = {};
-    if (!row.entryDate) errors.entryDate = t('common.date') + ' ' + t('common.required');
-    if (!row.vehicleNo) errors.vehicleNo = t('common.vehicleNo') + ' ' + t('common.required');
-    if (!row.senderName) errors.senderName = t('common.senderUnit') + ' ' + t('common.required');
-    if (!row.receiverName) errors.receiverName = t('common.receiverUnit') + ' ' + t('common.required');
-    if (!row.productName) errors.productName = t('common.product') + ' ' + t('common.required');
-    const tons = Number(row.weightTons ?? 0);
-    if (!tons || tons <= 0) errors.weightTons = t('common.tons') + ' ' + t('common.required');
-    return errors;
-  }, [t]);
 
   const entryKpis = useMemo(() => {
-    const draftRows = data.filter(row => row.id < 0);
-    const invalidRows = data.filter(row => Object.keys(validateRow(row)).length > 0);
-    const totalTons = data.reduce((sum, row) => sum + Number((row.weightTons ?? (row.weightKg ? Number(row.weightKg) / 1000 : 0)) || 0), 0);
+    const totalTons = data.reduce((sum, row) => sum + Number(row.weightTons || Number(row.weightKg || 0) / 1000), 0);
+    const draftCount = draftRows.length;
+    const manualRows = data.filter((row) => (row.sourceType || '') === 'manual').length;
+    const importedRows = data.filter((row) => row.id > 0 && (row.sourceType || '') !== 'manual').length;
     return [
-      { key: 'rows', title: t('common.currentBatch'), value: data.length, suffix: t('common.rows') },
-      { key: 'valid', title: t('common.validRows'), value: Math.max(data.length - invalidRows.length, 0), suffix: t('common.rows'), tone: invalidRows.length ? 'warning' as const : 'success' as const },
-      { key: 'invalid', title: t('common.invalidRows'), value: invalidRows.length, suffix: t('common.rows'), goodWhen: 'down' as const, tone: invalidRows.length ? 'danger' as const : 'success' as const },
-      { key: 'draft', title: t('common.unsavedRows'), value: draftRows.length, suffix: t('common.rows'), tone: draftRows.length ? 'warning' as const : 'neutral' as const },
+      { key: 'rows', title: t('common.rows'), value: total, suffix: t('common.rows') },
+      { key: 'imported', title: t('wholesaleEntry.importedRows'), value: importedRows, suffix: t('common.rows') },
+      { key: 'manual', title: t('wholesaleEntry.manualRows'), value: manualRows, suffix: t('common.rows') },
+      { key: 'draft', title: t('common.unsavedRows'), value: draftCount, suffix: t('common.rows') },
       { key: 'tons', title: t('common.weightTons'), value: totalTons, precision: 3, suffix: 't' },
     ];
-  }, [data, t, validateRow]);
+  }, [data, draftRows.length, t, total]);
 
-  const cellText = (value: unknown) => {
-    if (value instanceof Date) return dayjs(value).format('YYYY-MM-DD');
-    return String(value ?? '').trim();
+  const defaultClassification = (row: Partial<EntryRow>) => {
+    if (row.classification && row.classification !== 'unknown') return row.classification;
+    if (processingSenderValues.has(String(row.senderName || ''))) return 'processing';
+    const customer = customerOpts.find((item) => item.value === row.entityName);
+    if (customer?.customerType === 'local_wholesale' || customer?.customerType === 'export_wholesale') {
+      return customer.customerType;
+    }
+    return row.classification || 'unknown';
   };
 
-  const handleUploadFile = (file: File) => {
-    if (!canCreate) {
-      message.error(t('common.noPermission'));
-      return false;
-    }
-    if (!file.name.toLowerCase().endsWith('.xlsx')) {
-      message.error('请上传 .xlsx 格式文件');
-      return false;
-    }
-    readXlsxFile(file).then((rows) => {
-      try {
-        const headerRow = rows.find((r) => r[1] && String(r[1]).includes('入厂日期'));
-        if (!headerRow) { message.error('未找到表头行（需包含「入厂日期」列）'); return; }
-        const headerIdx = rows.indexOf(headerRow);
-        const records: any[] = [];
-        for (let i = headerIdx + 1; i < rows.length; i++) {
-          const r = rows[i];
-          if (!r[1]) continue;
-          const entryDate = cellText(r[1]);
-          const productName = cellText(r[2]);
-          const weighNo = cellText(r[3]);
-          const vehicleNo = cellText(r[4]);
-          const senderName = cellText(r[5]);
-          const receiverName = cellText(r[6]);
-          const weightKg = r[7] != null && r[7] !== '' ? Number(r[7]) : undefined;
-          const remark = cellText(r[8]);
-          if (!entryDate || !productName || !vehicleNo) continue;
-          records.push({ entryDate, productName, weighNo, vehicleNo, senderName, receiverName, weightKg, remark });
-        }
-        if (records.length === 0) { message.error('未解析到有效数据'); return; }
-        setUploadRecords(records);
-        setUploadModalOpen(true);
-      } catch (err: any) {
-        message.error('文件解析失败: ' + (err.message || ''));
-      }
-    }).catch((err: any) => {
-      message.error('文件解析失败: ' + (err.message || ''));
-    });
-    return false;
+  const validateRow = (row: Partial<EntryRow>) => {
+    const errors: Record<string, string> = {};
+    if (!row.businessDate) errors.businessDate = t('common.required');
+    if (!row.productName) errors.productName = t('common.required');
+    if (!row.entityName) errors.entityName = t('common.required');
+    if (!row.senderName) errors.senderName = t('common.required');
+    if (!(Number(row.weightKg) > 0)) errors.weightKg = t('common.required');
+    return errors;
   };
 
-  const handleUploadConfirm = async () => {
-    if (!canCreate) {
+  const handleBatchSave = async (changes: Array<{ id: number; data: Partial<EntryRow> }>) => {
+    const newRows = changes.filter((change) => change.id < 0);
+    const existingRows = changes.filter((change) => change.id > 0);
+    if (newRows.length && !canEntry) {
       message.error(t('common.noPermission'));
       return;
     }
-    setUploading(true);
-    try {
-      const res = await batchCreateTrainEntry(uploadRecords);
-      message.success('导入成功 ' + (res.data?.inserted ?? uploadRecords.length));
-      setUploadModalOpen(false);
-      setUploadRecords([]);
-      fetchData();
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || err.message || '导入失败');
-    } finally { setUploading(false); }
+    if (existingRows.length && !canUpdate) {
+      message.error(t('common.noPermission'));
+      return;
+    }
+    for (const change of newRows) {
+      const row = change.data;
+      const payload: ManualWholesaleDetailPayload = {
+        businessDate: String(row.businessDate || dayjs().format('YYYY-MM-DD')),
+        productName: String(row.productName || '').trim(),
+        entityName: String(row.entityName || '').trim(),
+        classification: defaultClassification(row),
+        transportMode: row.transportMode || 'truck',
+        weightKg: Number(row.weightKg || 0),
+        vehicleNo: String(row.vehicleNo || '').trim(),
+        senderName: String(row.senderName || '').trim(),
+        weighSerialNo: String(row.weighSerialNo || '').trim(),
+        remark: String(row.remark || '').trim(),
+      };
+      await manualCreateWholesaleDetail(payload);
+    }
+    for (const change of existingRows) {
+      const row = change.data;
+      await updateWholesaleDetail(change.id, {
+        ...(row.businessDate !== undefined ? { businessDate: String(row.businessDate || '') } : {}),
+        ...(row.productName !== undefined ? { productName: String(row.productName || '').trim() } : {}),
+        ...(row.entityName !== undefined ? { entityName: String(row.entityName || '').trim() } : {}),
+        ...(row.classification !== undefined ? { classification: defaultClassification(row) } : {}),
+        ...(row.transportMode !== undefined ? { transportMode: row.transportMode || 'truck' } : {}),
+        ...(row.weightKg !== undefined ? { weightKg: Number(row.weightKg || 0) } : {}),
+        ...(row.vehicleNo !== undefined ? { vehicleNo: String(row.vehicleNo || '').trim() } : {}),
+        ...(row.senderName !== undefined ? { senderName: String(row.senderName || '').trim() } : {}),
+        ...(row.weighSerialNo !== undefined ? { weighSerialNo: String(row.weighSerialNo || '').trim() } : {}),
+        ...(row.remark !== undefined ? { remark: String(row.remark || '').trim() } : {}),
+      });
+    }
+    await fetchData();
   };
 
-  const columns = [
-    { title: t('common.date'), dataIndex: 'entryDate', key: 'entryDate', width: 130, editable: true, required: true, editorType: 'date' as const },
-    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 120, editable: true, required: true },
-    { title: t('common.senderUnit'), dataIndex: 'senderName', key: 'senderName', width: 170, editable: true, required: true },
-    { title: t('common.receiverUnit'), dataIndex: 'receiverName', key: 'receiverName', width: 170, editable: true, required: true },
-    { title: t('common.product'), dataIndex: 'productName', key: 'productName', width: 130, editable: true, required: true },
-    { title: t('common.tons'), dataIndex: 'weightTons', key: 'weightTons', width: 100, editable: true, required: true, editorType: 'number' as const },
-    { title: t('common.businessType'), dataIndex: 'businessType', key: 'businessType', width: 110, render: (_: any, row: TrainEntryRecord) => classifyOilFlow(row).type },
-    { title: t('common.recognitionResult'), dataIndex: 'recognitionResult', key: 'recognitionResult', width: 240, render: (_: any, row: TrainEntryRecord) => classifyOilFlow(row).result },
-    { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: 160, editable: true },
+  const handleManualBatchSave = async (changes: Array<{ id: number; data: Partial<EntryRow> }>) => {
+    await handleBatchSave(changes);
+    setDraftRows([]);
+  };
+
+  const handleMaintenanceBatchSave = async (changes: Array<{ id: number; data: Partial<EntryRow> }>) => {
+    await handleBatchSave(changes);
+    setEditing(false);
+  };
+
+  const addRow = () => {
+    if (!canEntry) {
+      message.error(t('common.noPermission'));
+      return;
+    }
+    setActiveTab('entry');
+    entryTableRef.current?.addNewRow();
+  };
+
+  const saveDraftRows = async () => {
+    if (!canEntry) {
+      message.error(t('common.noPermission'));
+      return;
+    }
+    await entryTableRef.current?.saveAllChanges();
+  };
+
+  const saveMaintenanceRows = async () => {
+    if (!canUpdate) {
+      message.error(t('common.noPermission'));
+      return;
+    }
+    await maintenanceTableRef.current?.saveAllChanges();
+  };
+
+  const clearDraft = () => {
+    entryTableRef.current?.clearDraft();
+    setDraftRows([]);
+  };
+
+  const handleImportFile = async (file: File) => {
+    if (!canEntry) {
+      message.error(t('common.noPermission'));
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      message.error(t('wholesaleEntry.selectFile'));
+      return;
+    }
+    try {
+      const result = await uploadWholesaleDetailXlsx(file);
+      if (result?.error) {
+        message.error(result.error);
+      } else {
+        message.success(result?.uploadLabel || t('wholesaleEntry.importSuccess'));
+        setActiveTab('maintenance');
+        await fetchData();
+      }
+    } catch (err: any) {
+      message.error(err?.message || t('wholesaleEntry.importFailed'));
+    }
+  };
+
+  const handleExportMaintenance = async () => {
+    setExporting(true);
+    try {
+      await downloadWholesaleDetailsExport({
+        data_source: 'uploaded',
+        date_from: dates[0].format('YYYY-MM-DD'),
+        date_to: dates[1].format('YYYY-MM-DD'),
+      });
+      message.success(t('common.downloadStarted'));
+    } catch (err: any) {
+      message.error(err?.message || t('common.downloadFailed'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const centerAlign = { align: 'center' as const };
+  const columns: ColumnDefinition<EntryRow>[] = [
+    { title: t('common.source'), dataIndex: 'sourceType', key: 'sourceType', width: 130, render: sourceLabel, ...centerAlign },
+    { title: t('wholesaleEntry.sourceRow'), dataIndex: 'sourceRowNumber', key: 'sourceRowNumber', width: 90, render: (value) => value || '--', ...centerAlign },
+    { title: t('wholesaleEntry.entryDate'), dataIndex: 'businessDate', key: 'businessDate', width: 118, editable: true, required: true, editorType: 'date', ...centerAlign },
+    { title: t('common.transportMode'), dataIndex: 'transportMode', key: 'transportMode', width: 100, editable: true, editorType: 'select', editorOptions: transportOptions, render: (value) => t(`transport.${value}`, { defaultValue: value || '--' }), ...centerAlign },
+    { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: 120, editable: true, render: (value) => value || '--', ...centerAlign },
+    { title: t('common.productName'), dataIndex: 'productName', key: 'productName', width: 180, editable: true, required: true, editorType: 'select', editorOptions: productOpts, render: (_, row) => displayProductName(row.productName || row.rawProductName, row.standardProductName), ...centerAlign },
+    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 120, editable: true, render: (value) => value || '--', ...centerAlign },
+    {
+      title: t('common.senderUnit'),
+      dataIndex: 'senderName',
+      key: 'senderName',
+      width: 260,
+      editable: true,
+      required: true,
+      editorType: 'select',
+      editorOptions: senderOptions,
+      render: (_, row) => displayCustomerName(row.senderName, row.standardSenderName),
+      ...centerAlign,
+    },
+    { title: t('common.receiverUnit'), dataIndex: 'entityName', key: 'entityName', width: 240, editable: true, required: true, editorType: 'select', editorOptions: customerOpts, render: (_, row) => displayCustomerName(row.entityName || row.rawEntityName, row.standardEntityName), ...centerAlign },
+    { title: t('common.weightKg'), dataIndex: 'weightKg', key: 'weightKg', width: 120, editable: true, required: true, editorType: 'number', render: (value) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 3 }), ...centerAlign },
+    {
+      title: t('common.weightTons'),
+      dataIndex: 'weightTons',
+      key: 'weightTons',
+      width: 110,
+      render: (_: unknown, row: EntryRow) => {
+        const kg = row.weightKg;
+        const tons = kg !== undefined && kg !== null && kg !== '' ? Number(kg) / 1000 : Number(row.weightTons || 0);
+        return Number(tons).toLocaleString(undefined, { maximumFractionDigits: 3 });
+      },
+      ...centerAlign,
+    },
+    { title: t('common.classification'), dataIndex: 'classification', key: 'classification', width: 150, editable: true, editorType: 'select', editorOptions: classificationOptions, render: (value) => t(`wholesale.${value}`, { defaultValue: value || '--' }), ...centerAlign },
+    { title: t('common.matchStatus', { defaultValue: 'еЊ№й…ЌзЉ¶жЂЃ' }), dataIndex: 'matchStatus', key: 'matchStatus', width: 110, render: matchStatusLabel, ...centerAlign },
+    { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: 220, editable: true, render: (value) => value || '--', ...centerAlign },
+    { title: t('common.createdAt'), dataIndex: 'createdAt', key: 'createdAt', width: 160, render: (value) => value || '--', ...centerAlign },
   ];
+  const manualHiddenColumns = new Set(['sourceType', 'sourceRowNumber', 'weightTons', 'matchStatus', 'createdAt']);
+  const manualColumns = columns.filter((col) => !manualHiddenColumns.has(col.key));
 
   return (
     <Card
       title={t('common.trainEntry')}
+      className="client-fit-page client-fit-table-card"
       extra={
         <Space wrap>
-          <RangePicker value={dates} onChange={(v) => v && setDates(v as [dayjs.Dayjs, dayjs.Dayjs])} />
+          <RangePicker value={dates} onChange={(value) => value && setDates(value as [dayjs.Dayjs, dayjs.Dayjs])} />
           <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>{t('common.search')}</Button>
-          {canDelete && (
-            <Popconfirm
-              title={t('common.deleteConfirm')}
-              okText={t('common.confirm')}
-              cancelText={t('common.cancel')}
-              onConfirm={() => tableRef.current?.deleteSelectedRows()}
-              disabled={selectedIds.length === 0}
-            >
-              <Button danger icon={<DeleteOutlined />} disabled={selectedIds.length === 0}>
-                {selectedIds.length > 0 ? `${t('common.delete')} (${selectedIds.length})` : t('common.delete')}
-              </Button>
-            </Popconfirm>
-          )}
-          {canCreate && (
-            <>
-              <Button icon={<UploadOutlined />} onClick={() => document.getElementById('train-upload-input')?.click()}>
-                {t('common.import')}
-              </Button>
-              <input id="train-upload-input" type="file" accept=".xlsx" style={{ display: 'none' }}
-                onChange={(e) => e.target.files?.[0] && handleUploadFile(e.target.files[0])} />
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { if (!editing) setEditing(true); tableRef.current?.addNewRow(); }}>
-                {t('common.add')}
-              </Button>
-            </>
-          )}
-          {editing && canEdit && (
-            <>
-              <Button icon={<SaveOutlined />} type="primary" onClick={async () => { try { await tableRef.current?.saveAllChanges(); setEditing(false); } catch {} }} loading={saving}>
-                {t('common.save')}
-              </Button>
-              <Button icon={<CloseOutlined />} onClick={() => setEditing(false)}>
-                {t('common.cancel')}
-              </Button>
-            </>
-          )}
-          {!editing && canEdit && (
-            <Button onClick={() => setEditing(true)}>
-              {t('common.edit')}
+          {activeTab === 'maintenance' && (
+            <Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExportMaintenance}>
+              {t('common.export')}
             </Button>
+          )}
+          {canEntry && (
+            <>
+              {activeTab === 'maintenance' && (
+                <>
+                  <Button icon={<UploadOutlined />} onClick={() => document.getElementById('wholesale-detail-import-input')?.click()}>
+                    {t('common.import')}
+                  </Button>
+                  <input
+                    id="wholesale-detail-import-input"
+                    type="file"
+                    accept=".xlsx"
+                    style={{ display: 'none' }}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) handleImportFile(file);
+                      event.target.value = '';
+                    }}
+                  />
+                </>
+              )}
+              {activeTab === 'entry' && (
+                <>
+                  <Button icon={<PlusOutlined />} onClick={addRow}>{t('wholesaleEntry.addRow')}</Button>
+                  <Button icon={<ClearOutlined />} onClick={clearDraft}>{t('common.clearDraft')}</Button>
+                </>
+              )}
+            </>
+          )}
+          {activeTab === 'maintenance' && canUpdate && (
+            <Button icon={<EditOutlined />} onClick={() => setEditing((value) => !value)}>
+              {editing ? t('common.cancel') : t('common.edit')}
+            </Button>
+          )}
+          {activeTab === 'entry' && canEntry && (
+            <Button icon={<SaveOutlined />} type="primary" onClick={saveDraftRows}>{t('wholesaleEntry.saveRows')}</Button>
+          )}
+          {activeTab === 'maintenance' && canUpdate && (
+            <Button icon={<SaveOutlined />} type="primary" onClick={saveMaintenanceRows}>{t('wholesaleEntry.saveRows')}</Button>
           )}
         </Space>
       }
     >
-      <div style={{ marginBottom: 16 }}>
-        <KpiGrid items={entryKpis} defaultSpan={6} />
+      <div className="client-fit-card-fixed">
+        <KpiGrid items={entryKpis} defaultSpan={4} />
       </div>
-      <ExcelTable
-        ref={tableRef}
-        dataSource={data}
-        columns={columns}
-        editing={editing}
-        setEditing={(value) => setEditing(canEdit && value)}
-        isAdmin={false}
-        canDelete={canDelete}
-        onBatchSave={handleBatchSave}
-        onRealTimeSave={handleRealTimeSave}
-        onAddNew={handleAddNew}
-        onDelete={handleDeleteRows}
-        onSelectionChange={setSelectedIds}
-        validateRow={validateRow}
-        initialNewRow={() => ({ entryDate: dayjs().format('YYYY-MM-DD') })}
-        draftKey="train-entry-spreadsheet-draft"
-        rowHeight={40}
-        height={600}
+      <Tabs
+        className="client-fit-tabs train-entry-tabs"
+        activeKey={activeTab}
+        onChange={(key) => setActiveTab(key as 'entry' | 'maintenance')}
+        items={[
+          {
+            key: 'entry',
+            label: t('wholesaleEntry.manualEntry'),
+            children: (
+              <div className="client-fit-table-scroll train-entry-table-scroll">
+                <ExcelTable<EntryRow>
+                  ref={entryTableRef}
+                  dataSource={draftRows}
+                  columns={manualColumns}
+                  editing
+                  setEditing={() => undefined}
+                  isAdmin={canEntry}
+                  canDelete
+                  onBatchSave={handleManualBatchSave}
+                  onDelete={async (ids) => setDraftRows((rows) => rows.filter((row) => !ids.includes(row.id)))}
+                  onAddNew={(row) => setDraftRows((rows) => [row, ...rows])}
+                  validateRow={validateRow}
+                  isCellEditable={() => canEntry}
+                  initialNewRow={() => ({
+                    businessDate: dayjs().format('YYYY-MM-DD'),
+                    transportMode: 'truck',
+                    classification: 'unknown',
+                    senderName: senderOptions[0]?.value,
+                    weightKg: '',
+                    remark: '',
+                  })}
+                  draftKey="wholesale-detail-entry-draft"
+                  height="100%"
+                />
+              </div>
+            ),
+          },
+          {
+            key: 'maintenance',
+            label: t('wholesaleEntry.detailMaintenance'),
+            children: (
+              <div className="client-fit-table-scroll train-entry-table-scroll">
+                <ExcelTable<EntryRow>
+                  ref={maintenanceTableRef}
+                  dataSource={data}
+                  columns={columns}
+                  editing={editing}
+                  setEditing={setEditing}
+                  isAdmin={canUpdate}
+                  canDelete={false}
+                  onBatchSave={handleMaintenanceBatchSave}
+                  validateRow={validateRow}
+                  isCellEditable={() => canUpdate}
+                  height="100%"
+                  pagination={{
+                    current: page,
+                    pageSize: ENTRY_PAGE_SIZE,
+                    total: data.length,
+                    onChange: setPage,
+                    showTotal: (count) => t('common.total', { count }),
+                  }}
+                />
+              </div>
+            ),
+          },
+        ]}
       />
     </Card>
   );

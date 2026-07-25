@@ -12,7 +12,9 @@ DATA_SCOPE_TYPES = ("all", "dept_tree", "dept", "self", "custom")
 MODULE_CATALOG = [
     ("dashboard", "数据可视化", 10),
     ("retail", "零售", 20),
+    ("profit", "利润核算", 25),
     ("wholesale", "批发", 30),
+    ("wholesale_entry", "批发录入", 32),
     ("exchange", "汇率查询", 40),
     ("train_entry", "数据录入", 50),
     ("procurement", "原料采购", 60),
@@ -55,8 +57,14 @@ PERMISSION_CATALOG = [
     ("dashboard:view", "dashboard", "view", "menu", "View data visualization", 10),
     ("retail:view", "retail", "view", "menu", "View retail", 20),
     ("retail:export", "retail", "export", "button", "Export retail data", 21),
+    ("profit:view", "profit", "view", "menu", "View profit accounting", 22),
+    ("profit:cost_update", "profit", "cost_update", "button", "Update profit cost items", 23),
+    ("profit:purchase_price_update", "profit", "purchase_price_update", "button", "Update profit purchase prices", 24),
+    ("profit:wholesale_price_update", "profit", "wholesale_price_update", "button", "Update wholesale briefing prices", 25),
     ("wholesale:view", "wholesale", "view", "menu", "View wholesale", 30),
     ("wholesale:export", "wholesale", "export", "button", "Export wholesale data", 31),
+    ("wholesale_entry:create", "wholesale_entry", "create", "button", "Create wholesale detail entry", 33),
+    ("wholesale_entry:update", "wholesale_entry", "update", "button", "Update wholesale detail entry", 34),
     ("exchange:view", "exchange", "view", "menu", "View exchange rates", 40),
     ("train_entry:view", "train_entry", "view", "menu", "View train entries", 50),
     ("train_entry:create", "train_entry", "create", "button", "Create train entry", 51),
@@ -99,6 +107,8 @@ PERMISSION_CATALOG = [
     ("system_health:manage", "system_health", "manage", "button", "Run system maintenance tasks", 159),
     ("settings:view", "settings", "view", "menu", "View settings", 160),
     ("settings:update", "settings", "update", "button", "Update settings", 161),
+    ("management:view", "management", "view", "menu", "View management center", 162),
+    ("management:update", "management", "update", "button", "Update management center", 163),
 ]
 
 
@@ -135,6 +145,8 @@ SALES_DEPARTMENT_ACTIONS = DATA_VIEW_ACTIONS | {
     "train_entry:create", "train_entry:update",
     "contracts:create",
     "materials:create", "materials:update", "materials:approve",
+    "wholesale_entry:create", "wholesale_entry:update",
+    "profit:view", "profit:wholesale_price_update",
 }
 
 PROCUREMENT_DEPARTMENT_ACTIONS = DATA_VIEW_ACTIONS | {

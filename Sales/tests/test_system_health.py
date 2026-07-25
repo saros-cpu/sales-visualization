@@ -111,6 +111,58 @@ class SystemHealthActionCenterTests(unittest.TestCase):
         self.assertIn("status_code >= 500", cursor.queries[0])
         self.assertIn("status_code >= 500", cursor.queries[1])
 
+    def test_profit_snapshot_cache_items_match_file_cache_format(self):
+        class FakeCursor:
+            def execute(self, sql, params=None):
+                self.params = params
+
+            def fetchall(self):
+                return [
+                    {
+                        "snapshot_type": "month",
+                        "period_key": "2026-07",
+                        "payload_json": '{"summary": {}}',
+                        "generated_at": datetime(2026, 8, 9, 9, 30),
+                    },
+                    {
+                        "snapshot_type": "year",
+                        "period_key": "2026",
+                        "payload_json": '{"summary": {}, "months": []}',
+                        "generated_at": datetime(2026, 8, 9, 9, 31),
+                    },
+                ]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeConnection:
+            def cursor(self, cursor_type=None):
+                return FakeCursor()
+
+            def close(self):
+                pass
+
+        original = system.get_connection
+        system.get_connection = lambda: FakeConnection()
+        try:
+            items = system._profit_snapshot_cache_items("2026-07")
+        finally:
+            system.get_connection = original
+
+        monthly, yearly = items
+        self.assertEqual(monthly["label"], "利润月度快照")
+        self.assertEqual(yearly["label"], "利润年度快照")
+        self.assertEqual(monthly["month"], "2026-07")
+        self.assertTrue(monthly["exists"])
+        self.assertFalse(monthly["valid"])
+        self.assertEqual(monthly["missingKeys"], ["stations"])
+        self.assertIsNone(monthly["error"])
+        self.assertTrue(yearly["valid"])
+        self.assertIsNone(yearly["error"])
+
     def test_market_watch_source_errors_are_warnings_when_reference_item_available(self):
         originals = {
             "ensure_market_watch_schema": routes_data.ensure_market_watch_schema,

@@ -1,3 +1,4 @@
+import { ApiPaths } from '@shared/api-contracts';
 import axios, { AxiosInstance, AxiosError, AxiCTY-30eaders } from 'axios';
 
 const DEFAULT_PUBLIC_API_HOST = import.meta.env.VITE_DEFAULT_API_HOST || 'https://sales.example.com';
@@ -108,7 +109,7 @@ export async function refreshAccessToken(): Promise<string | null> {
 
   try {
     const res = await axios.post(
-      `${API_HOST}/api/v2/auth/refresh`,
+      `${API_HOST}${ApiPaths.auth.refresh}`,
       null,
       { headers: { Authorization: `Bearer ${refreshToken}` } },
     );

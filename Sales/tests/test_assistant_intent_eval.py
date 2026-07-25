@@ -407,6 +407,10 @@ class AssistantIntentEvalTests(unittest.TestCase):
         context = {"pageContext": {"path": "/", "module": "", "page": "home", "title": "数据驾驶舱"}}
         cases = [
             ("本月零售销量", "retail", "retail_summary", "2026-07-01"),
+            ("当月销量", "retail", "retail_summary", "2026-07-01"),
+            ("当月销售额", "retail", "retail_summary", "2026-07-01"),
+            ("昨日销量", "retail", "retail_summary", "2026-07-21"),
+            ("当日销量", "retail", "retail_summary", "2026-07-22"),
             ("本月每日销量趋势", "retail", "retail_trend", "2026-07-01"),
             ("月趋势", "retail", "retail_trend", "2026-07-01"),
             ("2026年KPI", "retail", "retail_kpi", "2026-01-01"),
@@ -432,6 +436,35 @@ class AssistantIntentEvalTests(unittest.TestCase):
                 if question in {"本月每日销量趋势", "月趋势"}:
                     self.assertEqual(plan["metric"], "volume")
                     self.assertEqual(plan["visual"]["preferredType"], "line")
+
+    def test_colloquial_cross_module_questions_route_to_existing_tools(self):
+        cases = [
+            ("本月销售前十名", "retail", "retail_ranking", "amount", ["station"]),
+            ("本月按站销售额", "retail", "retail_summary", "amount", ["station"]),
+            ("8月按区域销售额", "retail", "retail_summary", "amount", ["region"]),
+            ("发电机用油多少", "self_use", "self_use_summary", "volume", []),
+            ("内部用油费用", "self_use", "self_use_summary", "amount", []),
+            ("自用油哪个车最多", "self_use", "self_use_summary", "volume", ["vehicle"]),
+            ("调拨审批到哪了", "materials", "material_transfer_summary", "count", ["status"]),
+            ("接口慢不慢", "system_health", "system_health_summary", "status", []),
+            ("缓存有没有问题", "system_health", "system_health_summary", "status", []),
+            ("利润快照缓存状态", "system_health", "system_health_summary", "amount", ["status"]),
+            ("日报任务跑了吗", "system_health", "system_health_summary", "status", []),
+            ("口径文档在哪", "knowledge", "knowledge_summary", "count", []),
+            ("利润算法怎么写的", "knowledge", "knowledge_summary", "amount", []),
+            ("库存液位低的站", "retail", "retail_inventory", "amount", []),
+            ("液位有没有异常", "retail", "retail_inventory", "amount", ["status"]),
+        ]
+        for question, domain, route, metric, dimensions in cases:
+            with self.subTest(question=question):
+                plan = build_assistant_query_plan(question, today=TODAY)
+
+                self.assertEqual(plan["domain"], domain)
+                self.assertEqual(plan["route"], route)
+                self.assertEqual(plan["metric"], metric)
+                self.assertFalse(plan.get("needsClarification"))
+                for dimension in dimensions:
+                    self.assertIn(dimension, plan.get("dimensions") or [])
 
     def test_compound_plan_self_check_covers_subplans(self):
         plan = build_assistant_query_plan("26年上半年零售总额、哪个站销售额最高、哪个油品销量下滑", today=TODAY)

@@ -120,6 +120,17 @@ export default function WeighingList() {
   const twoLineText = (value?: string | number | null) => (
     <span className="weighing-list-two-line">{value === null || value === undefined || value === '' ? '--' : value}</span>
   );
+  const standardText = (raw?: string | null, standard?: string | null) => {
+    const rawText = String(raw || '').trim();
+    const standardTextValue = String(standard || '').trim();
+    if (!standardTextValue || standardTextValue === rawText) return twoLineText(rawText);
+    return (
+      <span className="weighing-list-two-line">
+        <span>{standardTextValue}</span>
+        <span className="muted" style={{ fontSize: 12 }}>{rawText}</span>
+      </span>
+    );
+  };
   const sourceLabel = (value?: string) => {
     const raw = String(value || 'unknown').trim();
     const normalized = sourceAliases[raw.toLowerCase()] || raw;
@@ -133,9 +144,9 @@ export default function WeighingList() {
     { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: '9%', responsive: ['lg' as const], render: twoLineText },
     { title: t('weighing.businessDate'), dataIndex: 'businessDate', key: 'businessDate', width: '7%', responsive: ['md' as const] },
     { title: t('weighing.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: '6%', render: twoLineText },
-    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: '13%', render: twoLineText },
-    { title: t('weighing.receiverName'), dataIndex: 'receiverName', key: 'receiverName', width: '14%', render: twoLineText },
-    { title: t('weighing.rawProductName'), dataIndex: 'rawProductName', key: 'rawProductName', width: '9%', render: (v: string) => twoLineText(t(`product.${v}`, { defaultValue: v || '--' })) },
+    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: '13%', render: (_: string, row: WeighingItem) => standardText(row.senderName, row.standardSenderName || row.displaySenderName) },
+    { title: t('weighing.receiverName'), dataIndex: 'receiverName', key: 'receiverName', width: '14%', render: (_: string, row: WeighingItem) => standardText(row.receiverName, row.standardReceiverName || row.standardEntityName || row.displayReceiverName) },
+    { title: t('weighing.rawProductName'), dataIndex: 'rawProductName', key: 'rawProductName', width: '9%', render: (_: string, row: WeighingItem) => standardText(row.rawProductName, row.standardProductName || row.displayProductName) },
     { title: t('weighing.grossWeight'), dataIndex: 'grossWeight', key: 'grossWeight', width: '5%', responsive: ['xl' as const], render: weightText },
     { title: t('weighing.tareWeight'), dataIndex: 'tareWeight', key: 'tareWeight', width: '5%', responsive: ['xl' as const], render: weightText },
     { title: t('weighing.netWeight'), dataIndex: 'netWeight', key: 'netWeight', width: '6%', render: weightText },

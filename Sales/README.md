@@ -163,6 +163,6 @@ C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe Sales\scripts\d
 C:\Users\User\AppData\Local\Programs\Python\Python313\python.exe D:\SalesVisualization\Sales\scripts\health_check.py --strict-tasks
 ```
 
-每日 `08:30` 的零售任务会按“昨天所属月份”强制刷新日销表 Excel，然后生成日快照、月快照及年度派生快照；区域快照同时维护环比、同比字段。后台手动刷新零售快照采用后台执行和单实例保护，重复点击不会启动第二份任务。日销表索引记录在 `OilStation/exports/.monthly_report_index.json`，系统健康页会显示当前月日销表文件和最后数据日。
+每日 `08:30` 的零售任务会按“昨天所属月份”强制刷新日销表 Excel，然后生成日快照、月快照、年度派生快照和利润快照；区域快照同时维护环比、同比字段。后台手动刷新零售/自用油/利润快照采用后台执行和单实例保护，重复点击不会启动第二份任务。日销表索引记录在 `OilStation/exports/.monthly_report_index.json`，系统健康页会显示当前月日销表文件和最后数据日。
 
-如果 8:30 自动任务之后又补录或修正零售数据库，当天需要在后台“自动任务”中执行“立即刷新零售快照”；否则正常情况下无需每天手动点击。
+如果 8:30 自动任务之后又补录或修正零售数据库，当天需要在后台“自动任务”中执行“立即刷新零售/自用油/利润快照”；否则正常情况下无需每天手动点击。

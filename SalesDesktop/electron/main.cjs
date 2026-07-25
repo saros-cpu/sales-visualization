@@ -33,6 +33,8 @@ const appIcon = path.join(__dirname, '..', 'build', 'icon.ico');
 const appProtocolHost = 'salesdesktop';
 const allowedExternalHosts = new Set(runtimeConfig.allowedHosts);
 const fallbackUpdateUrls = ['http://198.51.100.10/download'];
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+let singleInstanceServer = null;
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.sales.desktop');
 }
@@ -535,7 +537,13 @@ function setupUpdater() {
 
 function setupFileDownload() {
   ipcMain.handle('download-file', async (event, { url, filename, token }) => {
-    if (!isAllowedExternalUrl(url)) return false;
+    if (!isAllowedExternalUrl(url)) {
+      return {
+        ok: false,
+        error: 'download_host_not_allowed',
+        message: '下载链接未通过桌面安全白名单',
+      };
+    }
 
     const result = await dialog.showSaveDialog(mainWindow, {
       defaultPath: filename,
@@ -544,18 +552,47 @@ function setupFileDownload() {
         { name: 'All Files', extensions: ['*'] },
       ],
     });
-    if (result.canceled || !result.filePath) return false;
+    if (result.canceled || !result.filePath) {
+      return {
+        ok: false,
+        error: 'download_cancelled',
+        message: '已取消保存文件',
+        canceled: true,
+      };
+    }
 
     try {
       const headers = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(url, { headers });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        let body = '';
+        try {
+          body = (await response.text()).slice(0, 4000);
+        } catch {
+          body = '';
+        }
+        return {
+          ok: false,
+          error: `http_${response.status}`,
+          status: response.status,
+          statusText: response.statusText,
+          message: `下载接口返回错误：${response.status} ${response.statusText}`,
+          bodyPreview: body,
+        };
+      }
       const buffer = Buffer.from(await response.arrayBuffer());
       fs.writeFileSync(result.filePath, buffer);
-      return true;
+      return {
+        ok: true,
+        filePath: result.filePath,
+      };
     } catch (e) {
-      return false;
+      return {
+        ok: false,
+        error: 'download_failed',
+        message: e?.message || '下载文件时发生未知错误',
+      };
     }
   });
 }
@@ -627,22 +664,49 @@ function setupDevToolsAccess() {
   });
 }
 
-app.whenReady().then(() => {
-  registerAppProtocol();
-  const csp = `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src ${connectSrc}; img-src 'self' data: blob:; font-src 'self' data:`;
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } });
+if (!gotSingleInstanceLock) {
+  app.quit();
+  setTimeout(() => process.exit(1), 1500);
+} else {
+  app.on('second-instance', () => {
+    showMainWindow();
   });
-  createWindow();
-  setupUpdater();
-  setupFileDownload();
-  setupOpenExternal();
-  setupWindowControl();
-  setupDevToolsAccess();
-});
-app.on('before-quit', () => { isQuitting = true; });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin' && isQuitting) app.quit(); });
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  else showMainWindow();
-});
+
+  function startApp() {
+    app.whenReady().then(() => {
+      registerAppProtocol();
+      const csp = `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src ${connectSrc}; img-src 'self' data: blob:; font-src 'self' data:`;
+      session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } });
+      });
+      createWindow();
+      setupUpdater();
+      setupFileDownload();
+      setupOpenExternal();
+      setupWindowControl();
+      setupDevToolsAccess();
+    });
+    app.on('before-quit', () => { isQuitting = true; });
+    app.on('window-all-closed', () => { if (process.platform !== 'darwin' && isQuitting) app.quit(); });
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else showMainWindow();
+    });
+  }
+
+  const srv = require('net').createServer();
+  srv.once('error', (e) => {
+    if (e && e.code === 'EADDRINUSE') {
+      // another instance on this machine already holds the port
+      app.quit();
+      setTimeout(() => process.exit(1), 1500);
+      return;
+    }
+    if (!srv.listening) startApp();
+  });
+  srv.listen(47321, '127.0.0.1', () => {
+    // machine-wide lock held for the whole process lifetime
+    singleInstanceServer = srv;
+    startApp();
+  });
+}

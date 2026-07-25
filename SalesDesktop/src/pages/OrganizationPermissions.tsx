@@ -97,6 +97,10 @@ const copy = {
       verify: '复核',
       manage: '管理',
       reset_password: '重置密码',
+      cost_update: '更新成本项',
+      purchase_price_update: '更新购油价',
+      wholesale_price_update: '更新批发价',
+      reindex: '重建索引',
     },
     resourceTypeLabels: {
       depot: '油库/仓库',
@@ -105,6 +109,7 @@ const copy = {
     moduleNames: {
       dashboard: '数据可视化',
       retail: '零售',
+      profit: '利润核算',
       wholesale: '批发',
       exchange: '汇率查询',
       train_entry: '数据录入',
@@ -118,7 +123,27 @@ const copy = {
       roles: '角色权限',
       aliases: '别名管理',
       weighing: '称重审核',
+      wholesale_entry: '批发数据录入',
       settings: '设置',
+      management: '管理中心',
+      knowledge: '知识库',
+      audit_logs: '审计日志',
+      system_health: '系统健康',
+      data_entry: '数据录入',
+      contract_mgmt: '合同管理',
+      retail_view: '零售查看',
+      wholesale_view: '批发查看',
+      procurement_view: '采购查看',
+      processing_view: '代加工查看',
+      contract_view: '合同查看',
+      reports: '报表打印',
+      wholesale_entry: '批发录入',
+      print_detail: '明细表打印',
+      print_summary: '汇总表打印',
+      print_loss: '损耗分析报告',
+      print_retail: '零售分析报告',
+      user_mgmt: '用户管理',
+      about: '关于系统',
     },
     roleNames: {
       admin: '系统管理员',
@@ -193,6 +218,10 @@ const copy = {
       verify: 'Проверка данных',
       manage: 'Администрирование',
       reset_password: 'Сброс пароля',
+      cost_update: 'Обновление себестоимости',
+      purchase_price_update: 'Обновление закупочных цен',
+      wholesale_price_update: 'Обновление оптовых цен',
+      reindex: 'Пересоздание индекса',
     },
     resourceTypeLabels: {
       depot: 'Нефтебаза / склад',
@@ -201,6 +230,7 @@ const copy = {
     moduleNames: {
       dashboard: 'Визуализация данных',
       retail: 'Розница',
+      profit: 'Учёт прибыли',
       wholesale: 'Опт',
       exchange: 'Курсы валют',
       train_entry: 'Ввод операционных данных',
@@ -214,7 +244,27 @@ const copy = {
       roles: 'Роли и права доступа',
       aliases: 'Справочник алиасов',
       weighing: 'Проверка данных взвешивания',
+      wholesale_entry: 'Ввод оптовых данных',
       settings: 'Настройки',
+      management: 'Центр управления',
+      knowledge: 'База знаний',
+      audit_logs: 'Журнал аудита',
+      system_health: 'Состояние системы',
+      data_entry: 'Ввод операционных данных',
+      contract_mgmt: 'Управление договорами',
+      retail_view: 'Просмотр розницы',
+      wholesale_view: 'Просмотр опта',
+      procurement_view: 'Просмотр закупок',
+      processing_view: 'Просмотр переработки',
+      contract_view: 'Просмотр договоров',
+      reports: 'Печать отчетов',
+      wholesale_entry: 'Ввод оптовых данных',
+      print_detail: 'Печать детальных отчетов',
+      print_summary: 'Печать сводных отчетов',
+      print_loss: 'Отчет о потерях',
+      print_retail: 'Отчет по рознице',
+      user_mgmt: 'Управление пользователями',
+      about: 'О системе',
     },
     roleNames: {
       admin: 'Системный администратор',
@@ -524,13 +574,12 @@ export default function OrganizationPermissions() {
     { title: text.module, dataIndex: 'moduleName', width: 220 },
     {
       title: text.dataScopes,
-      dataIndex: 'moduleKey',
-      render: (moduleKey: string) => (
+      render: (record: any) => (
         <Select
-          value={scopeDraft[moduleKey] || selectedRole?.dataScope || 'dept'}
+          value={scopeDraft[record.moduleKey] || selectedRole?.dataScope || 'dept'}
           style={{ width: 240 }}
           disabled={!canManageRoles}
-          onChange={(value) => setScopeDraft((prev) => ({ ...prev, [moduleKey]: value }))}
+          onChange={(value) => setScopeDraft((prev) => ({ ...prev, [record.moduleKey]: value }))}
           options={(overview?.dataScopeTypes || []).map((value) => ({ value, label: scopeLabel(value) }))}
         />
       ),

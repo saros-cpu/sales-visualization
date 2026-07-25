@@ -113,6 +113,242 @@ REPORT_GUIDANCE: dict[str, dict[str, Any]] = {
     },
 }
 
+SNAPSHOT_DATA_SOURCE_MARKERS = ("snapshot", "snapshots")
+PUBLISHED_KNOWLEDGE_SOURCES = {"knowledge_base"}
+REFERENCE_CATALOG_SOURCES = {
+    "map_station_depot_coordinates",
+    "station_status_catalog",
+    "runtime_settings",
+    "report_center_exports",
+    "dashboard_cockpit",
+    "system_health",
+}
+DATA_SOURCE_CONTRACTS: dict[str, dict[str, Any]] = {
+    "retail_snapshots": {
+        "sourceKind": "confirmed_snapshot",
+        "snapshotStatus": "existing",
+        "snapshotNeed": "existing_sufficient",
+        "answerability": "answer_from_existing_snapshot",
+        "note": "零售日/月快照已覆盖销售额、销量、吨位、站点、区域、油品等领导高频问法。",
+    },
+    "retail_daily_snapshots": {
+        "sourceKind": "confirmed_snapshot",
+        "snapshotStatus": "existing",
+        "snapshotNeed": "existing_sufficient",
+        "answerability": "answer_from_existing_snapshot",
+        "note": "用于趋势、异常、补传检查；只读取已完成业务日快照。",
+    },
+    "retail_kpi_snapshots": {
+        "sourceKind": "confirmed_snapshot",
+        "snapshotStatus": "existing",
+        "snapshotNeed": "existing_sufficient",
+        "answerability": "answer_from_existing_snapshot",
+        "note": "年度/月度 KPI 使用现有零售 KPI 快照。",
+    },
+    "density_records": {
+        "sourceKind": "confirmed_snapshot",
+        "snapshotStatus": "existing",
+        "snapshotNeed": "existing_sufficient",
+        "answerability": "answer_from_existing_snapshot",
+        "note": "密度问答读取最新零售日快照中的真实 mass/volume。",
+    },
+    "profit_report_snapshots": {
+        "sourceKind": "confirmed_snapshot",
+        "snapshotStatus": "existing",
+        "snapshotNeed": "existing_sufficient",
+        "answerability": "answer_from_existing_snapshot",
+        "note": "利润月度/年度数据默认读 profit_report_snapshots；管理员专属。",
+    },
+    "wholesale_snapshots": {
+        "sourceKind": "permission_scoped_readonly_summary",
+        "snapshotStatus": "readonly_summary_service",
+        "snapshotNeed": "optional_for_repeat_leadership_queries",
+        "answerability": "answer_now_from_readonly_summary",
+        "note": "历史兼容名；当前批发汇总实际走 wholesale_detail_records_source_policy。",
+    },
+    "wholesale_detail_records_source_policy": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "readonly_summary_service",
+        "snapshotNeed": "optional_for_repeat_leadership_queries",
+        "answerability": "answer_now_from_readonly_records",
+        "note": "批发年月日汇总按 2026-06-01 来源边界读取明细：此前称重生成，之后上传或手工录入；高频历史趋势可后续固化月快照。",
+    },
+    "combined_snapshots": {
+        "sourceKind": "hybrid_readonly_summary",
+        "snapshotStatus": "retail_snapshot_plus_wholesale_summary",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_existing_snapshot",
+        "usesExistingSnapshots": True,
+        "note": "合并经营汇总复用零售快照和批发汇总。",
+    },
+    "retail_alert_insights": {
+        "sourceKind": "derived_snapshot",
+        "snapshotStatus": "existing",
+        "snapshotNeed": "existing_sufficient",
+        "answerability": "answer_from_existing_insight",
+        "note": "零售预警读取已生成 insight 表；必要时再按月度快照只读摘要。",
+    },
+    "self_use_report24_snapshots": {
+        "sourceKind": "report_backed_readonly_api",
+        "snapshotStatus": "readonly_api",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_now_report24_readonly",
+        "note": "自用油按原报表 24 只读 API 聚合；当前无需新增快照，若领导高频查多年趋势再考虑月快照。",
+    },
+    "wholesale_detail_records": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "recommended_for_high_frequency_rankings",
+        "answerability": "answer_now_from_readonly_records",
+        "note": "采购按供应商/油品/月份可直接聚合明细；若长期作为领导常用数据，应新增月度采购排行快照。",
+    },
+    "weighing_service": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "optional_for_long_history_trends",
+        "answerability": "answer_now_from_readonly_service",
+        "note": "称重待审、复核、车辆等运营问法可直接读服务；多年趋势可后续做月快照。",
+    },
+    "transfer_loss": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "recommended_for_cross_source_analysis",
+        "answerability": "answer_now_from_readonly_records",
+        "note": "调拨损耗涉及 supply 与批发明细跨源聚合；当前可答，建议后续做月度损耗快照。",
+    },
+    "materials": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_status",
+        "answerability": "answer_now_from_current_records",
+        "note": "物资库存是当前状态类问题，直接读表更准确；若问历史库存趋势才需要日快照。",
+    },
+    "material_transfer_orders": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_status",
+        "answerability": "answer_now_from_current_records",
+        "note": "调拨单状态/待审批直接读业务表即可。",
+    },
+    "accounting_handover_reports": {
+        "sourceKind": "report_backed_readonly_files",
+        "snapshotStatus": "report_exports",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_now_from_report_exports",
+        "note": "吉方交接日报状态查询读取报表生成/导出记录；不需要另建 AI 快照。",
+    },
+    "assistant_tool_orchestration": {
+        "sourceKind": "assistant_orchestration",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_by_readonly_subqueries",
+        "note": "复合问题拆分为多个只读子查询，不直接访问可写数据源。",
+    },
+    "audit_logs": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_now_from_recent_logs",
+        "note": "审计日志本身是追加记录，助手只读最近操作摘要；禁止暴露敏感字段。",
+    },
+    "contracts": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_status",
+        "answerability": "answer_now_from_current_records",
+        "note": "合同到期、状态、数量类问题以当前合同台账为准，直接只读查询更准确。",
+    },
+    "dashboard_cockpit": {
+        "sourceKind": "project_reference_catalog",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_reference_catalog",
+        "note": "驾驶舱组件、首页指标是页面配置/展示目录，不是业务快照。",
+    },
+    "entity_product_aliases": {
+        "sourceKind": "project_reference_catalog",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_reference_catalog",
+        "note": "别名匹配是标准化规则目录，直接查询规则即可。",
+    },
+    "exchange_rates": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_now_from_readonly_records",
+        "note": "汇率是日期记录表，按日/月只读查询即可，不需要再包一层快照。",
+    },
+    "knowledge_base": {
+        "sourceKind": "published_knowledge",
+        "snapshotStatus": "published_documents",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_published_knowledge",
+        "note": "知识库和docs问答只读取已发布内容，不访问敏感配置。",
+    },
+    "map_station_depot_coordinates": {
+        "sourceKind": "project_reference_catalog",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_reference_catalog",
+        "note": "站点/油库位置是基础目录数据，直接读坐标目录。",
+    },
+    "market_watch": {
+        "sourceKind": "published_knowledge",
+        "snapshotStatus": "published_market_notes",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_published_knowledge",
+        "note": "市场观察按已维护内容回答，不实时抓取外网行情。",
+    },
+    "organization_permissions": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_now_from_permission_catalog",
+        "note": "用户、角色、组织权限只回答统计和配置概况，不输出口令、令牌等敏感信息。",
+    },
+    "report_center_exports": {
+        "sourceKind": "project_reference_catalog",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_reference_catalog",
+        "note": "报表中心目录和导出类型来自已注册报表配置，不需要快照。",
+    },
+    "runtime_settings": {
+        "sourceKind": "project_reference_catalog",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_non_sensitive_settings",
+        "note": "设置问答只允许非敏感配置概况；敏感 URL、账号、密码、密钥请求会被拒绝。",
+    },
+    "station_status_catalog": {
+        "sourceKind": "project_reference_catalog",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_reference_catalog",
+        "note": "站点营业状态是基础目录状态，直接读当前目录。",
+    },
+    "system_health": {
+        "sourceKind": "runtime_monitoring_readonly",
+        "snapshotStatus": "runtime_status",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_now_from_runtime_status",
+        "note": "系统健康只读运行状态和告警摘要，助手不得重启服务或修改配置。",
+    },
+    "train_entry": {
+        "sourceKind": "permission_scoped_readonly_records",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_now_from_readonly_records",
+        "note": "火车外运录入是业务明细记录，按时间只读查询即可。",
+    },
+}
+FORBIDDEN_ASSISTANT_ACTIONS = [
+    "insert", "update", "delete", "approve", "reject", "import", "export",
+    "refresh", "execute", "restart", "deploy", "reindex", "configure",
+    "write_file", "modify_code",
+]
+
 
 def compact_permission_codes(user_context: dict[str, Any] | None) -> set[str]:
     if not isinstance(user_context, dict):
@@ -270,6 +506,7 @@ def build_query_spec(plan: dict[str, Any] | None, user_context: dict[str, Any] |
     period = plan.get("period") if isinstance(plan.get("period"), dict) else {}
     comparison = plan.get("comparison") if isinstance(plan.get("comparison"), dict) else None
     entities = plan.get("entities") if isinstance(plan.get("entities"), dict) else {}
+    source_contract = build_data_source_contract(plan)
     return {
         "mode": "read_only",
         "route": plan.get("route"),
@@ -289,10 +526,68 @@ def build_query_spec(plan: dict[str, Any] | None, user_context: dict[str, Any] |
             if key in {"station", "resource", "customer", "supplier", "vehicle"}
         },
         "allowedOperations": ["select", "aggregate", "rank", "trend", "compare", "explain"],
-        "blockedOperations": ["insert", "update", "delete", "approve", "reject", "import", "export", "refresh", "execute"],
+        "blockedOperations": FORBIDDEN_ASSISTANT_ACTIONS,
+        "dataSource": source_contract.get("dataSource"),
+        "dataSourceContract": source_contract,
+        "snapshotPolicy": source_contract.get("snapshotPolicy"),
         "requiredPermissions": list(required_permissions(plan)),
         "permission": permission_result(user_context, plan) if user_context is not None else None,
         "dataScope": data_scope_result(user_context, plan) if user_context is not None else None,
+    }
+
+
+def build_data_source_contract(plan: dict[str, Any] | None) -> dict[str, Any]:
+    plan = plan if isinstance(plan, dict) else {}
+    tool = plan.get("tool") if isinstance(plan.get("tool"), dict) else {}
+    data_source = str(tool.get("dataSource") or "unknown")
+    configured = dict(DATA_SOURCE_CONTRACTS.get(data_source) or {})
+    configured_source_kind = configured.get("sourceKind")
+    is_configured_snapshot = configured_source_kind in {"confirmed_snapshot", "derived_snapshot"}
+    is_snapshot = is_configured_snapshot or (
+        not configured
+        and any(marker in data_source for marker in SNAPSHOT_DATA_SOURCE_MARKERS)
+    )
+    is_knowledge = configured_source_kind == "published_knowledge" or data_source in PUBLISHED_KNOWLEDGE_SOURCES
+    is_reference = configured_source_kind == "project_reference_catalog" or data_source in REFERENCE_CATALOG_SOURCES
+    if configured_source_kind:
+        source_kind = str(configured_source_kind)
+        allowed_sources = [source_kind]
+    elif is_snapshot:
+        source_kind = "confirmed_snapshot"
+        allowed_sources = ["confirmed_snapshots"]
+    elif is_knowledge:
+        source_kind = "published_knowledge"
+        allowed_sources = ["published_knowledge"]
+    elif is_reference:
+        source_kind = "project_reference_catalog"
+        allowed_sources = ["project_reference_catalogs"]
+    else:
+        source_kind = "permission_scoped_readonly_records"
+        allowed_sources = ["permission_scoped_readonly_records"]
+    configured_uses_snapshots = configured.get("usesExistingSnapshots")
+    uses_existing_snapshots = bool(is_snapshot if configured_uses_snapshots is None else configured_uses_snapshots)
+    return {
+        "dataSource": data_source,
+        "sourceKind": source_kind,
+        "readOnly": True,
+        "mutationAllowed": False,
+        "answerFromExistingSnapshots": uses_existing_snapshots,
+        "usesExistingSnapshots": uses_existing_snapshots,
+        "answerFromPublishedKnowledge": is_knowledge,
+        "snapshotStatus": configured.get("snapshotStatus") or ("existing" if is_snapshot else "none"),
+        "snapshotNeed": configured.get("snapshotNeed") or ("existing_sufficient" if is_snapshot else "not_required_for_current_assistant"),
+        "answerability": configured.get("answerability") or ("answer_from_existing_snapshot" if is_snapshot else "answer_now_from_readonly_source"),
+        "note": configured.get("note") or "",
+        "allowedSources": allowed_sources,
+        "forbiddenSources": ["production_db_write", "runtime_restart", "code_mutation", "sensitive_config"],
+        "forbiddenActions": FORBIDDEN_ASSISTANT_ACTIONS,
+        "snapshotPolicy": {
+            "applies": is_snapshot,
+            "readOnly": True,
+            "answerFromExistingSnapshots": uses_existing_snapshots,
+            "allowedSources": ["confirmed_snapshots"] if is_snapshot else [],
+            "forbiddenSources": ["production_db_write", "runtime_restart", "code_mutation", "sensitive_config"],
+        },
     }
 
 
@@ -403,11 +698,40 @@ def build_data_freshness(payload: dict[str, Any]) -> dict[str, Any]:
     plan = payload.get("assistantPlan") if isinstance(payload.get("assistantPlan"), dict) else {}
     period = plan.get("period") if isinstance(plan.get("period"), dict) else {}
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    query_spec = payload.get("querySpec") if isinstance(payload.get("querySpec"), dict) else {}
     sources: list[str] = []
+
+    def add_source(value: str | None) -> None:
+        if value and value not in sources:
+            sources.append(value)
+
     for key in ("source", "sourceFile", "month", "generatedAt", "updatedAt"):
         value = data.get(key)
         if value:
-            sources.append(f"{key}:{value}")
+            add_source(f"{key}:{value}")
+    for meta_key in ("snapshot", "snapshotMeta", "dataSourceContract"):
+        meta = data.get(meta_key)
+        if not isinstance(meta, dict):
+            continue
+        source_type = meta.get("type") or meta.get("source")
+        period_key = meta.get("periodKey") or meta.get("month") or meta.get("date")
+        if source_type:
+            suffix = f":{period_key}" if period_key else ""
+            add_source(f"{meta_key}:{source_type}{suffix}")
+        for key in ("confirmed", "readOnly", "updatedAt", "generatedAt", "sourceCount"):
+            if key in meta and meta.get(key) not in (None, ""):
+                add_source(f"{meta_key}.{key}:{meta.get(key)}")
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    if summary.get("queryStart"):
+        add_source(f"queryStart:{summary.get('queryStart')}")
+    if summary.get("queryEnd"):
+        add_source(f"queryEnd:{summary.get('queryEnd')}")
+    contract = data.get("dataSourceContract") if isinstance(data.get("dataSourceContract"), dict) else query_spec.get("dataSourceContract")
+    if isinstance(contract, dict):
+        if contract.get("dataSource"):
+            add_source(f"contract.source:{contract.get('dataSource')}")
+        if contract.get("sourceKind"):
+            add_source(f"contract.kind:{contract.get('sourceKind')}")
     end_exclusive = str(payload.get("queryEndExclusive") or period.get("endExclusive") or "")
     status = "unknown"
     warnings: list[str] = []
@@ -469,6 +793,8 @@ def evaluate_response_quality(payload: dict[str, Any], user_context: dict[str, A
     agent = payload.get("agent") if isinstance(payload.get("agent"), dict) else {}
     if agent.get("status") == "blocked_action_request":
         add("readonly_refusal", "pass", "action request blocked")
+    elif agent.get("status") == "blocked_sensitive_info":
+        add("sensitive_info_refusal", "pass", "sensitive information request blocked")
     elif agent.get("status") == "permission_denied":
         required = ",".join(required_permissions(plan))
         add("permission_guard", "pass", required or "permission denied")

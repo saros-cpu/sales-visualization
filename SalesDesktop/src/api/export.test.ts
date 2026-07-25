@@ -92,7 +92,7 @@ describe('desktop report export API', () => {
   it('generates retail daily workbooks before downloading the saved file', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({
       status: 'ok',
-      file: '零售日销表_2026-07.xlsx',
+      file: '加油站七月份日销表10.08.xlsx',
     }));
     vi.stubGlobal('window', {});
     vi.stubGlobal('fetch', fetchMock);
@@ -103,7 +103,66 @@ describe('desktop report export API', () => {
     expect(firstFetchUrl(fetchMock)).toBe('https://sales.example.com/api/export/monthly/2026-07');
     expect(mocks.downloadWithAuth).toHaveBeenCalledWith(
       'https://sales.example.com/api/export/monthly/2026-07/download',
-      '零售日销表_2026-07.xlsx',
+      '加油站七月份日销表10.08.xlsx',
+    );
+  });
+
+  it('downloads single day retail workbook when generated with the monthly report', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      status: 'ok',
+      file: '加油站八月份日销表12.08.xlsx',
+      singleDayFile: '加油站八月份零售日报08.12.xlsx',
+      singleDayDownloadUrl: '/api/export/monthly/2026-08/daily/download',
+    }));
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { generateAndDownloadReport } = await import('./export');
+    await generateAndDownloadReport({ kind: 'retailDaily', yearMonth: '2026-08' });
+
+    expect(mocks.downloadWithAuth).toHaveBeenCalledWith(
+      'https://sales.example.com/api/export/monthly/2026-08/download',
+      '加油站八月份日销表12.08.xlsx',
+    );
+    expect(mocks.downloadWithAuth).toHaveBeenCalledWith(
+      'https://sales.example.com/api/export/monthly/2026-08/daily/download',
+      '加油站八月份零售日报08.12.xlsx',
+    );
+  });
+
+  it('generates daily briefing workbooks through the shared export endpoint', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      status: 'ok',
+      file: 'ProductTeam销售日报表2026.08.10.xlsx',
+    }));
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { downloadDailyBriefingReport } = await import('./export');
+    await downloadDailyBriefingReport('2026-08-10');
+
+    expect(firstFetchUrl(fetchMock)).toBe('https://sales.example.com/api/export/daily-briefing/2026-08-10');
+    expect(mocks.downloadWithAuth).toHaveBeenCalledWith(
+      'https://sales.example.com/api/export/daily-briefing/2026-08-10/download',
+      'ProductTeam销售日报表2026.08.10.xlsx',
+    );
+  });
+
+  it('refreshes daily briefing generation without forcing a second download regeneration', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      status: 'ok',
+      file: 'ProductTeam销售日报表2026.08.10.xlsx',
+    }));
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { downloadDailyBriefingReport } = await import('./export');
+    await downloadDailyBriefingReport('2026-08-10', true);
+
+    expect(firstFetchUrl(fetchMock)).toBe('https://sales.example.com/api/export/daily-briefing/2026-08-10?refresh=1');
+    expect(mocks.downloadWithAuth).toHaveBeenCalledWith(
+      'https://sales.example.com/api/export/daily-briefing/2026-08-10/download',
+      'ProductTeam销售日报表2026.08.10.xlsx',
     );
   });
 

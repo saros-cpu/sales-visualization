@@ -431,6 +431,26 @@ body {
   background: #ffffff;
 }
 
+.train-entry-table-scroll .ant-table-content,
+.train-entry-table-scroll .ant-table-body {
+  overflow-x: auto !important;
+}
+
+.train-entry-table-scroll .ant-table-thead > tr > th,
+.train-entry-table-scroll .ant-table-tbody > tr > td {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.train-entry-table-scroll .ant-table-thead > tr > th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.train-entry-table-scroll .ant-table-tbody > tr > td {
+  white-space: normal;
+}
+
 .client-fit-page .ant-pagination {
   margin-bottom: 0;
 }
@@ -839,6 +859,176 @@ body {
   margin-top: 8px;
 }
 
+.wholesale-transport-kpi-row .kpi-card {
+  --cockpit-card-min-height: 136px;
+  --cockpit-card-padding: 18px 20px;
+  --cockpit-kpi-title-min-height: 20px;
+  --cockpit-kpi-title-margin: 10px;
+  --cockpit-kpi-title-size: 16px;
+  --cockpit-kpi-value-size: clamp(30px, 2.4vw, 40px);
+  --cockpit-kpi-footer-min-height: 22px;
+}
+
+.wholesale-transport-kpi-row .kpi-card .ant-statistic-title {
+  font-weight: 650;
+}
+
+.wholesale-transport-kpi-row .kpi-card .ant-statistic-content {
+  font-weight: 800;
+}
+
+.wholesale-transport-kpi-row .kpi-card-footer {
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.wholesale-summary-card {
+  --wholesale-summary-compare-shift: -24px;
+  --wholesale-summary-compare-value-size: clamp(24px, 1.75vw, 28px);
+  flex: 1;
+  height: 100%;
+  min-height: 148px;
+  overflow: hidden;
+}
+
+.wholesale-summary-card > .ant-card-body {
+  display: grid;
+  height: 100%;
+  min-height: 124px;
+  grid-template-columns: minmax(0, 1fr) 136px;
+  column-gap: 12px;
+  align-items: center;
+  padding: 18px 28px 18px 22px;
+}
+
+.wholesale-summary-card-left {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+}
+
+.wholesale-summary-card-title {
+  width: 100%;
+  overflow: hidden;
+  color: #5f6368;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wholesale-summary-card-value {
+  width: 100%;
+  margin-top: 10px;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: clamp(32px, 2.5vw, 42px);
+  font-weight: 800;
+  line-height: 1;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wholesale-summary-card-extra {
+  width: 100%;
+  margin-top: 12px;
+  overflow: hidden;
+  color: rgba(0,0,0,0.45);
+  font-size: 14px;
+  line-height: 1.2;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wholesale-summary-card-right {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  transform: translateX(var(--wholesale-summary-compare-shift));
+}
+
+.wholesale-summary-card-compare {
+  display: grid;
+  width: max-content;
+  grid-template-columns: 2.8em 116px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.wholesale-summary-card-compare-label {
+  display: inline-flex;
+  height: var(--wholesale-summary-compare-value-size);
+  align-items: center;
+  justify-content: flex-end;
+  color: rgba(0,0,0,0.55);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1;
+  text-align: right;
+  transform: translateX(-34px);
+}
+
+.wholesale-summary-card-compare-value {
+  position: relative;
+  display: block;
+  width: 116px;
+  height: var(--wholesale-summary-compare-value-size);
+  font-size: var(--wholesale-summary-compare-value-size);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.wholesale-summary-card-compare-arrow {
+  display: inline-flex;
+  width: 16px;
+  flex: 0 0 16px;
+  justify-content: center;
+  font-size: .72em;
+}
+
+.wholesale-summary-card-compare-main {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.wholesale-summary-card-compare-number {
+  display: block;
+  min-width: 0;
+  overflow: visible;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.wholesale-summary-card-compare-percent {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 14px;
+  text-align: left;
+  transform: translateY(-50%);
+}
+
 @media (max-width: 720px) {
   .kpi-card.kpi-card-has-compare > .ant-card-body {
     grid-template-columns: 1fr;
@@ -851,6 +1041,24 @@ body {
 
   .kpi-card .kpi-card-compare-panel .kpi-card-compare-group {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wholesale-summary-card > .ant-card-body {
+    grid-template-columns: 1fr;
+    row-gap: 14px;
+  }
+
+  .wholesale-summary-card {
+    --wholesale-summary-compare-shift: 0px;
+  }
+
+  .wholesale-summary-card-right {
+    height: auto;
+    flex-direction: row;
+  }
+
+  .wholesale-summary-card-compare {
+    width: auto;
   }
 }
 
@@ -1797,11 +2005,11 @@ body {
 }
 
 .wholesale-query-table .ant-table-content {
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 .weighing-list-table .ant-table-content {
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 .wholesale-query-table .ant-table-thead > tr > th,
@@ -1902,18 +2110,6 @@ body {
   min-height: 0;
   flex-direction: column;
   gap: 10px;
-}
-
-.global-ai-hint {
-  flex: 0 0 auto;
-}
-
-.global-ai-ops-bar {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
 }
 
 .global-ai-messages {
@@ -2019,6 +2215,12 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   margin: 6px 0 10px;
+}
+
+.global-ai-plan-meta .ant-tag {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .global-ai-table table {

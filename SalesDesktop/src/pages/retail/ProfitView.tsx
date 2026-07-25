@@ -21,6 +21,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRetailYears } from '@/hooks/useRetailYears';
 import {
   formatRetailCnyKpi,
+  formatRetailLitersKpiParts,
+  formatRetailSomKpiParts,
   formatRetailTonsKpi,
   numericMetric,
 } from '@/utils/retailMetrics';
@@ -31,50 +33,6 @@ type ProfitCompareKey = ProfitAmountKey | 'volume' | 'dieselVolume';
 type ProfitCompareData = { mom: ProfitSummary | null; yoy: ProfitSummary | null };
 type ProfitCompareItem = { text: string; tone: 'up' | 'down' | 'neutral'; arrow: string };
 type ProfitKpiParts = { value: string; unit: string };
-
-function resolveKpiLocale(language?: string) {
-  return language?.startsWith('ru') ? 'ru-RU' : 'zh-CN';
-}
-
-function compactKpiNumber(value: number, divisor: number, locale: string, maximumFractionDigits: number) {
-  return (value / divisor).toLocaleString(locale, { maximumFractionDigits });
-}
-
-function formatSomKpiParts(value: unknown, language?: string): ProfitKpiParts {
-  const numeric = numericMetric(value);
-  const locale = resolveKpiLocale(language);
-  if (locale === 'ru-RU') {
-    if (Math.abs(numeric) >= 100000000) {
-      return { value: compactKpiNumber(numeric, 100000000, 'ru-RU', 2), unit: 'млрд сом' };
-    }
-    if (Math.abs(numeric) >= 1000000) {
-      return { value: compactKpiNumber(numeric, 1000000, 'ru-RU', 1), unit: 'млн сом' };
-    }
-    return { value: numeric.toLocaleString('ru-RU', { maximumFractionDigits: 0 }), unit: 'сом' };
-  }
-  if (Math.abs(numeric) >= 100000000) {
-    return { value: compactKpiNumber(numeric, 100000000, 'zh-CN', 2), unit: '亿索姆' };
-  }
-  if (Math.abs(numeric) >= 10000) {
-    return { value: compactKpiNumber(numeric, 10000, 'zh-CN', 1), unit: '万索姆' };
-  }
-  return { value: numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 }), unit: '索姆' };
-}
-
-function formatLitersKpiParts(value: unknown, language?: string): ProfitKpiParts {
-  const numeric = numericMetric(value);
-  const locale = resolveKpiLocale(language);
-  if (locale === 'ru-RU') {
-    if (Math.abs(numeric) >= 1000) {
-      return { value: compactKpiNumber(numeric, 1000, 'ru-RU', 1), unit: 'тыс. л' };
-    }
-    return { value: numeric.toLocaleString('ru-RU', { maximumFractionDigits: 0 }), unit: 'л' };
-  }
-  if (Math.abs(numeric) >= 10000) {
-    return { value: compactKpiNumber(numeric, 10000, 'zh-CN', 1), unit: '万L' };
-  }
-  return { value: numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 }), unit: 'L' };
-}
 
 function amount(value?: number | null, digits = 2) {
   return Number(value || 0).toLocaleString(undefined, {
@@ -340,14 +298,14 @@ export default function ProfitView() {
   };
 
   const renderSummary = (summary?: ProfitMonthData['summary'] | ProfitYearData['summary']) => {
-    const salesKpi = formatSomKpiParts(summary?.salesAmount ?? 0, i18n.language);
-    const volumeKpi = formatLitersKpiParts(summary?.volume ?? 0, i18n.language);
-    const dieselSalesKpi = formatSomKpiParts(summary?.dieselSalesAmount ?? 0, i18n.language);
-    const dieselVolumeKpi = formatLitersKpiParts(summary?.dieselVolume ?? 0, i18n.language);
-    const purchaseKpi = formatSomKpiParts(summary?.purchaseAmount ?? 0, i18n.language);
-    const salaryKpi = formatSomKpiParts(summary?.salary ?? 0, i18n.language);
-    const otherKpi = formatSomKpiParts(summary?.otherFees ?? 0, i18n.language);
-    const netProfitKpi = formatSomKpiParts(summary?.netProfit ?? 0, i18n.language);
+    const salesKpi = formatRetailSomKpiParts(summary?.salesAmount ?? 0, i18n.language);
+    const volumeKpi = formatRetailLitersKpiParts(summary?.volume ?? 0, i18n.language);
+    const dieselSalesKpi = formatRetailSomKpiParts(summary?.dieselSalesAmount ?? 0, i18n.language);
+    const dieselVolumeKpi = formatRetailLitersKpiParts(summary?.dieselVolume ?? 0, i18n.language);
+    const purchaseKpi = formatRetailSomKpiParts(summary?.purchaseAmount ?? 0, i18n.language);
+    const salaryKpi = formatRetailSomKpiParts(summary?.salary ?? 0, i18n.language);
+    const otherKpi = formatRetailSomKpiParts(summary?.otherFees ?? 0, i18n.language);
+    const netProfitKpi = formatRetailSomKpiParts(summary?.netProfit ?? 0, i18n.language);
     return (
       <div className="profit-kpi-grid">
         <ProfitKpiCard title={t('retail.totalSales')} value={salesKpi.value} unit={salesKpi.unit} lead={cnyExtraText(summary, 'salesAmount')} compare={kpiCompare(summary, 'salesAmount')} />

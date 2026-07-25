@@ -59,6 +59,7 @@ export default function SelfUse() {
     { title: t('retail.plateNumber'), dataIndex: 'plateNumber', key: 'plateNumber', render: (v: string | number) => String(v || '-') },
     { title: t('retail.volume'), dataIndex: 'volume', key: 'volume', sorter: (a: any, b: any) => a.volume - b.volume, render: (v: number) => `${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}L` },
     { title: t('retail.totalTons'), dataIndex: 'mass', key: 'tons', sorter: (a: any, b: any) => retailTonsOf(a) - retailTonsOf(b), render: (_: number, r: any) => `${formatRetailTons(retailTonsOf(r))} t` },
+    { title: t('retail.amount'), dataIndex: 'amount', key: 'amount', sorter: (a: any, b: any) => numeric(a.amount) - numeric(b.amount), render: (v: number) => `${formatNumber(v, 2)} сом` },
     { title: t('retail.density'), dataIndex: 'density', key: 'density', render: (v: number) => v ? formatNumber(v, 4) : '-' },
   ];
 
@@ -91,6 +92,7 @@ export default function SelfUse() {
           <Space className="client-fit-summary-line">
             <span>{t('common.total', { count: summary.totalRecords })} {t('retail.volume')} {summary.totalVolume.toLocaleString()}L</span>
             <span>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(summary))}t</span>
+            <span>{t('retail.amount')} {formatNumber(summary.totalAmount, 2)} сом</span>
             {summary.totalWeightKg ? <span>{t('retail.weightKg')} {formatNumber(summary.totalWeightKg)}kg</span> : null}
           </Space>
         )}

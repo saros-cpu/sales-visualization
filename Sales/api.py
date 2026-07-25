@@ -215,6 +215,7 @@ EXTERNAL_API_PERMISSION_PREFIXES = (
     ("/api/export/analysis/sales", "retail:export"),
     ("/api/export/analysis/monthly", "retail:export"),
     ("/api/export/analysis/yearly", "retail:export"),
+    ("/api/export/daily-briefing", "retail:export"),
     ("/api/export/retail/range", "retail:export"),
     ("/api/export/monthly", "retail:export"),
     ("/api/export/self-use", "retail:export"),

@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import jsonify, request
+from flask import current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 import pymysql
 
@@ -24,6 +24,7 @@ from shared_utils import (
     REFRESH_CACHE_LOCK,
     REFRESH_CACHE_STATUS,
     ensure_automation_task_schema,
+    ensure_market_watch_schema,
     ensure_station_status_schema,
     record_automation_task,
     retail_station_catalog_cached,
@@ -92,8 +93,8 @@ def _active_month() -> str:
 def _profit_snapshot_cache_items(ym: str) -> list[dict[str, Any]]:
     year = ym.split("-", 1)[0]
     expected = [
-        ("profit_month", f"利润月度快照 {ym}", "month", ym, {"summary", "stations"}),
-        ("profit_year", f"年度利润总表快照 {year}", "year", year, {"summary", "months"}),
+        ("profit_month", "利润月度快照", "month", ym, {"summary", "stations"}),
+        ("profit_year", "利润年度快照", "year", year, {"summary", "months"}),
     ]
     rows: dict[tuple[str, str], dict[str, Any]] = {}
     error: str | None = None
@@ -148,7 +149,7 @@ def _profit_snapshot_cache_items(ym: str) -> list[dict[str, Any]]:
             missing = sorted(required_keys - set(payload.keys())) if isinstance(payload, dict) else sorted(required_keys)
             item["missingKeys"] = missing
             item["valid"] = not missing
-            item["error"] = None if item["valid"] else "missing_keys"
+            item["error"] = None
         except (TypeError, json.JSONDecodeError) as exc:
             item["error"] = exc.__class__.__name__
         result.append(item)
@@ -190,8 +191,10 @@ def _cache_items() -> list[dict[str, Any]]:
     workbook_info = {"key": "report_workbook", "label": "报表文件状态", "month": ym, "exists": False, "valid": False, "file": None}
     try:
         index = json.loads(report_index.read_text(encoding="utf-8-sig")) if report_index.exists() else {}
-        file_name = (index.get(ym) or {}).get("file")
-        workbook_path = OILSTATION_ROOT / "exports" / file_name if file_name else None
+        report_item = index.get(ym) or {}
+        file_name = report_item.get("file")
+        stored_path = report_item.get("path") or file_name
+        workbook_path = OILSTATION_ROOT / "exports" / stored_path if stored_path else None
         if workbook_path:
             workbook_info.update(_file_info(workbook_path))
             workbook_info["file"] = file_name
@@ -1214,8 +1217,58 @@ def _automation_rows(cur) -> list[dict[str, Any]]:
             item["summary"] = json.loads(item["summary"]) if item.get("summary") else None
         except Exception:
             pass
+        summary = item["summary"] if isinstance(item.get("summary"), dict) else {}
+        for key, value in summary.items():
+            item.setdefault(key, value)
+        item["taskName"] = item.get("task_name")
+        item["startedAt"] = item.get("started_at")
+        item["finishedAt"] = item.get("finished_at")
         result.append(item)
     return result
+
+
+def _automation_task_row(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    for key in ("started_at", "finished_at"):
+        value = item.get(key)
+        item[key] = value.isoformat(sep=" ") if isinstance(value, datetime) else str(value) if value else None
+    try:
+        summary = json.loads(item.get("summary") or "{}")
+    except Exception:
+        summary = {}
+    return {
+        **(summary if isinstance(summary, dict) else {}),
+        "id": item.get("id"),
+        "taskName": item.get("task_name"),
+        "status": item.get("status"),
+        "startedAt": item.get("started_at"),
+        "finishedAt": item.get("finished_at"),
+        "summary": summary if isinstance(summary, dict) else {},
+        "error": item.get("error") or "",
+    }
+
+
+def _automation_tasks_payload(cur) -> dict[str, Any]:
+    ensure_automation_task_schema(cur)
+    cur.execute("""
+        SELECT r.id, r.task_name, r.status, r.started_at, r.finished_at, r.summary, r.error
+        FROM automation_task_runs r
+        JOIN (
+            SELECT task_name, MAX(id) AS id
+            FROM automation_task_runs
+            GROUP BY task_name
+        ) latest ON latest.id = r.id
+        ORDER BY r.task_name
+    """)
+    latest = [_automation_task_row(row) for row in cur.fetchall()]
+    cur.execute("""
+        SELECT id, task_name, status, started_at, finished_at, summary, error
+        FROM automation_task_runs
+        ORDER BY id DESC
+        LIMIT 40
+    """)
+    recent = [_automation_task_row(row) for row in cur.fetchall()]
+    return {"latest": latest, "recent": recent}
 
 
 def _ai_status(cur) -> dict[str, Any]:
@@ -1243,6 +1296,47 @@ def _ai_status(cur) -> dict[str, Any]:
         "failed7d": int(row.get("failed_count") or 0),
         "avgDurationMs": int(row.get("avg_duration_ms") or 0),
         "lastCalledAt": row["last_called_at"].isoformat(sep=" ") if isinstance(row.get("last_called_at"), datetime) else None,
+    }
+
+
+def _latest_exchange_status(cur) -> dict[str, Any]:
+    cur.execute(
+        """
+        SELECT rate_date, usd_kgs, cny_kgs, source, is_manual, fetched_at
+        FROM exchange_rates
+        WHERE rate_date <= CURDATE()
+        ORDER BY rate_date DESC
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    return {
+        "date": row["rate_date"].isoformat() if row and row.get("rate_date") else None,
+        "usdKgs": float(row["usd_kgs"]) if row and row.get("usd_kgs") is not None else None,
+        "cnyKgs": float(row["cny_kgs"]) if row and row.get("cny_kgs") is not None else None,
+        "source": row.get("source") if row else None,
+        "isManual": bool(row.get("is_manual")) if row else False,
+        "fetchedAt": row["fetched_at"].isoformat() if row and row.get("fetched_at") else None,
+    }
+
+
+def _latest_market_status(cur) -> dict[str, Any]:
+    ensure_market_watch_schema(cur)
+    cur.execute(
+        """
+        SELECT observed_at, title, source_name, created_at
+        FROM market_watch_items
+        WHERE is_active = TRUE
+        ORDER BY observed_at DESC, priority ASC, id DESC
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    return {
+        "observedAt": row["observed_at"].isoformat() if row and row.get("observed_at") else None,
+        "title": row.get("title") if row else None,
+        "sourceName": row.get("source_name") if row else None,
+        "createdAt": row["created_at"].isoformat() if row and row.get("created_at") else None,
     }
 
 
@@ -1415,6 +1509,8 @@ def system_health():
             accounting = _accounting_report_status(cur, date.today() - timedelta(days=1))
             retail_alerts = _retail_alert_status(cur)
             report_audit = _latest_report_audit_status()
+            latest_exchange = _latest_exchange_status(cur)
+            latest_market = _latest_market_status(cur)
             assistant_coverage = assistant_project_coverage_status()
             action_center = _action_center(
                 cache_items,
@@ -1429,19 +1525,31 @@ def system_health():
                 assistant_coverage,
             )
             status = _overall_status(cache_items, api, automation, knowledge, updater, action_center["items"])
+            services = {
+                "backend": {"status": "ok"},
+                "database": {"status": "ok" if db_ok else "error"},
+                "openrouter": {"status": "ok" if ai["configured"] else "warning"},
+                "knowledgeIndex": {"status": knowledge["status"]},
+                "desktopUpdate": {"status": updater["status"]},
+            }
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            checks = [
+                {"name": "主项目服务", "ok": True, "elapsedMs": duration_ms},
+                {"name": "销售数据库", "ok": db_ok, "elapsedMs": None},
+                {"name": "知识库索引", "ok": knowledge["status"] == "ok", "elapsedMs": None},
+                {"name": "客户端更新包", "ok": updater["status"] == "ok", "elapsedMs": None},
+            ]
             return jsonify({"code": 0, "message": "success", "data": {
                 "status": status,
+                "ok": status == "ok",
                 "checkedAt": datetime.now().isoformat(sep=" "),
-                "durationMs": int((time.perf_counter() - started_at) * 1000),
-                "services": {
-                    "backend": {"status": "ok"},
-                    "database": {"status": "ok" if db_ok else "error"},
-                    "openrouter": {"status": "ok" if ai["configured"] else "warning"},
-                    "knowledgeIndex": {"status": knowledge["status"]},
-                    "desktopUpdate": {"status": updater["status"]},
-                },
+                "generatedAt": date.today().isoformat(),
+                "durationMs": duration_ms,
+                "checks": checks,
+                "services": services,
                 "api": api,
                 "cache": {"items": cache_items, "refresh": dict(REFRESH_CACHE_STATUS)},
+                "cacheRefresh": dict(REFRESH_CACHE_STATUS),
                 "automation": automation,
                 "ai": ai,
                 "knowledge": knowledge,
@@ -1449,6 +1557,43 @@ def system_health():
                 "accountingLatest": accounting,
                 "retailAlerts": retail_alerts,
                 "reportAudit": report_audit,
+                "latestExchange": latest_exchange,
+                "latestMarket": latest_market,
+                "security": {
+                    "runtimeSecret": (WORKSPACE_ROOT / ".runtime" / "secret_key.txt").exists(),
+                    "cookieSecure": bool(current_app.config.get("SESSION_COOKIE_SECURE")),
+                    "cookieHttpOnly": bool(current_app.config.get("SESSION_COOKIE_HTTPONLY")),
+                    "sameSite": current_app.config.get("SESSION_COOKIE_SAMESITE"),
+                },
+                "snapshots": {
+                    "actualCount": sum(1 for item in cache_items if item.get("exists")),
+                    "expectedCount": len(cache_items),
+                    "missing": [item.get("label") or item.get("key") for item in cache_items if not item.get("exists")],
+                    "dailyMissing": [item.get("label") or item.get("key") for item in cache_items if item.get("key") == "retail_day" and not item.get("exists")],
+                    "dailyActualCount": 1 if any(item.get("key") == "retail_day" and item.get("exists") for item in cache_items) else 0,
+                    "dailyExpectedCount": 1,
+                    "reportWorkbook": next((item for item in cache_items if item.get("key") == "report_workbook"), {}),
+                    "profitSnapshots": {
+                        "ok": all(item.get("exists") and item.get("valid") for item in cache_items if str(item.get("key") or "").startswith("profit_")),
+                        "month": _active_month(),
+                        "missing": [
+                            item.get("label") or item.get("key")
+                            for item in cache_items
+                            if str(item.get("key") or "").startswith("profit_") and not (item.get("exists") and item.get("valid"))
+                        ],
+                        "items": [item for item in cache_items if str(item.get("key") or "").startswith("profit_")],
+                    },
+                },
+                "logs": [],
+                "tasks": [
+                    {
+                        "taskName": item.get("task_name") or item.get("taskName"),
+                        "status": item.get("status"),
+                        "ok": item.get("status") == "success",
+                        "warning": item.get("status") not in {"success", "running", "queued"},
+                    }
+                    for item in automation
+                ],
                 "assistantProjectCoverage": assistant_coverage,
                 "actionCenter": action_center,
             }})
@@ -1496,6 +1641,18 @@ def generate_accounting_reports():
     except Exception as exc:
         conn.rollback()
         return jsonify({"code": 5001, "message": str(exc), "data": None}), 500
+    finally:
+        conn.close()
+
+
+@bp_v2.route("/system/automation-tasks", methods=["GET"])
+@jwt_required()
+@permission_required("system_health:view")
+def automation_tasks():
+    conn = get_connection()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            return jsonify({"code": 0, "message": "success", "data": _automation_tasks_payload(cur)})
     finally:
         conn.close()
 

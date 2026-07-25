@@ -688,10 +688,38 @@ class AssistantLlmPeriodFallbackTests(unittest.TestCase):
         self.assertEqual(plan["period"]["label"], "本月")
 
     @patch("routes_assistant.assistant_llm_parse_period")
+    def test_common_business_time_synonyms_skip_llm(self, mock_parse):
+        cases = [
+            ("当月销量", "本月", "2026-07-01", "2026-07-23"),
+            ("本月份销售额", "本月", "2026-07-01", "2026-07-23"),
+            ("昨日销量", "昨天", "2026-07-21", "2026-07-22"),
+            ("昨儿销售额", "昨天", "2026-07-21", "2026-07-22"),
+            ("当日销量", "今天", "2026-07-22", "2026-07-23"),
+            ("当天销售额", "今天", "2026-07-22", "2026-07-23"),
+            ("当周销量", "本周", "2026-07-20", "2026-07-23"),
+            ("这个星期销售额", "本周", "2026-07-20", "2026-07-23"),
+            ("上个月销量", "上月", "2026-06-01", "2026-07-01"),
+            ("上上个月零售销量", "上上个月", "2026-05-01", "2026-06-01"),
+            ("当季销量", "2026年第3季度", "2026-07-01", "2026-07-23"),
+            ("当前年销量", "2026年", "2026-01-01", "2026-07-23"),
+        ]
+
+        for question, label, start, end_exclusive in cases:
+            with self.subTest(question=question):
+                plan = build_assistant_query_plan(question, today=self.today)
+
+                self.assertEqual(plan["period"]["label"], label)
+                self.assertEqual(plan["period"]["start"], start)
+                self.assertEqual(plan["period"]["endExclusive"], end_exclusive)
+                self.assertNotEqual(plan["period"]["label"], "最近7天")
+
+        mock_parse.assert_not_called()
+
+    @patch("routes_assistant.assistant_llm_parse_period")
     def test_llm_none_keeps_rules_fallback(self, mock_parse):
         mock_parse.return_value = None
 
-        plan = build_assistant_query_plan("上上个月零售销量", today=self.today)
+        plan = build_assistant_query_plan("月初零售销量", today=self.today)
 
         self.assertEqual(plan["period"]["label"], "最近7天")
 

@@ -6,6 +6,7 @@ import pymysql
 from db import get_connection
 from import_helpers import (
     classify_wholesale_movement,
+    format_lpg_tank_remark,
     is_internal_entity_name,
     load_entity_lookup,
     load_product_lookup,
@@ -23,6 +24,19 @@ KJ_COLUMN_MAP = {
 }
 
 CORRECTABLE_FIELDS = list(KJ_COLUMN_MAP.keys())
+
+
+def _json_text(column: str, key: str) -> str:
+    return f"NULLIF(JSON_UNQUOTE(JSON_EXTRACT({column}, '$.{key}')), '')"
+
+
+def _lpg_remark_sql(table_alias: str) -> str:
+    remark = f"{table_alias}.remark"
+    return (
+        f"CASE WHEN JSON_VALID({remark}) THEN "
+        f"{_json_text(remark, 'operation')} "
+        f"ELSE {remark} END"
+    )
 
 
 def ensure_weighing_review_schema(cur) -> None:
@@ -44,6 +58,7 @@ def ensure_weighing_review_schema(cur) -> None:
 
 
 def auto_classify(sender_name: str, receiver_name: str) -> str:
+    """Fallback only; maintained customers and aliases are handled before this."""
     receiver = (receiver_name or '').strip().lower()
 
     def is_own_station(name: str) -> bool:
@@ -54,9 +69,10 @@ def auto_classify(sender_name: str, receiver_name: str) -> str:
     is_receiver_company = is_internal_entity_name(receiver_name)
     is_receiver_station = is_own_station(receiver)
 
-    # 规则1: Example/CUSTOMER-S-АББР/油库 → 非自有设施 = 外销 (export_wholesale)
+    # 规则1: Example/CUSTOMER-S-АББР/油库 → 未维护的非自有设施 = 待识别。
+    # 出口批发 / 本地批发必须来自客户维护或人工审核，称重方向本身不能判断。
     if is_sender_company and not is_receiver_company and not is_receiver_station:
-        return 'export_wholesale'
+        return 'unknown'
     # 规则2: Example/CUSTOMER-S-АББР/油库 → 自有设施 = 外运 (transfer，不是物资调拨)
     elif is_sender_company and (is_receiver_company or is_receiver_station):
         return 'transfer'
@@ -66,6 +82,57 @@ def auto_classify(sender_name: str, receiver_name: str) -> str:
     # 规则4: 非Example/CUSTOMER-S-АББР/油库 → 非Example/CUSTOMER-S-АББР = 代加工 (processing)
     else:
         return 'processing'
+
+
+WEIGH_SOURCE_LABELS = {
+    'storagedistrict': '储运区',
+    'lpg': '液化气罐区',
+}
+
+WEIGH_SOURCE_ALIASES = {
+    '储运区': 'storagedistrict',
+    'kj_weighing': 'storagedistrict',
+    'storage_district': 'storagedistrict',
+    'storagedistrict': 'storagedistrict',
+    '液化气罐区': 'lpg',
+    'lpg': 'lpg',
+    'lpg_weighing': 'lpg',
+    'lpg_storage': 'lpg',
+}
+
+
+def _split_filter_terms(value) -> list[str]:
+    if not value:
+        return []
+    values = value.split(',') if isinstance(value, str) else value
+    terms = []
+    for item in values:
+        if item is None:
+            continue
+        for part in str(item).split(','):
+            text = part.strip().lower()
+            if text:
+                terms.append(text)
+    return terms
+
+
+def _normalize_source_terms(value) -> set[str]:
+    sources = set()
+    for term in _split_filter_terms(value):
+        sources.add(WEIGH_SOURCE_ALIASES.get(term, term))
+    return sources
+
+
+def _matches_filter_terms(terms: list[str], *values) -> bool:
+    if not terms:
+        return True
+    candidates = [str(value or '').strip().lower() for value in values]
+    return any(
+        term == candidate or term in candidate
+        for term in terms
+        for candidate in candidates
+        if candidate
+    )
 
 
 def _correction_joins(table_alias: str, weighing_source: str, id_column: str = 'id') -> str:
@@ -107,10 +174,17 @@ def get_weighing_list(date_from: date, date_to: date,
                        product_name: Optional[str] = None,
                        entity_name: Optional[str] = None,
                        source: Optional[str] = None,
+                       sender_names: Optional[list[str]] = None,
+                       receiver_names: Optional[list[str]] = None,
+                       product_names: Optional[list[str]] = None,
                        allowed_entity_names: Optional[list[str]] = None,
                        page: int = 1, page_size: int = 50) -> dict:
     conn = get_connection()
     try:
+        source_terms = _normalize_source_terms(source)
+        sender_filter_terms = _split_filter_terms(sender_names)
+        receiver_filter_terms = _split_filter_terms(receiver_names)
+        product_filter_terms = _split_filter_terms(product_names)
         params = [date_from, date_to]
         params_lpg = [date_from, date_to]
         if vehicle_no:
@@ -185,7 +259,9 @@ WHERE {' AND '.join(lpg_where)}'''
                 sender = row.get('sender_name') or ''
                 receiver = row.get('receiver_name') or ''
                 raw_product = row.get('raw_product_name') or ''
-                entity = lookup_entity(entity_lookup, receiver)
+                sender_entity = lookup_entity(entity_lookup, sender)
+                receiver_entity = lookup_entity(entity_lookup, receiver)
+                entity = receiver_entity
                 product = lookup_product(product_lookup, raw_product)
                 try:
                     item_classification = classify_wholesale_movement(
@@ -197,7 +273,7 @@ WHERE {' AND '.join(lpg_where)}'''
                     )
                 except Exception:
                     item_classification = auto_classify(sender, receiver)
-                if not item_classification or item_classification == 'unknown':
+                if not item_classification:
                     item_classification = auto_classify(sender, receiver)
                 review = review_map.get((row['source'], str(row['id'])))
                 if review and review.get('classification'):
@@ -213,6 +289,11 @@ WHERE {' AND '.join(lpg_where)}'''
                     'receiverName': receiver,
                     'rawProductName': row['raw_product_name'],
                     'standardProductName': product.get('display_name') if product else None,
+                    'displayProductName': product.get('display_name') if product else row['raw_product_name'],
+                    'standardSenderName': sender_entity.get('standard_name') if sender_entity else None,
+                    'standardReceiverName': receiver_entity.get('standard_name') if receiver_entity else None,
+                    'displaySenderName': sender_entity.get('standard_name') if sender_entity else sender,
+                    'displayReceiverName': receiver_entity.get('standard_name') if receiver_entity else receiver,
                     'standardEntityName': entity.get('standard_name') if entity else None,
                     'entityType': entity.get('entity_type') if entity else 'unknown',
                     'entityCode': entity.get('entity_code') if entity else None,
@@ -221,21 +302,29 @@ WHERE {' AND '.join(lpg_where)}'''
                     'netWeight': net_weight,
                     'classification': item_classification,
                     'status': review['audit_status'] if review else 'pending',
-                    'remark': row['remark'],
+                    'remark': format_lpg_tank_remark(row['remark']) if row.get('source') == 'lpg' else row['remark'],
                     'reviewRemark': review.get('remark') if review else None,
                 }
-                if source and item['source'] != source:
+                if source_terms and item['source'] not in source_terms:
                     continue
                 if classification and item['classification'] != classification:
                     continue
                 if product_name:
-                    product_text = f"{item.get('rawProductName') or ''} {item.get('standardProductName') or ''}".lower()
+                    product_text = " ".join([
+                        item.get('rawProductName') or '',
+                        item.get('standardProductName') or '',
+                        item.get('displayProductName') or '',
+                    ]).lower()
                     if product_name.lower() not in product_text:
                         continue
                 if entity_name:
                     entity_text = " ".join([
                         item.get('senderName') or '',
                         item.get('receiverName') or '',
+                        item.get('standardSenderName') or '',
+                        item.get('standardReceiverName') or '',
+                        item.get('displaySenderName') or '',
+                        item.get('displayReceiverName') or '',
                         item.get('standardEntityName') or '',
                     ]).lower()
                     if entity_name.lower() not in entity_text:
@@ -245,10 +334,36 @@ WHERE {' AND '.join(lpg_where)}'''
                     entity_text = " ".join([
                         item.get('senderName') or '',
                         item.get('receiverName') or '',
+                        item.get('standardSenderName') or '',
+                        item.get('standardReceiverName') or '',
+                        item.get('displaySenderName') or '',
+                        item.get('displayReceiverName') or '',
                         item.get('standardEntityName') or '',
                     ]).lower()
                     if not allowed_terms or not any(term in entity_text for term in allowed_terms):
                         continue
+                if not _matches_filter_terms(
+                    sender_filter_terms,
+                    item.get('senderName'),
+                    item.get('standardSenderName'),
+                    item.get('displaySenderName'),
+                ):
+                    continue
+                if not _matches_filter_terms(
+                    receiver_filter_terms,
+                    item.get('receiverName'),
+                    item.get('standardReceiverName'),
+                    item.get('displayReceiverName'),
+                    item.get('standardEntityName'),
+                ):
+                    continue
+                if not _matches_filter_terms(
+                    product_filter_terms,
+                    item.get('rawProductName'),
+                    item.get('standardProductName'),
+                    item.get('displayProductName'),
+                ):
+                    continue
                 if status and item['status'] != status:
                     continue
                 all_items.append(item)
@@ -287,6 +402,65 @@ def verify_weighing(weighing_source: str, weighing_id: int,
 
             conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def _add_filter_option(target: set[str], *values) -> None:
+    for value in values:
+        text = str(value or '').strip()
+        if text:
+            target.add(text)
+
+
+def get_weighing_filter_options(date_from: date, date_to: date) -> dict:
+    options = {
+        'sender': set(),
+        'receiver': set(),
+        'product': set(),
+        'source': set(),
+    }
+    conn = get_connection()
+    try:
+        kj_sql = f'''SELECT 'storagedistrict' AS source, {_correction_cols_kj('kw')}, DATE(kw.毛重日期) AS business_date
+FROM kj_weighing kw
+{_correction_joins('kw', 'kj_weighing', '序号')}
+WHERE DATE(kw.毛重日期) BETWEEN %s AND %s AND (kw.作废 IS NULL OR kw.作废 = 0)'''
+        lpg_sql = f'''SELECT 'lpg' AS source, {_correction_cols_lpg('lpg')}, lpg.business_date
+FROM lpg_weighing lpg
+{_correction_joins('lpg', 'lpg')}
+WHERE lpg.business_date BETWEEN %s AND %s'''
+        union_sql = f'''SELECT source, sender_name, receiver_name, raw_product_name
+FROM (
+    {kj_sql}
+    UNION ALL
+    {lpg_sql}
+) AS combined'''
+        with conn.cursor(pymysql.cursors.DictCursor) as cur, conn.cursor() as lookup_cur:
+            entity_lookup = load_entity_lookup(lookup_cur)
+            product_lookup = load_product_lookup(lookup_cur)
+            cur.execute(union_sql, [date_from, date_to, date_from, date_to])
+            for row in cur.fetchall():
+                sender = row.get('sender_name') or ''
+                receiver = row.get('receiver_name') or ''
+                raw_product = row.get('raw_product_name') or ''
+                sender_entity = lookup_entity(entity_lookup, sender)
+                receiver_entity = lookup_entity(entity_lookup, receiver)
+                product = lookup_product(product_lookup, raw_product)
+                _add_filter_option(
+                    options['sender'],
+                    sender_entity.get('standard_name') if sender_entity else sender,
+                )
+                _add_filter_option(
+                    options['receiver'],
+                    receiver_entity.get('standard_name') if receiver_entity else receiver,
+                )
+                _add_filter_option(
+                    options['product'],
+                    product.get('display_name') if product else raw_product,
+                )
+                _add_filter_option(options['source'], WEIGH_SOURCE_LABELS.get(row.get('source'), row.get('source')))
+        return {key: sorted(values) for key, values in options.items()}
     finally:
         conn.close()
 

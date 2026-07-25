@@ -109,7 +109,9 @@ def status():
 
     data = {'hasUsers': has_any_user, 'authenticated': bool(user), 'user': None}
     if user:
-        data.update(_auth_payload(user))
+        # Web sessions may be restored from the Flask session cookie after a
+        # reload; return fresh JWTs so v2 API calls do not bounce back to login.
+        data.update(_auth_payload(user, include_tokens=True))
     return jsonify({'code': 0, 'message': 'success', 'data': data})
 
 

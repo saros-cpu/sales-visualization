@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import axios from 'axios';
 import { API_HOST, resolveApiHost } from '@/api/http';
+import { ApiPaths } from '@shared/api-contracts';
 import { mountHomeMap } from '@/lib/kgz-map/kgz-map-entry';
+import { localizeMapPoint } from '@shared/map-labels';
 import '@/lib/kgz-map/kgz-map.css';
 import './WallpaperApp.css';
 import businessPointsRaw from '../../public/kgz-map/data/business_points.json?raw';
@@ -78,6 +80,16 @@ function resolveWallpaperLang(): WallLang {
     if (nav.startsWith('ru')) return 'ru';
   }
   return 'zh';
+}
+
+function localizePayload(p: any, lang?: WallLang): any {
+  if (!p) return p;
+  const resolved = lang || resolveWallpaperLang();
+  return {
+    ...p,
+    stations: Array.isArray(p.stations) ? p.stations.map((s: any) => localizeMapPoint(s, resolved)) : p.stations,
+    depots: Array.isArray(p.depots) ? p.depots.map((d: any) => localizeMapPoint(d, resolved)) : p.depots,
+  };
 }
 
 function t(key: string): string {
@@ -433,7 +445,7 @@ async function requestWallpaperPayload(wallpaperToken: string, method: Wallpaper
   const headers = (method === 'header' || method === 'vpn') && wallpaperToken
     ? { 'X-Wallpaper-Token': wallpaperToken }
     : undefined;
-  const response = await axios.get(`${apiHost}/api/wallpaper/map`, {
+  const response = await axios.get(`${apiHost}${ApiPaths.wallpaper.map}`, {
     params,
     headers,
     timeout: 15000,
@@ -576,7 +588,7 @@ export default function WallpaperApp() {
     if (!engineRuntime) return;
     if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
     previewTimerRef.current = window.setTimeout(() => {
-      void fetch('/api/wallpaper/settings/preview', {
+      void fetch(ApiPaths.wallpaper.settingsPreview, {
         method: 'POST',
         headers: localApiHeaders(true),
         body: JSON.stringify(hudLayoutPayload(layout)),
@@ -659,7 +671,7 @@ export default function WallpaperApp() {
     let cancelled = false;
     const syncSettings = async () => {
       try {
-        const response = await fetch('/api/wallpaper/settings', { cache: 'no-store' });
+        const response = await fetch(ApiPaths.wallpaper.settings, { cache: 'no-store' });
         if (!response.ok) return;
         const settings = await response.json();
         if (cancelled) return;
@@ -817,8 +829,10 @@ export default function WallpaperApp() {
 
     applyWallpaperLayout();
     let cancelled = false;
+    const currentLang = resolveWallpaperLang();
     mountHomeMap(el, { stations: [], depots: [], customers: [] }, {
       basePath: resolveKgzDataPath(),
+      lang: currentLang,
       showRoadPanel: false,
       showLakeLabels: true,
       showCities: true,
@@ -845,7 +859,7 @@ export default function WallpaperApp() {
       applyWallpaperLayout();
       if (latestPayloadRef.current) {
         mapVersionRef.current = mapDataVersion(latestPayloadRef.current);
-        mapRef.current?.updateLayers?.(mapLayers(latestPayloadRef.current, layerOptions));
+        mapRef.current?.updateLayers?.(mapLayers(localizePayload(latestPayloadRef.current, currentLang), layerOptions));
       }
       window.wallpaperAPI?.ready?.();
 
@@ -880,7 +894,7 @@ export default function WallpaperApp() {
     const nextVersion = mapDataVersion(payload);
     if (!payload || !mapRef.current || nextVersion === mapVersionRef.current) return;
     mapVersionRef.current = nextVersion;
-    mapRef.current.updateLayers?.(mapLayers(payload, layerOptions));
+    mapRef.current.updateLayers?.(mapLayers(localizePayload(payload), layerOptions));
     window.setTimeout(() => mapRef.current?.resize?.(), 80);
   }, [payload]);
 

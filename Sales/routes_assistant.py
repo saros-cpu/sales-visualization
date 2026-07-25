@@ -24,9 +24,11 @@ from assistant_agent import (
     clear_assistant_response,
     is_action_request,
     is_clear_assistant_command,
+    is_sensitive_info_request,
     read_only_refusal,
+    sensitive_info_refusal,
 )
-from assistant_quality import enrich_assistant_payload
+from assistant_quality import build_data_source_contract, enrich_assistant_payload
 from config import DB_CONFIG
 from db import get_connection
 from shared_utils import (
@@ -36,8 +38,9 @@ from shared_utils import (
 from text_utils import clean_str, normalize_station_name, parse_date, parse_decimal
 from retail_internal import open_oilstation
 from services.weighing_service import get_weighing_list
-from summary_service import available_periods, period_bounds, summarize_combined, summarize_wholesale
-from wholesale_service import summarize_wholesale_page
+from summary_service import available_periods, period_bounds, summarize_combined
+from wholesale_service import summarize_wholesale_range
+from wholesale_source_policy import detail_source_policy_clause, detail_source_policy_params
 from routes_data import chinese_market_item, market_source_display
 from project_capabilities import project_assistant_capabilities, project_assistant_coverage_baseline_date
 
@@ -140,13 +143,13 @@ _ASSISTANT_TOOL_CATALOG = {
         "name": "wholesale_summary",
         "description": "批发业务汇总和客户排行",
         "readOnly": True,
-        "dataSource": "wholesale_snapshots",
+        "dataSource": "wholesale_detail_records_source_policy",
     },
     "wholesale_review": {
         "name": "wholesale_review",
         "description": "批发复核异常提示",
         "readOnly": True,
-        "dataSource": "wholesale_snapshots",
+        "dataSource": "wholesale_detail_records_source_policy",
     },
     "train_entry_summary": {
         "name": "train_entry_summary",
@@ -320,6 +323,7 @@ def assistant_tool_catalog():
             "route": key,
             "mode": "read_only",
             "canWrite": False,
+            "dataSourceContract": build_data_source_contract({"route": key, "tool": value}),
         }
         for key, value in sorted(_ASSISTANT_TOOL_CATALOG.items())
     }
@@ -523,12 +527,13 @@ _ASSISTANT_BUSINESS_LEXICON = {
         "self_use": (
             "自用油", "自用油数据", "自用油量", "自用", "内部用油", "公司用油",
             "公司自用油", "自己用油", "自己用了多少油", "自己用了",
+            "发电机用油", "发电用油", "发电机用了多少油",
         ),
         "retail": ("零售", "加油站", "站点", "油站", "站里", "销售站"),
         "profit": (
             "利润", "利润核算", "利润页", "利润报表", "利润总表", "年度利润", "月度利润",
             "利润成本", "成本维护", "购油单价", "购油价格", "购油金额", "水电网警",
-            "员工薪资", "薪酬", "利润快照", "柴油销售额", "柴油销量", "利润表",
+            "员工薪资", "薪酬", "利润快照", "利润表",
             "月度利润表", "年度利润表", "月利润", "年利润", "成本", "成本项",
             "成本表", "油价成本", "油品成本", "购油价", "进油价", "进价",
             "进货价", "采购价", "购进价", "赚", "赚了", "赚钱", "赚没赚",
@@ -542,27 +547,36 @@ _ASSISTANT_BUSINESS_LEXICON = {
         ),
         "reports": (
             "报表中心", "报表文件", "导出报表", "导出文件", "下载报表", "月报", "年报",
-            "日销表", "零售日报", "自用油报表", "批发报表", "批发明细", "在哪下",
+            "日销表", "零售日报", "每日汇报表", "汇报表", "销售日报表", "ProductTeam销售日报表",
+            "自用油报表", "批发报表", "批发明细", "在哪下",
             "能下不", "能不能下", "下表", "拿表", "取表", "出表", "表格",
         ),
         "accounting": ("吉方", "交接日报", "会计日报", "财务交接", "日报缺", "缺站", "缺没缺站", "有没有缺站", "日报齐", "日报全不全"),
-        "combined": ("合并", "总销售", "整体", "公司", "全部业务", "经营情况"),
+        "combined": ("合并", "合计", "总计", "总共", "合起来", "加起来", "总销售", "整体", "公司", "全部业务", "经营情况"),
         "exchange": ("汇率", "美元", "人民币", "美金", "索姆/人民币"),
         "market": ("市场", "行情", "观察", "原油", "成品油", "俄罗斯", "乌兹别克", "国际"),
         "contract": ("合同", "协议"),
         "density": ("密度",),
         "procurement": ("采购", "原料采购", "进货", "进货量", "进货数据", "进了多少货", "采购数据", "供应商", "供货商"),
         "weighing": ("称重", "地磅", "过磅", "磅单", "待审核", "待复核", "审核称重"),
-        "materials": ("物资", "物料", "办公用品", "物资库存", "物资入库", "调拨单"),
+        "materials": ("物资", "物料", "办公用品", "物资库存", "物资入库", "调拨单", "物资调拨", "物资申请", "调拨审批", "调拨申请", "调拨"),
         "transfer_loss": ("调拨损耗", "损耗", "损耗率", "损耗情况", "运输损耗", "途中损耗"),
         "system_health": (
             "系统健康", "健康检查", "运行治理", "提醒中心", "告警", "自动任务",
             "任务状态", "服务状态", "AI助手", "AI助手状态", "AI状态", "大模型状态",
+            "接口", "接口慢", "接口慢不慢", "缓存", "缓存状态", "快照缓存", "日报任务", "任务跑", "跑了吗", "任务有没有跑",
+            "壁纸刷新", "壁纸不刷新", "液位不更新",
             "毛病", "有毛病", "系统故障", "服务故障", "接口故障", "挂了", "卡了",
             "卡不卡", "系统卡", "卡顿", "响应慢", "加载慢", "没反应", "打不开",
             "报错", "请求失败", "加载失败", "后端挂", "服务挂",
         ),
-        "knowledge": ("知识库", "知识文章", "附件索引", "资料库", "文档库", "口径说明"),
+        "knowledge": (
+            "知识库", "知识文章", "附件索引", "资料库", "文档库", "docs",
+            "技术方案", "实施方案", "维护交接", "API接口", "接口调用手册",
+            "报表口径", "口径说明", "验数记录", "发布版本台账", "AI助手方案", "助手方案",
+            "口径文档", "数据口径", "计算口径", "算法", "计算方式", "公式", "怎么算", "怎么计算",
+            "文档在哪", "说明在哪",
+        ),
         "audit": (
             "审计", "审计日志", "操作日志", "登录日志", "谁动", "动了数据",
             "改了数据", "谁改", "谁操作", "操作记录", "谁登录", "登录过",
@@ -579,7 +593,7 @@ _ASSISTANT_BUSINESS_LEXICON = {
         "map": ("地图",),
     },
     "metrics": {
-        "amount": ("金额", "销售额", "营业额", "收入", "钱", "索姆", "人民币", "元", "款", "利润", "毛利", "净利", "净利润", "盈利", "亏损", "赚", "亏"),
+        "amount": ("金额", "销售额", "营业额", "收入", "钱", "索姆", "人民币", "元", "款", "费用", "成本", "工资", "薪资", "利润", "毛利", "净利", "净利润", "盈利", "亏损", "赚", "亏"),
         "volume": (
             "销量", "销售量", "升", "升数", "油量", "卖得", "卖了多少",
             "卖油", "最能卖", "能卖", "拿货", "出油", "出油量", "用油量",
@@ -591,13 +605,13 @@ _ASSISTANT_BUSINESS_LEXICON = {
         "dimensions": {
             "station": (
                 "站点", "加油站", "哪家站", "哪个站", "各站", "站排行", "站点排行",
-                "油站", "按站点", "分站", "站点拆分", *_ASSISTANT_ACTIVE_STATION_WORDS,
+                "油站", "按站", "按油站", "按加油站", "按站点", "分站", "站点拆分", *_ASSISTANT_ACTIVE_STATION_WORDS,
             ),
             "resource": ("油品", "产品", "品类", "资源", "汽油", "柴油", "д/т", "аи", "按油品", "油品拆分"),
             "region": ("区域", "地区", "州", "各州", "按区域", "区域拆分"),
             "customer": ("客户", "客户排行", "哪家客户", "按客户", "客户拆分", "去向", "去哪", "去哪里", "流向", "客户/去向", "收货单位"),
             "supplier": ("供应商", "供货商", "发货单位"),
-            "vehicle": ("车辆", "车号", "车牌"),
+            "vehicle": ("车辆", "车号", "车牌", "哪个车", "按车", "分车"),
             "status": ("状态", "待审核", "待复核", "待审批", "审批", "没审批", "未审批", "没审核", "未审核", "告警", "异常"),
             "depot": ("油库", "仓库", "库房", "库区", "库点"),
             "material": ("物资", "物料", "办公用品", "材料"),
@@ -629,7 +643,7 @@ _ASSISTANT_COMPARISON_SIGNAL_WORDS = (
     "上个月同期", "上月同期", "去年同期", "上年同期", "增长率", "变化",
 )
 _ASSISTANT_RANKING_SIGNAL_WORDS = (
-    "排行", "排名", "top", "TOP", "哪个", "哪家", "最高", "最多", "最好", "卖得最好", "前几", "第一名",
+    "排行", "排名", "top", "TOP", "哪个", "哪家", "最高", "最多", "最好", "卖得最好", "前几", "前几名", "前十", "前十名", "前五", "前五名", "第一名",
 )
 _ASSISTANT_TREND_SIGNAL_WORDS = (
     "趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常",
@@ -797,9 +811,9 @@ def _assistant_month_to_date(year, month, anchor_day):
 
 
 def _assistant_calendar_period(text, today):
-    if _assistant_contains_any(text, ("月初到现在", "月初至今", "本月以来", "这个月以来")):
+    if _assistant_contains_any(text, ("月初到现在", "月初至今", "本月以来", "本月至今", "这个月以来", "当月以来", "当月至今")):
         return "本月以来", today.replace(day=1), today + timedelta(days=1)
-    if _assistant_contains_any(text, ("年初到现在", "年初至今", "今年以来")):
+    if _assistant_contains_any(text, ("年初到现在", "年初至今", "今年以来", "当年以来", "当年至今")):
         return f"{today.year}年以来", date(today.year, 1, 1), today + timedelta(days=1)
 
     if _assistant_contains_any(text, ("上个月同期", "上月同期")):
@@ -972,11 +986,11 @@ def _assistant_half_year_period(text, today):
 
 def _assistant_quarter_period(text, today):
     current_quarter = (today.month - 1) // 3 + 1
-    if "本季度" in text or "这个季度" in text or "当前季度" in text:
+    if _assistant_contains_any(text, ("本季度", "这个季度", "当前季度", "当季", "本季", "这个季")):
         start_month = (current_quarter - 1) * 3 + 1
         start = date(today.year, start_month, 1)
         return f"{today.year}年第{current_quarter}季度", start, today + timedelta(days=1)
-    if "上季度" in text or "上个季度" in text or "上一季度" in text:
+    if _assistant_contains_any(text, ("上季度", "上个季度", "上一季度", "上季", "上一季")):
         quarter = current_quarter - 1
         year = today.year
         if quarter == 0:
@@ -1028,18 +1042,23 @@ def parse_assistant_period(question, today=None):
     quarter = _assistant_quarter_period(text, today)
     if quarter:
         return quarter
-    if "昨天" in text:
+    if _assistant_contains_any(text, ("昨天", "昨日", "昨儿")):
         start = today - timedelta(days=1)
         return "昨天", start, today
-    if "今天" in text or "今日" in text:
+    if _assistant_contains_any(text, ("今天", "今日", "当日", "当天", "本日")):
         return "今天", today, today + timedelta(days=1)
     current_monday = today - timedelta(days=today.weekday())
-    if "上周" in text or "上星期" in text:
+    if _assistant_contains_any(text, ("上周", "上星期", "上个星期", "上一周")):
         start = current_monday - timedelta(days=7)
         return "上周", start, current_monday
-    if "本周" in text or "这周" in text:
+    if _assistant_contains_any(text, ("本周", "这周", "这个周", "当周", "本星期", "这星期", "这个星期")):
         return "本周", current_monday, today + timedelta(days=1)
-    if "上月" in text:
+    if re.search(r"(?:上上月|上上个月)", text):
+        first_this_month = today.replace(day=1)
+        start = _assistant_shift_months(first_this_month, -2)
+        end = _assistant_shift_months(first_this_month, -1)
+        return "上上个月", start, end
+    if re.search(r"(?<!上)(?:上月|上个月|上一月)", text):
         first_this_month = today.replace(day=1)
         last_month_end = first_this_month
         if first_this_month.month == 1:
@@ -1077,7 +1096,7 @@ def parse_assistant_period(question, today=None):
             start = date(today.year, month, 1)
             end = date(today.year + 1, 1, 1) if month == 12 else date(today.year, month + 1, 1)
             return f"{today.year}年{month}月", start, end
-    if "本月" in text or "这个月" in text or "这月" in text:
+    if _assistant_contains_any(text, ("本月", "这个月", "这月", "当月", "本月份", "当月份", "当前月", "这个月份")):
         start = today.replace(day=1)
         return "本月", start, today + timedelta(days=1)
     year_match = re.search(r"(?<!\d)(20\d{2}|\d{2})\s*年(?!\s*\d)", text)
@@ -1085,6 +1104,8 @@ def parse_assistant_period(question, today=None):
         year = _assistant_year_number(year_match.group(1))
         if year is not None:
             return f"{year}年", date(year, 1, 1), date(year + 1, 1, 1)
+    if _assistant_contains_any(text, ("今年", "本年", "当前年", "当年", "这个年")):
+        return f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
     if "大前年" in text:
         year = today.year - 3
         return f"{year}年", date(year, 1, 1), date(year + 1, 1, 1)
@@ -1094,8 +1115,6 @@ def parse_assistant_period(question, today=None):
     if _assistant_contains_any(text, ("去年", "上年", "上一年")):
         year = today.year - 1
         return f"{year}年", date(year, 1, 1), date(today.year, 1, 1)
-    if _assistant_contains_any(text, ("今年", "本年", "当前年", "当年", "这个年")):
-        return f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
     if "年销量" in text or "年度" in text or "全年" in text:
         return f"{today.year}年", date(today.year, 1, 1), today + timedelta(days=1)
     start = today - timedelta(days=7)
@@ -1248,9 +1267,10 @@ def _assistant_domain_from_terms(business_terms, default="retail"):
     weighing_terms = set(domain_terms.get("weighing") or [])
     if weighing_terms.intersection({"称重", "地磅", "过磅", "磅单", "审核称重"}):
         return "weighing"
+    if domain_terms.get("knowledge"):
+        return "knowledge"
     for domain_name in (
         "system_health",
-        "knowledge",
         "audit",
         "alias",
         "users",
@@ -1392,7 +1412,16 @@ def _assistant_clarification_payload(
 
 
 def _assistant_has_explicit_time_signal(text):
-    return bool(_ASSISTANT_EXPLICIT_TIME_PATTERN.search(str(text or "")))
+    value = str(text or "")
+    if _ASSISTANT_EXPLICIT_TIME_PATTERN.search(value):
+        return True
+    return _assistant_contains_any(value, (
+        "昨日", "昨儿", "当日", "当天", "本日",
+        "当周", "这个周", "本星期", "这星期", "这个星期", "上一周", "上个星期",
+        "当月", "本月份", "当月份", "当前月", "这个月份", "上个月", "上一月", "上上月", "上上个月",
+        "当季", "本季", "这个季", "上季", "上一季",
+        "当年以来", "当年至今",
+    ))
 
 
 def _assistant_should_skip_llm_period_fallback(text):
@@ -1625,7 +1654,9 @@ def _assistant_has_strong_business_intent(text, business_terms):
         text,
         (
             "KPI", "kpi", "关键指标", "年度指标", "年度目标", "目标完成",
-            "占比", "结构", "构成", "库存", "期末", "价格", "单价", "售价", "零售价",
+            "占比", "结构", "构成", "库存", "期末", "液位", "价格", "单价", "售价", "零售价",
+            "销量", "销售量", "销售额", "营业额", "金额", "吨数", "吨位", "升数",
+            "费用", "成本", "缓存", "接口", "任务",
         ),
     ):
         return True
@@ -1783,9 +1814,12 @@ def _assistant_compound_segments(text):
     normalized = str(text or "").strip()
     if not normalized:
         return []
-    if not _assistant_contains_any(normalized, ("、", "；", ";", "，", ",", "同时", "另外", "再看", "再查", "还有")):
+    compound_marker = _assistant_contains_any(normalized, ("分别", "各自", "一起看", "同时看", "对比看", "一并看"))
+    if not _assistant_contains_any(normalized, ("、", "；", ";", "，", ",", "同时", "另外", "再看", "再查", "还有")) and not compound_marker:
         return []
     prepared = re.sub(r"(?:同时|另外|再看|再查|还有)", "；", normalized)
+    if compound_marker:
+        prepared = re.sub(r"\s*(?:以及|与|和)\s*", "；", prepared)
     prepared = re.sub(r"[，,]\s*(?=(?:哪个|哪家|哪些|油品|站点|区域|客户|同比|环比|为什么|原因|排行|下滑|掉|总额|销量|营业额))", "；", prepared)
     parts = [part.strip(" ，,、;；") for part in re.split(r"[;；、]", prepared) if part.strip(" ，,、;；")]
     intentful = [
@@ -1793,7 +1827,8 @@ def _assistant_compound_segments(text):
         if part not in {"为什么", "原因", "怎么回事"}
         if _assistant_contains_any(part, (
             "数据", "总额", "汇总", "销量", "销售额", "营业额", "排行", "最高", "最多",
-            "哪个", "哪家", "油品", "站", "区域", "客户", "下滑", "掉", "同比", "环比", "为什么", "原因", "缺站"
+            "哪个", "哪家", "油品", "站", "区域", "客户", "下滑", "掉", "同比", "环比", "为什么", "原因", "缺站",
+            "零售", "批发", "自用油", "利润", "采购", "称重", "调拨损耗", "损耗", "汇率", "合同", "物资", "火车",
         ))
     ]
     return intentful if len(intentful) >= 2 else []
@@ -2143,6 +2178,17 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     explicit_dimensions = list(dimensions)
 
     domain = _assistant_domain_from_terms(business_terms)
+    domain_terms = business_terms.get("domains") if isinstance(business_terms, dict) else {}
+    if (
+        domain_terms.get("combined")
+        and _assistant_contains_any(text, ("合计", "总计", "总共", "合起来", "加起来"))
+        and any(domain_terms.get(name) for name in (
+            "wholesale", "self_use", "procurement", "weighing", "transfer_loss",
+            "materials", "profit", "train_entry", "contract",
+        ))
+        and not _assistant_contains_any(text, ("分别", "各自"))
+    ):
+        domain = "combined"
     if (
         not _assistant_has_explicit_domain(business_terms)
         and page_hints.get("domain")
@@ -2172,6 +2218,13 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     )
     data_recovery_words = ("数据", "传回来", "补回来", "回来", "补传", "上传", "更新", "到了", "有没有")
     trend_words = ("趋势", "走势", "每日", "日销量", "波动", "掉", "下降", "下滑", "跌", "减少", "掉得厉害", "异常")
+    trend_requested = _assistant_contains_any(text, trend_words)
+    if (
+        trend_requested
+        and _assistant_contains_any(text, ("昨日销量", "今日销量", "当日销量"))
+        and not _assistant_contains_any(text, ("趋势", "走势", "每日", "波动", "变化", "曲线", "图"))
+    ):
+        trend_requested = False
     comparison_words = _ASSISTANT_COMPARISON_SIGNAL_WORDS
     ranking_words = _ASSISTANT_RANKING_SIGNAL_WORDS
     location_object_requested = (
@@ -2271,7 +2324,7 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         if _assistant_contains_any(text, ("待审核", "待复核", "未审核", "没审核", "审核", "状态")) and "status" not in dimensions:
             dimensions.append("status")
     elif domain == "materials":
-        if _assistant_contains_any(text, ("调拨单", "调拨", "审批", "待审批")):
+        if _assistant_contains_any(text, ("调拨单", "调拨", "调拨审批", "调拨申请", "物资申请", "审批", "待审批")):
             route = "material_transfer_summary"
             intent = "status" if _assistant_contains_any(text, ("状态", "审批", "待审批")) else "summary"
         else:
@@ -2332,7 +2385,7 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     elif domain == "self_use":
         route = "self_use_summary"
         intent = "summary"
-        if (_assistant_chart_kind(text) == "line" or _assistant_contains_any(text, trend_words)) and "date" not in dimensions:
+        if (_assistant_chart_kind(text) == "line" or trend_requested) and "date" not in dimensions:
             dimensions.append("date")
         if not explicit_metric:
             metric = "volume"
@@ -2346,7 +2399,7 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
         intent = "status"
         if not explicit_metric:
             metric = "status"
-    elif _assistant_contains_any(text, ("库存", "期末")):
+    elif _assistant_contains_any(text, ("库存", "期末", "液位", "库存液位")):
         route = "retail_inventory"
         intent = "inventory"
     elif _assistant_contains_any(text, ("价格", "单价", "售价", "零售价", "均价")):
@@ -2355,12 +2408,12 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
     elif _assistant_contains_any(text, ("占比", "结构", "油品结构", "油品占比", "构成")):
         route = "retail_resource_share"
         intent = "structure"
-    elif _assistant_contains_any(text, trend_words) and ("station" in dimensions or _assistant_contains_any(text, ("哪个站", "哪家站", "站点"))):
+    elif trend_requested and ("station" in dimensions or _assistant_contains_any(text, ("哪个站", "哪家站", "站点"))):
         route = "station_trend_anomaly"
         intent = "trend_anomaly"
         if not explicit_metric:
             metric = "volume"
-    elif _assistant_contains_any(text, trend_words):
+    elif trend_requested:
         route = "retail_trend"
         intent = "trend"
         if not explicit_metric:
@@ -2399,6 +2452,12 @@ def build_assistant_query_plan(question, today=None, context=None, allow_compoun
 
     if route == "retail_ranking" and not dimensions:
         dimensions.append("station")
+    if (
+        route == "retail_ranking"
+        and not explicit_dimensions
+        and _assistant_contains_any(text, ("前十", "前十名", "前五", "前五名", "销售排名", "销售排行", "销量排名", "销量排行", "排行榜", "榜单"))
+    ):
+        explicit_dimensions = ["station"]
     if route == "retail_resource_share" and "resource" not in dimensions:
         dimensions.append("resource")
     if _assistant_route_uses_retail_operation_cutoff(domain, route):
@@ -2526,13 +2585,34 @@ def register_assistant_routes(app):
         year, month = key.split("-")
         return OILSTATION_ROOT / "cache_snapshots" / "monthly" / year / f"{prefix}_{int(month):02d}.json"
 
+    def _retail_snapshot_meta(kind, key):
+        path = _retail_snapshot_file(kind, key)
+        meta = {
+            "type": f"retail_{kind}",
+            "periodKey": key,
+            "source": "OilStation/cache_snapshots",
+            "fileName": path.name,
+            "confirmed": path.exists(),
+            "readOnly": True,
+            "policy": "confirmed_snapshot_only",
+        }
+        if path.exists():
+            try:
+                meta["updatedAt"] = datetime.fromtimestamp(path.stat().st_mtime).isoformat(sep=" ", timespec="seconds")
+            except OSError:
+                pass
+        return meta
+
 
     def _read_retail_snapshot(kind, key):
         path = _retail_snapshot_file(kind, key)
         if not path.exists():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                payload.setdefault("_snapshotMeta", _retail_snapshot_meta(kind, key))
+            return payload
         except (OSError, json.JSONDecodeError):
             return None
 
@@ -2555,10 +2635,10 @@ def register_assistant_routes(app):
 
     def _retail_report_workbook_from_index(ym):
         item = _retail_report_index().get(ym) or {}
-        filename = item.get("file")
-        if not filename:
+        stored_path = item.get("path") or item.get("file")
+        if not stored_path:
             return None
-        path = OILSTATION_ROOT / "exports" / filename
+        path = OILSTATION_ROOT / "exports" / stored_path
         return path if path.exists() else None
 
 
@@ -2858,6 +2938,16 @@ def register_assistant_routes(app):
             return None
         if ym is None:
             ym = payload.get("month")
+        snapshot_meta = dict(payload.get("_snapshotMeta") or payload.get("snapshot") or {})
+        if ym and not snapshot_meta:
+            snapshot_meta = {
+                "type": "retail_monthly",
+                "periodKey": ym,
+                "source": "OilStation/cache_snapshots",
+                "confirmed": True,
+                "readOnly": True,
+                "policy": "confirmed_snapshot_only",
+            }
         resource_tons_from_report = _retail_resource_tons_from_report(ym) if ym else {}
         station_tons_from_report = _retail_station_tons_from_report(ym) if ym else {}
         summary = payload.get("summary") or {}
@@ -2935,6 +3025,9 @@ def register_assistant_routes(app):
         total_tons = resource_total_tons or station_total_tons or float(summary_tons or 0)
         return {
             "source": payload.get("source") or "OilStationSnapshot",
+            "sourceVersion": "retail-snapshot-readonly-v1",
+            "month": ym or payload.get("date") or "",
+            "snapshot": snapshot_meta,
             "summary": {
                 "totalTxn": int(summary.get("totalTxn") or 0),
                 "totalLiters": round(float(summary.get("totalLiters") or resource_total_liters or 0), 2),
@@ -2953,10 +3046,14 @@ def register_assistant_routes(app):
         resource_map = {}
         station_map = {}
         region_map = {}
+        source_snapshots = []
         for payload in payloads:
             normalized = _normalize_retail_snapshot_payload(payload, (payload or {}).get("month"))
             if not normalized:
                 continue
+            snapshot_meta = normalized.get("snapshot") if isinstance(normalized.get("snapshot"), dict) else {}
+            if snapshot_meta:
+                source_snapshots.append(snapshot_meta)
             summary = normalized["summary"]
             for key in ("totalTxn", "totalLiters", "totalTons", "totalSales", "totalSalesCny"):
                 merged["summary"][key] += float(summary.get(key) or 0)
@@ -3001,12 +3098,32 @@ def register_assistant_routes(app):
             key=lambda item: item["amount"],
             reverse=True,
         )
+        merged["source"] = "OilStationSnapshot"
+        merged["sourceVersion"] = "retail-snapshot-readonly-v1"
+        merged["snapshot"] = {
+            "type": "retail_merged",
+            "source": "OilStation/cache_snapshots",
+            "confirmed": bool(source_snapshots),
+            "readOnly": True,
+            "policy": "confirmed_snapshot_only",
+            "sourceCount": len(source_snapshots),
+            "sources": source_snapshots[:24],
+        }
         return merged
 
 
     def _empty_retail_snapshot_payload(start, end, source="OilStationSnapshot"):
         return {
             "source": source,
+            "sourceVersion": "retail-snapshot-readonly-v1",
+            "snapshot": {
+                "type": "retail_missing",
+                "source": "OilStation/cache_snapshots",
+                "confirmed": False,
+                "readOnly": True,
+                "policy": "confirmed_snapshot_only",
+                "reason": "snapshot_not_found",
+            },
             "summary": {
                 "totalTxn": 0,
                 "totalLiters": 0.0,
@@ -3080,11 +3197,37 @@ def register_assistant_routes(app):
         return _merge_retail_snapshot_payloads(dates)
 
 
+    def _assistant_wholesale_combined_range(cur, start, end):
+        page = summarize_wholesale_range(cur, start, end)
+        cards = page.get("cards") or {}
+        categories = {
+            key: {
+                "rows": int((card or {}).get("rows") or 0),
+                "tons": round(float((card or {}).get("tons") or 0), 3),
+                "amountCny": round(float((card or {}).get("amountCny") or 0), 2),
+            }
+            for key, card in cards.items()
+        }
+        sales_keys = ("local_wholesale", "export_wholesale", "unknown")
+        sales_amount_keys = ("local_wholesale", "export_wholesale")
+        return {
+            "categories": categories,
+            "salesTons": round(sum(categories.get(key, {}).get("tons", 0) for key in sales_keys), 3),
+            "salesAmountCny": round(sum(categories.get(key, {}).get("amountCny", 0) for key in sales_amount_keys), 2),
+            "pendingSalesTons": categories.get("unknown", {}).get("tons", 0),
+            "transferTons": round(float((cards.get("transfer") or {}).get("tons") or 0), 3),
+            "byProductCategory": page.get("productRankings") or {},
+            "sourcePolicy": page.get("sourcePolicy") or {},
+            "dataCompleteness": page.get("dataCompleteness") or {},
+            "dataQualityWarnings": page.get("dataQualityWarnings") or [],
+        }
+
+
     def _combined_data_from_snapshots(cur, year, month, start, end):
         retail_snapshot = _retail_snapshot_for_period(start, end)
         if not retail_snapshot:
             return summarize_combined(cur, year, month)
-        wholesale = summarize_wholesale(cur, year, month)
+        wholesale = _assistant_wholesale_combined_range(cur, start, end)
         retail_summary = retail_snapshot.get("summary") or {}
         retail = {
             "liters": round(float(retail_summary.get("totalLiters") or 0), 2),
@@ -3122,6 +3265,16 @@ def register_assistant_routes(app):
                 )
         else:
             lines.append("该区间暂未查询到已结束班组的销售数据。")
+        snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+        snapshot_label = snapshot.get("periodKey") or snapshot.get("sourceCount") or snapshot.get("type")
+        snapshot_updated = snapshot.get("updatedAt") or snapshot.get("generatedAt") or "--"
+        lines.append("口径：零售管理快照口径，数据来自已确认日/月快照；助手不查询生产库、不实时重算、不触发刷新。")
+        if snapshot:
+            lines.append(f"数据来源：{snapshot.get('type') or 'retail_snapshot'} {snapshot_label or ''}，更新时间 {snapshot_updated}。")
+        for warning in (payload.get("warnings") or [])[:3]:
+            lines.append(f"数据提示：{warning}")
+        if payload.get("sourceError"):
+            lines.append("数据提示：当前期间未找到已确认销售快照，请先生成或核对对应日/月快照后再问。")
         if any(word in question for word in ("站点", "加油站", "排行", "排名", "最好")) and payload.get("stations"):
             lines.append("站点排行：")
             for item in payload.get("stations", [])[:10]:
@@ -3159,11 +3312,34 @@ def register_assistant_routes(app):
 
 
     def _assistant_table(title, columns, rows):
+        def cell_value(value):
+            if value is None:
+                return ""
+            if isinstance(value, dict):
+                allowed = {}
+                if value.get("skip"):
+                    allowed["skip"] = True
+                if "value" in value:
+                    allowed["value"] = "" if value.get("value") is None else str(value.get("value"))
+                elif "text" in value:
+                    allowed["value"] = "" if value.get("text") is None else str(value.get("text"))
+                elif "label" in value:
+                    allowed["value"] = "" if value.get("label") is None else str(value.get("label"))
+                for span_key in ("rowSpan", "colSpan"):
+                    try:
+                        span = int(value.get(span_key) or 0)
+                    except (TypeError, ValueError):
+                        span = 0
+                    if span > 1:
+                        allowed[span_key] = span
+                return allowed if allowed else str(value)
+            return str(value)
+
         return {
             "title": title,
             "columns": columns,
             "rows": [
-                ["" if value is None else str(value) for value in row]
+                [cell_value(value) for value in row]
                 for row in rows
             ],
         }
@@ -3401,7 +3577,7 @@ def register_assistant_routes(app):
     def _assistant_empty_self_use_data(start, end, source_error=""):
         return {
             "source": "OilStationSelfUse",
-            "sourceVersion": "report24-only-v1",
+            "sourceVersion": "report24-only-v2",
             "date_from": start.isoformat(),
             "date_to": (end - timedelta(days=1)).isoformat() if end > start else start.isoformat(),
             "records": [],
@@ -3530,7 +3706,7 @@ def register_assistant_routes(app):
 
         return {
             "source": "OilStationSelfUse",
-            "sourceVersion": (raw_data or {}).get("sourceVersion") or "report24-only-v1",
+            "sourceVersion": (raw_data or {}).get("sourceVersion") or "report24-only-v2",
             "date_from": start.isoformat(),
             "date_to": query_end.isoformat(),
             "records": records,
@@ -3563,6 +3739,7 @@ def register_assistant_routes(app):
                 f"覆盖 {int(summary.get('activeStations') or 0)} 个站点。"
             ),
             "口径：原系统报表24自用油，条件为 BasePaymentTypeKey=2 AND DerivedPaymentTypeKey=2；销量、金额、重量分别使用 selling.Volume、selling.ShopCost、selling.Mass。",
+            f"数据来源：{data.get('source') or 'OilStationSelfUse'}，版本 {data.get('sourceVersion') or 'report24-only'}，只读查询，不修改业务数据。",
         ]
         if not data.get("records"):
             lines.append("该区间暂未查询到自用油记录。")
@@ -3722,7 +3899,7 @@ def register_assistant_routes(app):
 
     def _assistant_wholesale_tables(label, data, question):
         cards = data.get("cards") or {}
-        labels = {"export_wholesale": "出口批发", "local_wholesale": "本地批发", "unknown": "待识别", "transfer": "外运", "processing": "代加工", "procurement": "采购"}
+        labels = {"export_wholesale": "出口批发", "local_wholesale": "本地批发", "unknown": "待识别批发", "transfer": "外运", "processing": "代加工", "procurement": "采购"}
         sales_keys = ("export_wholesale", "local_wholesale", "unknown")
         sales_total_tons = sum(float((cards.get(key) or {}).get("tons") or 0) for key in sales_keys)
         sales_total_amount = sum(float((cards.get(key) or {}).get("amountCny") or 0) for key in ("export_wholesale", "local_wholesale"))
@@ -3743,6 +3920,52 @@ def register_assistant_routes(app):
             ["分类", "吨数", "金额", "客户/去向数", "待复核"],
             category_rows,
         )]
+        warnings = data.get("dataQualityWarnings") or []
+        if warnings or _assistant_has_any(question, ("口径", "来源", "完整", "数据", "称重", "上传", "录入", "6月", "六月", "2026")):
+            source_rows = _assistant_wholesale_source_rows(data)
+            if source_rows:
+                tables.append(_assistant_table(
+                    f"{label}批发数据来源",
+                    ["来源", "记录数", "吨数", "日期范围"],
+                    source_rows,
+                ))
+        trend_rows = data.get("monthlyTrend") or []
+        if _assistant_has_any(question, ("趋势", "走势", "每月", "月度", "年度", "全年")) and len(trend_rows) > 1:
+            tables.append(_assistant_table(
+                f"{label}批发月度趋势",
+                ["月份", "出口", "本地", "待识别", "外运", "代加工", "采购", "金额"],
+                [
+                    [
+                        item.get("month") or "--",
+                        _fmt_tons(item.get("exportTons")),
+                        _fmt_tons(item.get("localTons")),
+                        _fmt_tons(item.get("pendingTons")),
+                        _fmt_tons(item.get("transferTons")),
+                        _fmt_tons(item.get("processingTons")),
+                        _fmt_tons(item.get("procurementTons")),
+                        _fmt_amount(item.get("amountCny"), "元"),
+                    ]
+                    for item in trend_rows
+                ],
+            ))
+        elif _assistant_has_any(question, ("趋势", "走势", "每日", "每天", "日度")) and data.get("dailyTrend"):
+            tables.append(_assistant_table(
+                f"{label}批发每日趋势",
+                ["日期", "出口", "本地", "待识别", "外运", "代加工", "采购", "金额"],
+                [
+                    [
+                        item.get("date") or "--",
+                        _fmt_tons(item.get("exportTons")),
+                        _fmt_tons(item.get("localTons")),
+                        _fmt_tons(item.get("pendingTons")),
+                        _fmt_tons(item.get("transferTons")),
+                        _fmt_tons(item.get("processingTons")),
+                        _fmt_tons(item.get("procurementTons")),
+                        _fmt_amount(item.get("amountCny"), "元"),
+                    ]
+                    for item in (data.get("dailyTrend") or [])[:31]
+                ],
+            ))
         rankings = data.get("customerRankings") or {}
         if _assistant_has_any(question, ("客户", "排行", "排名", "top", "TOP")):
             for key in ("export_wholesale", "local_wholesale", "unknown"):
@@ -3771,17 +3994,46 @@ def register_assistant_routes(app):
                     ["区域", "吨数", "记录数"],
                     [[item.get("region") or "--", _fmt_tons(item.get("tons")), item.get("rows") or 0] for item in transfer_summary.get("byRegion", [])[:10]],
                 ))
+        if warnings:
+            tables.append(_assistant_table(
+                f"{label}数据完整性提示",
+                ["序号", "提示"],
+                [[index, warning] for index, warning in enumerate(warnings, start=1)],
+            ))
         return tables
 
 
     def _assistant_wholesale_charts(label, data, question):
         cards = data.get("cards") or {}
-        labels = {"export_wholesale": "出口批发", "local_wholesale": "本地批发", "unknown": "待识别", "transfer": "外运", "processing": "代加工", "procurement": "采购"}
+        labels = {"export_wholesale": "出口批发", "local_wholesale": "本地批发", "unknown": "待识别批发", "transfer": "外运", "processing": "代加工", "procurement": "采购"}
         category_rows = [
             {"name": labels.get(key, key), "tons": float((cards.get(key) or {}).get("tons") or 0)}
             for key in ("export_wholesale", "local_wholesale", "unknown", "transfer")
         ]
         charts = []
+        if _assistant_has_any(question, ("趋势", "走势", "每日", "每天", "每月", "月度", "年度", "全年")):
+            trend_rows = data.get("monthlyTrend") or []
+            x_key = "month"
+            title = f"{label}批发月度趋势"
+            if len(trend_rows) <= 1:
+                trend_rows = data.get("dailyTrend") or []
+                x_key = "date"
+                title = f"{label}批发每日趋势"
+            chart = _assistant_chart(
+                title,
+                "mixed",
+                x_axis=[str(item.get(x_key) or "") for item in trend_rows],
+                series=[
+                    {"name": "出口批发", "type": "bar", "unit": "吨", "data": [item.get("exportTons") for item in trend_rows]},
+                    {"name": "本地批发", "type": "bar", "unit": "吨", "data": [item.get("localTons") for item in trend_rows]},
+                    {"name": "外运", "type": "line", "unit": "吨", "data": [item.get("transferTons") for item in trend_rows]},
+                    {"name": "金额", "type": "line", "unit": "元", "data": [item.get("amountCny") for item in trend_rows]},
+                ],
+                unit="吨",
+                summary="按统一批发来源口径展示趋势。",
+            )
+            if chart:
+                charts.append(chart)
         chart = _assistant_rank_chart(f"{label}批发分类吨数", category_rows, "tons", limit=6)
         if chart:
             charts.append(chart)
@@ -4032,6 +4284,7 @@ def register_assistant_routes(app):
             ["批发月报", "月度", "wholesale:export", "按年月下载批发汇总报表"],
             ["零售月度Excel", "月度", "retail:export", "导出零售月度Excel明细"],
             ["零售区间日报", "日期区间", "retail:export", "按起止日期导出零售日报/区间报表"],
+            ["每日汇报表", "汇报日期", "retail:export", "按新版ProductTeam模板下载；日销售取前一天，月/年累计截至汇报日前一日，批发价固定，日零售价按87.50汇率折算为美元/吨"],
             ["自用油区间报表", "日期区间", "retail:export", "按原报表24口径导出自用油"],
             ["批发明细", "月度", "wholesale:export", "按年月下载批发明细"],
         ]
@@ -4426,6 +4679,7 @@ def register_assistant_routes(app):
             })
 
         statuses = _assistant_active_station_status_map()
+        last_sale_dates = _assistant_station_last_sale_dates()
         status_items = []
         for item in statuses.values():
             public_status, reason = _assistant_station_public_status(item)
@@ -4435,7 +4689,7 @@ def register_assistant_routes(app):
                     "region": item.get("region"),
                     "status": public_status,
                     "reason": reason,
-                    "startedAt": item.get("startedAt"),
+                    "startedAt": _assistant_station_status_start_text(item, last_sale_dates),
                 })
         insights["stationStatuses"] = status_items
         return insights
@@ -4488,6 +4742,58 @@ def register_assistant_routes(app):
         return tables
 
 
+    def _assistant_wholesale_source_note(data):
+        completeness = data.get("dataCompleteness") or {}
+        policy = data.get("sourcePolicy") or completeness.get("sourcePolicy") or {}
+        cutoff = policy.get("cutoff") or "2026-06-01"
+        detail = completeness.get("businessDetail") or {}
+        rows = int(detail.get("businessPolicyRows") or 0)
+        tons = float(detail.get("businessPolicyTons") or 0)
+        suffix = f"；本次统计命中 {rows:,} 条、{tons:,.3f} 吨" if rows or tons else ""
+        return f"口径：{cutoff} 前取储运区与液化气罐区称重生成明细，{cutoff} 起取批发上传或手工录入明细{suffix}。"
+
+
+    def _assistant_wholesale_source_rows(data):
+        completeness = data.get("dataCompleteness") or {}
+        rows = []
+        business = completeness.get("businessDetail") or {}
+        if business:
+            rows.append([
+                "业务口径命中",
+                business.get("businessPolicyRows") or 0,
+                _fmt_tons(business.get("businessPolicyTons")),
+                f"{business.get('firstDetailDate') or '--'} 至 {business.get('lastDetailDate') or '--'}",
+            ])
+        weighing = completeness.get("weighingGeneratedDetail") or {}
+        total = weighing.get("total") or {}
+        if total:
+            rows.append([
+                "称重生成明细",
+                total.get("rows") or 0,
+                _fmt_tons(total.get("tons")),
+                f"{total.get('firstDate') or '--'} 至 {total.get('lastDate') or '--'}",
+            ])
+        uploaded = completeness.get("uploadedOrManualDetail") or {}
+        if uploaded:
+            rows.append([
+                "上传/手工明细",
+                uploaded.get("rows") or 0,
+                _fmt_tons(uploaded.get("tons")),
+                f"{uploaded.get('firstDate') or '--'} 至 {uploaded.get('lastDate') or '--'}",
+            ])
+        raw_sources = completeness.get("weighingRawSources") or {}
+        for key, label_text in (("storageDistrict", "储运区原始称重"), ("lpgTankArea", "液化气罐区原始称重")):
+            item = raw_sources.get(key) or {}
+            if item.get("tableExists") or item.get("rawRows"):
+                rows.append([
+                    label_text,
+                    item.get("rawRows") or 0,
+                    _fmt_tons(item.get("rawTons")),
+                    f"{item.get('firstRawDate') or '--'} 至 {item.get('lastRawDate') or '--'}",
+                ])
+        return rows
+
+
     def _format_assistant_wholesale_answer(label, data, question):
         cards = data.get("cards") or {}
         export_card = cards.get("export_wholesale") or {}
@@ -4507,7 +4813,7 @@ def register_assistant_routes(app):
             lines.append(f"批发销售合计：{total_tons:,.3f} 吨，金额 {total_amount:,.2f} 元。")
             lines.append(f"出口批发：{float(export_card.get('tons') or 0):,.3f} 吨，{float(export_card.get('amountCny') or 0):,.2f} 元。")
             lines.append(f"本地批发：{float(local_card.get('tons') or 0):,.3f} 吨，{float(local_card.get('amountCny') or 0):,.2f} 元。")
-            lines.append(f"待识别：{float(pending_card.get('tons') or 0):,.3f} 吨，数量已统计，金额待合同复核。")
+            lines.append(f"待识别批发：{float(pending_card.get('tons') or 0):,.3f} 吨，数量已统计，金额待合同复核。")
             lines.append(f"外运：{float(transfer_card.get('tons') or 0):,.3f} 吨。")
         rankings = data.get("customerRankings") or {}
         key = "export_wholesale" if "出口" in question else ("local_wholesale" if "本地" in question else None)
@@ -4527,12 +4833,15 @@ def register_assistant_routes(app):
             else:
                 _append_rank_lines(lines, "出口批发油品排行：", products.get("export_wholesale"), limit=5)
                 _append_rank_lines(lines, "本地批发油品排行：", products.get("local_wholesale"), limit=5)
-                _append_rank_lines(lines, "待识别油品排行：", products.get("unknown"), limit=5)
+                _append_rank_lines(lines, "待识别批发油品排行：", products.get("unknown"), limit=5)
                 _append_rank_lines(lines, "外运油品排行：", products.get("transfer"), limit=5)
         if "外运" in question and _assistant_has_any(question, ("区域", "去向", "详情", "油库", "加油站")):
             transfer_summary = data.get("transferSummary") or {}
             _append_rank_lines(lines, "外运区域汇总：", transfer_summary.get("byRegion"), limit=8)
             _append_rank_lines(lines, "外运去向排行：", data.get("transferTargets"), limit=8)
+        lines.append(_assistant_wholesale_source_note(data))
+        for warning in data.get("dataQualityWarnings") or []:
+            lines.append(f"提示：{warning}")
         return "\n".join(lines)
 
 
@@ -4650,111 +4959,440 @@ def register_assistant_routes(app):
         }
 
 
-    def _assistant_latest_retail_density_data(today=None):
+    def _assistant_density_bucket_row(bucket):
+        volume = float(bucket.get("volume") or 0)
+        mass = float(bucket.get("mass") or 0)
+        if volume <= 0 or mass <= 0:
+            return None
+        density = mass / volume
+        if density < 0.4 or density > 1.1:
+            return None
+        row = {
+            **bucket,
+            "volume": round(volume, 2),
+            "mass": round(mass, 3),
+            "tons": round(mass / 1000, 3),
+            "amount": round(float(bucket.get("amount") or 0), 2),
+            "density": round(density, 6),
+        }
+        return row
+
+
+    def _assistant_add_density_bucket(target, key, base, volume, mass, amount=0):
+        volume_value = float(volume or 0)
+        mass_value = float(mass or 0)
+        if volume_value <= 0 or mass_value <= 0:
+            return
+        density = mass_value / volume_value
+        if density < 0.4 or density > 1.1:
+            return
+        bucket = target.setdefault(key, {**base, "volume": 0.0, "mass": 0.0, "amount": 0.0})
+        bucket["volume"] += volume_value
+        bucket["mass"] += mass_value
+        bucket["amount"] += float(amount or 0)
+
+
+    def _assistant_latest_retail_density_data(today=None, start=None, end=None):
         today = today or date.today()
-        if today.month == 1 and today.day == 1:
-            max_day = 1
-        else:
-            max_day = max(1, today.day - 1)
         ym = f"{today.year}-{today.month:02d}"
-        for day in range(max_day, 0, -1):
-            current_day = date(today.year, today.month, day)
-            payload = _read_retail_snapshot("daily", current_day.isoformat())
-            normalized = _normalize_retail_snapshot_payload(payload, ym) if payload else None
-            rows = [
-                row for row in (
-                    _assistant_density_from_resource_item(item)
-                    for item in ((normalized or {}).get("byResource") or [])
+        if start and end:
+            first_day = start
+            latest_snapshot_day = today - timedelta(days=1) if today > first_day else first_day
+            last_day = min(end - timedelta(days=1), latest_snapshot_day)
+            if last_day < first_day:
+                last_day = first_day
+            ym = f"{first_day.year}-{first_day.month:02d}" if first_day.year == last_day.year and first_day.month == last_day.month else str(first_day.year)
+        else:
+            first_day = date(today.year, today.month, 1)
+            last_day = today - timedelta(days=1) if today > first_day else first_day
+        resource_map = {}
+        station_resource_map = {}
+        used_days = []
+
+        def consume_snapshot_payload(payload, current_ym):
+            if not payload:
+                return False
+            normalized = _normalize_retail_snapshot_payload(payload, current_ym)
+            has_resource_rows = False
+            for item in (normalized or {}).get("byResource") or []:
+                row = _assistant_density_from_resource_item(item)
+                if not row:
+                    continue
+                has_resource_rows = True
+                resource_key = row.get("resourceKey") or row.get("key") or row.get("name")
+                _assistant_add_density_bucket(
+                    resource_map,
+                    resource_key,
+                    {
+                        "resourceKey": row.get("resourceKey"),
+                        "key": row.get("resourceKey"),
+                        "name": row.get("name") or "--",
+                    },
+                    row.get("volume"),
+                    row.get("mass"),
                 )
-                if row
-            ]
-            total_volume = sum(float(item.get("volume") or 0) for item in rows)
-            total_mass = sum(float(item.get("mass") or 0) for item in rows)
-            if not rows or total_volume <= 0 or total_mass <= 0:
-                continue
-            rows.sort(key=lambda item: float(item.get("volume") or 0), reverse=True)
-            return {
-                "date": current_day.isoformat(),
-                "month": ym,
-                "source": "retail_daily_snapshot",
-                "summary": {
-                    "totalVolume": round(total_volume, 2),
-                    "totalMass": round(total_mass, 3),
-                    "totalTons": round(total_mass / 1000, 3),
-                    "weightedDensity": round(total_mass / total_volume, 6),
-                },
-                "byResource": rows,
-            }
+
+            for station in payload.get("stationResources") or []:
+                shop_key = station.get("shopKey")
+                station_name = station.get("name") or "--"
+                station_short = station.get("short") or ""
+                station_region = station.get("region") or "--"
+                for item in station.get("resources") or []:
+                    volume = _assistant_float(item.get("volume"))
+                    mass = _retail_mass_from_item(item)
+                    if mass is None:
+                        mass = _assistant_float(item.get("mass"))
+                    resource_key = _assistant_int(item.get("resourceKey") or item.get("key"))
+                    resource_name = item.get("name") or "--"
+                    amount = _assistant_float(item.get("amount"))
+                    _assistant_add_density_bucket(
+                        station_resource_map,
+                        (shop_key, resource_key or resource_name),
+                        {
+                            "shopKey": shop_key,
+                            "station": station_name,
+                            "short": station_short,
+                            "region": station_region,
+                            "resourceKey": resource_key,
+                            "key": resource_key,
+                            "name": resource_name,
+                        },
+                        volume,
+                        mass,
+                        amount,
+                    )
+                    if not has_resource_rows:
+                        _assistant_add_density_bucket(
+                            resource_map,
+                            resource_key or resource_name,
+                            {"resourceKey": resource_key, "key": resource_key, "name": resource_name},
+                            volume,
+                            mass,
+                            amount,
+                        )
+            return has_resource_rows or bool(payload.get("stationResources"))
+
+        used_monthly_snapshots = False
+        if start and end and first_day.day == 1:
+            monthly_payloads = []
+            cursor = first_day
+            can_use_monthly = True
+            while cursor <= last_day:
+                current_ym = f"{cursor.year}-{cursor.month:02d}"
+                next_year, next_month = _month_after(cursor.year, cursor.month)
+                chunk_end = min(date(next_year, next_month, 1), last_day + timedelta(days=1))
+                monthly_payload = _read_retail_snapshot("monthly", current_ym)
+                summary = (monthly_payload or {}).get("summary") or {}
+                query_start = parse_date(summary.get("queryStart"))
+                query_end = parse_date(summary.get("queryEnd"))
+                if not query_end:
+                    daily_dates = [parse_date(item.get("date")) for item in (monthly_payload or {}).get("daily") or []]
+                    daily_dates = [item for item in daily_dates if item]
+                    query_end = max(daily_dates) + timedelta(days=1) if daily_dates else None
+                if (
+                    not monthly_payload
+                    or (query_start and query_start > cursor)
+                    or not query_end
+                    or query_end < chunk_end
+                    or query_end > chunk_end
+                ):
+                    can_use_monthly = False
+                    break
+                monthly_payloads.append((current_ym, monthly_payload, cursor, chunk_end))
+                cursor = chunk_end
+            if can_use_monthly and monthly_payloads:
+                for current_ym, monthly_payload, chunk_start, chunk_end in monthly_payloads:
+                    if consume_snapshot_payload(monthly_payload, current_ym):
+                        used_days.extend(
+                            (chunk_start + timedelta(days=offset)).isoformat()
+                            for offset in range((chunk_end - chunk_start).days)
+                        )
+                used_monthly_snapshots = bool(used_days)
+
+        if not used_monthly_snapshots:
+            for offset in range((last_day - first_day).days + 1):
+                current_day = first_day + timedelta(days=offset)
+                payload = _read_retail_snapshot("daily", current_day.isoformat())
+                if consume_snapshot_payload(payload, f"{current_day.year}-{current_day.month:02d}"):
+                    used_days.append(current_day.isoformat())
+
+        rows = [
+            row for row in (_assistant_density_bucket_row(item) for item in resource_map.values())
+            if row
+        ]
+        station_rows = [
+            row for row in (_assistant_density_bucket_row(item) for item in station_resource_map.values())
+            if row
+        ]
+        rows.sort(key=lambda item: float(item.get("volume") or 0), reverse=True)
+        station_rows.sort(key=lambda item: (str(item.get("region") or ""), str(item.get("station") or ""), str(item.get("name") or "")))
+        total_volume = sum(float(item.get("volume") or 0) for item in rows)
+        total_mass = sum(float(item.get("mass") or 0) for item in rows)
+        period_start = used_days[0] if used_days else None
+        period_end = used_days[-1] if used_days else None
+        period_label = f"{period_start} 至 {period_end}" if period_start and period_end and period_start != period_end else (period_start or ym)
         return {
-            "date": None,
+            "date": period_end,
+            "periodLabel": period_label,
             "month": ym,
-            "source": "retail_daily_snapshot",
-            "summary": {"totalVolume": 0.0, "totalMass": 0.0, "totalTons": 0.0, "weightedDensity": 0.0},
-            "byResource": [],
+            "source": "retail_daily_snapshots",
+            "summary": {
+                "days": len(used_days),
+                "totalVolume": round(total_volume, 2),
+                "totalMass": round(total_mass, 3),
+                "totalTons": round(total_mass / 1000, 3),
+                "weightedDensity": round(total_mass / total_volume, 6) if total_volume > 0 else 0.0,
+            },
+            "byResource": rows,
+            "byStationResource": station_rows,
         }
 
 
-    def _assistant_density_answer(data):
-        rows = data.get("byResource") or []
-        summary = data.get("summary") or {}
-        if not rows:
-            return f"{data.get('month') or '当前月'}暂未找到可用零售日快照，无法按实际质量/销量计算密度。"
-        lines = [
-            f"{data.get('date')} 零售实绩加权平均密度为 {float(summary.get('weightedDensity') or 0):.6f}。",
-            f"该日销量 {_fmt_volume(summary.get('totalVolume'))}，质量 {_fmt_tons(summary.get('totalTons'))}。",
-            "口径：按当前月最新有零售日快照的质量 ÷ 销量计算，不使用固定密度。",
+    def _assistant_density_data_for_question(question, start=None, end=None):
+        text = str(question or "")
+        today = date.today()
+        if _assistant_contains_any(text, ("当月", "本月", "这个月", "当前月")):
+            return _assistant_latest_retail_density_data(today=today, start=date(today.year, today.month, 1), end=today + timedelta(days=1))
+        explicit_period = bool(start and end and _assistant_has_explicit_time_signal(text))
+        if explicit_period and not _assistant_contains_any(text, ("当前密度", "现在密度")):
+            return _assistant_latest_retail_density_data(today=today, start=start, end=end)
+        return _assistant_latest_retail_density_data(today=today)
+
+
+    def _assistant_density_period_label(data):
+        return data.get("periodLabel") or data.get("month") or data.get("date") or "当前"
+
+
+    def _assistant_density_station_label(station):
+        if not isinstance(station, dict):
+            return ""
+        shop_key = station.get("shopKey")
+        name = station.get("name") or station.get("station") or (f"{shop_key}号站" if shop_key else "")
+        short = station.get("short") or ""
+        prefix = f"{shop_key}号站 " if shop_key and str(shop_key) not in str(name) else ""
+        suffix = f"（{short}）" if short and short != name else ""
+        return f"{prefix}{name}{suffix}".strip() or "该站"
+
+
+    def _assistant_density_station_norms(value):
+        raw = str(value or "").strip()
+        if not raw:
+            return set()
+        parts = [raw]
+        parts.extend(part.strip() for part in re.split(r"[/|,，、;；\n\r]+", raw) if part.strip())
+        norms = set()
+        for part in parts:
+            normalized = normalize_station_name(part)
+            if not normalized:
+                continue
+            norms.add(normalized)
+            norms.add(normalized.replace(" ", ""))
+            norms.add(normalized.replace("-", ""))
+        return {item for item in norms if item}
+
+
+    def _assistant_density_add_station_alias(lookup, station, alias):
+        if not isinstance(station, dict):
+            return
+        for normalized in _assistant_density_station_norms(alias):
+            if normalized in {"АЗС", "AЗС", "AZS"}:
+                continue
+            if len(normalized) >= 2:
+                lookup.setdefault(normalized, dict(station))
+
+
+    def _assistant_density_station_alias_lookup():
+        catalog = retail_station_catalog_cached()
+        lookup = {}
+        for shop_key, station in catalog.items():
+            base = dict(station)
+            aliases = [
+                station.get("name"),
+                station.get("short"),
+                f"{shop_key}号站",
+                f"{shop_key}站",
+                f"АЗС {station.get('short') or ''}".strip(),
+            ]
+            for alias in aliases:
+                _assistant_density_add_station_alias(lookup, base, alias)
+        conn = None
+        try:
+            conn = get_connection()
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                if not _assistant_table_exists(cur, "entity_aliases"):
+                    return lookup
+                cur.execute(
+                    """
+                    SELECT entity_code, standard_name, alias_name
+                    FROM entity_aliases
+                    WHERE entity_type = 'retail_station'
+                    """
+                )
+                for row in cur.fetchall():
+                    shop_key = _assistant_int(row.get("entity_code"))
+                    station = dict(catalog.get(shop_key) or {})
+                    if not station:
+                        continue
+                    station["shopKey"] = shop_key
+                    _assistant_density_add_station_alias(lookup, station, row.get("standard_name"))
+                    _assistant_density_add_station_alias(lookup, station, row.get("alias_name"))
+        except Exception as exc:
+            try:
+                app.logger.warning("assistant density station alias lookup failed: %s", exc)
+            except Exception:
+                pass
+        finally:
+            if conn is not None:
+                conn.close()
+        return lookup
+
+
+    def _assistant_density_station_number(text):
+        patterns = (
+            r"(?<!\d)(\d{1,3})\s*(?:号\s*)?(?:站|加油站|油站)(?!\d)",
+            r"(?:站|加油站|油站|АЗС)\s*(\d{1,3})(?!\d)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, str(text or ""), flags=re.IGNORECASE)
+            if not match:
+                continue
+            shop_key = _assistant_int(match.group(1))
+            if shop_key in retail_station_catalog_cached():
+                return shop_key
+        return None
+
+
+    def _assistant_density_visible_station_keys(data):
+        keys = set()
+        for row in (data.get("byStationResource") or []):
+            shop_key = _assistant_int((row or {}).get("shopKey"))
+            if shop_key:
+                keys.add(shop_key)
+        return keys
+
+
+    def _assistant_density_station_visible(station, visible_keys):
+        if not isinstance(station, dict) or not station.get("shopKey"):
+            return False
+        if not visible_keys:
+            return True
+        return _assistant_int(station.get("shopKey")) in visible_keys
+
+
+    def _assistant_density_resolve_station(question, plan, data):
+        catalog = retail_station_catalog_cached()
+        visible_keys = _assistant_density_visible_station_keys(data)
+        entities = plan.get("entities") if isinstance(plan, dict) else {}
+        station = entities.get("station") if isinstance(entities, dict) else None
+        if _assistant_density_station_visible(station, visible_keys):
+            shop_key = _assistant_int(station.get("shopKey"))
+            return {**(catalog.get(shop_key) or {}), **station, "shopKey": shop_key}
+        shop_key = _assistant_density_station_number(question)
+        if shop_key and _assistant_density_station_visible(catalog.get(shop_key), visible_keys):
+            return dict(catalog[shop_key])
+        station = _assistant_station_from_text(question)
+        if _assistant_density_station_visible(station, visible_keys):
+            shop_key = _assistant_int(station.get("shopKey"))
+            return {**(catalog.get(shop_key) or {}), **station, "shopKey": shop_key}
+        question_norms = _assistant_density_station_norms(question)
+        if not question_norms:
+            return None
+        question_compact = {item.replace(" ", "").replace("-", "") for item in question_norms}
+        for alias, matched_station in sorted(_assistant_density_station_alias_lookup().items(), key=lambda item: len(item[0]), reverse=True):
+            alias_compact = alias.replace(" ", "").replace("-", "")
+            if not alias or len(alias_compact) < 2:
+                continue
+            alias_matched = any(alias in item for item in question_norms) or any(alias_compact in item for item in question_compact)
+            if alias_matched and _assistant_density_station_visible(matched_station, visible_keys):
+                return matched_station
+        return None
+
+
+    def _assistant_density_filter_resource(rows, resource):
+        if not isinstance(resource, dict) or not resource.get("resourceKey"):
+            return rows
+        resource_key = _assistant_int(resource.get("resourceKey"))
+        if not resource_key:
+            return rows
+        return [
+            row for row in rows
+            if _assistant_int((row or {}).get("resourceKey") or (row or {}).get("key")) == resource_key
         ]
-        for item in rows:
-            lines.append(
-                f"{item.get('name') or '--'}：{float(item.get('density') or 0):.6f}"
-                f"（{_fmt_volume(item.get('volume'))}，{_fmt_tons(item.get('tons'))}）"
-            )
-        return "\n".join(lines)
 
 
-    def _assistant_density_tables(data):
-        rows = data.get("byResource") or []
+    def _assistant_density_selected_rows(data, question=None, plan=None):
+        station = _assistant_density_resolve_station(question, plan, data)
+        resource = ((plan.get("entities") or {}).get("resource") if isinstance(plan, dict) else None)
+        if station:
+            shop_key = _assistant_int(station.get("shopKey"))
+            rows = [
+                row for row in (data.get("byStationResource") or [])
+                if _assistant_int((row or {}).get("shopKey")) == shop_key
+            ]
+        else:
+            rows = list(data.get("byResource") or [])
+        rows = _assistant_density_filter_resource(rows, resource)
+        rows.sort(key=lambda item: (str(item.get("name") or ""), _assistant_int(item.get("resourceKey") or item.get("key")) or 0))
+        return station, resource, rows
+
+
+    def _assistant_density_tables_for_rows(data, rows, station=None):
         if not rows:
             return []
-        summary = data.get("summary") or {}
-        table_rows = [
-            [
-                data.get("date") or "--",
+        period_label = _assistant_density_period_label(data)
+        title = f"{_assistant_density_station_label(station)}平均密度" if station else "全站（所有站点汇总）平均密度"
+        density_column = "该站平均密度" if station else "全站平均密度"
+        table_rows = []
+        for index, item in enumerate(rows):
+            table_rows.append([
+                {"value": period_label, "rowSpan": len(rows)} if index == 0 else {"skip": True},
                 item.get("name") or "--",
                 f"{float(item.get('density') or 0):.6f}",
-                _fmt_volume(item.get("volume")),
-                f"{float(item.get('mass') or 0):,.3f} kg",
-                _fmt_tons(item.get("tons")),
-                data.get("source") or "--",
-            ]
-            for item in rows
-        ]
-        table_rows.append([
-            data.get("date") or "--",
-            "综合加权平均",
-            f"{float(summary.get('weightedDensity') or 0):.6f}",
-            _fmt_volume(summary.get("totalVolume")),
-            f"{float(summary.get('totalMass') or 0):,.3f} kg",
-            _fmt_tons(summary.get("totalTons")),
-            data.get("source") or "--",
-        ])
-        return [_assistant_table(
-            "当前月最新日零售实际密度",
-            ["日期", "油品", "实际平均密度", "销量", "质量", "吨位", "来源"],
-            table_rows,
-        )]
+            ])
+        return [_assistant_table(title, ["日期", "油品", density_column], table_rows)]
 
 
-    def _assistant_density_charts(data):
-        rows = data.get("byResource") or []
-        chart = _assistant_chart(
-            f"{data.get('date') or ''}零售实际密度",
-            "bar",
-            x_axis=[str(item.get("name") or "--") for item in rows],
-            series=[{"name": "实际平均密度", "type": "bar", "unit": "", "data": [item.get("density") for item in rows]}],
-            summary="按当前月最新日快照的质量除以销量计算。",
-        )
-        return [chart] if chart else []
+    def _assistant_density_payload(data, question=None, plan=None):
+        data = data if isinstance(data, dict) else {}
+        station, resource, rows = _assistant_density_selected_rows(data, question, plan)
+        period_label = _assistant_density_period_label(data)
+        response_data = dict(data)
+        if station:
+            response_data["matchedStation"] = station
+        if isinstance(resource, dict) and resource.get("resourceKey"):
+            response_data["resourceFilter"] = resource
+        if not rows:
+            target = _assistant_density_station_label(station) if station else "全站（所有站点汇总）"
+            return {
+                "periodLabel": period_label,
+                "answer": f"{period_label} {target}暂无密度数据。",
+                "tables": [],
+                "charts": [],
+                "data": response_data,
+            }
+        target = _assistant_density_station_label(station) if station else "全站（所有站点汇总）"
+        lines = [f"{period_label} {target}平均密度："]
+        for item in rows:
+            lines.append(f"{item.get('name') or '--'}：{float(item.get('density') or 0):.6f}")
+        return {
+            "periodLabel": period_label,
+            "answer": "\n".join(lines),
+            "tables": _assistant_density_tables_for_rows(data, rows, station),
+            "charts": [],
+            "data": response_data,
+        }
+
+
+    def _assistant_density_answer(data, question=None, plan=None):
+        return _assistant_density_payload(data, question, plan).get("answer") or ""
+
+
+    def _assistant_density_tables(data, question=None, plan=None):
+        return _assistant_density_payload(data, question, plan).get("tables") or []
+
+
+    def _assistant_density_charts(data, question=None, plan=None):
+        return []
 
 
     def _assistant_contract_answer(cur, question):
@@ -4874,47 +5512,51 @@ def register_assistant_routes(app):
         conn = get_connection()
         try:
             with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                source_policy = detail_source_policy_clause("d")
                 cur.execute(
                     """
                     SELECT COUNT(*) AS records,
-                           COALESCE(SUM(weight_tons), 0) AS tons,
-                           COUNT(DISTINCT COALESCE(NULLIF(standard_entity_name, ''), NULLIF(sender_name, ''))) AS suppliers,
-                           COUNT(DISTINCT NULLIF(raw_product_name, '')) AS products
-                    FROM wholesale_detail_records
-                    WHERE classification = 'procurement'
-                      AND business_date >= %s AND business_date < %s
+                           COALESCE(SUM(d.weight_tons), 0) AS tons,
+                           COUNT(DISTINCT COALESCE(NULLIF(d.standard_entity_name, ''), NULLIF(d.sender_name, ''))) AS suppliers,
+                           COUNT(DISTINCT NULLIF(d.raw_product_name, '')) AS products
+                    FROM wholesale_detail_records d
+                    WHERE d.classification = 'procurement'
+                      AND d.business_date >= %s AND d.business_date < %s
+                      AND """ + source_policy + """
                     """,
-                    (start, end),
+                    (start, end, *detail_source_policy_params()),
                 )
                 summary = cur.fetchone() or {}
                 cur.execute(
                     """
-                    SELECT COALESCE(NULLIF(standard_entity_name, ''), NULLIF(sender_name, ''), '--') AS name,
+                    SELECT COALESCE(NULLIF(d.standard_entity_name, ''), NULLIF(d.sender_name, ''), '--') AS name,
                            COUNT(*) AS records,
-                           COALESCE(SUM(weight_tons), 0) AS tons
-                    FROM wholesale_detail_records
-                    WHERE classification = 'procurement'
-                      AND business_date >= %s AND business_date < %s
-                    GROUP BY COALESCE(NULLIF(standard_entity_name, ''), NULLIF(sender_name, ''), '--')
+                           COALESCE(SUM(d.weight_tons), 0) AS tons
+                    FROM wholesale_detail_records d
+                    WHERE d.classification = 'procurement'
+                      AND d.business_date >= %s AND d.business_date < %s
+                      AND """ + source_policy + """
+                    GROUP BY COALESCE(NULLIF(d.standard_entity_name, ''), NULLIF(d.sender_name, ''), '--')
                     ORDER BY tons DESC, records DESC
                     LIMIT 12
                     """,
-                    (start, end),
+                    (start, end, *detail_source_policy_params()),
                 )
                 suppliers = [dict(row) for row in cur.fetchall()]
                 cur.execute(
                     """
-                    SELECT COALESCE(NULLIF(raw_product_name, ''), '--') AS name,
+                    SELECT COALESCE(NULLIF(d.raw_product_name, ''), '--') AS name,
                            COUNT(*) AS records,
-                           COALESCE(SUM(weight_tons), 0) AS tons
-                    FROM wholesale_detail_records
-                    WHERE classification = 'procurement'
-                      AND business_date >= %s AND business_date < %s
-                    GROUP BY COALESCE(NULLIF(raw_product_name, ''), '--')
+                           COALESCE(SUM(d.weight_tons), 0) AS tons
+                    FROM wholesale_detail_records d
+                    WHERE d.classification = 'procurement'
+                      AND d.business_date >= %s AND d.business_date < %s
+                      AND """ + source_policy + """
+                    GROUP BY COALESCE(NULLIF(d.raw_product_name, ''), '--')
                     ORDER BY tons DESC, records DESC
                     LIMIT 12
                     """,
-                    (start, end),
+                    (start, end, *detail_source_policy_params()),
                 )
                 products = [dict(row) for row in cur.fetchall()]
                 return {"summary": dict(summary), "suppliers": suppliers, "products": products}
@@ -5873,10 +6515,14 @@ def register_assistant_routes(app):
         lines.append(f"零售：{float(retail.get('tons') or 0):,.3f} 吨，{float(retail.get('amountCny') or 0):,.2f} 元。")
         lines.append(f"批发销售：{float(wholesale.get('salesTons') or 0):,.3f} 吨，{float(wholesale.get('salesAmountCny') or 0):,.2f} 元。")
         lines.append(f"外运：{float(combined.get('transferTons') or 0):,.3f} 吨。")
+        if wholesale.get("sourcePolicy") or wholesale.get("dataCompleteness"):
+            lines.append(_assistant_wholesale_source_note(wholesale))
         if wholesale.get("byProductCategory"):
             products = wholesale["byProductCategory"]
             _append_rank_lines(lines, "出口批发油品排行：", products.get("export_wholesale"), limit=3)
             _append_rank_lines(lines, "本地批发油品排行：", products.get("local_wholesale"), limit=3)
+        for warning in wholesale.get("dataQualityWarnings") or []:
+            lines.append(f"提示：{warning}")
         return "\n".join(lines)
 
 
@@ -6043,8 +6689,71 @@ def register_assistant_routes(app):
         return "正常营业", reason
 
 
-    def _assistant_station_status_answer(station=None):
+    def _assistant_station_has_sales_row(row):
+        if not isinstance(row, dict):
+            return False
+        if any(_assistant_float(row.get(key)) > 0 for key in ("volume", "amount", "mass", "tons")):
+            return True
+        return any(
+            any(_assistant_float(resource.get(key)) > 0 for key in ("volume", "amount", "mass", "tons"))
+            for resource in (row.get("resources") or [])
+            if isinstance(resource, dict)
+        )
+
+
+    def _assistant_station_last_sale_dates():
+        daily_root = OILSTATION_ROOT / "cache_snapshots" / "daily"
+        if not daily_root.exists():
+            return {}
+        result = {}
+        for path in sorted(daily_root.glob("*/*/day_*.json")):
+            try:
+                snapshot_day = date(
+                    int(path.parent.parent.name),
+                    int(path.parent.name),
+                    int(path.stem.split("_")[-1]),
+                )
+            except (TypeError, ValueError):
+                continue
+            payload = _assistant_read_snapshot_json(path) or {}
+            rows = payload.get("stationResources") or payload.get("stations") or []
+            for row in rows:
+                if not isinstance(row, dict) or not _assistant_station_has_sales_row(row):
+                    continue
+                shop_key = _assistant_int(row.get("shopKey"))
+                if not shop_key:
+                    continue
+                if snapshot_day > result.get(shop_key, date.min):
+                    result[shop_key] = snapshot_day
+        return result
+
+
+    def _assistant_station_status_start_date(status, last_sale_dates=None):
+        if not isinstance(status, dict) or status.get("status") != "closed":
+            return _assistant_parse_iso_date((status or {}).get("startedAt")) if status else None
+        try:
+            shop_key = int(status.get("shopKey"))
+        except (TypeError, ValueError):
+            shop_key = 0
+        last_sale = (last_sale_dates or {}).get(shop_key)
+        if last_sale:
+            return last_sale + timedelta(days=1)
+        return _assistant_parse_iso_date(status.get("startedAt"))
+
+
+    def _assistant_station_status_start_text(status, last_sale_dates=None):
+        start_date = _assistant_station_status_start_date(status, last_sale_dates)
+        return start_date.isoformat() if start_date else "--"
+
+
+    def _assistant_status_reason_text(value):
+        return str(value or "").strip().rstrip("。；;，, ")
+
+
+    def _assistant_station_status_answer(station=None, last_sale_dates=None):
         statuses = _assistant_active_station_status_map()
+        if last_sale_dates is None:
+            last_sale_dates = _assistant_station_last_sale_dates()
         if isinstance(station, dict) and station.get("shopKey"):
             try:
                 shop_key = int(station.get("shopKey"))
@@ -6053,7 +6762,10 @@ def register_assistant_routes(app):
             status = statuses.get(shop_key) if shop_key is not None else None
             status_text, reason = _assistant_station_public_status(status)
             station_name = station.get("name") or (f"{shop_key}号站" if shop_key is not None else "该站")
-            detail = f"，原因：{reason}" if reason else ""
+            reason_text = _assistant_status_reason_text(reason)
+            detail = f"，原因：{reason_text}" if reason_text else ""
+            if isinstance(status, dict) and status.get("status") == "closed":
+                detail += f"，停业开始：{_assistant_station_status_start_text(status, last_sale_dates)}"
             return f"{station_name}当前状态：{status_text}{detail}。"
         if not statuses:
             return "当前所有站点正常营业。"
@@ -6063,22 +6775,25 @@ def register_assistant_routes(app):
         if closed:
             lines.append(f"暂停营业/停站点（{len(closed)} 个）：")
             for s in closed:
-                reason = s.get("closedReason") or s.get("statusLabel") or "未知"
-                lines.append(f"  {s.get('name')}（{s.get('region')}）— {reason}")
+                reason = _assistant_status_reason_text(s.get("closedReason") or s.get("statusLabel")) or "未知"
+                start_text = _assistant_station_status_start_text(s, last_sale_dates)
+                lines.append(f"  {s.get('name')}（{s.get('region')}）— {reason}，停业开始：{start_text}")
         if warning:
             if closed:
                 lines.append("")
             lines.append(f"异常状态站点（{len(warning)} 个）：")
             for s in warning:
-                reason = s.get("closedReason") or s.get("statusLabel") or "未知"
+                reason = _assistant_status_reason_text(s.get("closedReason") or s.get("statusLabel")) or "未知"
                 lines.append(f"  {s.get('name')}（{s.get('region')}）— {reason}（不影响销售）")
         if not closed and not warning:
             lines.append("当前所有站点状态正常。")
         return "\n".join(lines)
 
 
-    def _assistant_station_status_tables(station=None):
+    def _assistant_station_status_tables(station=None, last_sale_dates=None):
         statuses = _assistant_active_station_status_map()
+        if last_sale_dates is None:
+            last_sale_dates = _assistant_station_last_sale_dates()
         if isinstance(station, dict) and station.get("shopKey"):
             try:
                 shop_key = int(station.get("shopKey"))
@@ -6088,13 +6803,14 @@ def register_assistant_routes(app):
             status_text, reason = _assistant_station_public_status(status)
             return [_assistant_table(
                 "站点当前状态",
-                ["站号", "站点", "区域", "状态", "原因"],
+                ["站号", "站点", "区域", "状态", "原因", "开始时间"],
                 [[
                     shop_key or station.get("shopKey") or "--",
                     station.get("name") or "--",
                     station.get("region") or "--",
                     status_text,
                     reason or "",
+                    _assistant_station_status_start_text(status, last_sale_dates),
                 ]],
             )]
         if not statuses:
@@ -6113,7 +6829,7 @@ def register_assistant_routes(app):
                     s.get("region", "--"),
                     "停业" if s.get("status") == "closed" else "异常",
                     s.get("closedReason") or s.get("statusLabel") or "",
-                    s.get("startedAt") or "--",
+                    _assistant_station_status_start_text(s, last_sale_dates),
                 ]
                 for s in all_items
             ],
@@ -6364,6 +7080,7 @@ def register_assistant_routes(app):
         label_candidates = {
             str(item.get("name") or ""),
             str(item.get("short") or ""),
+            str(item.get("station") or ""),
             str(item.get("stationName") or ""),
             str(item.get("resourceLabel") or ""),
         }
@@ -6407,6 +7124,44 @@ def register_assistant_routes(app):
                 {**item, "volume": round(item["volume"], 2), "amount": round(item["amount"], 2)}
                 for _, item in sorted(daily_by_date.items())
             ]
+        density_station_rows = copied.get("byStationResource")
+        if isinstance(density_station_rows, list):
+            filtered_density_rows = [
+                item for item in density_station_rows
+                if isinstance(item, dict) and _assistant_station_allowed(item, allowed)
+            ]
+            copied["byStationResource"] = filtered_density_rows
+            resource_buckets = {}
+            for item in filtered_density_rows:
+                resource_key = item.get("resourceKey") or item.get("key") or item.get("name")
+                _assistant_add_density_bucket(
+                    resource_buckets,
+                    resource_key,
+                    {
+                        "resourceKey": item.get("resourceKey"),
+                        "key": item.get("key") or item.get("resourceKey"),
+                        "name": item.get("name") or "--",
+                    },
+                    item.get("volume"),
+                    item.get("mass"),
+                    item.get("amount"),
+                )
+            resource_rows = [
+                row for row in (_assistant_density_bucket_row(item) for item in resource_buckets.values())
+                if row
+            ]
+            resource_rows.sort(key=lambda item: float(item.get("volume") or 0), reverse=True)
+            total_volume = sum(float(item.get("volume") or 0) for item in resource_rows)
+            total_mass = sum(float(item.get("mass") or 0) for item in resource_rows)
+            summary = dict(copied.get("summary") or {})
+            summary.update({
+                "totalVolume": round(total_volume, 2),
+                "totalMass": round(total_mass, 3),
+                "totalTons": round(total_mass / 1000, 3),
+                "weightedDensity": round(total_mass / total_volume, 6) if total_volume > 0 else 0.0,
+            })
+            copied["byResource"] = resource_rows
+            copied["summary"] = summary
         records = copied.get("records")
         if isinstance(records, list):
             filtered_records = [item for item in records if isinstance(item, dict) and _assistant_station_allowed(item, allowed)]
@@ -6475,18 +7230,13 @@ def register_assistant_routes(app):
     def _assistant_retail_data_for_period(start, end, resource=None, *, plan=None, user_context=None):
         data = _retail_snapshot_for_period(start, end)
         needs_refresh = _retail_payload_needs_mass_refresh(data)
-        if not data or needs_refresh:
-            response = open_oilstation(
-                "/api/assistant/retail-summary",
-                query_string={
-                    "start": start.isoformat(),
-                    "end": end.isoformat(),
-                    **({"refresh": "1"} if needs_refresh else {}),
-                },
-            )
-            fresh_data = response.get_json() if response.status_code < 400 else {}
-            if fresh_data:
-                data = fresh_data
+        if not data:
+            data = _empty_retail_snapshot_payload(start, end)
+            data["sourceError"] = "confirmed_snapshot_missing"
+        elif needs_refresh:
+            warnings = list(data.get("warnings") or [])
+            warnings.append("快照吨位字段可能不完整，已按现有快照回答，未触发实时刷新。")
+            data["warnings"] = warnings
         data = _assistant_filter_retail_resource(data or {}, resource)
         return _assistant_apply_station_scope(data, plan or {}, user_context)
 
@@ -6624,14 +7374,9 @@ def register_assistant_routes(app):
                 "data": data,
             }
         if route == "density_summary":
-            data = _assistant_latest_retail_density_data()
-            return {
-                "periodLabel": data.get("date") or data.get("month") or "当前密度",
-                "answer": _assistant_density_answer(data),
-                "tables": _assistant_density_tables(data),
-                "charts": _assistant_density_charts(data),
-                "data": data,
-            }
+            data = _assistant_density_data_for_question(original_question, start, end)
+            data = _assistant_apply_station_scope(data, plan, user_context)
+            return _assistant_density_payload(data, original_question, plan)
         if route == "train_entry_summary":
             data = _assistant_train_entry_data(start, end)
             return {
@@ -6655,10 +7400,11 @@ def register_assistant_routes(app):
             }
         if route == "station_status":
             station = (plan.get("entities") or {}).get("station")
+            last_sale_dates = _assistant_station_last_sale_dates()
             return {
                 "periodLabel": "当前",
-                "answer": _assistant_station_status_answer(station),
-                "tables": _assistant_station_status_tables(station),
+                "answer": _assistant_station_status_answer(station, last_sale_dates),
+                "tables": _assistant_station_status_tables(station, last_sale_dates),
                 "data": {"station": station} if station else {},
             }
         if route == "self_use_summary":
@@ -7196,6 +7942,8 @@ def register_assistant_routes(app):
             return {"error": "question_required"}, 400
         if is_clear_assistant_command(question):
             return enrich_assistant_payload(clear_assistant_response(question, payload.get("language"))), 200
+        if is_sensitive_info_request(question):
+            return enrich_assistant_payload(sensitive_info_refusal(question, payload.get("language"))), 200
         if is_action_request(question):
             return enrich_assistant_payload(read_only_refusal(question, payload.get("language"))), 200
 
@@ -7388,12 +8136,13 @@ def register_assistant_routes(app):
 
         if route == "station_status" or _assistant_has_any(match_question, ("停业", "站点状态", "异常站点", "暂停营业", "维修", "停电")):
             station = (plan.get("entities") or {}).get("station")
+            last_sale_dates = _assistant_station_last_sale_dates()
             return _assistant_response(
                 question,
                 plan,
                 periodLabel="当前",
-                answer=_assistant_station_status_answer(station),
-                tables=_assistant_station_status_tables(station),
+                answer=_assistant_station_status_answer(station, last_sale_dates),
+                tables=_assistant_station_status_tables(station, last_sale_dates),
                 data={"station": station} if station else {},
             )
         if route == "procurement_summary":
@@ -7682,21 +8431,19 @@ def register_assistant_routes(app):
                 data=data,
             )
         if route == "wholesale_review" or _assistant_has_any(match_question, ("审核", "复核", "异常", "提示", "未匹配")):
-            year, month = _assistant_year_month_from_period(start, end)
             conn = get_connection()
             try:
                 cur = conn.cursor()
-                data = summarize_wholesale_page(cur, year, month)
+                data = summarize_wholesale_range(cur, start, end, label=label)
                 answer = _assistant_review_answer(label, data)
             finally:
                 conn.close()
             return _assistant_response(question, plan, periodLabel=label, answer=answer, tables=_assistant_review_tables(label, data), data=data)
         if route == "wholesale_summary" or any(word in match_question for word in ("批发", "外运", "出口", "本地", "客户")):
-            year, month = _assistant_year_month_from_period(start, end)
             conn = get_connection()
             try:
                 cur = conn.cursor()
-                data = summarize_wholesale_page(cur, year, month)
+                data = summarize_wholesale_range(cur, start, end, label=label)
             finally:
                 conn.close()
             return _assistant_response(
@@ -7721,16 +8468,9 @@ def register_assistant_routes(app):
                 conn.close()
             return _assistant_response(question, plan, periodLabel=label, answer=answer, tables=tables, charts=charts)
         if route == "density_summary" or "密度" in match_question:
-            data = _assistant_latest_retail_density_data()
-            return _assistant_response(
-                question,
-                plan,
-                periodLabel=data.get("date") or data.get("month") or "当前密度",
-                answer=_assistant_density_answer(data),
-                tables=_assistant_density_tables(data),
-                charts=_assistant_density_charts(data),
-                data=data,
-            )
+            data = _assistant_density_data_for_question(question, start, end)
+            data = _assistant_apply_station_scope(data, plan, user_context)
+            return _assistant_response(question, plan, **_assistant_density_payload(data, question, plan))
         if route == "retail_inventory" or _assistant_has_any(match_question, ("库存", "期末")):
             inventory_data = _retail_inventory_for_period(start, end)
             if inventory_data:

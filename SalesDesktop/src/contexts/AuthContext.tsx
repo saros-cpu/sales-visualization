@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import client from '@/api/client';
 import { clearAuthTokens, refreshAccessToken } from '@/api/http';
 import { recordDevToolsOpen } from '@/api/system';
+import { ApiPaths } from '@shared/api-contracts';
 
 interface User {
   id: number;
@@ -32,6 +33,10 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
+
+function v2Path(path: string) {
+  return path.replace(/^\/api\/v2/, '') || '/';
+}
 
 function isJwtExpired(token: string): boolean {
   try {
@@ -88,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         if (!token) return;
 
-        const res = await client.get('/auth/me');
+        const res = await client.get(v2Path(ApiPaths.auth.me));
         if (cancelled) return;
         const userData = res.data?.user || res.data;
         if (userData && typeof userData === 'object') {
@@ -112,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (username: string, password: string) => {
-    const res = await client.post('/auth/login', { username, password });
+    const res = await client.post(v2Path(ApiPaths.auth.login), { username, password });
     const {
       accessToken,
       refreshToken,
@@ -136,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     const refreshToken = localStorage.getItem('refreshToken') || '';
-    client.post('/auth/logout', refreshToken ? { refreshToken } : {}).catch(() => {});
+    client.post(v2Path(ApiPaths.auth.logout), refreshToken ? { refreshToken } : {}).catch(() => {});
     clearAuthTokens();
     syncDevToolsAccess(null);
     setUser(null);

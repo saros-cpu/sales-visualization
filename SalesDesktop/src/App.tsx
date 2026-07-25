@@ -63,7 +63,6 @@ const Procurement = lazyWithRetry(() => import('@/pages/Procurement'));
 const Contracts = lazyWithRetry(() => import('@/pages/Contracts/ContractView'));
 const ContractAdd = lazyWithRetry(() => import('@/pages/Contracts/ContractAdd'));
 const Materials = lazyWithRetry(() => import('@/pages/Materials'));
-const TransferLoss = lazyWithRetry(() => import('@/pages/TransferLoss'));
 const Users = lazyWithRetry(() => import('@/pages/Users'));
 const OrganizationPermissions = lazyWithRetry(() => import('@/pages/OrganizationPermissions'));
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
@@ -271,7 +270,7 @@ function AppRoutes() {
           <Route path="add" element={<ErrorBoundary><Suspense fallback={loading}><ContractAdd /></Suspense></ErrorBoundary>} />
         </Route>
         <Route path="materials" element={<ErrorBoundary><Suspense fallback={loading}><Materials /></Suspense></ErrorBoundary>} />
-        <Route path="transfer-loss" element={<ErrorBoundary><Suspense fallback={loading}><TransferLoss /></Suspense></ErrorBoundary>} />
+        <Route path="transfer-loss" element={<Navigate to="/wholesale/overview" replace />} />
         <Route path="map" element={<ErrorBoundary><Suspense fallback={loading}><MapPage /></Suspense></ErrorBoundary>} />
         <Route path="users" element={<ErrorBoundary><Suspense fallback={loading}><Users /></Suspense></ErrorBoundary>} />
         <Route path="users/roles" element={<Navigate to="/users/organization" replace />} />

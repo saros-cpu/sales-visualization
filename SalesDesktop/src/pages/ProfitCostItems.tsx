@@ -6,21 +6,32 @@ import {
   getProfitCostItems,
   getProfitCostTypes,
   getProfitPurchasePrices,
+  getWholesaleBriefingPrices,
   saveProfitCostItems,
   saveProfitPurchasePrices,
+  saveWholesaleBriefingPrices,
   type ProfitCostType,
   type ProfitPurchasePriceValue,
   type ProfitPurchaseStationRow,
   type ProfitStationRow,
+  type WholesaleBriefingPriceRow,
 } from '@/api/management';
 import PageState from '@/components/ui/PageState';
 import StationNameStack from '@/components/ui/StationNameStack';
 import { useRetailYears } from '@/hooks/useRetailYears';
+import { useAuth } from '@/contexts/AuthContext';
+
+const TAB_PERMISSIONS: Array<{ key: string; permission: string }> = [
+  { key: 'costs', permission: 'profit:cost_update' },
+  { key: 'purchase', permission: 'profit:purchase_price_update' },
+  { key: 'wholesale', permission: 'profit:wholesale_price_update' },
+];
 
 type CellKey = `${number}:${string}`;
 type DraftMap = Map<CellKey, number | null>;
 type PurchaseCellKey = `${number}:${number}`;
 type PurchaseDraftMap = Map<PurchaseCellKey, number | null>;
+type WholesaleDraftMap = Map<number, { largePrice: number | null; retailPrice: number | null }>;
 type PurchaseGridRow = ProfitPurchasePriceValue & { shopKey: number; stationName: string };
 type PurchaseDisplayRow = Omit<ProfitPurchasePriceValue, 'source'> & {
   key: string;
@@ -42,11 +53,15 @@ function purchaseCellKey(shopKey: number, resourceKey: number): PurchaseCellKey 
 
 export default function ProfitCostItems() {
   const { t } = useTranslation();
+  const { can } = useAuth();
   const { message } = App.useApp();
   const now = new Date();
   const { year, setYear, yearOptions } = useRetailYears(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [activeTab, setActiveTab] = useState('costs');
+  const allowedTabKeys = useMemo(() => (
+    TAB_PERMISSIONS.filter((tab) => can(tab.permission)).map((tab) => tab.key)
+  ), [can]);
+  const [activeTab, setActiveTab] = useState(() => allowedTabKeys[0] ?? 'costs');
   const [costTypes, setCostTypes] = useState<ProfitCostType[]>([]);
   const [rows, setRows] = useState<ProfitStationRow[]>([]);
   const [purchaseStations, setPurchaseStations] = useState<ProfitPurchaseStationRow[]>([]);
@@ -54,6 +69,9 @@ export default function ProfitCostItems() {
   const [origin, setOrigin] = useState<DraftMap>(new Map());
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraftMap>(new Map());
   const [purchaseOrigin, setPurchaseOrigin] = useState<PurchaseDraftMap>(new Map());
+  const [wholesaleRows, setWholesaleRows] = useState<WholesaleBriefingPriceRow[]>([]);
+  const [wholesaleDraft, setWholesaleDraft] = useState<WholesaleDraftMap>(new Map());
+  const [wholesaleOrigin, setWholesaleOrigin] = useState<WholesaleDraftMap>(new Map());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -115,6 +133,28 @@ export default function ProfitCostItems() {
     load();
   }, [load]);
 
+  const loadWholesale = useCallback(async () => {
+    try {
+      const payload = await getWholesaleBriefingPrices();
+      const nextDraft: WholesaleDraftMap = new Map();
+      const nextOrigin: WholesaleDraftMap = new Map();
+      for (const item of payload.items) {
+        const value = { largePrice: item.largePrice ?? null, retailPrice: item.retailPrice ?? null };
+        nextDraft.set(item.productKey, value);
+        nextOrigin.set(item.productKey, value);
+      }
+      setWholesaleRows(payload.items);
+      setWholesaleDraft(nextDraft);
+      setWholesaleOrigin(nextOrigin);
+    } catch (e: any) {
+      setError(e?.message || t('common.failed'));
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (can('profit:wholesale_price_update')) loadWholesale();
+  }, [loadWholesale, can]);
+
   const dirtyCount = useMemo(() => {
     let count = 0;
     for (const [key, value] of draft) {
@@ -130,6 +170,17 @@ export default function ProfitCostItems() {
     }
     return count;
   }, [purchaseDraft, purchaseOrigin]);
+
+  const wholesaleDirtyCount = useMemo(() => {
+    let count = 0;
+    for (const [productKey, value] of wholesaleDraft) {
+      const origin = wholesaleOrigin.get(productKey);
+      if (!origin) continue;
+      if ((value.largePrice ?? null) !== (origin.largePrice ?? null)) count += 1;
+      if ((value.retailPrice ?? null) !== (origin.retailPrice ?? null)) count += 1;
+    }
+    return count;
+  }, [wholesaleDraft, wholesaleOrigin]);
 
   const purchaseRows = useMemo<PurchaseGridRow[]>(() => (
     purchaseStations.flatMap((item) => item.rows.map((row) => ({
@@ -206,6 +257,15 @@ export default function ProfitCostItems() {
     });
   };
 
+  const setWholesaleCell = (productKey: number, field: 'largePrice' | 'retailPrice', value: number | null) => {
+    setWholesaleDraft((prev) => {
+      const next = new Map(prev);
+      const current = next.get(productKey) || { largePrice: null, retailPrice: null };
+      next.set(productKey, { ...current, [field]: value });
+      return next;
+    });
+  };
+
   const onSaveCosts = async () => {
     const items: Array<{ shopKey: number; costType: string; value: number | null }> = [];
     for (const [key, value] of draft) {
@@ -252,6 +312,31 @@ export default function ProfitCostItems() {
       await saveProfitPurchasePrices(loadedMonth || ym, items);
       message.success(t('common.saved'));
       await load();
+    } catch (e: any) {
+      message.error(e?.message || t('common.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onSaveWholesalePrices = async () => {
+    const items: Array<{ productKey: number; largePrice: number | null; retailPrice: number | null }> = [];
+    for (const [productKey, value] of wholesaleDraft) {
+      const origin = wholesaleOrigin.get(productKey);
+      if (!origin) continue;
+      if ((value.largePrice ?? null) === (origin.largePrice ?? null)
+        && (value.retailPrice ?? null) === (origin.retailPrice ?? null)) continue;
+      items.push({ productKey, largePrice: value.largePrice ?? null, retailPrice: value.retailPrice ?? null });
+    }
+    if (!items.length) {
+      message.info(t('common.noChangesToSave'));
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveWholesaleBriefingPrices(items);
+      message.success(t('common.saved'));
+      await loadWholesale();
     } catch (e: any) {
       message.error(e?.message || t('common.saveFailed'));
     } finally {
@@ -328,6 +413,36 @@ export default function ProfitCostItems() {
     );
   };
 
+  const renderWholesaleEditable = (row: WholesaleBriefingPriceRow, field: 'largePrice' | 'retailPrice') => {
+    const current = wholesaleDraft.get(row.productKey) || { largePrice: null, retailPrice: null };
+    const original = wholesaleOrigin.get(row.productKey) || { largePrice: null, retailPrice: null };
+    const value = current[field] ?? null;
+    const dirty = (value ?? null) !== (original[field] ?? null);
+
+    const input = (
+      <InputNumber
+        style={{ width: 120 }}
+        min={0}
+        step={0.1}
+        precision={2}
+        value={value}
+        placeholder={t('profit.notSet')}
+        onChange={(v) => setWholesaleCell(row.productKey, field, v == null ? null : Number(v))}
+      />
+    );
+
+    return (
+      <Space direction="vertical" size={2}>
+        {dirty ? (
+          <Tooltip title={t('profit.dirtyTip')}>
+            <span style={{ color: '#CC0000' }}>{input}</span>
+          </Tooltip>
+        ) : input}
+        {value == null && <Tag style={{ marginInlineEnd: 0 }}>{t('profit.notSet')}</Tag>}
+      </Space>
+    );
+  };
+
   const costColumns = [
     {
       title: t('profit.stationNo'), dataIndex: 'shopKey', key: 'shopKey', width: 80,
@@ -383,8 +498,39 @@ export default function ProfitCostItems() {
     },
   ];
 
-  const activeDirtyCount = activeTab === 'purchase' ? purchaseDirtyCount : dirtyCount;
-  const onSaveActive = activeTab === 'purchase' ? onSavePurchasePrices : onSaveCosts;
+  const wholesaleColumns = [
+    {
+      title: t('common.productName'), dataIndex: 'labelZh', key: 'productKey', width: 220,
+      align: 'center' as const,
+      render: (_: string, row: WholesaleBriefingPriceRow) => (
+        <Tooltip title={row.labelRu}>
+          <span>{row.labelZh}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: t('profit.wholesaleLargePrice'),
+      key: 'largePrice',
+      align: 'center' as const,
+      width: 180,
+      render: (_: unknown, row: WholesaleBriefingPriceRow) => renderWholesaleEditable(row, 'largePrice'),
+    },
+    {
+      title: t('profit.wholesaleRetailPrice'),
+      key: 'retailPrice',
+      align: 'center' as const,
+      width: 180,
+      render: (_: unknown, row: WholesaleBriefingPriceRow) => renderWholesaleEditable(row, 'retailPrice'),
+    },
+    {
+      title: t('profit.updatedAt'), dataIndex: 'updatedAt', key: 'updatedAt', width: 180,
+      align: 'center' as const,
+      render: (v?: string | null) => v || '--',
+    },
+  ];
+
+  const activeDirtyCount = activeTab === 'costs' ? dirtyCount : activeTab === 'purchase' ? purchaseDirtyCount : wholesaleDirtyCount;
+  const onSaveActive = activeTab === 'costs' ? onSaveCosts : activeTab === 'purchase' ? onSavePurchasePrices : onSaveWholesalePrices;
 
   if (loading && !rows.length && !purchaseStations.length) return <PageState status="loading" />;
 
@@ -412,7 +558,7 @@ export default function ProfitCostItems() {
         </div>
 
         {error && <Alert type="error" message={error} closable />}
-        <Alert type="info" message={t('profit.hint')} showIcon />
+        <Alert type="info" message={activeTab === 'wholesale' ? t('profit.wholesalePriceHint') : t('profit.hint')} showIcon />
       </div>
 
       <Tabs
@@ -462,7 +608,28 @@ export default function ProfitCostItems() {
               </div>
             ),
           },
-        ]}
+          {
+            key: 'wholesale',
+            label: t('profit.wholesalePricesTab'),
+            children: (
+              <div className="client-fit-page">
+                <Card size="small" className="client-fit-table-card">
+                  <div className="client-fit-table-scroll">
+                    <Table
+                      columns={wholesaleColumns}
+                      dataSource={wholesaleRows}
+                      rowKey="productKey"
+                      loading={loading}
+                      size="small"
+                      pagination={false}
+                      scroll={{ x: 'max-content' }}
+                    />
+                  </div>
+                </Card>
+              </div>
+            ),
+          },
+        ].filter((item) => allowedTabKeys.includes(item.key))}
       />
     </div>
   );

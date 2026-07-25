@@ -1,4 +1,7 @@
 import client from './client';
+import { ApiPaths } from '@shared/api-contracts';
+
+const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface WeighingItem {
   source: string;
@@ -9,6 +12,13 @@ export interface WeighingItem {
   senderName: string;
   receiverName: string;
   rawProductName: string;
+  standardProductName?: string | null;
+  displayProductName?: string | null;
+  standardSenderName?: string | null;
+  standardReceiverName?: string | null;
+  displaySenderName?: string | null;
+  displayReceiverName?: string | null;
+  standardEntityName?: string | null;
   grossWeight: number | null;
   tareWeight: number | null;
   netWeight: number;
@@ -30,7 +40,7 @@ export interface WeighingListParams {
 }
 
 export async function getWeighingList(params: WeighingListParams) {
-  const res = await client.get('/weighing/list', { params });
+  const res = await client.get(v2(ApiPaths.weighing.list), { params });
   return res.data;
 }
 
@@ -43,7 +53,7 @@ export async function verifyWeighing(data: {
   operator_id: number;
   remark?: string;
 }) {
-  const res = await client.post('/weighing/verify', data);
+  const res = await client.post(v2(ApiPaths.weighing.verify), data);
   return res.data;
 }
 
@@ -53,6 +63,6 @@ export async function batchReviewWeighing(data: {
   classification?: string;
   remark?: string;
 }) {
-  const res = await client.post('/weighing/batch-review', data);
+  const res = await client.post(v2(ApiPaths.weighing.batchReview), data);
   return res.data;
 }

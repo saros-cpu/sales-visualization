@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from text_utils import normalize_text
+from import_helpers import classify_wholesale_movement, load_entity_lookup, resolve_customer_reference
 
 
 def resolve_exchange(cur, rate_date):
@@ -43,85 +43,96 @@ def convert_amount(amount_original, currency_code, usd_kgs, cny_kgs):
 
 
 def resolve_sales_customer(cur, raw_entity_name):
-    normalized_name = normalize_text(raw_entity_name)
-    cur.execute(
-        "SELECT normalized_name, customer_type FROM customers WHERE normalized_name = %s LIMIT 1",
-        (normalized_name,),
-    )
-    customer = cur.fetchone()
-    if customer:
-        return customer[0], customer[1]
-
-    cur.execute(
-        """
-        SELECT standard_name
-        FROM entity_aliases
-        WHERE entity_type = 'wholesale_customer'
-          AND normalized_alias = %s
-        ORDER BY confidence DESC, id DESC
-        LIMIT 1
-        """,
-        (normalized_name,),
-    )
-    alias = cur.fetchone()
-    if not alias:
-        return normalized_name, "unknown"
-
-    standard_normalized = normalize_text(alias[0])
-    cur.execute(
-        "SELECT normalized_name, customer_type FROM customers WHERE normalized_name = %s LIMIT 1",
-        (standard_normalized,),
-    )
-    customer = cur.fetchone()
-    return customer if customer else (standard_normalized, "unknown")
+    return resolve_customer_reference(cur, raw_entity_name)
 
 
 def provisional_sales_classification(customer_type, existing_classification):
     if customer_type in ("local_wholesale", "export_wholesale"):
         return customer_type
-    if existing_classification in ("local_wholesale", "export_wholesale", "unknown"):
-        return existing_classification
     return "unknown"
 
 
-def recalculate_wholesale_batch(cur, batch_id):
+def recalculate_wholesale_details(cur, where_clause, params=()):
     cur.execute(
-        """
+        f"""
         DELETE cr
         FROM calculation_results cr
         JOIN wholesale_detail_records d ON d.id = cr.detail_id
-        WHERE d.batch_id = %s
+        WHERE {where_clause}
         """,
-        (batch_id,),
+        params,
     )
     cur.execute(
-        """
+        f"""
         DELETE qi
         FROM data_quality_issues qi
         JOIN wholesale_detail_records d ON d.id = qi.related_id
-        WHERE d.batch_id = %s
+        WHERE {where_clause}
           AND qi.related_table = 'wholesale_detail_records'
         """,
-        (batch_id,),
+        params,
     )
 
+    entity_lookup = load_entity_lookup(cur)
     cur.execute(
-        """
-        SELECT id, business_date, raw_entity_name, product_id, weight_tons, classification
-        FROM wholesale_detail_records
-        WHERE batch_id = %s
-          AND classification IN ('local_wholesale', 'export_wholesale', 'unknown')
+        f"""
+        SELECT id, business_date, raw_entity_name, sender_name, product_id, weight_tons, classification, audit_status
+        FROM wholesale_detail_records d
+        WHERE {where_clause}
         """,
-        (batch_id,),
+        params,
     )
     details = cur.fetchall()
 
     matched = 0
     unmatched = 0
     missing_rates = 0
-    for detail_id, business_date, raw_entity_name, product_id, weight_tons, classification in details:
+    classification_cache = {}
+    manual_non_sales_classes = {"transfer", "processing", "procurement", "other"}
+    for detail_id, business_date, raw_entity_name, sender_name, product_id, weight_tons, classification, audit_status in details:
+        if audit_status == "approved" and classification in manual_non_sales_classes:
+            cur.execute(
+                """
+                UPDATE wholesale_detail_records
+                SET contract_id = NULL,
+                    match_status = CASE WHEN product_id IS NULL THEN 'unmatched' ELSE 'matched' END
+                WHERE id = %s
+                """,
+                (detail_id,),
+            )
+            continue
+        classification_key = (raw_entity_name or "", sender_name or "")
+        strict_classification = classification_cache.get(classification_key)
+        if strict_classification is None:
+            strict_classification = classify_wholesale_movement(
+                cur,
+                entity_lookup,
+                raw_entity_name,
+                sender_name=sender_name,
+                current=classification,
+            )
+            classification_cache[classification_key] = strict_classification
+        if strict_classification not in ("local_wholesale", "export_wholesale", "unknown"):
+            cur.execute(
+                """
+                UPDATE wholesale_detail_records
+                SET contract_id = NULL,
+                    classification = %s,
+                    match_status = CASE WHEN product_id IS NULL THEN 'unmatched' ELSE 'matched' END
+                WHERE id = %s
+                """,
+                (strict_classification, detail_id),
+            )
+            continue
+
+        if strict_classification == "unknown":
+            issue_type = "unknown_product" if not product_id else "contract_unmatched"
+            mark_unmatched(cur, detail_id, issue_type, "unknown")
+            unmatched += 1
+            continue
+
         customer_name, customer_type = resolve_sales_customer(cur, raw_entity_name)
-        provisional_classification = provisional_sales_classification(customer_type, classification)
+        provisional_classification = strict_classification
         if not product_id:
             mark_unmatched(cur, detail_id, "unknown_product", provisional_classification)
             unmatched += 1
@@ -201,11 +212,19 @@ def recalculate_wholesale_batch(cur, batch_id):
             SET contract_id = %s, classification = %s, match_status = 'matched'
             WHERE id = %s
             """,
-            (contract_id, sales_type, detail_id),
+            (contract_id, strict_classification, detail_id),
         )
         matched += 1
 
     return {"matched": matched, "unmatched": unmatched, "missing_rates": missing_rates}
+
+
+def recalculate_wholesale_batch(cur, batch_id):
+    return recalculate_wholesale_details(cur, "d.batch_id = %s", (batch_id,))
+
+
+def recalculate_wholesale_all(cur):
+    return recalculate_wholesale_details(cur, "1 = 1")
 
 
 def mark_unmatched(cur, detail_id, issue_type, classification="unknown"):
