@@ -3,15 +3,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useChart } from '../../hooks/useChart';
 import { getMonths, getStations, getStationDetail } from '../../api/retail';
+import RetailKpiCompare from '../../components/retail/RetailKpiCompare';
 import {
   REGION_COLORS,
   REGION_ORDER,
   amountCnyOf,
   formatCnyKpi,
   formatLitersKpiParts,
+  formatRetailMonthLabel,
   formatSomKpiParts,
   formatTonsKpi,
+  normalizeRetailMonthOptions,
   numberFormat,
+  retailTonsOf,
   sortRankingRows,
 } from '../../utils/retail-helpers';
 
@@ -32,23 +36,18 @@ function numeric(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function tonsOf(item) {
-  const tons = numeric(item?.totalTons ?? item?.tons);
-  if (tons > 0) return tons;
-  const mass = numeric(item?.mass ?? item?.totalWeightKg);
-  return mass > 0 ? mass / 1000 : 0;
-}
-
 export default function StationPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryMonth = params.get('month') || '';
   const queryName = params.get('name');
   const fromRegion = params.get('from') === 'region';
   const fromRegionName = params.get('region') || '';
 
   const [allStations, setAllStations] = useState([]);
-  const [currentMonth, setCurrentMonth] = useState(location.state?.month || '');
+  const [months, setMonths] = useState([]);
+  const [currentMonth, setCurrentMonth] = useState(queryMonth || location.state?.month || '');
   const [currentShopKey, setCurrentShopKey] = useState(location.state?.shopKey || null);
   const [detail, setDetail] = useState(null);
 
@@ -65,12 +64,31 @@ export default function StationPage() {
     if (currentMonth) return;
     (async () => {
       try {
-        const months = await getMonths();
-        const valid = months.find(m => m.transactions > 1000);
-        setCurrentMonth(valid ? valid.month : months[0]?.month || '2026-04');
+        const monthList = normalizeRetailMonthOptions(await getMonths());
+        setMonths(monthList);
+        const valid = monthList.find(m => m.transactions > 1000);
+        setCurrentMonth(valid ? valid.month : monthList[0]?.month || '2026-04');
       } catch { setCurrentMonth('2026-04'); }
     })();
   }, []);
+
+  useEffect(() => {
+    if (queryMonth) {
+      setDetail(null);
+      setCurrentMonth(prev => (prev === queryMonth ? prev : queryMonth));
+    }
+  }, [queryMonth]);
+
+  useEffect(() => {
+    if (months.length || !currentMonth) return;
+    (async () => {
+      try {
+        setMonths(normalizeRetailMonthOptions(await getMonths()));
+      } catch {
+        setMonths([{ month: currentMonth }]);
+      }
+    })();
+  }, [months.length, currentMonth]);
 
   // ── 加载站点列表 ──
   useEffect(() => {
@@ -85,18 +103,23 @@ export default function StationPage() {
 
   // ── 确定默认 shopKey ──
   useEffect(() => {
-    if (!allStations.length || currentShopKey) return;
+    if (!allStations.length) return;
     let key = null;
+    const queryShopKey = Number(params.get('shopKey'));
+    if (Number.isFinite(queryShopKey) && queryShopKey > 0) {
+      const found = allStations.find(s => Number(s.shopKey) === queryShopKey);
+      if (found) key = found.shopKey;
+    }
     if (queryName) {
       const found = allStations.find(s => s.name === queryName);
       if (found) key = found.shopKey;
     }
     if (!key) {
       const active = allStations.filter(s => s.amount > 0);
-      if (active.length) key = active[0].shopKey;
+      if (!currentShopKey && active.length) key = active[0].shopKey;
     }
-    if (key) setCurrentShopKey(key);
-  }, [allStations, queryName, currentShopKey]);
+    if (key && Number(key) !== Number(currentShopKey)) setCurrentShopKey(key);
+  }, [allStations, queryName, currentShopKey, params]);
 
   // ── 加载详情 ──
   const loadDetail = useCallback(async (shopKey) => {
@@ -215,32 +238,61 @@ export default function StationPage() {
     }, true);
 
     // 6. 雷达图
-    const maxAmt = Math.max(...cmpData.map(x => x.amount), 1);
-    const maxVol = Math.max(...cmpData.map(x => x.volume), 1);
-    const maxCard = Math.max(...cmpData.map(x => x.amount > 0 ? (x.card || 0) / x.amount : 0), 0.01);
-    const maxPts = Math.max(...cmpData.map(x => x.bonus || 0), 1);
-    const score = x => [
-      Math.round(x.volume / maxVol * 100),
-      Math.round(x.amount / maxAmt * 100),
-      Math.round((x.amount > 0 ? (x.card || 0) / x.amount : 0) / maxCard * 100),
-      x.bonus > 0 ? Math.min(100, Math.round(x.bonus / maxPts * 100)) : 0,
-      cmpData.length > 1 ? Math.round((1 - cmpData.indexOf(x) / (cmpData.length - 1)) * 100) : 100,
+    const rankMetrics = [
+      { label: '销量', value: x => numeric(x.volume) },
+      { label: '金额', value: x => numeric(x.amount) },
+      { label: '刷卡率', value: x => numeric(x.amount) > 0 ? numeric(x.card) / numeric(x.amount) : 0 },
+      { label: '积分', value: x => numeric(x.bonus) },
     ];
+    const makeRankMap = metric => new Map(
+      [...cmpData]
+        .sort((a, b) => metric(b) - metric(a))
+        .map((row, index) => [Number(row.shopKey), index + 1]),
+    );
+    const rankMaps = rankMetrics.map(metric => ({ ...metric, ranks: makeRankMap(metric.value) }));
+    const rankTotal = Math.max(cmpData.length, 1);
+    const overallRank = row => {
+      const key = Number(row.shopKey);
+      const sum = rankMaps.reduce((total, metric) => total + (metric.ranks.get(key) || rankTotal), 0);
+      return sum / Math.max(rankMaps.length, 1);
+    };
+    const overallRankMap = new Map(
+      [...cmpData]
+        .sort((a, b) => overallRank(a) - overallRank(b))
+        .map((row, index) => [Number(row.shopKey), index + 1]),
+    );
+    const radarRankItems = [
+      ...rankMaps,
+      { label: '综合', ranks: overallRankMap },
+    ];
+    const rankScore = rank => {
+      if (rankTotal <= 1) return 100;
+      return Math.max(0, Math.round((rankTotal - rank) / (rankTotal - 1) * 100));
+    };
     const cur = cmpData.find(x => x.shopKey === currentShopKey);
     if (cur) {
+      const curKey = Number(cur.shopKey);
+      const curRanks = radarRankItems.map(item => item.ranks.get(curKey) || rankTotal);
       const rdc = radarC.init('chart-station-radar');
       rdc?.setOption({
         backgroundColor: 'transparent',
-        tooltip: darkTooltip,
+        tooltip: {
+          ...darkTooltip,
+          formatter: () => [
+            `<b>${name}</b>`,
+            `同区域共 ${rankTotal} 个正常营业站`,
+            ...radarRankItems.map((item, index) => `${item.label}：第 ${curRanks[index]} / ${rankTotal}`),
+          ].join('<br/>'),
+        },
         radar: {
-          indicator: [{ name: '销量', max: 100 }, { name: '金额', max: 100 }, { name: '刷卡率', max: 100 }, { name: '积分', max: 100 }, { name: '排名', max: 100 }],
+          indicator: radarRankItems.map(item => ({ name: item.label, max: 100 })),
           center: ['50%', '50%'], radius: '65%', nameGap: 8,
           name: { textStyle: { color: 'rgba(160,180,210,0.7)', fontSize: 10 } },
           splitLine: { lineStyle: { color: 'rgba(0,180,255,0.1)' } },
           splitArea: { areaStyle: { color: ['rgba(0,180,255,0.03)', 'rgba(0,180,255,0.06)'] } },
           axisLine: { lineStyle: { color: 'rgba(0,180,255,0.15)' } },
         },
-        series: [{ type: 'radar', data: [{ value: score(cur), name, areaStyle: { color: color + '40' }, lineStyle: { color, width: 2 }, itemStyle: { color } }] }],
+        series: [{ type: 'radar', data: [{ value: curRanks.map(rankScore), name, areaStyle: { color: color + '40' }, lineStyle: { color, width: 2 }, itemStyle: { color } }] }],
       }, true);
     }
   }, [detail, allStations, currentShopKey]);
@@ -263,7 +315,14 @@ export default function StationPage() {
 
   const handleSwitchStation = (e) => {
     const sk = parseInt(e.target.value);
-    if (sk) setCurrentShopKey(sk);
+    if (!sk) return;
+    setCurrentShopKey(sk);
+    const selected = allStations.find(s => Number(s.shopKey) === sk);
+    const query = new URLSearchParams(params);
+    query.set('shopKey', String(sk));
+    if (selected?.name) query.set('name', selected.name);
+    if (currentMonth) query.set('month', currentMonth);
+    navigate(`/retail/station?${query.toString()}`, { replace: true, state: { shopKey: sk, month: currentMonth } });
   };
 
   const s = detail?.summary || {};
@@ -272,11 +331,26 @@ export default function StationPage() {
   const stationSalesKpi = formatSomKpiParts(stationAmount);
   const stationLitersKpi = formatLitersKpiParts(stationVolume);
   const stationSalesCny = amountCnyOf({ ...s, amount: stationAmount, avgCnyKgs: s.avgCnyKgs ?? detail?.avgCnyKgs });
+  const stationMom = detail?.comparison?.mom || {};
+  const stationYoy = detail?.comparison?.yoy || {};
+  const stationMomSales = stationMom.sales ?? stationMom.amount;
+  const stationYoySales = stationYoy.sales ?? stationYoy.amount;
+  const monthOptions = months.length ? months : (currentMonth ? [{ month: currentMonth }] : []);
+  const changeMonth = (month) => {
+    setDetail(null);
+    setCurrentMonth(month);
+    const query = new URLSearchParams(params);
+    query.set('month', month);
+    if (currentShopKey) query.set('shopKey', String(currentShopKey));
+    const selected = allStations.find(st => Number(st.shopKey) === Number(currentShopKey));
+    if (selected?.name) query.set('name', selected.name);
+    navigate(`/retail/station?${query.toString()}`, { replace: true, state: { shopKey: currentShopKey, month } });
+  };
   return (
     <div className="retail-page-wrap">
       {/* Header */}
       <div className="retail-page-header" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', borderBottom: '1px solid rgba(0,180,255,0.12)' }}>
-        <button className="retail-nav-btn" onClick={() => fromRegion && fromRegionName ? navigate(`/retail/region?region=${encodeURIComponent(fromRegionName)}`) : navigate('/retail')} style={{ padding: '4px 12px', background: 'rgba(0,30,80,0.4)', border: '1px solid rgba(0,180,255,0.2)', borderRadius: 6, color: '#c8d8f0', cursor: 'pointer', fontSize: 12 }}>
+        <button className="retail-nav-btn" onClick={() => fromRegion && fromRegionName ? navigate(`/retail/region?region=${encodeURIComponent(fromRegionName)}${currentMonth ? `&month=${encodeURIComponent(currentMonth)}` : ''}`) : navigate('/retail')} style={{ padding: '4px 12px', background: 'rgba(0,30,80,0.4)', border: '1px solid rgba(0,180,255,0.2)', borderRadius: 6, color: '#c8d8f0', cursor: 'pointer', fontSize: 12 }}>
           ← {fromRegion ? '返回区域' : '返回'}
         </button>
         <div>
@@ -291,6 +365,34 @@ export default function StationPage() {
       <div className="retail-station-grid">
         {/* Left col */}
         <div className="station-left-col">
+          {/* 切换站点 */}
+          <div className="retail-panel" style={{ flexShrink: 0 }}>
+            <div className="panel-header"><div className="dot" /><span>选择站点</span></div>
+            <div style={{ padding: '8px 10px' }}>
+              <select className="station-selector" value={currentShopKey || ''} onChange={handleSwitchStation}>
+                {stationGroups.map(g => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.stations.map(st => {
+                      const tag = st.status === 'closed' ? (st.closedReason?.includes('装修') ? ' [装修]' : ' [停业]') : '';
+                      return <option key={st.shopKey} value={st.shopKey}>{st.name} ({st.short}){tag}</option>;
+                    })}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 选择月份 */}
+          <div className="retail-panel" style={{ flexShrink: 0 }}>
+            <div className="panel-header"><div className="dot" /><span>选择月份</span></div>
+            <div style={{ padding: '8px 10px' }}>
+              <select className="retail-month-select station-month-selector" value={currentMonth} onChange={e => changeMonth(e.target.value)}>
+                {!monthOptions.length ? <option value="">加载中</option> : null}
+                {monthOptions.map(item => <option key={item.month} value={item.month}>{formatRetailMonthLabel(item.month)}</option>)}
+              </select>
+            </div>
+          </div>
+
           {/* 站点信息 */}
           <div className="retail-panel" style={{ flexShrink: 0 }}>
             <div className="panel-header"><div className="dot" /><span>站点信息</span></div>
@@ -318,35 +420,35 @@ export default function StationPage() {
           <div className="retail-panel" style={{ flexShrink: 0 }}>
             <div className="panel-header"><div className="dot" /><span>当月经营指标</span></div>
             <div className="station-kpi">
-              <div className="retail-kpi-card c1"><div className="kpi-label">💰 销售金额</div><div className="kpi-value">{stationSalesKpi.value}</div><div className="kpi-unit">{stationSalesKpi.unit}</div><div className="kpi-change">人民币 {formatCnyKpi(stationSalesCny)}</div></div>
-              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{stationLitersKpi.value}</div><div className="kpi-unit">{stationLitersKpi.unit}</div><div className="kpi-change">吨位 {formatTonsKpi(tonsOf(s))}</div></div>
+              <div className="retail-kpi-card kpi-card-with-compare c1">
+                <div className="retail-kpi-main">
+                  <div className="kpi-label">💰 销售金额</div>
+                  <div className="kpi-value">{stationSalesKpi.value}</div>
+                  <div className="kpi-unit">{stationSalesKpi.unit}</div>
+                  <div className="kpi-change">人民币 {formatCnyKpi(stationSalesCny)}</div>
+                </div>
+                <RetailKpiCompare items={[
+                  { label: '环比', value: stationMomSales },
+                  { label: '同比', value: stationYoySales },
+                ]} />
+              </div>
+              <div className="retail-kpi-card kpi-card-with-compare c2">
+                <div className="retail-kpi-main">
+                  <div className="kpi-label">⛽ 销售总量</div>
+                  <div className="kpi-value">{stationLitersKpi.value}</div>
+                  <div className="kpi-unit">{stationLitersKpi.unit}</div>
+                  <div className="kpi-change">吨位 {formatTonsKpi(retailTonsOf(s))}</div>
+                </div>
+                <RetailKpiCompare items={[
+                  { label: '环比', value: stationMom.volume },
+                  { label: '同比', value: stationYoy.volume },
+                ]} />
+              </div>
               <div className="retail-kpi-card c3"><div className="kpi-label">💵 现金占比</div><div className="kpi-value">{s.amount > 0 ? (s.cashSales / s.amount * 100).toFixed(2) : '0'}</div><div className="kpi-unit">%</div></div>
               <div className="retail-kpi-card c4"><div className="kpi-label">🎯 积分消费</div><div className="kpi-value">{numberFormat(s.bonusCost || 0)}</div><div className="kpi-unit">索姆</div></div>
             </div>
           </div>
 
-          {/* 切换站点 */}
-          <div className="retail-panel" style={{ flexShrink: 0 }}>
-            <div className="panel-header"><div className="dot" /><span>切换站点</span></div>
-            <div style={{ padding: '6px 10px' }}>
-              <select className="station-selector" value={currentShopKey || ''} onChange={handleSwitchStation}>
-                {stationGroups.map(g => (
-                  <optgroup key={g.label} label={g.label}>
-                    {g.stations.map(st => {
-                      const tag = st.status === 'closed' ? (st.closedReason?.includes('装修') ? ' [装修]' : ' [停业]') : '';
-                      return <option key={st.shopKey} value={st.shopKey}>{st.name} ({st.short}){tag}</option>;
-                    })}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* 雷达图 */}
-          <div className="retail-panel" style={{ flex: 1, minHeight: 0 }}>
-            <div className="panel-header"><div className="dot" /><span>同区域对比雷达图</span></div>
-            <div className="panel-body"><div id="chart-station-radar" className="chart-full" /></div>
-          </div>
         </div>
 
         {/* Right grid cells */}
@@ -373,6 +475,11 @@ export default function StationPage() {
         <div className="retail-panel station-cell-resource">
           <div className="panel-header"><div className="dot" /><span>油品销售结构</span></div>
           <div className="panel-body"><div id="chart-station-resource" className="chart-full" /></div>
+        </div>
+
+        <div className="retail-panel station-cell-radar">
+          <div className="panel-header"><div className="dot" /><span>同区域对比雷达图</span></div>
+          <div className="panel-body"><div id="chart-station-radar" className="chart-full" /></div>
         </div>
       </div>
     </div>

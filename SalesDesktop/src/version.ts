@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.3.0';
+export const VERSION = '5.4.1';
 export const BUILD_DATE = '2026-08-15';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,25 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.4.1',
+    date: '2026-08-15',
+    type: 'patch',
+    changes: [
+      '修复：批发查询/称重记录中俄双语名称不再重复显示——当原始名与标准名中文主名相同（同一实体不同写法，如手录「Example石油公司 / Example Petroleum CJSC」与标准名仅分隔符/引号/拼写差异）时，不再补显灰色小字原始名，避免「Example石油公司」在一个单元格里出现两次。',
+    ],
+  },
+  {
+    version: '5.4.0',
+    date: '2026-08-15',
+    type: 'minor',
+    changes: [
+      '新增：BilingualName 通用组件统一采购查询/批发查询/过磅记录的中俄双语名称渲染（中文在上、俄文在下两行），删除采购页重复拆分逻辑。',
+      '优化：批发查询与过磅记录列宽自适应，俄语全称不再截断；双语名居中。',
+      '优化：数据录入 ExcelTable 回车自动聚焦新行。',
+      '修复：明细保存 500（DictCursor）；clean_str 接入 repair_mojibake 自动还原外部客户端提交中文被双重编码的乱码。',
+    ],
+  },
   {
     version: '5.3.0',
     date: '2026-08-15',

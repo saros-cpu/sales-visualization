@@ -1,75 +1,96 @@
 // src/api/retail.js — 零售模块 API
+import { ApiPaths, ReportCatalog } from '@shared/api-contracts';
 import { get, download } from './client';
 
 // ── 年份 & 月份 ──
-export const getYears = () => get('/api/years');
-export const getMonths = () => get('/api/months');
+export const getYears = () => get(ApiPaths.retail.years);
+export const getMonths = () => get(ApiPaths.retail.months);
 
 // ── 仪表板 ──
 export const getDashboardYearly = (year) =>
-  get(`/api/dashboard/yearly?year=${year}`);
+  get(ApiPaths.retail.dashboardYearly(year));
 export const getKpiYearly = (year) =>
-  get(`/api/kpi/yearly?year=${year}&inventory=0`);
-export const getStationMapDetails = () => get('/api/station-map-details');
+  get(ApiPaths.retail.kpiYearly(year));
+export const getStationMapDetails = () => get(ApiPaths.retail.stationMapDetails);
 
 // ── 月度 ──
 export const getMonthlyData = (ym, { refresh } = {}) => {
-  return get(`/api/monthly/${ym}`, refresh ? { refresh: '1' } : undefined);
+  return get(ApiPaths.retail.monthly(ym), refresh ? { refresh: '1' } : undefined);
 };
-export const getStations = (ym) => get(`/api/stations/${ym}`);
+export const getStations = (ym) => get(ApiPaths.retail.stations(ym));
 
 // ── 站点详情 ──
 export const getStationDetail = (ym, shopKey) =>
-  get(`/api/station/${ym}/${shopKey}`);
+  get(ApiPaths.retail.station(ym, shopKey));
 
 // ── 区域 ──
-export const getRegions = (ym) => get(`/api/regions/${ym}`);
-export const getDaily = (ym) => get(`/api/daily/${ym}`);
+export const getRegions = (ym) => get(ApiPaths.retail.regions(ym));
+export const getDaily = (ym) => get(ApiPaths.retail.daily(ym));
 
 // ── 油品 ──
 export const getResourcesYearly = (year, month) => {
   const params = new URLSearchParams({ year: String(year) });
   if (month) params.set('month', String(month));
-  return get(`/api/resources/yearly?${params}`);
+  return get(ApiPaths.retail.resourcesYearly(Object.fromEntries(params)));
 };
 
 // ── 站点状态（预警页） ──
-export const getStationStatuses = () => get('/api/retail/station-statuses');
+export const getStationStatuses = () => get(ApiPaths.retail.stationStatuses);
 
 // ── KPI（通用） ──
-export const getKpi = () => get('/api/kpi');
+export const getKpi = () => get(ApiPaths.retail.kpi);
 
 // ── 报告导出 ──
 export const generateYearlyReport = (year) =>
-  get(`/api/export/analysis/yearly/${encodeURIComponent(year)}`);
+  get(ApiPaths.reports.analysisYearly(year));
 export const generateMonthlyReport = (ym) =>
-  get(`/api/export/analysis/monthly/${encodeURIComponent(ym)}`);
+  get(ApiPaths.reports.analysisMonthly(ym));
 export const exportMonthlyExcel = (ym) =>
-  get(`/api/export/monthly/${ym}`);
+  get(ApiPaths.reports.monthlyRetail(ym));
+
+export const downloadMonthlyRetailReport = async (ym) => {
+  const res = await exportMonthlyExcel(ym);
+  if ((res.status && res.status !== 'ok') || (res.code && res.code !== 0)) {
+    throw new Error(res.error || res.message || '零售日报生成失败');
+  }
+  await download(ReportCatalog.retailDaily.download(ym), res.file || ReportCatalog.retailDaily.fallbackName(ym));
+  if (res.singleDayFile) {
+    await download(res.singleDayDownloadUrl || ReportCatalog.retailDaily.singleDayDownload(ym), res.singleDayFile);
+  }
+  return res;
+};
+
+export const getSelfUseByRange = (dateFrom, dateTo) =>
+  get(ApiPaths.retail.selfUseRange(dateFrom, dateTo));
+
+export const downloadSelfUseReport = (dateFrom, dateTo) => {
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return download(ApiPaths.reports.selfUse(Object.fromEntries(params)), ReportCatalog.selfUse.fallbackName(dateFrom, dateTo));
+};
 
 export const getProfitMonthData = (ym, { refresh } = {}) =>
-  get(`/api/export/profit/${encodeURIComponent(ym)}/data`, refresh ? { refresh: '1' } : undefined);
+  get(ReportCatalog.profitMonth.data(ym, refresh ? { refresh: '1' } : undefined));
 
 export const getProfitYearData = (year, { refresh } = {}) =>
-  get(`/api/export/profit-year/${encodeURIComponent(year)}/data`, refresh ? { refresh: '1' } : undefined);
+  get(ReportCatalog.profitYear.data(year, refresh ? { refresh: '1' } : undefined));
 
 export const downloadProfitReport = async (ym) => {
-  const res = await get(`/api/export/profit/${encodeURIComponent(ym)}`);
+  const res = await get(ReportCatalog.profitMonth.generate(ym));
   if ((res.status && res.status !== 'ok') || (res.code && res.code !== 0)) {
     throw new Error(res.error || res.message || '利润核算月度文件生成失败');
   }
-  await download(`/api/export/profit/${encodeURIComponent(ym)}/download`, res.file || `利润核算_${ym}.xlsx`);
+  await download(ReportCatalog.profitMonth.download(ym), res.file || ReportCatalog.profitMonth.fallbackName(ym));
   return res;
 };
 
 export const downloadProfitYearReport = async (year) => {
-  const res = await get(`/api/export/profit-year/${encodeURIComponent(year)}`);
+  const res = await get(ReportCatalog.profitYear.generate(year));
   if ((res.status && res.status !== 'ok') || (res.code && res.code !== 0)) {
     throw new Error(res.error || res.message || '年度利润核算总表生成失败');
   }
-  await download(`/api/export/profit-year/${encodeURIComponent(year)}/download`, res.file || `利润核算_${year}年.xlsx`);
+  await download(ReportCatalog.profitYear.download(year), res.file || ReportCatalog.profitYear.fallbackName(year));
   return res;
 };
 
 // ── 零售页面导航 ──
-export const getRetailPages = () => get('/api/retail/pages');
+export const getRetailPages = () => get(ApiPaths.retail.pages);

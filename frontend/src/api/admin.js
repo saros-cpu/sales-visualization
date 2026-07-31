@@ -1,187 +1,248 @@
-// src/api/admin.js — 管理后台 API
-import { get, post, buildQuery } from './client';
+import { ApiPaths } from '@shared/api-contracts';
+import { get, post } from './client';
 
-// ── 概览 & 通用 ──
-export const getReferenceOptions = () => get('/api/reference/options');
-export const getProducts = () => get('/api/admin/products');
-export const getDensities = () => get('/api/densities');
+async function requestJson(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const token = localStorage.getItem('accessToken');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(path, { credentials: 'include', ...options, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || '请求失败');
+  return data;
+}
 
-// ── 用户管理 ──
+export const getReferenceOptions = () => get(ApiPaths.admin.referenceOptions);
+export const getProducts = () => get(ApiPaths.admin.products);
+export const getDensities = () => get(ApiPaths.admin.densities);
+
 export const getUsers = async () => {
-  const items = await get('/api/v2/users');
+  const items = await get(ApiPaths.users.list);
   return { items: Array.isArray(items) ? items : (items?.items || []) };
 };
-export const createUser = (payload) => post('/api/v2/users', {
+
+export const createUser = (payload) => post(ApiPaths.users.list, {
   ...payload,
   role: payload.role === 'user' ? 'viewer' : payload.role,
 });
 
-// ── 零售站点 ──
-export const getStationCatalog = () => get('/api/retail/station-catalog');
-export const getStationStatuses = () => get('/api/admin/retail-station-statuses');
-export const saveStationStatus = (payload) => post('/api/admin/retail-station-statuses', payload);
-export const closeStationStatus = (id) =>
-  post(`/api/admin/retail-station-statuses/${id}/close`, {});
+export const getStationCatalog = () => get(ApiPaths.retail.stationCatalog);
+export const getStationStatuses = () => get(ApiPaths.admin.stationStatuses);
+export const saveStationStatus = (payload) => post(ApiPaths.admin.stationStatuses, payload);
+export const closeStationStatus = (id) => post(ApiPaths.admin.stationStatusClose(id), {});
 
-// ── 汇率 ──
 export const getAdminExchangeRates = ({ year, month }) => {
-  const q = { year };
-  if (month) q.month = month;
-  return get(`/api/admin/exchange-rates?${buildQuery(q)}`);
+  const params = { year };
+  if (month) params.month = month;
+  return get(ApiPaths.admin.exchangeRates(params));
 };
-export const saveExchangeRate = (payload) => post('/api/admin/exchange-rates', payload);
-export const fetchMissingRates = (payload) => post('/api/admin/exchange-rates/fetch-missing', payload);
+export const saveExchangeRate = (payload) => post(ApiPaths.admin.exchangeRatesBase, payload);
+export const fetchMissingRates = (payload) => post(ApiPaths.admin.exchangeRatesFetchMissing, payload);
 
-// ── 市场观察 ──
-export const getMarketWatch = () => get('/api/admin/market-watch');
-export const saveMarketWatch = (payload) => post('/api/admin/market-watch', payload);
-export const fetchMarketWatch = () => post('/api/admin/market-watch/fetch', {});
+export const getMarketWatch = () => get(ApiPaths.admin.marketWatch);
+export const saveMarketWatch = (payload) => post(ApiPaths.admin.marketWatch, payload);
+export const fetchMarketWatch = () => post(ApiPaths.admin.marketWatchFetch, {});
 
-// ── 自动任务 ──
-export const getAutomationTasks = () => get('/api/admin/automation-tasks');
-export const runAutomationTask = (task) => post('/api/admin/automation-tasks/run', { task });
+export const getAutomationTasks = () => get(ApiPaths.system.automationTasks);
+export const runAutomationTask = (task) => post(ApiPaths.system.runAutomationTask, { task });
 
-// ── 批发维护 ──
-export const getImportBatches = () => get('/api/admin/import-batches');
-export const rollbackBatch = (batchId) => post(`/api/admin/import-batches/${batchId}/rollback`, {});
-export const organizeWholesale = () => post('/api/admin/wholesale/organize', {});
-export const deduplicateWholesale = () => post('/api/admin/wholesale/deduplicate', {});
+export const getImportBatches = () => get(ApiPaths.admin.importBatches);
+export const rollbackBatch = (batchId) => post(ApiPaths.admin.importBatchRollback(batchId), {});
+export const organizeWholesale = () => post(ApiPaths.admin.wholesaleOrganize, {});
+export const deduplicateWholesale = () => post(ApiPaths.admin.wholesaleDeduplicate, {});
 export const uploadWholesaleFile = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetch('/api/import/upload', {
+  const headers = {};
+  const token = localStorage.getItem('accessToken');
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(ApiPaths.admin.importUpload, {
     method: 'POST',
     credentials: 'include',
+    headers,
     body: formData,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || '上传失败');
+  if (!res.ok) throw new Error(data.error || data.message || '上传失败');
   return data;
 };
 
-// ── 在线录入 ──
-export const saveManualDetail = (payload) => post('/api/manual/wholesale-detail', payload);
-export const saveManualContract = (payload) => post('/api/manual/contract', payload);
+export const saveManualDetail = (payload) => post(ApiPaths.admin.manualWholesaleDetail, payload);
+export const saveManualContract = (payload) => post(ApiPaths.admin.manualContract, payload);
 
-// ── 合同管理 ──
 export const getContracts = ({ year, month, salesType, productCode, customer }) => {
-  const q = {};
-  if (year) q.year = year;
-  if (month) q.month = month;
-  if (salesType) q.salesType = salesType;
-  if (productCode) q.productCode = productCode;
-  if (customer) q.customer = customer;
-  return get(`/api/admin/contracts?${buildQuery(q)}`);
+  const params = {};
+  if (year) params.year = year;
+  if (month) params.month = month;
+  if (salesType) params.salesType = salesType;
+  if (productCode) params.productCode = productCode;
+  if (customer) params.customer = customer;
+  return get(ApiPaths.admin.contracts(params));
 };
 export const saveContract = (id, payload) =>
-  fetch(`/api/admin/contracts/${id}`, {
+  requestJson(ApiPaths.admin.contract(id), {
     method: 'PATCH',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-  }).then(async res => {
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '保存失败');
-    return data;
   });
 
-// ── 审核中心 ──
 export const getReviewDetails = ({ kind, year, month }) => {
-  const q = { kind };
-  if (year) q.year = year;
-  if (month) q.month = month;
-  return get(`/api/review/details?${buildQuery(q)}`);
+  const params = { kind };
+  if (year) params.year = year;
+  if (month) params.month = month;
+  return get(ApiPaths.admin.reviewDetails(params));
 };
-export const applyReviewCorrection = (payload) => post('/api/review/correct', payload);
+export const applyReviewCorrection = (payload) => post(ApiPaths.admin.reviewCorrect, payload);
 
-// ── 客户管理 ──
 export const getCustomers = ({ type, keyword }) => {
-  const q = {};
-  if (type) q.type = type;
-  if (keyword) q.keyword = keyword;
-  return get(`/api/admin/customers?${buildQuery(q)}`);
+  const params = {};
+  if (type) params.customerType = type;
+  if (keyword) params.keyword = keyword;
+  return get(ApiPaths.admin.customers(params));
 };
-export const saveCustomer = (payload) => post('/api/admin/customers', payload);
+export const saveCustomer = (payload) => post(ApiPaths.admin.customersBase, payload);
 
-// ── 实体别名 ──
 export const getEntityAliases = ({ entityType, keyword }) => {
-  const q = {};
-  if (entityType) q.entityType = entityType;
-  if (keyword) q.keyword = keyword;
-  return get(`/api/admin/entity-aliases?${buildQuery(q)}`);
+  const params = {};
+  if (entityType) params.entityType = entityType;
+  if (keyword) params.keyword = keyword;
+  return get(ApiPaths.admin.entityAliases(params));
 };
-export const saveEntityAlias = (payload) => post('/api/admin/entity-aliases', payload);
+export const saveEntityAlias = (payload) => post(ApiPaths.admin.entityAliasesBase, payload);
 
-// ── 实体选项 ──
-export const getEntityOptions = () => get('/api/admin/entity-options');
+export const getEntityOptions = () => get(ApiPaths.admin.entityOptions);
+export const saveProductAlias = (payload) => post(ApiPaths.admin.productAliases, payload);
+export const saveDensity = (payload) => post(ApiPaths.admin.densities, payload);
+export const getOperationLogs = () => get(ApiPaths.admin.operationLogs);
 
-// ── 油品别名 ──
-export const saveProductAlias = (payload) => post('/api/admin/product-aliases', payload);
-
-// ── 密度维护 ──
-export const saveDensity = (payload) => post('/api/densities', payload);
-
-// ── 操作日志 ──
-export const getOperationLogs = () => get('/api/admin/operation-logs');
-
-// ── 合同执行看板 ──
 export const getContractExecution = ({ status, lifecycle, customerId, year, month, page, perPage }) => {
-  const q = {};
-  if (status) q.status = status;
-  if (lifecycle) q.lifecycle = lifecycle;
-  if (customerId) q.customerId = customerId;
-  if (year) q.year = year;
-  if (month) q.month = month;
-  if (page) q.page = page;
-  if (perPage) q.perPage = perPage;
-  return get(`/api/admin/contracts/execution?${buildQuery(q)}`);
+  const params = {};
+  if (status) params.status = status;
+  if (lifecycle) params.lifecycle = lifecycle;
+  if (customerId) params.customerId = customerId;
+  if (year) params.year = year;
+  if (month) params.month = month;
+  if (page) params.page = page;
+  if (perPage) params.perPage = perPage;
+  return get(ApiPaths.admin.contractExecution(params));
 };
 
-// ── 称重管理 ──
 export const getWeighEntityMappings = (params) => {
-  const q = {};
-  if (params?.keyword) q.keyword = params.keyword;
-  if (params?.unmapped) q.unmapped = params.unmapped;
-  return get(`/api/admin/weigh/mappings/entities?${buildQuery(q)}`);
+  const query = {};
+  if (params?.keyword) query.keyword = params.keyword;
+  if (params?.unmapped) query.unmapped = params.unmapped;
+  return get(ApiPaths.admin.weighMappingEntities(query));
 };
-export const saveWeighEntityMapping = (payload) => post('/api/admin/weigh/mappings/entities', payload);
-export const deleteWeighEntityMapping = (id) => fetch(`/api/admin/weigh/mappings/entities/${id}`, { method: 'DELETE', credentials: 'include' }).then(r => r.json());
+export const saveWeighEntityMapping = (payload) => post(ApiPaths.admin.weighMappingEntities(), payload);
+export const deleteWeighEntityMapping = (id) => requestJson(ApiPaths.admin.weighMappingEntity(id), { method: 'DELETE' });
 
 export const getWeighProductMappings = (params) => {
-  const q = {};
-  if (params?.keyword) q.keyword = params.keyword;
-  if (params?.unmapped) q.unmapped = params.unmapped;
-  return get(`/api/admin/weigh/mappings/products?${buildQuery(q)}`);
+  const query = {};
+  if (params?.keyword) query.keyword = params.keyword;
+  if (params?.unmapped) query.unmapped = params.unmapped;
+  return get(ApiPaths.admin.weighMappingProducts(query));
 };
-export const saveWeighProductMapping = (payload) => post('/api/admin/weigh/mappings/products', payload);
-export const deleteWeighProductMapping = (id) => fetch(`/api/admin/weigh/mappings/products/${id}`, { method: 'DELETE', credentials: 'include' }).then(r => r.json());
+export const saveWeighProductMapping = (payload) => post(ApiPaths.admin.weighMappingProducts(), payload);
+export const deleteWeighProductMapping = (id) => requestJson(ApiPaths.admin.weighMappingProduct(id), { method: 'DELETE' });
 
-export const getWeighRecords = (params) => {
-  const q = { page: params?.page || 1, size: params?.size || 50 };
-  if (params?.vehicle) q.vehicle = params.vehicle;
-  if (params?.entity) q.entity = params.entity;
-  if (params?.product) q.product = params.product;
-  if (params?.dateFrom) q.dateFrom = params.dateFrom;
-  if (params?.dateTo) q.dateTo = params.dateTo;
-  if (params?.colSender?.length) q.col_sender = params.colSender.join(',');
-  if (params?.colReceiver?.length) q.col_receiver = params.colReceiver.join(',');
-  if (params?.colProduct?.length) q.col_product = params.colProduct.join(',');
-  if (params?.colSource?.length) q.col_source = params.colSource.join(',');
-  return get(`/api/admin/weigh/records?${buildQuery(q)}`);
+const DEFAULT_WEIGHING_DATE_FROM = '2000-01-01';
+const WEIGH_SOURCE_LABELS = {
+  storagedistrict: '储运区',
+  lpg: '液化气罐区',
+};
+const WEIGH_SOURCE_TO_V2 = {
+  储运区: 'storagedistrict',
+  kj_weighing: 'storagedistrict',
+  storage_district: 'storagedistrict',
+  storagedistrict: 'storagedistrict',
+  液化气罐区: 'lpg',
+  lpg: 'lpg',
+  lpg_weighing: 'lpg',
+  lpg_storage: 'lpg',
 };
 
-export const getWeighRecordFilterOptions = () => get('/api/admin/weigh/records/filter-options');
-export const generateWeighDetails = (payload) => post('/api/admin/weigh/generate', payload);
+function todayLocalIso() {
+  const day = new Date();
+  day.setMinutes(day.getMinutes() - day.getTimezoneOffset());
+  return day.toISOString().slice(0, 10);
+}
+
+function csv(values, mapper = value => value) {
+  if (!Array.isArray(values) || !values.length) return '';
+  return values.map(value => mapper(value)).filter(Boolean).join(',');
+}
+
+function toLegacyWeighRecord(item = {}) {
+  const sourceLabel = WEIGH_SOURCE_LABELS[item.source] || item.source || '储运区';
+  return {
+    id: item.id,
+    source: item.source,
+    classification: item.classification,
+    status: item.status,
+    编号: item.weighSerialNo,
+    毛重日期: item.businessDate,
+    皮重日期: item.businessDate,
+    车号: item.vehicleNo,
+    原发货单位: item.senderName,
+    原收货单位: item.receiverName,
+    原货名: item.rawProductName,
+    标准发货单位: item.standardSenderName,
+    标准收货单位: item.standardReceiverName || item.standardEntityName,
+    标准货名: item.standardProductName,
+    发货单位显示: item.displaySenderName,
+    收货单位显示: item.displayReceiverName,
+    货名显示: item.displayProductName,
+    发货单位: item.displaySenderName || item.senderName,
+    收货单位: item.displayReceiverName || item.receiverName,
+    货名: item.displayProductName || item.rawProductName,
+    净重: item.netWeight,
+    备注: item.remark,
+    weigh_source: sourceLabel,
+  };
+}
+
+function buildWeighingQuery(params = {}) {
+  const query = {
+    page: params.page || 1,
+    page_size: params.size || 50,
+    date_from: params.dateFrom || DEFAULT_WEIGHING_DATE_FROM,
+    date_to: params.dateTo || todayLocalIso(),
+  };
+  if (params.vehicle) query.vehicle_no = params.vehicle;
+  if (params.entity) query.entity_name = params.entity;
+  if (params.product) query.product_name = params.product;
+  const senderNames = csv(params.colSender);
+  const receiverNames = csv(params.colReceiver);
+  const productNames = csv(params.colProduct);
+  const sources = csv(params.colSource, value => WEIGH_SOURCE_TO_V2[value] || value);
+  if (senderNames) query.sender_names = senderNames;
+  if (receiverNames) query.receiver_names = receiverNames;
+  if (productNames) query.product_names = productNames;
+  if (sources) query.source = sources;
+  return query;
+}
+
+export const getWeighRecords = async (params) => {
+  const data = await get(ApiPaths.weighing.list, buildWeighingQuery(params));
+  return {
+    ...data,
+    items: (data?.items || []).map(toLegacyWeighRecord),
+    size: data?.page_size || params?.size || 50,
+  };
+};
+export const getWeighRecordFilterOptions = () => get(ApiPaths.weighing.filterOptions, {
+  date_from: DEFAULT_WEIGHING_DATE_FROM,
+  date_to: todayLocalIso(),
+});
+export const generateWeighDetails = (payload) => post(ApiPaths.admin.weighGenerate, payload);
 
 export const getWeighAuditItems = ({ year, month }) => {
-  const q = { year };
-  if (month) q.month = month;
-  return get(`/api/admin/weigh/audit?${buildQuery(q)}`);
+  const params = { year };
+  if (month) params.month = month;
+  return get(ApiPaths.admin.weighAudit(params));
 };
-export const applyWeighAudit = (payload) => post('/api/admin/weigh/audit', payload);
-export const autoAuditWeigh = (payload) => post('/api/admin/weigh/auto-audit', payload);
+export const applyWeighAudit = (payload) => post(ApiPaths.admin.weighAuditBase, payload);
+export const autoAuditWeigh = (payload) => post(ApiPaths.admin.weighAutoAudit, payload);
 
-// ── 系统健康 ──
-export const getSystemHealth = () => get('/api/admin/system-health');
-export const refreshCache = () => post('/api/admin/system-health/refresh-cache', {});
-export const restartService = () => post('/api/admin/system/restart', {});
+export const getSystemHealth = () => get(ApiPaths.system.health);
+export const refreshCache = () => runAutomationTask('retail_snapshots');
+export const restartService = () => post(ApiPaths.admin.systemRestart, {});

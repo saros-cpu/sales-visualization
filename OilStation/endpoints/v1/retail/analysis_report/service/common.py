@@ -19,7 +19,7 @@ from business_time import (
     shift_join,
 )
 from cache_store import get_cached, set_cached
-from constants import SHOP_KEY_MAP
+from constants import REPORT_HIDDEN_STATION_KEYS, REPORT_HIDDEN_STATION_NOTE, SHOP_KEY_MAP
 from db import get_connection
 from export_excel import EXPORT_DIR, RESOURCE_DENSITY, _build_sheet_data, _round_half_up
 from endpoints.v1.retail.analytics.service.shared import (
@@ -318,6 +318,13 @@ def _station_key_from_cell(value):
     except (TypeError, ValueError):
         return None
     return station_key if station_key in SHOP_KEY_MAP else None
+
+
+def _is_report_hidden_station(shop_key):
+    try:
+        return int(shop_key) in REPORT_HIDDEN_STATION_KEYS
+    except (TypeError, ValueError):
+        return False
 
 
 def _workbook_report_ym(path):
@@ -1050,6 +1057,8 @@ def _complete_station_rows(stations):
     by_key = {int(item.get("shopKey")): dict(item) for item in stations if item.get("shopKey") is not None}
     rows = []
     for shop_key, info in SHOP_KEY_MAP.items():
+        if _is_report_hidden_station(shop_key):
+            continue
         item = by_key.get(shop_key, {})
         rows.append({
             "shopKey": shop_key,
@@ -1140,6 +1149,8 @@ def _region_js_rows(regions):
 def _station_js_rows(stations):
     rows = []
     for item in stations:
+        if _is_report_hidden_station(item.get("shopKey")):
+            continue
         rows.append({
             "name": item.get("name") or "--",
             "short": item.get("short") or "",
@@ -1212,7 +1223,7 @@ def _render_html_report(data):
     top_resource = _top_name(resources, "volume")
     analysis = [
         f"统计期内销售总量为 {_fmt(summary['totalLiters'], 2)} 升，折算 {_fmt(summary['totalTons'], 3)} 吨；销售金额为 {_fmt(summary['totalSales'], 2)} 索姆{cny_amount_phrase}。",
-        f"当前有销售记录站点 {len(active_stations)} 个，系统登记站点 {len(stations)} 个；销售金额最高站点为 {top_station}，销售贡献最高区域为 {top_region}。",
+        f"当前有销售记录在营站点 {len(active_stations)} 个，在营站点目录 {len(stations)} 个；销售金额最高站点为 {top_station}，销售贡献最高区域为 {top_region}。",
         f"油品结构中销量最高为 {top_resource}；现金支付占 {_percent(cash_sales, total_sales)}，刷卡支付占 {_percent(card_sales, total_sales)}。",
     ]
     if data["kind"] == "monthly":
@@ -1329,7 +1340,7 @@ def _render_html_report(data):
         )
     station_table_rows.append(
         "<tr class=\"total-row\"><td>合计</td>"
-        "<td>全部加油站</td><td>全部区域</td>"
+        "<td>全部在营站点</td><td>全部区域</td>"
         f"<td>{_fmt(station_total['volume'], 2)}</td>"
         f"<td>{_fmt(station_total['contractVolume'], 2)}</td>"
         f"<td>{_fmt(station_total['amount'], 2)}</td>"
@@ -1426,14 +1437,14 @@ def _render_html_report(data):
 <body>
   <div class="header"><div class="header-inner">
     <h1>⛽ {html.escape(data['title'])}</h1>
-    <p>吉尔吉斯斯坦 | 统计周期：{html.escape(period_label)} | 共{len(stations)}个加油站 | 货币单位：索姆（KGS）{html.escape(rate_line)}</p>
+    <p>吉尔吉斯斯坦 | 统计周期：{html.escape(period_label)} | 共{len(stations)}个在营站点 | 货币单位：索姆（KGS）{html.escape(rate_line)}</p>
   </div></div>
   <div class="container">
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">销售总量</div><div class="kpi-value">{_volume_short(summary['totalLiters'])}升</div><div class="kpi-sub">折算：{_fmt(summary['totalTons'], 3)} 吨</div></div>
       <div class="kpi-card"><div class="kpi-label">销售金额</div><div class="kpi-value">{_money_short(summary['totalSales'])}</div><div class="kpi-sub">{sales_kpi_sub}</div></div>
       <div class="kpi-card"><div class="kpi-label">期末库存</div><div class="kpi-value">{_volume_short(end_inventory)}升</div><div class="kpi-sub">精确：{_fmt(end_inventory, 2)} 升 ≈ {_fmt(end_inventory_tons, 3)} 吨</div></div>
-      <div class="kpi-card"><div class="kpi-label">活跃站点</div><div class="kpi-value">{len(active_stations)} / {len(stations)}</div><div class="kpi-sub">以本期实际销售记录统计</div></div>
+      <div class="kpi-card"><div class="kpi-label">在营站点</div><div class="kpi-value">{len(active_stations)} / {len(stations)}</div><div class="kpi-sub">按在营站点实际销售记录统计</div></div>
     </div>
 
     {month_compare_block}
@@ -1452,7 +1463,7 @@ def _render_html_report(data):
       <div class="card"><div class="card-title">⛽ 油品销量占比</div><div id="chartOil" class="chart"></div></div>
     </div>
     <div class="card"><div class="card-title">🗺️ 各区域销售量对比</div><div id="chartRegion" class="chart"></div></div>
-    <div class="card"><div class="card-title">🏪 加油站销售排行（完整站点）</div><div id="chartStation" class="chart" style="height:{station_chart_height}px"></div></div>
+    <div class="card"><div class="card-title">🏪 加油站销售排行（全部在营站点）</div><div id="chartStation" class="chart" style="height:{station_chart_height}px"></div></div>
     <div class="two-col">
       <div class="card"><div class="card-title">🗺️ 各区域销售金额占比</div><div id="chartRegionAmt" class="chart"></div></div>
       <div class="card"><div class="card-title">💳 各区域支付方式分布</div><div id="chartRegionPay" class="chart"></div></div>
@@ -1460,10 +1471,10 @@ def _render_html_report(data):
     {f'<div class="card"><div class="card-title">📅 月度趋势</div>{monthly_table}</div>' if monthly_table else ''}
     <div class="card"><div class="card-title">⛽ 油品结构明细</div>{resource_table}</div>
     <div class="card"><div class="card-title">🗺️ 区域表现明细</div>{region_table}</div>
-    <div class="card"><div class="card-title">📋 加油站销售数据明细（按销售量排序）</div><div style="overflow-x:auto"><table class="data-table station-table">
+    <div class="card"><div class="card-title">📋 加油站销售数据明细（全部在营站点）</div><div style="overflow-x:auto"><table class="data-table station-table">
       <thead><tr><th>排名</th><th>加油站</th><th>区域</th><th>销售总量(升)</th><th>合同量(升)</th><th>销售金额(索姆)</th><th>现金(索姆)</th><th>刷卡(索姆)</th><th>期末库存(升)</th></tr></thead>
       <tbody>{''.join(station_table_rows)}</tbody>
-    </table></div><div class="note">注：数据来源于零售报表同一口径，销售总量含合同销售；只统计已结束班组数据。</div></div>
+    </table></div><div class="note">注：数据来源于零售报表同一口径，销售总量含合同销售；只统计已结束班组数据；站点明细显示全部在营站点。</div></div>
 
     <div class="card"><div class="card-title">💱 汇率信息</div>
       <div class="insight-card" style="margin-bottom:16px">{html.escape(exchange_summary)}</div>
@@ -1472,9 +1483,10 @@ def _render_html_report(data):
 
     <div class="three-col">
       <div class="insight-card"><h4>✅ 经营亮点</h4>本期销售最高站点为 {html.escape(top_station)}；销售最高区域为 {html.escape(top_region)}；主力油品为 {html.escape(top_resource)}。</div>
-      <div class="insight-card" style="border-left-color:#e67e22"><h4>⚠️ 关注事项</h4>低销量或无销量站点已保留在完整明细中，建议结合后台站点状态、库存和班组完成情况复核。</div>
+      <div class="insight-card" style="border-left-color:#e67e22"><h4>⚠️ 关注事项</h4>低销量或无销量在营站点已保留在明细中，建议结合后台站点状态、库存和班组完成情况复核。</div>
       <div class="insight-card" style="border-left-color:#27ae60"><h4>📊 综合评价</h4>报告仅统计已结束班组数据，油品折吨按系统密度快照计算；{html.escape(cny_conclusion)}</div>
     </div>
+    <div class="note report-bottom-note">{html.escape(REPORT_HIDDEN_STATION_NOTE)}</div>
   </div>
   <script>
     const resources = {json.dumps(resource_rows, ensure_ascii=False)};

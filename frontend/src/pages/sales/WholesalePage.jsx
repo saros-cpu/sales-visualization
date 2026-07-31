@@ -22,7 +22,7 @@ const TABS = [
   { key: 'trend', label: '每日趋势' },
   { key: 'review', label: '审核' },
   { key: 'exchange', label: '汇率' },
-  { key: 'weigh', label: '称重明细' },
+  { key: 'weigh', label: '数据查询' },
 ];
 
 const sectionTitles = {
@@ -33,7 +33,7 @@ const sectionTitles = {
   trend: '每日批发趋势',
   review: '审核',
   exchange: '汇率',
-  weigh: '称重明细',
+  weigh: '数据查询',
 };
 
 export default function WholesalePage() {

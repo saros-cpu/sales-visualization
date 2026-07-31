@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useChart } from '../../hooks/useChart';
 import { getYears, getMonths, getResourcesYearly } from '../../api/retail';
+import RetailKpiCompare from '../../components/retail/RetailKpiCompare';
 import {
   amountCnyOf,
   formatCnyKpi,
@@ -10,8 +11,10 @@ import {
   formatTonsKpi,
   numberFormat,
   volumeFormat,
+  normalizeRetailMonthOptions,
   normalizeRetailYears,
   pctColor,
+  retailTonsOf,
   sortRankingRows,
 } from '../../utils/retail-helpers';
 import { useRetailHeader } from '../../components/layout/RetailHeaderContext';
@@ -28,13 +31,6 @@ function numeric(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function tonsOf(item) {
-  const tons = numeric(item?.totalTons ?? item?.tons ?? item?.latestMonthTons);
-  if (tons > 0) return tons;
-  const mass = numeric(item?.mass ?? item?.totalWeightKg ?? item?.latestMonthMass);
-  return mass > 0 ? mass / 1000 : 0;
-}
-
 function formatTons(value) {
   return numeric(value).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
@@ -46,7 +42,7 @@ function normalizeResources(rows) {
     const key = RESOURCE_ALIASES[rawKey] || rawKey;
     if (!RESOURCE_NAMES[key]) return;
     const cur = buckets.get(key) || { resourceKey: key, key, name: RESOURCE_NAMES[key], volume: 0, tons: 0, mass: 0, amount: 0, amountCnyAvg: 0, color: RESOURCE_COLORS[key], yoyVolumeParts: [], yoySalesParts: [], momVolumeParts: [], momSalesParts: [], latestMonthVolume: 0, latestMonthAmount: 0 };
-    const rowTons = tonsOf(row);
+    const rowTons = retailTonsOf(row);
     const rowMass = numeric(row.mass ?? row.latestMonthMass) || rowTons * 1000;
     cur.volume += Number(row.volume || 0);
     cur.mass += rowMass;
@@ -77,6 +73,14 @@ function normalizeResources(rows) {
 function pctCell(v) {
   if (v == null) return <span style={{ color: 'rgba(160,180,210,0.35)' }}>--</span>;
   return <span style={{ color: pctColor(v), fontWeight: 700 }}>{v >= 0 ? '+' : ''}{v}%</span>;
+}
+
+function averageCompare(rows, field) {
+  const values = (rows || [])
+    .map(row => Number(row?.[field]))
+    .filter(value => Number.isFinite(value));
+  if (!values.length) return null;
+  return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
 }
 
 export default function ResourcePage() {
@@ -117,7 +121,10 @@ export default function ResourcePage() {
     (async () => {
       try {
         const m = await getMonths();
-        const yearMonths = (m || []).filter(x => String(x.month || x).startsWith(String(year) + '-')).map(x => Number((x.month || x).slice(5, 7))).filter(x => x >= 1 && x <= 12);
+        const yearMonths = normalizeRetailMonthOptions(m)
+          .filter(x => x.month.startsWith(String(year) + '-'))
+          .map(x => Number(x.month.slice(5, 7)))
+          .filter(x => x >= 1 && x <= 12);
         setMonths(yearMonths.length ? yearMonths : Array.from({ length: 12 }, (_, i) => i + 1));
       } catch { setMonths(Array.from({ length: 12 }, (_, i) => i + 1)); }
     })();
@@ -150,7 +157,7 @@ export default function ResourcePage() {
         setTotalAmount(amount);
         setTotalAmountCny(amountCnyOf({ ...summary, totalAmount: summary.totalAmount ?? amount, amount }));
         setTotalVolume(res.reduce((s, r) => s + (r.volume || 0), 0));
-        setTotalTons(tonsOf(data.summary) || res.reduce((s, r) => s + tonsOf(r), 0));
+        setTotalTons(retailTonsOf(data.summary) || res.reduce((s, r) => s + retailTonsOf(r), 0));
         setPeriodLabel(data.periodLabel || data.latestMonth || '--');
       } catch (e) { console.error('油品数据加载失败', e); }
     })();
@@ -192,14 +199,40 @@ export default function ResourcePage() {
 
   const totalAmountKpi = formatSomKpiParts(totalAmount);
   const totalVolumeKpi = formatLitersKpiParts(totalVolume);
+  const totalMomSales = averageCompare(resources, 'momSales');
+  const totalYoySales = averageCompare(resources, 'yoySales');
+  const totalMomVolume = averageCompare(resources, 'momVolume');
+  const totalYoyVolume = averageCompare(resources, 'yoyVolume');
 
   return (
     <div className="retail-page-wrap">
       <div className="retail-resource-grid">
         {/* KPI Row */}
         <div className="retail-kpi-row">
-          <div className="retail-kpi-card c1"><div className="kpi-label">销售金额</div><div className="kpi-value">{totalAmountKpi.value}</div><div className="kpi-unit">{totalAmountKpi.unit}</div><div className="kpi-change">人民币 {formatCnyKpi(totalAmountCny)}</div></div>
-          <div className="retail-kpi-card c2"><div className="kpi-label">销售量</div><div className="kpi-value">{totalVolumeKpi.value}</div><div className="kpi-unit">{totalVolumeKpi.unit}</div><div className="kpi-change">吨位 {formatTonsKpi(totalTons)}</div></div>
+          <div className="retail-kpi-card kpi-card-with-compare c1">
+            <div className="retail-kpi-main">
+              <div className="kpi-label">销售金额</div>
+              <div className="kpi-value">{totalAmountKpi.value}</div>
+              <div className="kpi-unit">{totalAmountKpi.unit}</div>
+              <div className="kpi-change">人民币 {formatCnyKpi(totalAmountCny)}</div>
+            </div>
+            <RetailKpiCompare items={[
+              { label: '环比', value: totalMomSales },
+              { label: '同比', value: totalYoySales },
+            ]} />
+          </div>
+          <div className="retail-kpi-card kpi-card-with-compare c2">
+            <div className="retail-kpi-main">
+              <div className="kpi-label">销售量</div>
+              <div className="kpi-value">{totalVolumeKpi.value}</div>
+              <div className="kpi-unit">{totalVolumeKpi.unit}</div>
+              <div className="kpi-change">吨位 {formatTonsKpi(totalTons)}</div>
+            </div>
+            <RetailKpiCompare items={[
+              { label: '环比', value: totalMomVolume },
+              { label: '同比', value: totalYoyVolume },
+            ]} />
+          </div>
           <div className="retail-kpi-card c3"><div className="kpi-label">在售油品</div><div className="kpi-value">{resources.length}</div><div className="kpi-unit">类</div></div>
           <div className="retail-kpi-card c4"><div className="kpi-label">统计口径</div><div className="kpi-value">{periodLabel}</div><div className="kpi-unit">报表口径</div></div>
         </div>
@@ -217,7 +250,7 @@ export default function ResourcePage() {
                   <tr key={r.key}>
                     <td><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: r.color, marginRight: 6 }} />{r.name}</td>
                     <td>{volumeFormat(r.volume)} L</td>
-                    <td>{formatTons(tonsOf(r))} 吨</td>
+                    <td>{formatTons(retailTonsOf(r))} 吨</td>
                     <td>{numberFormat(r.amount)}</td>
                     <td>{pctCell(r.yoySales)}</td>
                     <td>{pctCell(r.momSales)}</td>

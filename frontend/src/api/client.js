@@ -1,3 +1,5 @@
+import { ApiPaths } from '@shared/api-contracts';
+
 const BASE = '';
 const PASSWORD_CHANGE_REQUIRED_MESSAGE = '首次登录或密码重置后，请先修改密码';
 
@@ -24,7 +26,7 @@ async function refreshAccessToken() {
   if (!refreshToken) return null;
 
   if (!refreshPromise) {
-    refreshPromise = fetch('/api/v2/auth/refresh', {
+    refreshPromise = fetch(ApiPaths.auth.refresh, {
       method: 'POST',
       headers: { Authorization: `Bearer ${refreshToken}` },
     })
@@ -116,14 +118,6 @@ export const del = (path) => api(path, { method: 'DELETE' });
 
 export const put = (path, body) =>
   api(path, { method: 'PUT', body: JSON.stringify(body) });
-
-export const buildQuery = (params) => {
-  const p = {};
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') p[k] = v;
-  }
-  return new URLSearchParams(p).toString();
-};
 
 function filenameFromDisposition(value) {
   if (!value) return '';

@@ -5,7 +5,9 @@ import { useChart, noDataOption } from '../../../hooks/useChart';
 
 export default function TrendTab({ data }) {
   const { initChart } = useChart();
-  const rows = data?.dailyTrend || [];
+  const useMonthlyTrend = !data?.period?.month && data?.monthlyTrend?.length;
+  const rows = useMonthlyTrend ? data.monthlyTrend : (data?.dailyTrend || []);
+  const periodKey = useMonthlyTrend ? 'month' : 'date';
   const showPendingColumn = rows.some(item => Number(item.pendingTons || 0) > 0);
 
   useEffect(() => {
@@ -18,7 +20,7 @@ export default function TrendTab({ data }) {
       return;
     }
 
-    const labels = items.map(i => i.date.slice(5));
+    const labels = items.map(i => String(i[periodKey] || '').slice(5) || String(i[periodKey] || ''));
     const showPending = items.some(i => Number(i.pendingTons || 0) > 0);
     const series = [
       { name: '出口批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.exportTons || 0), lineStyle: { width: 3 } },
@@ -26,7 +28,7 @@ export default function TrendTab({ data }) {
       { name: '外运', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.transferTons || 0), lineStyle: { width: 3 } },
       { name: '代加工', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.processingTons || 0), lineStyle: { width: 3 } },
       { name: '采购', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.procurementTons || 0), lineStyle: { width: 3 } },
-      ...(showPending ? [{ name: '待识别', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.pendingTons || 0), lineStyle: { width: 3, type: 'dashed' } }] : []),
+      ...(showPending ? [{ name: '待识别批发', type: 'line', smooth: true, symbolSize: 6, data: items.map(i => i.pendingTons || 0), lineStyle: { width: 3, type: 'dashed' } }] : []),
       {
         name: '销售额', type: 'bar', yAxisIndex: 1, barMaxWidth: 18,
         data: items.map(i => i.amountCny || 0),
@@ -71,25 +73,25 @@ export default function TrendTab({ data }) {
       ],
       series,
     }, true);
-  }, [rows, initChart]);
+  }, [rows, initChart, periodKey]);
 
   return (
     <section className="content-grid">
       <section className="panel panel-wide">
-        <div className="panel-head"><h2>每日批发趋势</h2><span>出口批发 / 本地批发 / 外运 / 代加工 / 采购</span></div>
+        <div className="panel-head"><h2>{useMonthlyTrend ? '月度批发趋势' : '每日批发趋势'}</h2><span>出口批发 / 本地批发 / 外运 / 代加工 / 采购</span></div>
         <div id="wholesaleTrendChart" className="trend-chart" />
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>日期</th><th>出口吨数</th><th>本地吨数</th>
-                <th>外运吨数</th><th>代加工吨数</th><th>采购吨数</th>{showPendingColumn && <th>待识别吨数</th>}<th>销售额</th>
+                <th>{useMonthlyTrend ? '月份' : '日期'}</th><th>出口吨数</th><th>本地吨数</th>
+                <th>外运吨数</th><th>代加工吨数</th><th>采购吨数</th>{showPendingColumn && <th>待识别批发吨数</th>}<th>销售额</th>
               </tr>
             </thead>
             <tbody>
               {rows.length ? rows.map((item, i) => (
                 <tr key={i}>
-                  <td>{item.date}</td>
+                  <td>{item[periodKey]}</td>
                   <td>{num.format(item.exportTons || 0)}</td>
                   <td>{num.format(item.localTons || 0)}</td>
                   <td>{num.format(item.transferTons || 0)}</td>

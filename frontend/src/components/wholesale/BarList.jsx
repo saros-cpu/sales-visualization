@@ -13,6 +13,14 @@ export default function BarList({ rows = [], showAmount = false }) {
           <div>
             <span>{item.name}</span>
             {showAmount && <small>{yuan.format(item.amountCny || 0)}</small>}
+            {(item.loadingTruckTons !== undefined || item.unloadingTruckTons !== undefined) ? (
+              <>
+                <small>装车：汽车 {num.format(item.loadingTruckTons || 0)} 吨 / 火车 {num.format(item.loadingTrainTons || 0)} 吨</small>
+                <small>卸车：汽车 {num.format(item.unloadingTruckTons || 0)} 吨 / 火车 {num.format(item.unloadingTrainTons || 0)} 吨</small>
+              </>
+            ) : (item.truckTons !== undefined || item.trainTons !== undefined) && (
+              <small>汽车 {num.format(item.truckTons || 0)} 吨 / 火车 {num.format(item.trainTons || 0)} 吨</small>
+            )}
           </div>
           <strong>{num.format(item.tons)} 吨</strong>
           <i style={{ width: `${Math.max(4, (item.tons / max) * 100)}%` }} />

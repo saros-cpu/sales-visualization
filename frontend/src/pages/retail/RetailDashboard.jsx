@@ -1,19 +1,24 @@
 // src/pages/retail/RetailDashboard.jsx — 零售仪表板
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getYears, getMonths, getDashboardYearly, getKpiYearly, getStationMapDetails, getStations, generateYearlyReport } from '../../api/retail';
+import { getYears, getMonths, getDashboardYearly, getKpiYearly, getStationMapDetails, getStations, getMonthlyData, generateYearlyReport } from '../../api/retail';
+import { localizeMapPoint } from '@shared/map-labels';
 import { download } from '../../api/client';
 import { useChart } from '../../hooks/useChart';
+import RetailKpiCompare from '../../components/retail/RetailKpiCompare';
 import {
   REGION_COLORS, REGION_ORDER,
-  fmtNum, fmtWanLiters, fmtLiters, fmtPct, pctColor,
+  fmtNum, fmtWanLiters, fmtLiters,
   buildResourceRank,
   amountCnyOf,
   formatCnyKpi,
   formatLitersKpiParts,
+  formatRetailMonthLabel,
   formatSomKpiParts,
   formatTonsKpi,
+  latestRetailMonthForYear,
   normalizeRetailYears,
+  retailTonsOf,
   sortRankingRows,
 } from '../../utils/retail-helpers';
 
@@ -22,20 +27,39 @@ function numeric(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function tonsOf(item) {
-  const tons = numeric(item?.totalTons ?? item?.tons);
-  if (tons > 0) return tons;
-  const mass = numeric(item?.mass ?? item?.totalWeightKg);
-  return mass > 0 ? mass / 1000 : 0;
-}
-
-function hasMonthlySales(item) {
+function hasSalesRecord(item) {
   return (
     numeric(item?.amount ?? item?.totalSales) > 0
     || numeric(item?.volume ?? item?.totalLiters) > 0
     || numeric(item?.txnCount) > 0
-    || tonsOf(item) > 0
+    || retailTonsOf(item) > 0
   );
+}
+
+function stationRowsOf(stations = []) {
+  return (stations || []).filter(s => s.type === 'station');
+}
+
+function isKnownClosedStation(item) {
+  const shopKey = Number(item?.shopKey);
+  if (ZERO_INVENTORY_STATION_KEYS.has(shopKey)) return true;
+  const reason = String(item?.closedReason || item?.inventoryZeroReason || item?.statusNote || '').trim();
+  const label = String(item?.statusLabel || '').trim();
+  const status = String(item?.statusType || item?.status || '').toLowerCase();
+  const closedText = `${reason} ${label}`;
+  if (/(停业|暂停|关闭|无法营业|装修)/.test(closedText)) return true;
+  return ['inactive', 'suspended'].includes(status) || (status === 'closed' && Boolean(reason || label));
+}
+
+function countOperatingStations(stations = []) {
+  return stationRowsOf(stations).filter(s => !isKnownClosedStation(s)).length;
+}
+
+function stationDisplayName(item) {
+  const name = String(item?.name || '').trim();
+  const short = String(item?.short || '').trim();
+  if (name && short && short !== name) return `${name}（${short}）`;
+  return name || short || '--';
 }
 
 const CORE_DEPOTS = [
@@ -124,7 +148,7 @@ export default function RetailDashboard() {
   const [regionMap, setRegionMap] = useState({});
   const [footerMessages, setFooterMessages] = useState([]);
   const [cutoffText, setCutoffText] = useState('数据截止：--');
-  const [latestStationActivity, setLatestStationActivity] = useState({ month: '', active: null, total: null });
+  const [latestStationActivity, setLatestStationActivity] = useState({ month: '', active: null, total: null, operating: null });
   const [retailMapFullscreen, setRetailMapFullscreen] = useState(false);
 
   // 3D map refs
@@ -168,7 +192,7 @@ export default function RetailDashboard() {
       if (r) {
         r.stations.push(s);
         r.vol += s.volume || 0;
-        r.tons += tonsOf(s);
+        r.tons += retailTonsOf(s);
         r.amt += s.amount || 0;
         r.cash += s.cash || 0;
         r.card += s.card || 0;
@@ -254,28 +278,42 @@ export default function RetailDashboard() {
         setRegionMap(computeRegionMap(stationList));
 
         // Auto-detect station status from recent sales
-        let latestActivity = { month: '', active: null, total: stationList.filter(s => s.type === 'station').length };
+        let latestMonthData = null;
+        let latestActivity = {
+          month: '',
+          active: null,
+          total: stationRowsOf(stationList).length,
+          operating: countOperatingStations(stationList),
+        };
         try {
           const monthsList = await getMonths().catch(() => []);
-          const yearStr = String(y);
-          const yearMonths = (monthsList || []).filter(m => m.month && m.month.startsWith(yearStr)).map(m => m.month);
-          const targetMonth = yearMonths.length > 0 ? yearMonths[yearMonths.length - 1] : null;
+          const targetMonth = latestRetailMonthForYear(monthsList, y);
           if (targetMonth) {
             await updateStationStatusBySales(stationList, targetMonth);
+            const [monthStationsResult, latestMonthDataResult] = await Promise.allSettled([
+              getStations(targetMonth),
+              getMonthlyData(targetMonth),
+            ]);
+            if (latestMonthDataResult.status === 'fulfilled') {
+              latestMonthData = latestMonthDataResult.value || null;
+            }
             try {
-              const monthStations = await getStations(targetMonth);
+              if (monthStationsResult.status !== 'fulfilled') throw monthStationsResult.reason || new Error('latest month stations unavailable');
+              const monthStations = monthStationsResult.value;
               const stationRows = Array.isArray(monthStations?.stations) ? monthStations.stations : [];
               latestActivity = {
                 month: targetMonth,
-                active: stationRows.filter(hasMonthlySales).length,
-                total: stationRows.length || stationList.filter(s => s.type === 'station').length,
+                active: stationRows.filter(hasSalesRecord).length,
+                total: stationRows.length || stationRowsOf(stationList).length,
+                operating: countOperatingStations(stationList),
               };
               setLatestStationActivity(latestActivity);
             } catch (e) {
               latestActivity = {
                 month: targetMonth,
                 active: null,
-                total: stationList.filter(s => s.type === 'station').length,
+                total: stationRowsOf(stationList).length,
+                operating: countOperatingStations(stationList),
               };
               setLatestStationActivity(latestActivity);
             }
@@ -287,7 +325,7 @@ export default function RetailDashboard() {
         setRegionMap(updatedRegionMap);
 
         // Build footer messages
-        const msgs = buildFooterMessages(stationList, updatedRegionMap, dd, latestActivity);
+        const msgs = buildFooterMessages(stationList, updatedRegionMap, dd, latestActivity, latestMonthData);
         setFooterMessages(msgs);
       }
     } catch (err) {
@@ -466,21 +504,22 @@ export default function RetailDashboard() {
     // If 3D map is active, update its layers
     if (retailKgzMapActiveRef.current && retailKgzMapRef.current) {
       retailKgzMapRef.current.updateLayers({
-        depots: ensureCoreDepots(depots).filter(d => d.lng && d.lat).map(normalizeDepotMarker),
+        depots: ensureCoreDepots(depots).filter(d => d.lng && d.lat).map(d => localizeMapPoint(normalizeDepotMarker(d), 'zh')),
         stations: stations.filter(s => s.type === 'station' && s.lng && s.lat).map(s => {
+          const ls = localizeMapPoint(s, 'zh');
           let color = '#34d399';
-          if (s.status === 'closed') {
+          if (ls.status === 'closed') {
             color = '#ef4444';
           }
           return {
-            ...s, type: 'station',
+            ...ls, type: 'station',
             size: 0.28, color, opacity: 0.95,
-            showLabel: true, label: s.name,
-            labelSubtitle: s.short || '',
-            inventory: s.currentInventory,
-            inventoryByResource: s.inventoryByResource,
-            inventoryAsOf: s.inventoryAsOf,
-            snapshotGeneratedAt: s.snapshotGeneratedAt,
+            showLabel: true, label: ls.name,
+            labelSubtitle: ls.short || '',
+            inventory: ls.currentInventory,
+            inventoryByResource: ls.inventoryByResource,
+            inventoryAsOf: ls.inventoryAsOf,
+            snapshotGeneratedAt: ls.snapshotGeneratedAt,
           };
         }),
         points: []
@@ -506,7 +545,7 @@ export default function RetailDashboard() {
     const depotData = ensureCoreDepots(depots)
       .filter(d => d.lng && d.lat)
       .map(d => {
-        const marker = normalizeDepotMarker(d);
+        const marker = localizeMapPoint(normalizeDepotMarker(d), 'zh');
         return {
           name: marker.name,
           value: [marker.lng, marker.lat, 0],
@@ -536,7 +575,7 @@ export default function RetailDashboard() {
     try {
       const runtimeImport = (url) => import(/* @vite-ignore */ url);
       const { mountRetailMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260801-hover-hit');
-      const map = await mountRetailMap('#mapChart', { depots: ensureCoreDepots(depots).map(normalizeDepotMarker), stations: [] }, {
+      const map = await mountRetailMap('#mapChart', { depots: ensureCoreDepots(depots).map(d => localizeMapPoint(normalizeDepotMarker(d), 'zh')), stations: [] }, {
         showRoadPanel: false, showLakeLabels: true, showCities: true,
         showRegionLabels: false, showLegend: false, mode: 'retail',
         initialCamera: { cameraX: -2.35, cameraY: 24.77, cameraZ: 38.2, targetX: -2.35, targetY: 0.33, targetZ: 3.95 },
@@ -693,14 +732,15 @@ export default function RetailDashboard() {
 
   const summary = kpi?.summary || {};
   const cmp = kpi?.comparison || {};
-  const totalTons = tonsOf(summary)
-    || (dashData?.byResource || []).reduce((sum, row) => sum + tonsOf(row), 0)
-    || stations.reduce((sum, row) => sum + tonsOf(row), 0);
+  const totalTons = retailTonsOf(summary)
+    || (dashData?.byResource || []).reduce((sum, row) => sum + retailTonsOf(row), 0)
+    || stations.reduce((sum, row) => sum + retailTonsOf(row), 0);
   const totalSalesKpi = formatSomKpiParts(summary.totalSales || summary.totalAmount || 0);
   const totalLitersKpi = formatLitersKpiParts(summary.totalLiters || summary.totalVolume || 0);
   const totalSalesCny = amountCnyOf(summary);
-  const latestActiveCount = latestStationActivity.active ?? stations.filter(s => s.type === 'station' && hasMonthlySales(s)).length;
-  const latestActivityMonth = latestStationActivity.month || '最新月份';
+  const latestActiveCount = latestStationActivity.active ?? stationRowsOf(stations).filter(hasSalesRecord).length;
+  const operatingStationCount = latestStationActivity.operating ?? countOperatingStations(stations);
+  const latestActivityMonth = formatRetailMonthLabel(latestStationActivity.month, '最新月份');
 
   // 计算所有站点日快照库存合计
   const totalStationInventory = stations.reduce((sum, s) => sum + (s.currentInventory || 0), 0);
@@ -720,31 +760,37 @@ export default function RetailDashboard() {
           <div className="retail-panel">
             <div className="retail-panel-header"><div className="dot" />核心经营指标（{year}年累计）</div>
             <div className="retail-kpi-grid">
-              <div className="retail-kpi-card c1">
-                <div className="kpi-icon">💰</div>
-                <div className="kpi-label">累计销售总金额</div>
-                <div className="kpi-value">{totalSalesKpi.value}</div>
-                <div className="kpi-unit">{totalSalesKpi.unit}</div>
-                <div className="kpi-change">人民币 {formatCnyKpi(totalSalesCny)}</div>
-                <div className="kpi-change" style={{ color: pctColor(cmp.yoySales) }}>
-                  {cmp.yoySales != null ? `同比 ${fmtPct(cmp.yoySales)}` : ''}
+              <div className="retail-kpi-card kpi-card-with-compare c1">
+                <div className="retail-kpi-main">
+                  <div className="kpi-icon">💰</div>
+                  <div className="kpi-label">累计销售总金额</div>
+                  <div className="kpi-value">{totalSalesKpi.value}</div>
+                  <div className="kpi-unit">{totalSalesKpi.unit}</div>
+                  <div className="kpi-change">人民币 {formatCnyKpi(totalSalesCny)}</div>
                 </div>
+                <RetailKpiCompare items={[
+                  { label: '环比', value: cmp.momSales ?? cmp.momSalesAmount },
+                  { label: '同比', value: cmp.yoySales ?? cmp.yoySalesAmount },
+                ]} />
               </div>
-              <div className="retail-kpi-card c2">
-                <div className="kpi-icon">⛽</div>
-                <div className="kpi-label">累计销售总量</div>
-                <div className="kpi-value">{totalLitersKpi.value}</div>
-                <div className="kpi-unit">{totalLitersKpi.unit}</div>
-                <div className="kpi-change">吨位 {formatTonsKpi(totalTons)}</div>
-                <div className="kpi-change" style={{ color: pctColor(cmp.yoyVolume) }}>
-                  {cmp.yoyVolume != null ? `同比 ${fmtPct(cmp.yoyVolume)}` : ''}
+              <div className="retail-kpi-card kpi-card-with-compare c2">
+                <div className="retail-kpi-main">
+                  <div className="kpi-icon">⛽</div>
+                  <div className="kpi-label">累计销售总量</div>
+                  <div className="kpi-value">{totalLitersKpi.value}</div>
+                  <div className="kpi-unit">{totalLitersKpi.unit}</div>
+                  <div className="kpi-change">吨位 {formatTonsKpi(totalTons)}</div>
                 </div>
+                <RetailKpiCompare items={[
+                  { label: '环比', value: cmp.momVolume },
+                  { label: '同比', value: cmp.yoyVolume },
+                ]} />
               </div>
               <div className="retail-kpi-card c3">
                 <div className="kpi-icon">🏪</div>
-                <div className="kpi-label">活跃加油站</div>
+                <div className="kpi-label">有销售站点</div>
                 <div className="kpi-value">{latestActiveCount}</div>
-                <div className="kpi-unit">站（{latestActivityMonth} 实际有销售）</div>
+                <div className="kpi-unit">站（{latestActivityMonth}；当前在营{operatingStationCount}站）</div>
               </div>
               <div className="retail-kpi-card c4">
                 <div className="kpi-icon">📦</div>
@@ -815,7 +861,7 @@ export default function RetailDashboard() {
 
       {/* Footer */}
       <footer className="retail-footer">
-        <div className="retail-footer-label">📋 实时动态</div>
+        <div className="retail-footer-label">📋 零售动态</div>
         <div className="retail-footer-scroll">
           <div className="retail-footer-inner">
             {(footerMessages.length > 0 ? [...footerMessages, ...footerMessages] : ['正在加载...']).map((msg, i) => (
@@ -829,29 +875,36 @@ export default function RetailDashboard() {
 }
 
 // Build footer messages
-function buildFooterMessages(stations, regionMap, monthlyData, latestActivity = {}) {
-  const totalVol = stations.filter(s => s.type === 'station').reduce((a, b) => a + b.volume, 0);
-  const totalAmt = stations.filter(s => s.type === 'station').reduce((a, b) => a + b.amount, 0);
-  const activeCount = latestActivity.active ?? stations.filter(s => s.type === 'station' && hasMonthlySales(s)).length;
+function buildFooterMessages(stations, regionMap, dashboardData, latestActivity = {}, latestMonthData = null) {
+  const stationRows = stationRowsOf(stations);
+  const totalVol = stationRows.reduce((a, b) => a + b.volume, 0);
+  const totalAmt = stationRows.reduce((a, b) => a + b.amount, 0);
+  const activeCount = latestActivity.active ?? stationRows.filter(hasSalesRecord).length;
+  const operatingCount = latestActivity.operating ?? countOperatingStations(stations);
+  const latestMonthText = formatRetailMonthLabel(latestActivity.month, '最新月份');
   const totalCash = stations.reduce((a, b) => a + (b.cash || 0), 0);
   const totalCard = stations.reduce((a, b) => a + (b.card || 0), 0);
   const totalPts = stations.reduce((a, b) => a + (b.bonus || 0), 0);
   const paymentTotal = totalCash + totalCard + totalPts;
 
-  const stationRows = stations.filter(s => s.type === 'station');
-  const leader = stationRows.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0))[0];
+  const leaderRows = stationRows.filter(s => !isKnownClosedStation(s) && hasSalesRecord(s));
+  const leaderSource = leaderRows.length ? leaderRows : stationRows;
+  const leader = leaderSource.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0))[0];
   const regionLeader = Object.entries(regionMap || {})
     .map(([name, v]) => ({ name, ...v }))
     .sort((a, b) => (b.vol || 0) - (a.vol || 0))[0];
-  const resourceLeader = buildResourceRank(monthlyData?.byResource || [])[0];
-  const dailyRows = (monthlyData?.daily || []).filter(d => (d.volume || 0) > 0);
+  const resourceLeader = buildResourceRank(dashboardData?.byResource || [])[0];
+  const latestDailyRows = latestMonthData?.daily || dashboardData?.daily || [];
+  const dailyRows = latestDailyRows
+    .filter(d => (d.volume || 0) > 0)
+    .sort((left, right) => String(left.date || '').localeCompare(String(right.date || '')));
   const latestDay = dailyRows[dailyRows.length - 1];
   const prevDay = dailyRows[dailyRows.length - 2];
 
   const messages = [];
   if (latestDay) {
     const latestVol = Number(latestDay.volume || 0);
-    let text = `${String(latestDay.date || '').slice(5)} 最新销量 ${latestVol.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} L`;
+    let text = `${String(latestDay.date || '').slice(5)} 最新销售日销量 ${latestVol.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} L`;
     if (prevDay && prevDay.volume) {
       const change = ((latestVol - prevDay.volume) / prevDay.volume) * 100;
       text += `，较上一销售日${change >= 0 ? '增长' : '下降'} ${Math.abs(change).toFixed(1)}%`;
@@ -859,18 +912,25 @@ function buildFooterMessages(stations, regionMap, monthlyData, latestActivity = 
     messages.push(text);
   }
   if (leader) {
-    messages.push(`${leader.short || leader.name} 当前销量领先，累计 ${Number(leader.volume || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} L`);
+    messages.push(`${stationDisplayName(leader)} 年累计销量领先，累计 ${Number(leader.volume || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} L`);
   }
   if (regionLeader) {
-    messages.push(`${regionLeader.name} 区域销量 ${Number(regionLeader.vol || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} L，区域表现居前`);
+    messages.push(`${regionLeader.name} 年累计区域销量 ${Number(regionLeader.vol || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} L，区域表现居前`);
   }
   if (resourceLeader) {
-    messages.push(`${resourceLeader.name} 油品销售额居首，累计 ${Number(resourceLeader.amount || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 索姆`);
+    messages.push(`${resourceLeader.name} 年累计油品销售额居首，累计 ${Number(resourceLeader.amount || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 索姆`);
   }
   if (paymentTotal > 0) {
-    messages.push(`现金占比 ${((totalCash / paymentTotal) * 100).toFixed(1)}%，刷卡占比 ${((totalCard / paymentTotal) * 100).toFixed(1)}%`);
+    const paymentParts = [
+      `现金 ${((totalCash / paymentTotal) * 100).toFixed(1)}%`,
+      `刷卡 ${((totalCard / paymentTotal) * 100).toFixed(1)}%`,
+    ];
+    if (totalPts > 0) {
+      paymentParts.push(`积分 ${((totalPts / paymentTotal) * 100).toFixed(1)}%`);
+    }
+    messages.push(`年累计支付方式：${paymentParts.join('，')}`);
   }
-  messages.push(`当前参与统计加油站 ${activeCount} 座，累计销售 ${Number(totalVol || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} L，金额 ${Number(totalAmt || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 索姆`);
+  messages.push(`当前在营加油站 ${operatingCount} 座，${latestMonthText}有销售站点 ${activeCount} 座，年累计销售 ${Number(totalVol || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} L，金额 ${Number(totalAmt || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 索姆`);
   return messages;
 }
 

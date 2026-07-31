@@ -195,7 +195,7 @@ internal sealed class RuntimeConfig
                 packageId = "kg.example.sales.wallpaper.engine",
                 packageVersion = AppVersion.Current,
                 updateManifestUrl = $"{localOrigin}/download/wallpaper-engine/latest.json",
-                language = LanguageMode,
+                language = LanguageMode == "auto" ? Language : LanguageMode,
                 refreshSeconds = RefreshSeconds,
                 refreshAtLocalTime = RefreshAtLocalTime,
                 vpnApiHost = "",

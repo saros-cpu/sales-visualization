@@ -4,6 +4,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request, send_file
 from loguru import logger
 
+from constants import REPORT_HIDDEN_STATION_KEYS, REPORT_HIDDEN_STATION_NOTE
 from db import get_connection
 from export_excel import (
     RESOURCE_NAMES,
@@ -13,6 +14,11 @@ from endpoints.v1.retail.export.service.workbook import (
     _can_reuse_report_workbook,
     _latest_report_workbook,
     _weekly_report_workbook,
+)
+from endpoints.v1.retail.export.service.daily_briefing import (
+    daily_briefing_workbook_path,
+    generate_daily_briefing_excel,
+    normalize_daily_briefing_date,
 )
 from endpoints.v1.retail.export.service.generator import generate_monthly_excel, generate_range_summary_excel
 from endpoints.v1.retail.export.service.profit_generator import (
@@ -46,6 +52,25 @@ def _self_use_float(value):
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _is_report_hidden_station_key(value):
+    try:
+        return int(value) in REPORT_HIDDEN_STATION_KEYS
+    except (TypeError, ValueError):
+        return False
+
+
+def _append_self_use_hidden_station_note(ws, row_idx, max_col, styles=None):
+    styles = styles or {}
+    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=max_col)
+    cell = ws.cell(row=row_idx, column=1, value=REPORT_HIDDEN_STATION_NOTE)
+    if styles.get('center_align'):
+        cell.alignment = styles['center_align']
+    if styles.get('thin_border'):
+        cell.border = styles['thin_border']
+    ws.row_dimensions[row_idx].height = 24
+    return row_idx
 
 
 def _self_use_weight_kg(record):
@@ -135,7 +160,7 @@ def _group_self_use_station_blocks(records):
             'amount': values['amount'],
         })
     return [
-        ((station_name, station_short), sorted(items, key=lambda item: (
+        ((station_order, station_name, station_short), sorted(items, key=lambda item: (
             str(item.get('product') or ''),
             SELF_USE_REMARK_ORDER.get(item.get('remark'), 99),
             str(item.get('remark') or ''),
@@ -201,7 +226,7 @@ def _write_self_use_station_sheet(wb, records, styles):
     grand_weight = 0.0
     grand_volume = 0.0
     grand_amount = 0.0
-    for (station_name, station_short), items in _group_self_use_station_blocks(records):
+    for (station_order, station_name, station_short), items in _group_self_use_station_blocks(records):
         block_start = row_idx
         station_weight = sum(item['weightKg'] for item in items)
         station_volume = sum(item['volume'] for item in items)
@@ -277,6 +302,9 @@ def _write_self_use_station_sheet(wb, records, styles):
             ws.merge_cells(start_row=block_start, start_column=2, end_row=subtotal_row, end_column=2)
             ws.cell(row=block_start, column=1).alignment = styles['center_align']
             ws.cell(row=block_start, column=2).alignment = styles['center_align']
+        if _is_report_hidden_station_key(station_order):
+            for hidden_row in range(block_start, subtotal_row + 1):
+                ws.row_dimensions[hidden_row].hidden = True
         row_idx += 1
 
     total_row = row_idx
@@ -298,7 +326,8 @@ def _write_self_use_station_sheet(wb, records, styles):
 
     _apply_self_use_russian_fonts(ws)
     _auto_fit_self_use_columns(ws)
-    _apply_self_use_filter(ws, ws.dimensions)
+    _append_self_use_hidden_station_note(ws, total_row + 1, 9, styles)
+    _apply_self_use_filter(ws, f'A1:I{total_row}')
     return ws
 
 
@@ -435,6 +464,65 @@ def api_export_download(year_month):
     return send_file(workbook_path, as_attachment=True, download_name=workbook_path.name)
 
 
+@export_api.route('/api/export/monthly/<year_month>/daily/download')
+def api_export_monthly_single_day_download(year_month):
+    conn = get_connection()
+    try:
+        result = generate_monthly_excel(conn, year_month, force_refresh=False)
+        workbook_path = Path(result.get('singleDayPath') or '')
+    finally:
+        conn.close()
+
+    if not workbook_path.exists():
+        return jsonify({'error': 'Single day report not found, please generate first'}), 404
+    return send_file(workbook_path, as_attachment=True, download_name=workbook_path.name)
+
+
+def _invalid_daily_briefing_date():
+    message = "invalid report_date, expected YYYY-MM-DD"
+    return jsonify({"status": "error", "error": message, "message": message}), 400
+
+
+@export_api.route('/api/export/daily-briefing/<report_date>')
+def api_export_daily_briefing(report_date):
+    report_date = normalize_daily_briefing_date(report_date)
+    if not report_date:
+        return _invalid_daily_briefing_date()
+    force_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    conn = get_connection()
+    try:
+        result = generate_daily_briefing_excel(conn, report_date, force_refresh=force_refresh)
+        return jsonify(result)
+    except Exception:
+        logger.exception("daily briefing export failed for %s", report_date)
+        return jsonify({"status": "error", "message": "生成每日汇报表失败，请联系管理员查看服务端日志"}), 500
+    finally:
+        conn.close()
+
+
+@export_api.route('/api/export/daily-briefing/<report_date>/download')
+def api_export_daily_briefing_download(report_date):
+    report_date = normalize_daily_briefing_date(report_date)
+    if not report_date:
+        return _invalid_daily_briefing_date()
+    force_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    _, filepath = daily_briefing_workbook_path(report_date)
+    workbook_path = Path(filepath)
+    conn = get_connection()
+    try:
+        result = generate_daily_briefing_excel(conn, report_date, force_refresh=force_refresh)
+        workbook_path = Path(result.get('path') or workbook_path)
+    except Exception:
+        logger.exception("daily briefing download failed for %s", report_date)
+        return jsonify({"status": "error", "message": "生成每日汇报表失败，请联系管理员查看服务端日志"}), 500
+    finally:
+        conn.close()
+
+    if not workbook_path.exists():
+        return jsonify({'error': 'File not found, please generate first'}), 404
+    return send_file(workbook_path, as_attachment=True, download_name=workbook_path.name)
+
+
 def _parse_report_range():
     date_from = request.args.get('date_from')
     date_to = request.args.get('date_to')
@@ -498,6 +586,7 @@ def api_export_self_use(year_month):
         return jsonify({'error': 'self-use snapshot not found'}), 404
 
     wb = Workbook()
+    wb._fonts[0] = Font(name='Times New Roman', size=11)
     ws = wb.active
     ws.title = '自用油'
 
@@ -536,10 +625,19 @@ def api_export_self_use(year_month):
             cell.border = thin_border
             if col_idx in (6, 7, 8):
                 cell.number_format = '#,##0.00'
+        if _is_report_hidden_station_key(rec.get('shopKey')):
+            ws.row_dimensions[i].hidden = True
 
+    last_data_row = max(1, len(snapshot.get('records', [])) + 1)
     _apply_self_use_russian_fonts(ws)
     _auto_fit_self_use_columns(ws)
-    _apply_self_use_filter(ws, ws.dimensions)
+    _append_self_use_hidden_station_note(
+        ws,
+        last_data_row + 1,
+        len(headers),
+        {'center_align': center_align, 'thin_border': thin_border},
+    )
+    _apply_self_use_filter(ws, f'A1:H{last_data_row}')
     _write_self_use_station_sheet(
         wb,
         snapshot.get('records', []),
@@ -608,6 +706,7 @@ def api_export_self_use_range():
     )
 
     wb = Workbook()
+    wb._fonts[0] = Font(name='Times New Roman', size=11)
 
     # Sheet 1: 自用油 (detail)
     ws = wb.active
@@ -638,10 +737,19 @@ def api_export_self_use_range():
             cell.border = thin_border
             if col_idx in (7, 8):
                 cell.number_format = '#,##0.00'
+        if _is_report_hidden_station_key(rec.get('shopKey')):
+            ws.row_dimensions[i].hidden = True
 
+    last_data_row = max(1, len(records) + 1)
     _apply_self_use_russian_fonts(ws)
     _auto_fit_self_use_columns(ws)
-    _apply_self_use_filter(ws, ws.dimensions)
+    _append_self_use_hidden_station_note(
+        ws,
+        last_data_row + 1,
+        len(headers),
+        {'center_align': center_align, 'thin_border': thin_border},
+    )
+    _apply_self_use_filter(ws, f'A1:H{last_data_row}')
 
     # Sheet 2: 总表
     company = defaultdict(lambda: {'volume': 0.0, 'weightKg': 0.0})

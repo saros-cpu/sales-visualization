@@ -85,6 +85,11 @@ STATION_MAP_DETAILS_TTL = 600
 STATION_MAP_DETAILS_CACHE_KEY = "station_map_details:latest"
 FUELBALANCE_WAREHOUSE_RESOURCE_MAP = {
     6: {1: 106, 2: 102, 3: 103, 4: 104},
+    19: {4: 108},
+    22: {4: 108},
+    24: {4: 108},
+    28: {1: 102, 2: 103, 3: 104, 4: 109, 5: 110, 6: 108},
+    29: {1: 102, 2: 103, 3: 106, 4: 108},
     30: {1: 102, 2: 103},
 }
 STATION_RESOURCE_ALLOWLIST = {
@@ -339,10 +344,11 @@ def _latest_report_workbook_for_map():
     if not isinstance(report_index, dict):
         return None, None
     for ym in sorted(report_index.keys(), reverse=True):
-        filename = (report_index.get(ym) or {}).get("file")
-        if not filename:
+        item = report_index.get(ym) or {}
+        stored_path = item.get("path") or item.get("file")
+        if not stored_path:
             continue
-        path = OILSTATION_ROOT / "exports" / filename
+        path = OILSTATION_ROOT / "exports" / stored_path
         if path.exists():
             return ym, path
     return None, None
@@ -482,6 +488,26 @@ def _station_resource_allowed(shop_key, resource_key):
     return not allowlist or int(resource_key or 0) in allowlist
 
 
+def _infer_current_fuelbalance_price_resource_key(price):
+    try:
+        p = float(price or 0)
+    except (TypeError, ValueError):
+        return 0
+    if p <= 0:
+        return 0
+    if p <= 60:
+        return 108
+    if p <= 80:
+        return 102
+    if p <= 95:
+        return 103
+    if p <= 105:
+        return 106
+    if p <= 115:
+        return 104
+    return 106
+
+
 def _infer_fuelbalance_resource_key(shop_key, resource_code, resource_name, price, warehouse_key=None):
     # Resource names avoid price-threshold drift after fuel price changes.
     sk = int(shop_key or 0)
@@ -495,6 +521,12 @@ def _infer_fuelbalance_resource_key(shop_key, resource_code, resource_name, pric
     mapped = FUELBALANCE_WAREHOUSE_RESOURCE_MAP.get(sk, {}).get(wk)
     if mapped:
         return canonical_resource_key(mapped)
+    try:
+        rc = int(resource_code or 0)
+    except (TypeError, ValueError):
+        rc = 0
+    if rc < 100:
+        return _infer_current_fuelbalance_price_resource_key(price)
     return infer_balance_resource_key(shop_key, resource_code, price, None)
 
 

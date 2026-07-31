@@ -75,9 +75,8 @@ files:
   - url: $installerName
     sha512: $sha512
     size: $size
-path: $installerName
-sha512: $sha512
-releaseDate: '$releaseDate'
+    path: $installerName
+    releaseDate: '$releaseDate'
 "@
 
 $latestPath = Join-Path $downloadRoot "latest.yml"

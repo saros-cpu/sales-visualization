@@ -1,79 +1,70 @@
-// src/utils/retail-helpers.js — 零售模块共享工具和常量
+// 零售模块共享工具和常量
+import {
+  RETAIL_DATA_START_YEAR,
+  fallbackRetailYears,
+  formatRetailCnyKpi as sharedFormatRetailCnyKpi,
+  formatRetailLitersKpiParts as sharedFormatRetailLitersKpiParts,
+  formatRetailSomKpiParts as sharedFormatRetailSomKpiParts,
+  formatRetailTonsKpi as sharedFormatRetailTonsKpi,
+  latestRetailMonthForYear,
+  metricNumber,
+  normalizeRetailMonthOptions,
+  normalizeRetailYears,
+  preferredRetailMonth,
+  retailCnyAmountOf,
+  retailTonsOf,
+  sortRankingRows,
+  splitRetailStationName,
+} from '@shared/retail-core';
 
-// ── 区域常量 ──
+export {
+  RETAIL_DATA_START_YEAR,
+  fallbackRetailYears,
+  latestRetailMonthForYear,
+  metricNumber,
+  normalizeRetailMonthOptions,
+  normalizeRetailYears,
+  preferredRetailMonth,
+  retailTonsOf,
+  sortRankingRows,
+};
+
 export const REGION_COLORS = {
-  'REG-06': '#00d4ff',
-  'REG-07': '#ff6b6b', // 预留(暂无数据)
-  'REG-01': '#00e5a0',
-  'REG-02': '#ef5350',
-  'CTY-20': '#ab47bc', // 预留(暂无数据)
-  'REG-04': '#a78bfa',
-  'REG-05': '#ffa726',
-  'CTY-19': '#26c6da', // 预留(暂无数据)
-  'REG-03': '#66bb6a',
+  REG-06: '#00d4ff',
+  REG-07: '#ff6b6b',
+  REG-01: '#00e5a0',
+  REG-02: '#ef5350',
+  CTY-20: '#ab47bc',
+  REG-04: '#a78bfa',
+  REG-05: '#ffa726',
+  CTY-19: '#26c6da',
+  REG-03: '#66bb6a',
 };
 
 export const REGION_ORDER = ['REG-02', 'REG-01', 'REG-04', 'REG-05', 'REG-06', 'REG-03'];
 
-// ── 导航Tab ──
 export const RETAIL_NAV = [
-  { key: 'dashboard', label: '📊 总览', path: '/retail' },
-  { key: 'region', label: '🗺️ 区域', path: '/retail/region' },
-  { key: 'station', label: '⛽ 站点', path: '/retail/station' },
-  { key: 'monthly', label: '📅 月度', path: '/retail/monthly' },
-  { key: 'resource', label: '🛢️ 油品', path: '/retail/resource' },
-  { key: 'profit', label: '💹 利润', path: '/retail/profit' },
-  { key: 'report', label: '📋 报表', path: '/retail/report' },
-  { key: 'alert', label: '⚠️ 预警', path: '/retail/alert', badge: true },
+  { key: 'dashboard', label: '总览', path: '/retail' },
+  { key: 'region', label: '区域', path: '/retail/region' },
+  { key: 'station', label: '站点', path: '/retail/station' },
+  { key: 'monthly', label: '月度', path: '/retail/monthly' },
+  { key: 'resource', label: '油品', path: '/retail/resource' },
+  { key: 'selfUse', label: '自用油', path: '/retail/self-use' },
+  { key: 'profit', label: '利润', path: '/retail/profit' },
+  { key: 'report', label: '报表', path: '/retail/report' },
+  { key: 'alert', label: '预警', path: '/retail/alert', badge: true },
 ];
 
-export const RETAIL_DATA_START_YEAR = 2023;
-
-export function fallbackRetailYears(currentYear = new Date().getFullYear()) {
-  const latestYear = Math.max(currentYear, RETAIL_DATA_START_YEAR);
-  return Array.from(
-    { length: latestYear - RETAIL_DATA_START_YEAR + 1 },
-    (_, index) => latestYear - index,
-  );
-}
-
-export function normalizeRetailYears(values, currentYear = new Date().getFullYear()) {
-  const years = Array.from(new Set((Array.isArray(values) ? values : [])
-    .map(value => Number(value))
-    .filter(value => Number.isFinite(value) && value >= RETAIL_DATA_START_YEAR)))
-    .sort((a, b) => b - a);
-  return years.length ? years : fallbackRetailYears(currentYear);
-}
-
-const CJK_RE = /[\u3400-\u9fff]/;
-const CYRILLIC_RE = /[\u0400-\u052f]/;
-
-function splitStationNameParts(value) {
-  return String(value || '')
-    .split(/\s*(?:\r?\n|\/|\uff0f|\|)\s*/)
-    .map(part => part.trim())
-    .filter(Boolean);
+export function formatRetailMonthLabel(month, fallback = '选择月份') {
+  const match = String(month || '').match(/^(\d{4})-(\d{2})$/);
+  if (!match) return month || fallback;
+  return `${match[1]}年${Number(match[2])}月`;
 }
 
 export function splitStationName(name, short) {
-  const seen = new Set();
-  const parts = [...splitStationNameParts(name), ...splitStationNameParts(short)].filter(part => {
-    if (seen.has(part)) return false;
-    seen.add(part);
-    return true;
-  });
-  const zh = parts.find(part => CJK_RE.test(part));
-  const ru = parts.find(part => CYRILLIC_RE.test(part));
-  const primary = zh || parts[0] || '-';
-  const secondary = ru && ru !== primary ? ru : (parts.find(part => part !== primary) || '');
-  return {
-    primary,
-    secondary,
-    title: secondary ? `${primary} / ${secondary}` : primary,
-  };
+  return splitRetailStationName(name, short);
 }
 
-// ── 格式化函数 ──
 export function fmtNum(n) {
   if (n == null) return '—';
   const abs = Math.abs(n);
@@ -121,102 +112,55 @@ export function pctColor(v) {
   return v > 0 ? '#00e5a0' : v < 0 ? '#ef5350' : 'rgba(160,180,210,0.6)';
 }
 
-export function metricNumber(value) {
-  const numeric = Number(value ?? 0);
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function compactNumber(value, divisor, maximumFractionDigits) {
-  return (metricNumber(value) / divisor).toLocaleString('zh-CN', {
-    maximumFractionDigits,
-  });
-}
-
 export function formatSomKpiParts(value) {
-  const numeric = metricNumber(value);
-  const abs = Math.abs(numeric);
-  if (abs >= 1e8) return { value: compactNumber(numeric, 1e8, 2), unit: '亿索姆' };
-  if (abs >= 1e4) return { value: compactNumber(numeric, 1e4, 1), unit: '万索姆' };
-  return {
-    value: numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 }),
-    unit: '索姆',
-  };
+  return sharedFormatRetailSomKpiParts(value);
 }
 
 export function formatLitersKpiParts(value) {
-  const numeric = metricNumber(value);
-  if (Math.abs(numeric) >= 1e4) return { value: compactNumber(numeric, 1e4, 1), unit: '万L' };
-  return {
-    value: numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 }),
-    unit: 'L',
-  };
+  return sharedFormatRetailLitersKpiParts(value);
 }
 
 export function formatCnyKpi(value) {
-  if (value == null || value === '') return '--';
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '--';
-  const abs = Math.abs(numeric);
-  if (abs >= 1e8) return `${compactNumber(numeric, 1e8, 2)} 亿元`;
-  if (abs >= 1e4) return `${compactNumber(numeric, 1e4, 1)} 万元`;
-  return `${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} 元`;
+  return sharedFormatRetailCnyKpi(value);
 }
 
 export function formatTonsKpi(value) {
-  return `${metricNumber(value).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 吨`;
+  return sharedFormatRetailTonsKpi(value);
 }
 
 export function amountCnyOf(item) {
-  if (!item || typeof item !== 'object') return null;
-  const keys = ['totalSalesCnyAvg', 'totalAmountCnyAvg', 'amountCnyAvg', 'totalSalesCny', 'amountCny'];
-  for (const key of keys) {
-    if (item[key] != null && item[key] !== '') {
-      const numeric = Number(item[key]);
-      if (Number.isFinite(numeric)) return numeric;
-    }
-  }
-  const avg = Number(item.avgCnyKgs || 0);
-  const amount = Number(item.totalSales ?? item.totalAmount ?? item.amount ?? 0);
-  if (avg > 0 && Number.isFinite(amount)) return amount / avg;
-  return null;
+  return retailCnyAmountOf(item);
 }
 
-export function sortRankingRows(rows, valueOf, limit) {
-  const sorted = [...(rows || [])].sort((left, right) => metricNumber(valueOf(right)) - metricNumber(valueOf(left)));
-  return typeof limit === 'number' ? sorted.slice(0, limit) : sorted;
-}
-
-// ── 油品合并排行（dashboard用） ──
 export function buildResourceRank(resources) {
   const merged = new Map();
   (resources || [])
-    .filter(r => !String(r.name || '').startsWith('Other'))
-    .forEach(r => {
-      const rawKey = Number(r.resourceKey ?? r.key);
+    .filter((row) => !String(row.name || '').startsWith('Other'))
+    .forEach((row) => {
+      const rawKey = Number(row.resourceKey ?? row.key);
       const rankKey = rawKey === 109 ? 106 : rawKey;
       const existing = merged.get(rankKey) || {
         resourceKey: rankKey,
-        name: rankKey === 106 ? 'Д/Т' : r.name,
+        name: rankKey === 106 ? 'Д/Т' : row.name,
         volume: 0,
         amount: 0,
-        color: r.color,
+        color: row.color,
       };
-      existing.volume += Number(r.volume || 0);
-      existing.amount += Number(r.amount || 0);
+      existing.volume += Number(row.volume || 0);
+      existing.amount += Number(row.amount || 0);
       merged.set(rankKey, existing);
     });
-  return sortRankingRows(Array.from(merged.values()), row => row.amount);
+  return sortRankingRows(Array.from(merged.values()), (row) => row.amount);
 }
 
-// ── 时钟 hook ──
 export function useClock() {
   const getTime = () => {
-    const n = new Date();
-    const pad = (v) => String(v).padStart(2, '0');
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, '0');
     const days = ['日', '一', '二', '三', '四', '五', '六'];
     return {
-      time: `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`,
-      date: `${n.getFullYear()}年${pad(n.getMonth() + 1)}月${pad(n.getDate())}日 星期${days[n.getDay()]}`,
+      time: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+      date: `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 星期${days[now.getDay()]}`,
     };
   };
   return getTime;

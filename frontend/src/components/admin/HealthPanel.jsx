@@ -59,7 +59,7 @@ export default function HealthPanel() {
           <div className={`ops-card ${profitSnapshotState}`}>
             <span>利润快照</span>
             <strong>{profitSnapshots.ok ? '已生成' : `${profitSnapshots.missing?.length || 0} 项缺失`}</strong>
-            <small>{profitSnapshots.month || '--'} · {profitSnapshotItems.map(item => item.generatedAt).filter(Boolean)[0] || '--'}</small>
+            <small>{profitSnapshots.month || '--'} · {fmtDate(profitSnapshotItems.map(item => item.generatedAt).filter(Boolean)[0])}</small>
           </div>
           <div className={`ops-card ${taskWarnings ? 'warn' : 'ok'}`}>
             <span>任务状态</span>

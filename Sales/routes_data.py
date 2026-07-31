@@ -1338,6 +1338,8 @@ def register_data_routes(app):
     def api_manual_wholesale_detail():
         payload = request.get_json(force=True)
         business_date = parse_date(payload.get("businessDate"))
+        if business_date and business_date > date.today():
+            return jsonify({"error": f"业务日期 {business_date.isoformat()} 晚于今天，请检查录入日期"}), 400
         raw_product = clean_str(payload.get("productName"))
         product_code = clean_str(payload.get("productCode"))
         raw_entity = clean_str(payload.get("entityName"))

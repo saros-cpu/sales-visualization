@@ -1,8 +1,16 @@
-// src/components/admin/WholesalePanel.jsx — 批发维护
+// src/components/admin/WholesalePanel.jsx — 批发数据维护
 import { useState, useEffect, useCallback } from 'react';
 import { fmtDate } from '../../utils/admin-helpers';
 import { num } from '../../utils/format';
 import { getImportBatches, rollbackBatch, organizeWholesale, deduplicateWholesale, uploadWholesaleFile, saveManualDetail, saveManualContract } from '../../api/admin';
+
+// 本地日期 YYYY-MM-DD（用于手工录入默认值，避免误写未来日期）
+const todayStr = () => {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+};
 
 const batchStatusLabel = (v) => ({ created: '已创建', parsed: '已解析', validated: '已校验', imported: '已导入', failed: '已回滚/失败' }[v] || v || '--');
 const classificationLabel = v => ({
@@ -11,7 +19,7 @@ const classificationLabel = v => ({
   local_wholesale: '本地批发',
   processing: '代加工',
   procurement: '采购',
-  unknown: '待识别',
+  unknown: '待识别批发',
 }[v] || v || '--');
 
 export default function WholesalePanel({ products, customerOptions, refresh }) {
@@ -98,7 +106,7 @@ export default function WholesalePanel({ products, customerOptions, refresh }) {
 
   return (
     <section className="admin-tab active">
-      <div className="section-title"><h2>批发维护</h2><span>Excel 上传识别、批发明细录入、合同录入统一放在后台</span></div>
+      <div className="section-title"><h2>批发数据维护</h2><span>Excel 上传识别、明细录入、合同录入统一放在后台</span></div>
       <section className="content-grid">
         <section className="panel panel-wide">
           <div className="panel-head"><h2>一键整理批发数据</h2><div className="inline-filter"><button type="button" onClick={handleOrganize}>开始整理</button><button type="button" onClick={handleDeduplicate}>一键去重</button></div></div>
@@ -155,7 +163,7 @@ export default function WholesalePanel({ products, customerOptions, refresh }) {
           )}
         </section>
         <section className="panel panel-wide">
-          <div className="panel-head"><h2>数据上传</h2><span>自动识别批发明细或合同登记 Excel</span></div>
+          <div className="panel-head"><h2>数据上传</h2><span>自动识别明细或合同登记 Excel</span></div>
           <form className="upload-drop upload-layout" onSubmit={handleUpload}><input name="file" type="file" accept=".xlsx,.xls" required /><button type="submit">上传并识别</button></form>
           <p className="form-status muted">{uploadStatus}</p>
         </section>
@@ -168,13 +176,13 @@ export default function WholesalePanel({ products, customerOptions, refresh }) {
           </div>
         </section>
         <section className="panel panel-wide">
-          <div className="panel-head"><h2>在线录入</h2><label className="inline-filter">录入类型<select value={entryType} onChange={e => setEntryType(e.target.value)}><option value="detail">批发明细</option><option value="contract">合同</option></select></label></div>
+          <div className="panel-head"><h2>在线录入</h2><label className="inline-filter">录入类型<select value={entryType} onChange={e => setEntryType(e.target.value)}><option value="detail">明细</option><option value="contract">合同</option></select></label></div>
           {entryType === 'detail' ? (
             <>
-              <p className="muted">录入单条批发明细，保存后自动识别油品、客户/去向并参与当前统计。</p>
+              <p className="muted">录入单条明细，保存后自动识别油品、客户/去向并参与当前统计。</p>
               <form className="form-grid manual-entry-form" onSubmit={handleDetail}>
-                <label>日期<input name="businessDate" type="date" required /></label>
-                <label>分类<select name="classification"><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">代加工</option><option value="procurement">采购</option><option value="unknown">待识别</option></select></label>
+                <label>日期<input name="businessDate" type="date" required defaultValue={todayStr()} max={todayStr()} /></label>
+                <label>分类<select name="classification"><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">代加工</option><option value="procurement">采购</option><option value="unknown">待识别批发</option></select></label>
                 <label>油品<select name="productCode"><option value="">自动识别</option>{productOpts}</select></label>
                 <label>客户 / 去向<input name="entityName" list="wsCustomerOpts" required /></label>
                 <label>重量 KG<input name="weightKg" type="number" step="0.001" required /></label>

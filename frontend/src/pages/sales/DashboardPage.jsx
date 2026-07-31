@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext, Link } from 'react-router-dom';
 import { usePeriod } from '../../hooks/usePeriod';
 import { useApi } from '../../hooks/useApi';
 import { getSummary, getHomeExchange, getMarketWatch, generateSalesReport } from '../../api/sales';
+import { localizeMapPoint } from '@shared/map-labels';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 
 // 格式化函数
@@ -306,7 +307,7 @@ export default function DashboardPage() {
     if (!el) return;
     const mc = window.echarts.init(el);
     echartsMapRef.current = mc;
-    const mapPoints = depotPoints.map(p => ({ ...p, type: 'depot' }));
+    const mapPoints = depotPoints.map(p => localizeMapPoint({ ...p, type: 'depot', closedReason: p.note }, 'zh'));
     const data = mapPoints.map(p => ({
       name: p.name, value: [p.lng, p.lat],
       itemStyle: { color: p.role === 'hq' ? '#00d4ff' : (p.status === 'closed' ? '#616b78' : '#ffd54f') }
@@ -332,7 +333,8 @@ export default function DashboardPage() {
         formatter: p => {
           const point = mapPoints.find(i => i.name === p.name);
           if (!point) return p.name;
-          const state = point.status === 'closed' ? '<span style="color:#ff6b6b">维修中</span>' : '<span style="color:#00e5a0">运营中</span>';
+          const stateColor = point.status === 'closed' ? '#ff6b6b' : '#00e5a0';
+          const state = '<span style="color:' + stateColor + '">' + point.statusLabel + '</span>';
           return `<div style="font-weight:800;color:#00d4ff;margin-bottom:7px">${point.name}</div><div style="color:#c9d8e8">${point.short}</div><div style="margin-top:6px">${state}</div><div style="color:rgba(200,220,240,0.72);margin-top:4px">${point.region}</div>`;
         }
       }
@@ -346,22 +348,25 @@ export default function DashboardPage() {
         const { mountHomeMap } = await runtimeImport('/assets/kgz-map/kgz-map-entry.js?v=20260801-hover-hit');
         mapShellRef.current?.classList.add('is-3d-map');
         const map = await mountHomeMap('#homeMapChart', {
-          depots: depotPoints.map(p => ({
-            ...p, type: 'depot',
-            depotType: p.role === 'hq' ? 'headquarters' : 'branch',
-            size: p.role === 'hq' ? 0.2 : 0.18,
-            y: p.role === 'hq' ? 3.12 : 2.9,
-            renderOrder: 176,
-            color: p.role === 'hq' ? '#38bdf8' : '#facc15',
-            anchorColor: p.role === 'hq' ? '#7dd3fc' : '#fde68a',
-            anchorOpacity: 0.78,
-            pinLine: true,
-            opacity: 0.98, showLabel: false, label: p.name,
-            labelSubtitle: p.status === 'closed' ? '维修中' : '运营中',
-            labelColor: p.status === 'closed' ? '#d8dee9' : '#f8fafc',
-            hoverScale: 2.25,
-            hoverLift: 0.24
-          })),
+          depots: depotPoints.map(p => {
+            const lp = localizeMapPoint({ ...p, closedReason: p.note }, 'zh');
+            return {
+              ...p, type: 'depot',
+              depotType: p.role === 'hq' ? 'headquarters' : 'branch',
+              size: p.role === 'hq' ? 0.2 : 0.18,
+              y: p.role === 'hq' ? 3.12 : 2.9,
+              renderOrder: 176,
+              color: p.role === 'hq' ? '#38bdf8' : '#facc15',
+              anchorColor: p.role === 'hq' ? '#7dd3fc' : '#fde68a',
+              anchorOpacity: 0.78,
+              pinLine: true,
+              opacity: 0.98, showLabel: false, label: lp.name,
+              labelSubtitle: lp.statusLabel,
+              labelColor: p.status === 'closed' ? '#d8dee9' : '#f8fafc',
+              hoverScale: 2.25,
+              hoverLift: 0.24
+            };
+          }),
           wholesaleCustomers: []
         }, {
           showRoads: true, showRoadPanel: true, showLakeLabels: true,

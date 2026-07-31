@@ -451,7 +451,7 @@ export default function TrainEntryPage() {
                   canDelete
                   onBatchSave={handleManualBatchSave}
                   onDelete={async (ids) => setDraftRows((rows) => rows.filter((row) => !ids.includes(row.id)))}
-                  onAddNew={(row) => setDraftRows((rows) => [row, ...rows])}
+                  onAddNew={(row) => setDraftRows((rows) => [...rows, row])}
                   validateRow={validateRow}
                   isCellEditable={() => canEntry}
                   initialNewRow={() => ({

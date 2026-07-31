@@ -9,6 +9,7 @@ import {
   getWholesaleDetails,
   type WholesaleItem,
 } from '@/api/wholesale';
+import BilingualName from '@/components/common/BilingualName';
 
 const { RangePicker } = DatePicker;
 
@@ -116,9 +117,9 @@ export default function Query() {
     const normalized = sourceAliases[raw.toLowerCase()] || raw;
     return <span className="wholesale-query-two-line">{t(`wholesale.sources.${normalized}`, { defaultValue: raw || '--' })}</span>;
   };
-  const withStandard = (raw?: string, standard?: string) => {
-    return <span className="wholesale-query-two-line">{standard || raw || '--'}</span>;
-  };
+  const withStandard = (raw?: string, standard?: string) => (
+    <BilingualName value={standard} raw={raw} />
+  );
   const twoLineText = (value?: string | number | null) => (
     <span className="wholesale-query-two-line">{value === null || value === undefined || value === '' ? '--' : value}</span>
   );
@@ -128,24 +129,24 @@ export default function Query() {
 
   const centerAlign = { align: 'center' as const };
   const columns = [
-    { title: t('common.source'), dataIndex: 'sourceType', key: 'sourceType', width: '8%', responsive: ['lg' as const], render: sourceLabel, ...centerAlign },
-    { title: t('wholesaleEntry.sourceRow'), dataIndex: 'sourceRowNumber', key: 'sourceRowNumber', width: '6%', responsive: ['xl' as const], render: twoLineText, ...centerAlign },
-    { title: t('wholesaleEntry.entryDate'), dataIndex: 'businessDate', key: 'businessDate', width: '7%', ellipsis: true, ...centerAlign },
+    { title: t('common.source'), dataIndex: 'sourceType', key: 'sourceType', width: 72, responsive: ['lg' as const], render: sourceLabel, ...centerAlign },
+    { title: t('wholesaleEntry.sourceRow'), dataIndex: 'sourceRowNumber', key: 'sourceRowNumber', width: 56, responsive: ['xl' as const], render: twoLineText, ...centerAlign },
+    { title: t('wholesaleEntry.entryDate'), dataIndex: 'businessDate', key: 'businessDate', width: 104, ...centerAlign },
     {
       title: t('common.productName'),
       dataIndex: 'rawProductName',
       key: 'rawProductName',
-      width: '11%',
+      width: 170,
       render: (_: string, row: WholesaleItem) => withStandard(row.rawProductName || row.productName, row.standardProductName),
       ...centerAlign,
     },
-    { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: '9%', responsive: ['lg' as const], render: twoLineText, ...centerAlign },
-    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: '7%', render: twoLineText, ...centerAlign },
+    { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: 124, responsive: ['lg' as const], render: twoLineText, ...centerAlign },
+    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 108, render: twoLineText, ...centerAlign },
     {
       title: t('common.senderUnit'),
       dataIndex: 'senderName',
       key: 'senderName',
-      width: '14%',
+      width: 220,
       render: (_: string, row: WholesaleItem) => withStandard(row.senderName, row.standardSenderName),
       ...centerAlign,
     },
@@ -153,24 +154,24 @@ export default function Query() {
       title: t('common.receiverUnit'),
       dataIndex: 'rawEntityName',
       key: 'rawEntityName',
-      width: '15%',
+      width: 240,
       render: (_: string, row: WholesaleItem) => withStandard(row.rawEntityName || row.entityName, row.standardEntityName),
       ...centerAlign,
     },
-    { title: t('common.weightKg'), dataIndex: 'weightKg', key: 'weightKg', width: '7%', render: weightText, ...centerAlign },
-    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: '7%', render: weightText, ...centerAlign },
+    { title: t('common.weightKg'), dataIndex: 'weightKg', key: 'weightKg', width: 92, render: weightText, ...centerAlign },
+    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 92, render: weightText, ...centerAlign },
     {
       title: t('common.classification'),
       dataIndex: 'classification',
       key: 'classification',
-      width: '8%',
+      width: 104,
       render: (value: string) => {
         const normalized = normalizeClassification(value);
         return <Tag color={classificationColors[normalized] || 'default'}>{t(classificationLabelKeys[normalized], { defaultValue: normalized })}</Tag>;
       },
       ...centerAlign,
     },
-    { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: '12%', responsive: ['xl' as const], render: twoLineText, ...centerAlign },
+    { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: 150, responsive: ['xl' as const], render: twoLineText, ...centerAlign },
   ];
 
   return (
@@ -229,7 +230,6 @@ export default function Query() {
           loading={loading}
           size="small"
           pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (count) => t('common.total', { count }) }}
-          tableLayout="fixed"
         />
       </div>
     </div>

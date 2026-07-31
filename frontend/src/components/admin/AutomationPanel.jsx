@@ -34,14 +34,14 @@ export default function AutomationPanel({ refresh, setStatusText }) {
 
   return (
     <section className="admin-tab active">
-      <div className="section-title"><h2>自动任务</h2><span>每日自动补齐汇率与市场观察</span></div>
+      <div className="section-title"><h2>自动任务</h2><span>每日自动补齐汇率、市场观察和业务快照</span></div>
       <section className="content-grid">
         <section className="panel">
           <div className="panel-head"><h2>任务计划</h2><span>当前启用</span></div>
           <div className="stack-list">
             <div className="stack-row"><span>07:30</span><strong>自动补汇率</strong><small>NBKR 历史页面</small></div>
             <div className="stack-row"><span>07:30</span><strong>获取市场观察</strong><small>俄罗斯 / 乌兹别克 / 国际</small></div>
-            <div className="stack-row"><span>08:30</span><strong>生成零售快照</strong><small>日快照与当前月汇总快照</small></div>
+            <div className="stack-row"><span>08:30</span><strong>生成零售/自用油/利润快照</strong><small>日快照、当前月汇总和利润总表快照</small></div>
           </div>
         </section>
         <section className="panel">

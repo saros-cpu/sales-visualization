@@ -431,6 +431,19 @@ body {
   background: #ffffff;
 }
 
+/* 采购查询等页面：滚动时固定表头，背景不透明，避免内容透出 */
+.client-fit-table-scroll .ant-table-sticky-holder {
+  background: #fafafa;
+  z-index: 2;
+}
+
+.client-fit-table-scroll .ant-table-thead > tr > th {
+  background: #fafafa;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
 .train-entry-table-scroll .ant-table-content,
 .train-entry-table-scroll .ant-table-body {
   overflow-x: auto !important;

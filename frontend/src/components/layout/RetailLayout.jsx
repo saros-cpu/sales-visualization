@@ -109,7 +109,7 @@ function RetailLayoutInner() {
           <div className="retail-logo">⛽</div>
           <div>
             <div className="retail-title">СНК-АЗС 数据监控中心</div>
-            <div className="retail-sub">SIBNEFTEKART · Example石油公司 · 吉尔吉斯斯坦</div>
+            <div className="retail-sub">CJSC "ЧПК" «ExampleCo» · Example石油公司 · 吉尔吉斯斯坦</div>
           </div>
         </div>
         <div className="retail-header-center">

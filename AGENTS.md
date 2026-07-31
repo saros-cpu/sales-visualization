@@ -15,16 +15,21 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `4.0.4`.
-- Current release code commit: the latest `fix: unify api and permission contracts` commit in `git log`.
+- Current released client version: `5.4.0`.
+- Current release code commit: tag `v5.4.0`（版本号 5.3.0 → 5.4.0，含 5.3.0 之后全部修复：双语两行显示、列宽自适应/居中、录入回车焦点、采购查询、明细保存 500、乱码根因修复）；previous release was `v5.3.0`.
 - Production public entry: `https://sales.example.com/`.
 - Production backup entry details are kept only in `docs/配置文档.md`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `https://sales.example.com/download/latest.yml`; fallback endpoint details are kept only in `docs/配置文档.md`.
-- Current installer: `SalesDesktop Setup 4.0.4.exe`.
-- Current wallpaper package: `SalesWallpaperEngine 0.2.3` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
+- Current installer: `SalesDesktop Setup 5.4.0.exe`.
+- Current wallpaper package: `SalesWallpaperEngine 0.2.5` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
 - The old web wallpaper package is retired and removed. Future wallpaper work must use `SalesWallpaperEngine`.
 - HTTPS certificate: enabled; certificate paths are kept only in `docs/配置文档.md`. HTTP remains active for compatibility.
+- Shared API/report path contracts live in `shared/api-contracts.js`; Web, desktop, and wallpaper callers should add paths there before using them in app-specific wrappers.
+- Shared retail display helpers live in `shared/retail-core.js`, and shared assistant frontend helpers live in `shared/assistant-ui.js`; do not duplicate month selection, tons/amount extraction, station name splitting, KPI formatting, assistant table merging, or assistant context helpers in individual pages.
+- Web routes are page-level lazy loaded through `frontend/src/App.jsx`; new heavy Web pages should follow that pattern so the first screen does not load every module.
+- Current 5.1.0 wholesale rule: wholesale, procurement, outsourced processing, and own transfer use one unified classification model. Sender example/oil-gas company to customer is wholesale, customer to example/oil-gas company is procurement, customer to customer is outsourced processing, and own transfer must resolve to a retail-board owned station/depot. Business reporting uses weighing-generated details before `2026-06-01` and uploaded/manual details from `2026-06-01`; query/export/auto-generation clamp weighing details to `2026-05-31` and earlier (`WHOLESALE_WEIGHING_END_DATE` in `Sales/wholesale_source_policy.py`); do not infer missing LPG tank-area totals from LPG product rows because the tank area can also load AI-80/AI-92 and reports cannot reliably identify tank-area source.
+- Wholesale detail query/export (5.1.0): filter options come from `/api/v2/wholesale/details/filter-options` and `/api/v2/weighing/filter-options`; bilingual export `/api/v2/wholesale/details/export` renders Chinese+Russian two-line cells; customer/sender/receiver/product names resolve to standard names via customer maintenance and aliases.
 
 ## Report Boundaries
 
@@ -33,6 +38,14 @@ Future agents, tools, and maintainers must treat this file as the project memory
   - Detail sheets should use the same data source as original report 84, but this project groups a complete natural day. One day may correspond to multiple original 84 shift reports.
   - Summary sheet compares to original report 254.
   - Data must match; format does not need to match the original software.
+  - Public download filename is `加油站{中文月份}日销表{生成日期}.xlsx`, while internal storage stays under `OilStation/exports/monthly/{year}/` with indexed relative paths.
+- Daily briefing report:
+  - For Chinese management.
+  - Matches the desktop template layout named `ProductTeam销售日报表YYYY.MM.DD.xlsx`; runtime generation should not depend on a user desktop file being present.
+  - Report date is the selected briefing date; daily retail data uses the previous day, and monthly/yearly retail totals run through the previous day.
+  - Only retail filling is implemented for now. Wholesale columns are intentionally left blank.
+  - Diesel variants such as diesel, -10 diesel, and -35 diesel must be grouped under the diesel口径.
+  - Retail tons must keep 3 decimal places and match retail snapshot/AI口径: daily from the day snapshot, month from the matching monthly snapshot, year from the yearly resource snapshot; do not round each product/day to 2 decimals before totaling.
 - Self-use oil report:
   - For Chinese management.
   - Compares to original report 24.
@@ -126,18 +139,18 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.4.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%204.0.4.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%204.0.4.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%205.1.0.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%205.1.0.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%205.1.0.exe"
 ```
 
 ## CodeGraph Memory
 
 Current CodeGraph baseline:
 
-- Files: `373`
-- Nodes: `9,393`
-- Edges: `32,898`
+- Files: `395`
+- Nodes: `10,132`
+- Edges: `34,126`
 - DB size: `58.13 MB`
 - Status: `Index is up to date`
 
@@ -149,6 +162,7 @@ codegraph explore "self-use report24-only"
 codegraph explore "retail range report 254"
 codegraph explore "accounting handover report 84"
 codegraph explore "profit accounting snapshots purchase prices"
+codegraph explore "shared API contracts desktop wrappers"
 codegraph explore "knowledge attachments reindex"
 codegraph explore "electron-updater latest.yml download"
 ```

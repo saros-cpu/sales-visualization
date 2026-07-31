@@ -3,14 +3,18 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useChart } from '../../hooks/useChart';
 import { getMonths, getStations, getRegions, getDaily } from '../../api/retail';
+import RetailKpiCompare from '../../components/retail/RetailKpiCompare';
 import {
   REGION_COLORS,
   REGION_ORDER,
   amountCnyOf,
   formatCnyKpi,
   formatLitersKpiParts,
+  formatRetailMonthLabel,
   formatSomKpiParts,
   formatTonsKpi,
+  normalizeRetailMonthOptions,
+  retailTonsOf,
   sortRankingRows,
 } from '../../utils/retail-helpers';
 
@@ -21,18 +25,13 @@ function numeric(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function tonsOf(item) {
-  const tons = numeric(item?.totalTons ?? item?.tons);
-  if (tons > 0) return tons;
-  const mass = numeric(item?.mass ?? item?.totalWeightKg);
-  return mass > 0 ? mass / 1000 : 0;
-}
-
 export default function RegionPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const queryMonth = params.get('month') || '';
   const [currentRegion, setCurrentRegion] = useState(params.get('region') || 'REG-02');
-  const [currentMonth, setCurrentMonth] = useState('');
+  const [currentMonth, setCurrentMonth] = useState(queryMonth);
+  const [months, setMonths] = useState([]);
   const [allStations, setAllStations] = useState([]);
   const [allRegionsData, setAllRegionsData] = useState({});
   const [regionsData, setRegionsData] = useState({});
@@ -48,12 +47,19 @@ export default function RegionPage() {
   useEffect(() => {
     (async () => {
       try {
-        const months = await getMonths();
-        const valid = months.find(m => m.transactions > 1000);
-        setCurrentMonth(valid ? valid.month : months[0]?.month || '2026-04');
+        const monthList = normalizeRetailMonthOptions(await getMonths());
+        setMonths(monthList);
+        const valid = monthList.find(m => m.transactions > 1000);
+        setCurrentMonth(prev => prev || valid?.month || monthList[0]?.month || '2026-04');
       } catch { setCurrentMonth('2026-04'); }
     })();
   }, []);
+
+  useEffect(() => {
+    if (queryMonth) {
+      setCurrentMonth(prev => (prev === queryMonth ? prev : queryMonth));
+    }
+  }, [queryMonth]);
 
   // ── 加载数据 ──
   useEffect(() => {
@@ -148,7 +154,7 @@ export default function RegionPage() {
     rankInst?.off('click');
     rankInst?.on('click', p => {
       const found = allStations.find(s => s.name === p.name);
-      navigate(`/retail/station?name=${encodeURIComponent(p.name)}&from=region&region=${encodeURIComponent(currentRegion)}`, { state: { shopKey: found?.shopKey, month: currentMonth } });
+      navigate(stationUrl(found || { name: p.name }), { state: { shopKey: found?.shopKey, month: currentMonth } });
     });
 
     // 3. 支付方式
@@ -195,17 +201,44 @@ export default function RegionPage() {
         { name: '刷卡', type: 'bar', barMaxWidth: 12, data: ccSts.map(s => s.card || 0), itemStyle: { color: '#00e5a0' }, label: { show: true, position: 'top', formatter: p => (p.value / 1e4).toFixed(2) + '万', color: 'rgba(220,240,255,0.78)', fontSize: 9 } },
       ],
     }, true);
-  }, [currentRegion, allStations, regionsData, allRegionsData, monthlyData]);
+  }, [currentRegion, allStations, regionsData, allRegionsData, monthlyData, currentMonth, navigate]);
 
   const rd = regionsData[currentRegion] || { amount: 0, volume: 0 };
   const rdWithRate = { ...rd, avgCnyKgs: rd.avgCnyKgs ?? allRegionsData.avgCnyKgs };
   const sts = allStations.filter(s => s.region === currentRegion);
   const activeSts = sts.filter(s => s.amount > 0);
-  const regionTons = tonsOf(rd) || sts.reduce((sum, row) => sum + tonsOf(row), 0);
+  const regionTons = retailTonsOf(rd) || sts.reduce((sum, row) => sum + retailTonsOf(row), 0);
   const regionSalesKpi = formatSomKpiParts(rd.amount);
   const regionLitersKpi = formatLitersKpiParts(rd.volume);
   const regionSalesCny = amountCnyOf(rdWithRate);
   const cardPct = rd.amount > 0 ? ((rd.card / rd.amount) * 100).toFixed(2) : '0.0';
+  const monthOptions = months.length ? months : (currentMonth ? [{ month: currentMonth }] : []);
+
+  const changeRegion = (region) => {
+    setCurrentRegion(region);
+    const query = new URLSearchParams(params);
+    query.set('region', region);
+    if (currentMonth) query.set('month', currentMonth);
+    navigate(`/retail/region?${query.toString()}`, { replace: true });
+  };
+
+  const changeMonth = (month) => {
+    setCurrentMonth(month);
+    const query = new URLSearchParams(params);
+    query.set('region', currentRegion);
+    query.set('month', month);
+    navigate(`/retail/region?${query.toString()}`, { replace: true });
+  };
+
+  const stationUrl = (station) => {
+    const query = new URLSearchParams();
+    if (station?.shopKey) query.set('shopKey', String(station.shopKey));
+    if (station?.name) query.set('name', station.name);
+    query.set('from', 'region');
+    query.set('region', currentRegion);
+    if (currentMonth) query.set('month', currentMonth);
+    return `/retail/station?${query.toString()}`;
+  };
 
   return (
     <div className="retail-page-wrap">
@@ -214,10 +247,19 @@ export default function RegionPage() {
         <div className="region-left-col">
           {/* 区域选择 */}
           <div className="retail-panel" style={{ flexShrink: 0 }}>
-            <div className="retail-panel-header"><div className="dot" /><span>选择区域</span></div>
+            <div className="retail-panel-header retail-panel-header-split">
+              <div className="retail-panel-title"><div className="dot" /><span>选择区域</span></div>
+              <label className="retail-inline-control">
+                <span>月份</span>
+                <select className="retail-month-select compact" value={currentMonth} onChange={e => changeMonth(e.target.value)}>
+                  {!monthOptions.length ? <option value="">加载中</option> : null}
+                  {monthOptions.map(item => <option key={item.month} value={item.month}>{formatRetailMonthLabel(item.month)}</option>)}
+                </select>
+              </label>
+            </div>
             <div style={{ display: 'flex', gap: 6, padding: '8px 12px', flexWrap: 'wrap' }}>
               {REGION_ORDER.map(r => (
-                <div key={r} className={`region-tab${r === currentRegion ? ' active' : ''}`} onClick={() => setCurrentRegion(r)}>{r}</div>
+                <div key={r} className={`region-tab${r === currentRegion ? ' active' : ''}`} onClick={() => changeRegion(r)}>{r}</div>
               ))}
             </div>
           </div>
@@ -226,8 +268,30 @@ export default function RegionPage() {
           <div className="retail-panel" style={{ flexShrink: 0 }}>
             <div className="retail-panel-header"><div className="dot" /><span>{currentRegion} 核心指标</span></div>
             <div className="retail-kpi-grid">
-              <div className="retail-kpi-card c1"><div className="kpi-label">💰 销售总金额</div><div className="kpi-value">{regionSalesKpi.value}</div><div className="kpi-unit">{regionSalesKpi.unit}</div><div className="kpi-change">人民币 {formatCnyKpi(regionSalesCny)}</div></div>
-              <div className="retail-kpi-card c2"><div className="kpi-label">⛽ 销售总量</div><div className="kpi-value">{regionLitersKpi.value}</div><div className="kpi-unit">{regionLitersKpi.unit}</div><div className="kpi-change">吨位 {formatTonsKpi(regionTons)}</div></div>
+              <div className="retail-kpi-card kpi-card-with-compare c1">
+                <div className="retail-kpi-main">
+                  <div className="kpi-label">💰 销售总金额</div>
+                  <div className="kpi-value">{regionSalesKpi.value}</div>
+                  <div className="kpi-unit">{regionSalesKpi.unit}</div>
+                  <div className="kpi-change">人民币 {formatCnyKpi(regionSalesCny)}</div>
+                </div>
+                <RetailKpiCompare items={[
+                  { label: '环比', value: rd.momSales ?? rd.momAmount },
+                  { label: '同比', value: rd.yoySales ?? rd.yoyAmount },
+                ]} />
+              </div>
+              <div className="retail-kpi-card kpi-card-with-compare c2">
+                <div className="retail-kpi-main">
+                  <div className="kpi-label">⛽ 销售总量</div>
+                  <div className="kpi-value">{regionLitersKpi.value}</div>
+                  <div className="kpi-unit">{regionLitersKpi.unit}</div>
+                  <div className="kpi-change">吨位 {formatTonsKpi(regionTons)}</div>
+                </div>
+                <RetailKpiCompare items={[
+                  { label: '环比', value: rd.momVolume },
+                  { label: '同比', value: rd.yoyVolume },
+                ]} />
+              </div>
               <div className="retail-kpi-card c3"><div className="kpi-label">🏪 活跃站点</div><div className="kpi-value">{activeSts.length}/{sts.length}</div><div className="kpi-unit">站</div></div>
               <div className="retail-kpi-card c4"><div className="kpi-label">💳 刷卡占比</div><div className="kpi-value">{cardPct}</div><div className="kpi-unit">%</div></div>
             </div>
@@ -240,7 +304,7 @@ export default function RegionPage() {
               {[...sts].sort((a, b) => b.amount - a.amount).map(s => {
                 const isClosed = s.status === 'closed';
                 return (
-                  <div key={s.shopKey} className="station-item" onClick={() => navigate(`/retail/station?name=${encodeURIComponent(s.name)}&from=region&region=${encodeURIComponent(currentRegion)}`, { state: { shopKey: s.shopKey, month: currentMonth } })}>
+                  <div key={s.shopKey} className="station-item" onClick={() => navigate(stationUrl(s), { state: { shopKey: s.shopKey, month: currentMonth } })}>
                     <div>
                       <div className="station-name">{s.name} {isClosed && <span className="closed-badge">● {s.closedReason || '停业'}</span>}</div>
                       <div className="station-short">{s.short}</div>

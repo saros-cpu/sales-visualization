@@ -13,7 +13,9 @@ import {
   formatLitersKpiParts,
   formatSomKpiParts,
   formatTonsKpi,
+  normalizeRetailMonthOptions,
   normalizeRetailYears,
+  preferredRetailMonth,
   splitStationName,
 } from '../../utils/retail-helpers';
 
@@ -194,7 +196,7 @@ export default function ProfitPage() {
   const loadSeqRef = useRef(0);
 
   const monthOptions = useMemo(
-    () => months.map(item => (typeof item === 'string' ? { month: item } : item)).filter(item => item?.month),
+    () => normalizeRetailMonthOptions(months),
     [months],
   );
 
@@ -205,12 +207,13 @@ export default function ProfitPage() {
     Promise.allSettled([getMonths(), getYears()])
       .then(([monthsResult, yearsResult]) => {
         if (!active) return;
-        const normalized = monthsResult.status === 'fulfilled' && Array.isArray(monthsResult.value)
-          ? monthsResult.value
-          : [];
+        const normalized = normalizeRetailMonthOptions(
+          monthsResult.status === 'fulfilled' && Array.isArray(monthsResult.value)
+            ? monthsResult.value
+            : [],
+        );
         setMonths(normalized);
-        const options = normalized.map(item => (typeof item === 'string' ? item : item.month)).filter(Boolean);
-        const selected = options.includes(preferred) ? preferred : (options[0] || preferred);
+        const selected = preferredRetailMonth(normalized, preferred, preferred);
         setYm(selected);
         const years = normalizeRetailYears(yearsResult.status === 'fulfilled' ? yearsResult.value : [], today.getFullYear());
         setYearOptions(years);

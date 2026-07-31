@@ -1,5 +1,5 @@
 // src/pages/sales/wholesale/OverviewTab.jsx — 批发总览
-import { yuan, num, card } from '../../../utils/format';
+import { num, card } from '../../../utils/format';
 
 const ISSUE_LABELS = {
   contract_unmatched: '合同未匹配',
@@ -8,15 +8,106 @@ const ISSUE_LABELS = {
   missing_exchange_rate: '缺少汇率',
 };
 
+const OPERATION_ITEMS = [
+  { key: 'loading-truck', operation: 'loading', transport: 'truck', label: '汽车装车', tone: 'combined', borderLeftColor: '#607D8B' },
+  { key: 'loading-train', operation: 'loading', transport: 'train', label: '火车装车', tone: 'combined', borderLeftColor: '#1677ff' },
+  { key: 'unloading-truck', operation: 'unloading', transport: 'truck', label: '汽车卸车', tone: 'combined', borderLeftColor: '#4CAF50' },
+  { key: 'unloading-train', operation: 'unloading', transport: 'train', label: '火车卸车', tone: 'processing', borderLeftColor: '#FF9800' },
+];
+
+const CLASS_SUMMARY_ITEMS = [
+  { key: 'export_wholesale', label: '出口批发', tone: 'wholesale', entityLabel: '客户', caption: '人民币销售额', showAmount: true, borderLeftColor: '#ffa726' },
+  { key: 'local_wholesale', label: '本地批发', tone: 'retail', entityLabel: '客户', caption: '人民币销售额', showAmount: true, borderLeftColor: '#00e5a0' },
+  { key: 'unknown', label: '待识别批发', tone: 'pending', entityLabel: '客户', caption: '数量已统计，金额待合同复核', goodWhen: 'down', borderLeftColor: '#ffcc66' },
+  { key: 'transfer', label: '外运', tone: 'combined', entityLabel: '去向', caption: '外运只统计重量', borderLeftColor: '#00d4ff' },
+  { key: 'procurement', label: '采购', tone: 'processing', entityLabel: '供应商', caption: '采购卸车统计', borderLeftColor: '#FF9800' },
+  { key: 'processing', label: '代加工', tone: 'processing', entityLabel: '客户', caption: '外部加工统计', borderLeftColor: '#9C27B0' },
+];
+
+function compareColor(value, goodWhen = 'up') {
+  if (!Number.isFinite(value) || value === 0) return '#b8c2d8';
+  const good = goodWhen === 'down' ? value < 0 : value > 0;
+  return good ? '#6ee7a8' : '#ff8a8a';
+}
+
+function CompareLine({ label, value, goodWhen }) {
+  if (!Number.isFinite(value)) {
+    return (
+      <div className="wholesale-class-compare-line is-empty">
+        <span className="wholesale-class-compare-label">{label}</span>
+        <span className="wholesale-class-compare-value">
+          <span className="wholesale-class-compare-main">
+            <span className="wholesale-class-compare-arrow" />
+            <span className="wholesale-class-compare-number">--</span>
+          </span>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="wholesale-class-compare-line">
+      <span className="wholesale-class-compare-label">{label}</span>
+      <span className="wholesale-class-compare-value" style={{ color: compareColor(value, goodWhen) }}>
+        <span className="wholesale-class-compare-main">
+          <span className="wholesale-class-compare-arrow">{value > 0 ? '↑' : value < 0 ? '↓' : ''}</span>
+          <span className="wholesale-class-compare-number">{num.format(Math.abs(value))}</span>
+        </span>
+        <span className="wholesale-class-compare-percent">%</span>
+      </span>
+    </div>
+  );
+}
+
+function OperationCard({ item, values }) {
+  return (
+    <article className={`metric-panel ${item.tone} wholesale-transport-metric`} style={{ '--metric-accent': item.borderLeftColor }}>
+      <span>{item.label}</span>
+      <strong>{num.format(values.tons || 0)} 吨</strong>
+      <small>批发明细按装卸与运输方式统计</small>
+      <dl>
+        <div><dt>单位</dt><dd>{num.format(values.entities || 0)} 个</dd></div>
+        <div><dt>记录</dt><dd>{num.format(values.rows || 0)} 条</dd></div>
+      </dl>
+    </article>
+  );
+}
+
+function SummaryCard({ item }) {
+  const amountText = item.showAmount ? ` | CNY ${num.format(item.values.amountCny || 0)}` : '';
+  const goodWhen = item.goodWhen || 'up';
+
+  return (
+    <article className={`metric-panel ${item.tone} wholesale-class-metric`} style={{ '--metric-accent': item.borderLeftColor }}>
+      <div className="wholesale-class-body">
+        <div className="wholesale-class-left">
+          <div className="wholesale-class-title">{item.label}</div>
+          <div className="wholesale-class-value">{num.format(item.values.tons || 0)} 吨</div>
+          <div className="wholesale-class-extra">
+            {item.entityLabel}: {num.format(item.values.entities || 0)} 个 | 记录: {num.format(item.values.rows || 0)} 条{amountText}
+          </div>
+        </div>
+        <div className="wholesale-class-right">
+          <CompareLine label="环比" value={item.comparison.momTons} goodWhen={goodWhen} />
+          <CompareLine label="同比" value={item.comparison.yoyTons} goodWhen={goodWhen} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function OverviewTab({ data }) {
   if (!data) return null;
 
-  const exportCard = card(data, 'export_wholesale');
-  const localCard = card(data, 'local_wholesale');
-  const pendingCard = card(data, 'unknown');
-  const transferCard = card(data, 'transfer');
-  const procurementCard = card(data, 'procurement');
-  const processingCard = card(data, 'processing');
+  const operationCards = OPERATION_ITEMS.map((item) => ({
+    ...item,
+    values: data.operationTransportSummary?.[item.operation]?.[item.transport] || { rows: 0, entities: 0, tons: 0 },
+  }));
+  const summaryCards = CLASS_SUMMARY_ITEMS.map((item) => ({
+    ...item,
+    values: card(data, item.key),
+    comparison: data.comparison?.[item.key] || {},
+  }));
 
   // 合同审核
   const status = data.review?.status || {};
@@ -30,61 +121,12 @@ export default function OverviewTab({ data }) {
 
   return (
     <>
-      <section className="summary-grid">
-        <article className="metric-panel wholesale">
-          <span>出口批发</span>
-          <strong>{yuan.format(exportCard.amountCny || 0)}</strong>
-          <small>人民币销售额</small>
-          <dl>
-            <div><dt>吨数</dt><dd>{num.format(exportCard.tons || 0)} 吨</dd></div>
-            <div><dt>客户</dt><dd>{num.format(exportCard.entities || 0)} 个</dd></div>
-          </dl>
-        </article>
-        <article className="metric-panel retail">
-          <span>本地批发</span>
-          <strong>{yuan.format(localCard.amountCny || 0)}</strong>
-          <small>人民币销售额</small>
-          <dl>
-            <div><dt>吨数</dt><dd>{num.format(localCard.tons || 0)} 吨</dd></div>
-            <div><dt>客户</dt><dd>{num.format(localCard.entities || 0)} 个</dd></div>
-          </dl>
-        </article>
-        <article className="metric-panel pending">
-          <span>待识别</span>
-          <strong>{num.format(pendingCard.tons || 0)} 吨</strong>
-          <small>数量已统计，金额待合同复核</small>
-          <dl>
-            <div><dt>客户</dt><dd>{num.format(pendingCard.entities || 0)} 个</dd></div>
-            <div><dt>记录</dt><dd>{num.format(pendingCard.rows || 0)} 条</dd></div>
-          </dl>
-        </article>
-        <article className="metric-panel combined">
-          <span>外运</span>
-          <strong>{num.format(transferCard.tons || 0)} 吨</strong>
-          <small>外运只统计重量</small>
-          <dl>
-            <div><dt>去向</dt><dd>{num.format(transferCard.entities || 0)} 个</dd></div>
-            <div><dt>记录</dt><dd>{num.format(transferCard.rows || 0)} 条</dd></div>
-          </dl>
-        </article>
-        <article className="metric-panel processing" style={{borderLeftColor:'#FF9800'}}>
-          <span>采购</span>
-          <strong>{num.format(procurementCard.tons || 0)} 吨</strong>
-          <small>采购</small>
-          <dl>
-            <div><dt>供应商</dt><dd>{num.format(procurementCard.entities || 0)} 个</dd></div>
-            <div><dt>记录</dt><dd>{num.format(procurementCard.rows || 0)} 条</dd></div>
-          </dl>
-        </article>
-        <article className="metric-panel processing" style={{borderLeftColor:'#9C27B0'}}>
-          <span>代加工</span>
-          <strong>{num.format(processingCard.tons || 0)} 吨</strong>
-          <small>外部加工</small>
-          <dl>
-            <div><dt>客户</dt><dd>{num.format(processingCard.entities || 0)} 个</dd></div>
-            <div><dt>记录</dt><dd>{num.format(processingCard.rows || 0)} 条</dd></div>
-          </dl>
-        </article>
+      <section className="summary-grid wholesale-transport-grid">
+        {operationCards.map(item => <OperationCard key={item.key} item={item} values={item.values} />)}
+      </section>
+
+      <section className="wholesale-summary-kpi-grid">
+        {summaryCards.map(item => <SummaryCard key={item.key} item={item} />)}
       </section>
 
       <section className="content-grid">

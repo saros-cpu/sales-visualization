@@ -227,28 +227,12 @@ main {
   box-shadow: 0 0 0 5px rgba(0, 229, 160, 0.16);
 }
 
-.data-assistant-head small {
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0.86;
-}
-
 .data-assistant-body {
   padding: 14px;
   display: grid;
   gap: 10px;
   background: linear-gradient(180deg, #fff, #f8fbfd);
   color: #243b53;
-}
-
-.data-assistant-hint {
-  border: 1px solid #d9e8f2;
-  border-radius: 10px;
-  background: #f5f9fc;
-  color: #526d82;
-  padding: 9px 10px;
-  font-size: 12px;
-  line-height: 1.55;
 }
 
 .data-assistant-body textarea {
@@ -349,26 +333,6 @@ main {
 
 .data-assistant-clarification-options button:hover {
   background: #e8f4fb;
-}
-
-.data-assistant-plan-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 6px 0 10px;
-}
-
-.data-assistant-plan-meta span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  border: 1px solid #c7ddeb;
-  background: #f4f9fd;
-  color: #1a3a5c;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .data-assistant-table {

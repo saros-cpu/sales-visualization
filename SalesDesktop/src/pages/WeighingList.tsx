@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { batchReviewWeighing, getWeighingList, WeighingItem } from '@/api/weighing';
 import { downloadWholesaleDetails } from '@/api/export';
 import { useAuth } from '@/contexts/AuthContext';
+import BilingualName from '@/components/common/BilingualName';
 
 const { RangePicker } = DatePicker;
 
@@ -120,17 +121,9 @@ export default function WeighingList() {
   const twoLineText = (value?: string | number | null) => (
     <span className="weighing-list-two-line">{value === null || value === undefined || value === '' ? '--' : value}</span>
   );
-  const standardText = (raw?: string | null, standard?: string | null) => {
-    const rawText = String(raw || '').trim();
-    const standardTextValue = String(standard || '').trim();
-    if (!standardTextValue || standardTextValue === rawText) return twoLineText(rawText);
-    return (
-      <span className="weighing-list-two-line">
-        <span>{standardTextValue}</span>
-        <span className="muted" style={{ fontSize: 12 }}>{rawText}</span>
-      </span>
-    );
-  };
+  const standardText = (raw?: string | null, standard?: string | null) => (
+    <BilingualName value={standard} raw={raw} />
+  );
   const sourceLabel = (value?: string) => {
     const raw = String(value || 'unknown').trim();
     const normalized = sourceAliases[raw.toLowerCase()] || raw;
@@ -141,17 +134,17 @@ export default function WeighingList() {
   );
 
   const columns = [
-    { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: '9%', responsive: ['lg' as const], render: twoLineText },
-    { title: t('weighing.businessDate'), dataIndex: 'businessDate', key: 'businessDate', width: '7%', responsive: ['md' as const] },
-    { title: t('weighing.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: '6%', render: twoLineText },
-    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: '13%', render: (_: string, row: WeighingItem) => standardText(row.senderName, row.standardSenderName || row.displaySenderName) },
-    { title: t('weighing.receiverName'), dataIndex: 'receiverName', key: 'receiverName', width: '14%', render: (_: string, row: WeighingItem) => standardText(row.receiverName, row.standardReceiverName || row.standardEntityName || row.displayReceiverName) },
-    { title: t('weighing.rawProductName'), dataIndex: 'rawProductName', key: 'rawProductName', width: '9%', render: (_: string, row: WeighingItem) => standardText(row.rawProductName, row.standardProductName || row.displayProductName) },
-    { title: t('weighing.grossWeight'), dataIndex: 'grossWeight', key: 'grossWeight', width: '5%', responsive: ['xl' as const], render: weightText },
-    { title: t('weighing.tareWeight'), dataIndex: 'tareWeight', key: 'tareWeight', width: '5%', responsive: ['xl' as const], render: weightText },
-    { title: t('weighing.netWeight'), dataIndex: 'netWeight', key: 'netWeight', width: '6%', render: weightText },
+    { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: 124, responsive: ['lg' as const], render: twoLineText },
+    { title: t('weighing.businessDate'), dataIndex: 'businessDate', key: 'businessDate', width: 104, responsive: ['md' as const] },
+    { title: t('weighing.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 108, render: twoLineText },
+    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: 220, render: (_: string, row: WeighingItem) => standardText(row.senderName, row.standardSenderName || row.displaySenderName) },
+    { title: t('weighing.receiverName'), dataIndex: 'receiverName', key: 'receiverName', width: 240, render: (_: string, row: WeighingItem) => standardText(row.receiverName, row.standardReceiverName || row.standardEntityName || row.displayReceiverName) },
+    { title: t('weighing.rawProductName'), dataIndex: 'rawProductName', key: 'rawProductName', width: 170, render: (_: string, row: WeighingItem) => standardText(row.rawProductName, row.standardProductName || row.displayProductName) },
+    { title: t('weighing.grossWeight'), dataIndex: 'grossWeight', key: 'grossWeight', width: 80, responsive: ['xl' as const], render: weightText },
+    { title: t('weighing.tareWeight'), dataIndex: 'tareWeight', key: 'tareWeight', width: 80, responsive: ['xl' as const], render: weightText },
+    { title: t('weighing.netWeight'), dataIndex: 'netWeight', key: 'netWeight', width: 92, render: weightText },
     {
-      title: t('weighing.classification'), dataIndex: 'classification', key: 'classification', width: '6%',
+      title: t('weighing.classification'), dataIndex: 'classification', key: 'classification', width: 104,
       render: (v: string) => {
         const normalized = normalizeClassification(v);
         const meta = classificationMeta[normalized];
@@ -164,14 +157,14 @@ export default function WeighingList() {
       title: t('common.status'),
       dataIndex: 'status',
       key: 'status',
-      width: '6%',
+      width: 96,
       render: (value: string) => {
         const meta = reviewStatusMeta[value] || reviewStatusMeta.pending;
         return <Tag color={meta.color}>{t(meta.labelKey)}</Tag>;
       },
     },
-    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', width: '8%', responsive: ['lg' as const], render: twoLineText },
-    { title: t('common.source'), dataIndex: 'source', key: 'source', width: '7%', responsive: ['lg' as const], render: sourceLabel },
+    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', width: 150, responsive: ['lg' as const], render: twoLineText },
+    { title: t('common.source'), dataIndex: 'source', key: 'source', width: 100, responsive: ['lg' as const], render: sourceLabel },
   ];
 
   return (
@@ -234,7 +227,6 @@ export default function WeighingList() {
             } : undefined}
             loading={loading}
             pagination={{ current: page, total, pageSize: 50, onChange: setPage, showTotal: (tot) => t('common.total', { count: tot }) }}
-            tableLayout="fixed"
             size="small"
           />
         </div>

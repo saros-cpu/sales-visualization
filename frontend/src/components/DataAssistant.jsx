@@ -1,4 +1,15 @@
 import { useRef, useState } from 'react';
+import { ApiPaths } from '@shared/api-contracts';
+import {
+  assistantCellSpan,
+  assistantCellText,
+  buildAssistantConversationContext,
+  buildAssistantPageContext,
+  createAssistantSessionId,
+  isAssistantTotalRow,
+  isClearAssistantCommand,
+  shouldSkipAssistantCell,
+} from '@shared/assistant-ui';
 import { post } from '../api/client';
 
 const SUGGESTIONS = [
@@ -17,77 +28,22 @@ const SUGGESTIONS = [
   { label: '密度', question: '当前密度' },
 ];
 
-function isTotalRow(row) {
-  return /合计|平均/.test(String((row || [])[0] ?? ''));
-}
-
-function createAssistantSessionId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `web-ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function isClearAssistantCommand(value) {
-  return /^(清空|清除|清屏|重置|删除)(问答|对话|聊天|记录|上下文)?$|^(clear|reset|delete)\s+(chat|conversation|history|context)$|^(очисти|сбрось|удали)\s+(чат|диалог|историю|контекст)$/i.test(String(value || '').trim());
-}
-
-function compactAssistantPlan(plan) {
-  if (!plan || typeof plan !== 'object') return undefined;
-  return {
-    domain: plan.domain,
-    intent: plan.intent,
-    route: plan.route,
-    metric: plan.metric,
-    dimensions: plan.dimensions,
-    entities: plan.entities,
-    period: plan.period,
-    tool: plan.tool,
-    businessTerms: plan.businessTerms,
-    comparison: plan.comparison,
-    executionHints: plan.executionHints,
-    assumptions: plan.assumptions,
-    selfCheck: plan.selfCheck,
-    subPlans: Array.isArray(plan.subPlans) ? plan.subPlans.slice(0, 5).map(compactAssistantPlan).filter(Boolean) : undefined,
-    needsClarification: plan.needsClarification,
-    clarification: plan.clarification,
-    clarificationResolved: plan.clarificationResolved,
-    explicit: plan.explicit,
-    visual: plan.visual,
-    contextUsed: plan.contextUsed,
-  };
-}
-
-function buildPageContext() {
-  const params = Object.fromEntries(new URLSearchParams(window.location.search).entries());
-  const segments = window.location.pathname.split('/').filter(Boolean);
-  return {
-    path: window.location.pathname,
-    search: window.location.search,
-    hash: window.location.hash,
-    module: segments[0] || '',
-    page: segments[1] || (segments[0] || 'home'),
-    title: document.title,
-    searchParams: params,
-  };
-}
-
 function buildConversationContext(sessionId, previousQuestion, previousAnswer) {
-  const previousPlan = compactAssistantPlan(previousAnswer?.assistantPlan);
-  return {
+  return buildAssistantConversationContext({
     sessionId,
-    pageContext: buildPageContext(),
-    lastAssistantPlan: previousPlan,
-    recentMessages: [
-      previousQuestion ? { role: 'user', content: previousQuestion.slice(0, 500) } : null,
+    pageContext: buildAssistantPageContext(),
+    messages: [
+      previousQuestion ? { role: 'user', content: previousQuestion } : null,
       previousAnswer?.answer ? {
         role: 'assistant',
-        content: String(previousAnswer.answer).slice(0, 500),
+        content: String(previousAnswer.answer),
         periodLabel: previousAnswer.periodLabel,
-        assistantPlan: previousPlan,
+        assistantPlan: previousAnswer.assistantPlan,
+        tables: previousAnswer.tables,
+        charts: previousAnswer.charts,
       } : null,
     ].filter(Boolean),
-  };
+  });
 }
 
 function TableResult({ table }) {
@@ -104,9 +60,17 @@ function TableResult({ table }) {
         </thead>
         <tbody>
           {(table.rows || []).map((row, ri) => (
-            <tr key={ri} className={isTotalRow(row) ? 'data-assistant-total-row' : ''}>
+            <tr key={ri} className={isAssistantTotalRow(row) ? 'data-assistant-total-row' : ''}>
               {row.map((cell, ci) => (
-                <td key={ci}>{cell}</td>
+                shouldSkipAssistantCell(cell) ? null : (
+                  <td
+                    key={ci}
+                    rowSpan={assistantCellSpan(cell, 'rowSpan')}
+                    colSpan={assistantCellSpan(cell, 'colSpan')}
+                  >
+                    {assistantCellText(cell)}
+                  </td>
+                )
               ))}
             </tr>
           ))}
@@ -116,52 +80,15 @@ function TableResult({ table }) {
   );
 }
 
-function PlanMeta({ plan }) {
-  if (!plan) return null;
-  return (
-    <div className="data-assistant-plan-meta">
-      {plan.period?.label && <span>{plan.period.label}</span>}
-      {plan.metric && <span>{plan.metric}</span>}
-      {plan.tool?.description && <span>{plan.tool.description}</span>}
-      {plan.comparison?.period?.label && <span>对比：{plan.comparison.period.label}</span>}
-      {Array.isArray(plan.subPlans) && plan.subPlans.length > 0 && <span>拆解 {plan.subPlans.length} 个子问题</span>}
-      {plan.selfCheck?.status && <span>{plan.selfCheck.status === 'fail' ? '自检未通过' : plan.selfCheck.status === 'warn' ? '自检有假设' : '自检通过'}</span>}
-    </div>
-  );
-}
-
-function ResponseMeta({ answer }) {
-  const quality = answer?.quality || {};
-  const diagnostics = answer?.diagnostics || {};
-  const freshness = answer?.freshness || {};
-  const refs = Array.isArray(answer?.knowledgeReferences) ? answer.knowledgeReferences : [];
-  const warnings = Array.isArray(diagnostics.warnings) ? diagnostics.warnings.slice(0, 2) : [];
-  const insights = Array.isArray(diagnostics.insights) ? diagnostics.insights.slice(0, 2) : [];
-  const nextChecks = Array.isArray(diagnostics.nextChecks) ? diagnostics.nextChecks.slice(0, 3) : [];
-  const freshnessWarnings = Array.isArray(freshness.warnings) ? freshness.warnings.slice(0, 2) : [];
-  if (!quality.status && warnings.length === 0 && insights.length === 0 && nextChecks.length === 0 && !freshness.status && refs.length === 0) return null;
-  return (
-    <div className="data-assistant-plan-meta">
-      {quality.status && <span>质量 {quality.score ?? '-'} / {quality.status}</span>}
-      {freshness.status && <span>数据 {freshness.status}</span>}
-      {warnings.map(item => <span key={item}>{item}</span>)}
-      {insights.map(item => <span key={item}>{item}</span>)}
-      {nextChecks.map(item => <span key={item}>排查：{item}</span>)}
-      {freshnessWarnings.map(item => <span key={item}>{item}</span>)}
-      {refs.map(ref => <span key={ref.id || ref.title}>{ref.id} {ref.title}</span>)}
-    </div>
-  );
-}
-
 async function queryAssistant(question, conversationContext) {
   const body = {
     question,
     language: 'zh',
-    useLlm: true,
+    useLlm: false,
     sessionId: conversationContext?.sessionId,
     conversationContext,
   };
-  return post('/api/v2/assistant/query', body);
+  return post(ApiPaths.assistant.query, body);
 }
 
 export default function DataAssistant() {
@@ -176,6 +103,12 @@ export default function DataAssistant() {
   const clarificationOptions = Array.isArray(answer?.clarification?.options) ? answer.clarification.options : [];
   const showClarificationOptions = !loading && !error && clarificationOptions.length > 0;
   const hasTableAnswer = Array.isArray(answer?.tables) && answer.tables.length > 0;
+
+  function handleButtonClick(event, action) {
+    event.preventDefault();
+    event.stopPropagation();
+    action();
+  }
 
   async function submitQuestion(question) {
     if (!question?.trim()) return;
@@ -216,40 +149,41 @@ export default function DataAssistant() {
 
   return (
     <div id="dataAssistantWidget">
-      <button className="data-assistant-fab" onClick={() => setOpen(!open)}>
+      <button type="button" className="data-assistant-fab" onClick={(e) => handleButtonClick(e, () => setOpen(!open))}>
         经营助手
       </button>
       <section className={`data-assistant-panel ${open ? 'open' : ''}`}>
         <div className="data-assistant-head">
           <span>经营数据助手</span>
-          <small>快照优先 · 表格展示</small>
         </div>
         <div className="data-assistant-body">
-          <div className="data-assistant-hint">
-            优先读取快照数据。支持零售/批发/外运/汇率/密度/合同/客户/市场观察/站点状态/趋势/KPI/同比环比/油品占比。
-          </div>
           <textarea
             placeholder="例如：5月零售销量、本月每日趋势、同比环比、停业站点、油品占比、年度KPI"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                e.preventDefault();
                 submitQuestion(input);
               }
             }}
           />
           <div className="data-assistant-suggestions">
             {SUGGESTIONS.map((s) => (
-              <button key={s.label} onClick={() => { setInput(s.question); submitQuestion(s.question); }}>
+              <button
+                type="button"
+                key={s.label}
+                onClick={(e) => handleButtonClick(e, () => { setInput(s.question); submitQuestion(s.question); })}
+              >
                 {s.label}
               </button>
             ))}
           </div>
           <div className="data-assistant-actions">
-            <button className="data-assistant-close" onClick={() => setOpen(false)}>
+            <button type="button" className="data-assistant-close" onClick={(e) => handleButtonClick(e, () => setOpen(false))}>
               收起
             </button>
-            <button className="data-assistant-submit" onClick={() => submitQuestion(input)}>
+            <button type="button" className="data-assistant-submit" onClick={(e) => handleButtonClick(e, () => submitQuestion(input))}>
               查询
             </button>
           </div>
@@ -260,24 +194,22 @@ export default function DataAssistant() {
               <span style={{ color: '#ef5350' }}>{error}</span>
             ) : hasTableAnswer ? (
               <>
-			                  {(answer.tables || []).map((table, i) => <TableResult key={i} table={table} />)}
+                {(answer.tables || []).map((table, i) => <TableResult key={i} table={table} />)}
               </>
             ) : (
-	              <>
-	                <PlanMeta plan={answer?.assistantPlan} />
-	                <ResponseMeta answer={answer} />
-	                {answer?.answer || '选择快捷问题或直接输入经营问题，结果会优先以表格显示。'}
-	              </>
+              <>
+                {answer?.answer || '选择快捷问题或直接输入经营问题，结果会优先以表格显示。'}
+              </>
             )}
             {showClarificationOptions && (
               <div className="data-assistant-clarification-options">
                 {clarificationOptions.map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => { setInput(option); submitQuestion(option); }}
-                    disabled={loading}
-                  >
+	                  <button
+	                    key={option}
+	                    type="button"
+	                    onClick={(e) => handleButtonClick(e, () => { setInput(option); submitQuestion(option); })}
+	                    disabled={loading}
+	                  >
                     {option}
                   </button>
                 ))}

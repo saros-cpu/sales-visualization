@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getMonths, getMonthlyData, generateMonthlyReport } from '../../api/retail';
 import { download } from '../../api/client';
 import { useChart } from '../../hooks/useChart';
+import RetailKpiCompare from '../../components/retail/RetailKpiCompare';
 import {
   REGION_COLORS,
   amountCnyOf,
@@ -10,7 +11,9 @@ import {
   formatLitersKpiParts,
   formatSomKpiParts,
   formatTonsKpi,
+  normalizeRetailMonthOptions,
   numberFormat,
+  preferredRetailMonth,
   volumeFormat,
   sortRankingRows,
 } from '../../utils/retail-helpers';
@@ -51,10 +54,10 @@ export default function MonthlyPage() {
     const yesterday = new Date(Date.now() - 86400000);
     const currentMonth = yesterday.toISOString().slice(0, 7);
     getMonths().then(list => {
-      setMonths(list);
-      if (list.length > 0) {
-        const sel = list.some(m => m.month === currentMonth) ? currentMonth : list[0].month;
-        setYm(sel);
+      const options = normalizeRetailMonthOptions(list);
+      setMonths(options);
+      if (options.length > 0) {
+        setYm(preferredRetailMonth(options, currentMonth));
       }
     }).catch(() => {});
   }, []);
@@ -234,13 +237,6 @@ export default function MonthlyPage() {
   const mom = cmp.mom || {};
   const yoy = cmp.yoy || {};
 
-  const fmtChange = (val, label) => {
-    if (val == null) return '--';
-    const arrow = val >= 0 ? '↑' : '↓';
-    const color = val >= 0 ? '#00e5a0' : '#ef5350';
-    return <span style={{ color }}>{arrow} {Math.abs(val).toFixed(2)}%</span>;
-  };
-
   const yearLabel = ym ? `${ym.split('-')[0]}年${parseInt(ym.split('-')[1])}月` : '';
 
   if (!data && loading) {
@@ -296,24 +292,29 @@ export default function MonthlyPage() {
     <main className="retail-monthly-content">
       {/* KPI Row */}
       <div className="retail-kpi-row">
-        <div className="retail-panel retail-kpi-card c1">
-          <div className="kpi-label">💰 月销售总金额</div>
-          <div className="kpi-value">{totalSalesKpi.value}</div>
-          <div className="kpi-unit">{totalSalesKpi.unit}</div>
-          <div className="kpi-sub">
-            {totalSalesCny != null ? <>人民币 {formatCnyKpi(totalSalesCny)} | </> : ''}
-            {fmtChange(mom.sales, '环比')}
-            {yoy.sales != null && <> | {fmtChange(yoy.sales, '同比')}</>}
+        <div className="retail-panel retail-kpi-card kpi-card-with-compare c1">
+          <div className="retail-kpi-main">
+            <div className="kpi-label">💰 月销售总金额</div>
+            <div className="kpi-value">{totalSalesKpi.value}</div>
+            <div className="kpi-unit">{totalSalesKpi.unit}</div>
+            <div className="kpi-sub">{totalSalesCny != null ? <>人民币 {formatCnyKpi(totalSalesCny)}</> : ''}</div>
           </div>
+          <RetailKpiCompare items={[
+            { label: '环比', value: mom.sales ?? mom.amount },
+            { label: '同比', value: yoy.sales ?? yoy.amount },
+          ]} />
         </div>
-        <div className="retail-panel retail-kpi-card c2">
-          <div className="kpi-label">⛽ 月销售总量</div>
-          <div className="kpi-value">{totalLitersKpi.value}</div>
-          <div className="kpi-unit">{totalLitersKpi.unit}</div>
-          <div className="kpi-sub">
-            {totalTons > 0 ? <>吨位 {formatTonsKpi(totalTons)} | </> : ''}
-            {fmtChange(mom.volume, '环比')}
+        <div className="retail-panel retail-kpi-card kpi-card-with-compare c2">
+          <div className="retail-kpi-main">
+            <div className="kpi-label">⛽ 月销售总量</div>
+            <div className="kpi-value">{totalLitersKpi.value}</div>
+            <div className="kpi-unit">{totalLitersKpi.unit}</div>
+            <div className="kpi-sub">{totalTons > 0 ? <>吨位 {formatTonsKpi(totalTons)}</> : ''}</div>
           </div>
+          <RetailKpiCompare items={[
+            { label: '环比', value: mom.volume },
+            { label: '同比', value: yoy.volume },
+          ]} />
         </div>
         <div className="retail-panel retail-kpi-card c3">
           <div className="kpi-label">📅 日均销量</div>

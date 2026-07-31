@@ -1,4 +1,13 @@
 (() => {
+  const WALLPAPER_API = Object.freeze({
+    map: '/api/wallpaper/map',
+    settings: '/api/wallpaper/settings',
+    settingsPreview: '/api/wallpaper/settings/preview',
+    settingsPreviewCommit: '/api/wallpaper/settings/preview/commit',
+    editMode: '/api/wallpaper/edit-mode',
+    refresh: '/api/wallpaper/refresh',
+  });
+
   const i18n = {
     zh: {
       title: '壁纸设置',
@@ -202,7 +211,7 @@
   async function loadRuntimeDataStatus() {
     setText(runtimeData, text('dataChecking'));
     try {
-      const response = await fetch(`/api/wallpaper/map?t=${Date.now()}`, { cache: 'no-store' });
+      const response = await fetch(`${WALLPAPER_API.map}?t=${Date.now()}`, { cache: 'no-store' });
       if (!response.ok) throw new Error(await response.text());
       const body = await response.json();
       const payload = body && body.data ? body.data : body;
@@ -312,7 +321,7 @@
         if (typeof data[key] === 'number') preview[key] = data[key];
       });
       try {
-        await postJson('/api/wallpaper/settings/preview', preview);
+        await postJson(WALLPAPER_API.settingsPreview, preview);
       } catch {
         setStatus('failed', 'error');
       }
@@ -320,7 +329,7 @@
   }
 
   async function setServerEditMode(enabled, clearPreview = false) {
-    const result = await postJson('/api/wallpaper/edit-mode', { enabled, clearPreview });
+    const result = await postJson(WALLPAPER_API.editMode, { enabled, clearPreview });
     setEditState(Boolean(result.editMode));
     return result;
   }
@@ -328,7 +337,7 @@
   async function loadSettings(options = {}) {
     const { quiet = false, previewOnly = false } = options;
     try {
-      const response = await fetch('/api/wallpaper/settings', { cache: 'no-store' });
+      const response = await fetch(WALLPAPER_API.settings, { cache: 'no-store' });
       if (!response.ok) throw new Error(await response.text());
       const settings = await response.json();
       applySettings(settings, previewOnly);
@@ -359,7 +368,7 @@
     setBusy(true);
     try {
       await loadSettings({ quiet: true, previewOnly: true });
-      const result = await postJson('/api/wallpaper/settings/preview/commit', {});
+      const result = await postJson(WALLPAPER_API.settingsPreviewCommit, {});
       await loadSettings({ quiet: true });
       setStatus(result.saved ? 'dragSaved' : 'dragNoChange', 'ok');
     } catch {
@@ -385,7 +394,7 @@
   saveBtn.addEventListener('click', async () => {
     setBusy(true);
     try {
-      await postJson('/api/wallpaper/settings', collect());
+      await postJson(WALLPAPER_API.settings, collect());
       setStatus('saved', 'ok');
     } catch {
       setStatus('failed', 'error');
@@ -397,7 +406,7 @@
   refreshBtn.addEventListener('click', async () => {
     setBusy(true);
     try {
-      await postJson('/api/wallpaper/refresh', {});
+      await postJson(WALLPAPER_API.refresh, {});
       await loadRuntimeDataStatus();
       setStatus('refreshed', 'ok');
     } catch {

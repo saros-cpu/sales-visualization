@@ -21,9 +21,10 @@ from typing import Any
 import pymysql
 
 from business_time import shift_business_date_expr
-from constants import SHOP_KEY_MAP
+from constants import REPORT_HIDDEN_STATION_KEYS, REPORT_HIDDEN_STATION_NOTE, SHOP_KEY_MAP
 from export_excel import (
     EXPORT_DIR,
+    Font,
     MONTH_NAMES_CN,
     _apply_style,
     _build_sheet_data,
@@ -1106,6 +1107,21 @@ def _excel_sum(cells):
     return "+".join(cells)
 
 
+def _hide_profit_station_rows(ws, shop_key, start_row, end_row):
+    if int(shop_key) not in REPORT_HIDDEN_STATION_KEYS:
+        return
+    for row_idx in range(int(start_row), int(end_row) + 1):
+        ws.row_dimensions[row_idx].hidden = True
+
+
+def _append_profit_hidden_station_note(ws, after_row):
+    note_row = int(after_row) + 1
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=len(HEADERS))
+    _apply_style(ws, note_row, 1, REPORT_HIDDEN_STATION_NOTE, size=10, h_align="left", wrap=True)
+    ws.row_dimensions[note_row].height = 24
+    return note_row
+
+
 def _write_profit_sheet(ws, context):
     month = int(context["month"])
     stations = context["stations"]
@@ -1188,6 +1204,7 @@ def _write_profit_sheet(ws, context):
         for col_letter in MERGE_COLS:
             if end > start:
                 ws.merge_cells(f"{col_letter}{start}:{col_letter}{end}")
+        _hide_profit_station_rows(ws, shop_key, start, end)
         current_row = end + 1
 
     total_row = current_row
@@ -1203,6 +1220,7 @@ def _write_profit_sheet(ws, context):
     ws.row_dimensions[net_row].height = 36
     _center_used_cells(ws, net_row, len(HEADERS))
     _auto_fit_columns(ws, COL_WIDTHS, min_row=1, max_row=net_row, max_width=34.0)
+    _append_profit_hidden_station_note(ws, net_row)
 
     return total_row
 
@@ -1309,6 +1327,7 @@ def _write_profit_year_sheet(ws, year, month_summaries, include_through_month=No
 def _build_profit_month_workbook(conn, year_month):
     context = _build_profit_month_context(conn, year_month)
     wb = openpyxl.Workbook()
+    wb._fonts[0] = Font(name='Times New Roman', size=11)
     total_row = _write_profit_sheet(wb.active, context)
     context["totalRow"] = total_row
     return wb, context
@@ -1347,6 +1366,7 @@ def generate_profit_year_excel(conn, year, force_refresh=False):
         generated_months.append(month_filename)
 
     wb = openpyxl.Workbook()
+    wb._fonts[0] = Font(name='Times New Roman', size=11)
     _write_profit_year_sheet(wb.active, year, month_summaries, include_through_month=include_through_month)
 
     filename, filepath = profit_year_workbook_path(year)

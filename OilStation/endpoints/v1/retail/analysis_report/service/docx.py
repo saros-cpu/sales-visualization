@@ -20,6 +20,7 @@ from endpoints.v1.retail.analysis_report.service.common import (
     _empty_report_extras, _sales_db_config, _exchange_rates_for_period,
     EXPORT_DIR, PROJECT_ROOT, REPORT_EXTRAS_DIR,
 )
+from constants import REPORT_HIDDEN_STATION_NOTE
 from export_excel import RESOURCE_DENSITY
 
 
@@ -63,7 +64,7 @@ def _docx_document_xml(data):
         f"统计期间：{data['queryStart']} 至 {data['queryEndExclusive']}（不含结束日）",
         f"销售金额：{_fmt(summary['totalSales'], 2)} 索姆",
         f"销量：{_fmt(summary['totalLiters'], 2)} 升 / {_fmt(summary['totalTons'], 3)} 吨",
-        f"活跃站点：{len(active_stations)} / {len(stations)} 个",
+        f"有销售在营站点：{len(active_stations)} / {len(stations)} 个",
         f"经营判断：最高销售站点为 {_top_name(active_stations)}，最高销售区域为 {_top_name(regions)}，主力油品为 {_top_name(resources, 'volume')}。本报告按零售报表口径生成，只统计已结束班组数据；柴油除 -35 柴油外统一归集为 Д/Т。",
         "油品结构：",
     ]
@@ -72,9 +73,10 @@ def _docx_document_xml(data):
     lines.append("区域表现：")
     for item in regions:
         lines.append(f"{item.get('region')}: {_fmt(item.get('volume'), 2)} 升，{_fmt(item.get('amount'), 2)} 索姆")
-    lines.append("站点排行（完整站点）：")
+    lines.append("站点排行（全部在营站点）：")
     for index, item in enumerate(stations, start=1):
         lines.append(f"{index}. {item.get('name')}（{item.get('short')}）: {_fmt(item.get('volume'), 2)} 升，{_fmt(item.get('amount'), 2)} 索姆")
+    lines.append(REPORT_HIDDEN_STATION_NOTE)
 
     body = "".join(
         f"<w:p><w:r><w:t>{escape(line)}</w:t></w:r></w:p>"
@@ -186,7 +188,7 @@ def _docx_document_xml_v2(data):
     else:
         overview_rows.extend([
             ["销售金额（索姆）", _fmt(summary.get("totalSales"), 2), "期末库存（升）", _fmt(end_inventory, 2)],
-            ["期末库存（吨）", _fmt(end_inventory_tons, 3), "活跃站点", f"{len(active_stations)} / {len(stations)}"],
+            ["期末库存（吨）", _fmt(end_inventory_tons, 3), "有销售在营站点", f"{len(active_stations)} / {len(stations)}"],
         ])
     overview_rows.append(["现金占比", _percent(cash_sales, total_sales), "刷卡占比", _percent(card_sales, total_sales)])
 
@@ -284,7 +286,7 @@ def _docx_document_xml_v2(data):
     overview_heading = "五、经营概览" if data["kind"] == "yearly" else "三、经营概览"
     resource_heading = "六、油品结构明细" if data["kind"] == "yearly" else "四、油品结构明细"
     region_heading = "七、区域表现明细" if data["kind"] == "yearly" else "五、区域表现明细"
-    station_heading = "八、加油站销售数据明细（按销售量排序）" if data["kind"] == "yearly" else "六、加油站销售数据明细（按销售量排序）"
+    station_heading = "八、加油站销售数据明细（全部在营站点）" if data["kind"] == "yearly" else "六、加油站销售数据明细（全部在营站点）"
     conclusion_heading = "九、核心结论" if data["kind"] == "yearly" else "七、核心结论"
     exchange_heading = "十、汇率信息" if data["kind"] == "yearly" else "八、汇率信息"
     body_parts = [
@@ -356,7 +358,7 @@ def _docx_document_xml_v2(data):
                 _fmt(item.get("endInventory"), 2) if item.get("endInventory") else "--",
             ] for index, item in enumerate(sorted(stations, key=lambda row: row.get("volume") or 0, reverse=True), start=1)] + ([[
                 "合计",
-                "全部加油站",
+                "全部在营站点",
                 "全部区域",
                 _fmt(_sum_key(stations, "volume"), 2),
                 _fmt(_sum_key(stations, "contractVolume"), 2),
@@ -372,12 +374,13 @@ def _docx_document_xml_v2(data):
             ["经营亮点", "关注风险", "综合评价"],
             [[
                 f"销售最高站点为 {_top_name(active_stations)}；主力油品为 {_top_name(resources, 'volume')}。",
-                "低销量或无销量站点需结合后台站点状态、库存和班组完成情况复核。",
+                "低销量或无销量在营站点需结合后台站点状态、库存和班组完成情况复核。",
                 "本报告按报表同一口径生成，适合作为月度/年度经营分析留档。",
             ]],
         ),
         heading(exchange_heading),
         para(exchange_text),
+        para(REPORT_HIDDEN_STATION_NOTE, color="667085", size=18, spacing=80),
     ]
     body = "".join(body_parts)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

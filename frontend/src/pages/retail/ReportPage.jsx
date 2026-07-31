@@ -1,9 +1,15 @@
 // src/pages/retail/ReportPage.jsx — 数据报表
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getMonths, getStations, exportMonthlyExcel } from '../../api/retail';
-import { download } from '../../api/client';
-import { REGION_COLORS, REGION_ORDER, numberFormat, volumeFormat } from '../../utils/retail-helpers';
+import { getMonths, getStations, downloadMonthlyRetailReport } from '../../api/retail';
+import {
+  REGION_COLORS,
+  REGION_ORDER,
+  normalizeRetailMonthOptions,
+  numberFormat,
+  preferredRetailMonth,
+  volumeFormat,
+} from '../../utils/retail-helpers';
 
 function fixed2(n) { return Number(n || 0).toFixed(2); }
 
@@ -24,7 +30,8 @@ export default function ReportPage() {
         const months = await getMonths();
         const yesterday = new Date(Date.now() - 86400000);
         const prefer = yesterday.toISOString().slice(0, 7);
-        const cm = months.some(m => m.month === prefer) ? prefer : (months[0]?.month || '2026-04');
+        const monthOptions = normalizeRetailMonthOptions(months);
+        const cm = preferredRetailMonth(monthOptions, prefer, '2026-04');
         setCurrentMonth(cm);
         const res = await getStations(cm);
         setAllStations(res.stations || []);
@@ -52,9 +59,7 @@ export default function ReportPage() {
   const handleExportExcel = async () => {
     setExporting(true);
     try {
-      const res = await exportMonthlyExcel(currentMonth);
-      if (res.status !== 'ok') throw new Error(res.error || '生成失败');
-      await download(`/api/export/monthly/${currentMonth}/download`, res.file || '');
+      await downloadMonthlyRetailReport(currentMonth);
     } catch (e) { console.error('Excel导出失败', e); alert('Excel导出失败: ' + e.message); }
     setExporting(false);
   };

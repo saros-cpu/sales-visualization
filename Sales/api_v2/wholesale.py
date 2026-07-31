@@ -1378,67 +1378,68 @@ def update_wholesale_detail(detail_id):
             if not business_date or not raw_product or not raw_entity or weight_kg is None or not (float(weight_kg) > 0):
                 return jsonify({"code": 4222, "message": "日期、油品、客户/去向、重量必填", "data": None}), 422
 
-            product = lookup_product(load_product_lookup(cur), raw_product)
-            entity_lookup = load_entity_lookup(cur)
-            entity = lookup_entity(entity_lookup, raw_entity)
-            if should_reclassify:
-                classification = classify_wholesale_movement(
-                    cur,
-                    entity_lookup,
-                    raw_entity,
-                    sender_name=sender_name,
-                    current="unknown",
-                )
-            if classification == "processing" or requested_transport_mode not in VALID_TRANSPORT_MODES:
-                transport_mode = detail_transport_mode(classification, vehicle_no, weigh_serial_no, remark)
-            else:
-                transport_mode = requested_transport_mode
-            if classification in ("local_wholesale", "export_wholesale", "unknown"):
-                get_or_create_customer(cur, raw_entity, classification if classification != "unknown" else "unknown")
+            with conn.cursor() as tcur:
+                product = lookup_product(load_product_lookup(tcur), raw_product)
+                entity_lookup = load_entity_lookup(tcur)
+                entity = lookup_entity(entity_lookup, raw_entity)
+                if should_reclassify:
+                    classification = classify_wholesale_movement(
+                        tcur,
+                        entity_lookup,
+                        raw_entity,
+                        sender_name=sender_name,
+                        current="unknown",
+                    )
+                if classification == "processing" or requested_transport_mode not in VALID_TRANSPORT_MODES:
+                    transport_mode = detail_transport_mode(classification, vehicle_no, weigh_serial_no, remark)
+                else:
+                    transport_mode = requested_transport_mode
+                if classification in ("local_wholesale", "export_wholesale", "unknown"):
+                    get_or_create_customer(tcur, raw_entity, classification if classification != "unknown" else "unknown")
 
-            match_status = "matched" if classification in ("transfer", "processing", "procurement", "other") else "unmatched"
-            cur.execute(
-                """
-                UPDATE wholesale_detail_records
-                SET business_date = %s,
-                    raw_product_name = %s,
-                    product_id = %s,
-                    vehicle_no = %s,
-                    weigh_serial_no = %s,
-                    raw_entity_name = %s,
-                    sender_name = %s,
-                    entity_type = %s,
-                    entity_code = %s,
-                    standard_entity_name = %s,
-                    classification = %s,
-                    weight_kg = %s,
-                    remark = %s,
-                    contract_id = NULL,
-                    match_status = %s,
-                    transport_mode = %s
-                WHERE id = %s
-                  AND batch_id IS NOT NULL
-                """,
-                (
-                    business_date,
-                    raw_product,
-                    product["id"] if product else None,
-                    vehicle_no,
-                    weigh_serial_no,
-                    raw_entity,
-                    sender_name,
-                    entity["entity_type"] if entity else "unknown",
-                    entity["entity_code"] if entity else None,
-                    entity["standard_name"] if entity else None,
-                    classification,
-                    weight_kg,
-                    remark,
-                    match_status,
-                    transport_mode,
-                    detail_id,
-                ),
-            )
-            recalculation = recalculate_wholesale_batch(cur, current["batch_id"])
+                match_status = "matched" if classification in ("transfer", "processing", "procurement", "other") else "unmatched"
+                tcur.execute(
+                    """
+                    UPDATE wholesale_detail_records
+                    SET business_date = %s,
+                        raw_product_name = %s,
+                        product_id = %s,
+                        vehicle_no = %s,
+                        weigh_serial_no = %s,
+                        raw_entity_name = %s,
+                        sender_name = %s,
+                        entity_type = %s,
+                        entity_code = %s,
+                        standard_entity_name = %s,
+                        classification = %s,
+                        weight_kg = %s,
+                        remark = %s,
+                        contract_id = NULL,
+                        match_status = %s,
+                        transport_mode = %s
+                    WHERE id = %s
+                      AND batch_id IS NOT NULL
+                    """,
+                    (
+                        business_date,
+                        raw_product,
+                        product["id"] if product else None,
+                        vehicle_no,
+                        weigh_serial_no,
+                        raw_entity,
+                        sender_name,
+                        entity["entity_type"] if entity else "unknown",
+                        entity["entity_code"] if entity else None,
+                        entity["standard_name"] if entity else None,
+                        classification,
+                        weight_kg,
+                        remark,
+                        match_status,
+                        transport_mode,
+                        detail_id,
+                    ),
+                )
+                recalculation = recalculate_wholesale_batch(tcur, current["batch_id"])
         conn.commit()
         return jsonify({"code": 0, "message": "success", "data": {"id": detail_id, "recalculation": recalculation}})
     except Exception:

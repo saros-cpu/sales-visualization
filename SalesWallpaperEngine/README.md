@@ -96,7 +96,7 @@ The tray menu includes `设置...`, which opens a local WebView2 settings window
 
 ```powershell
 cd D:\SalesVisualization
-powershell -ExecutionPolicy Bypass -File .\SalesWallpaperEngine\build.ps1 -Version 0.2.3 -IncludeKeyPath .\SalesWallpaperEngine\publish\wallpaper-key.json
+powershell -ExecutionPolicy Bypass -File .\SalesWallpaperEngine\build.ps1 -Version 0.2.4 -IncludeKeyPath .\SalesWallpaperEngine\publish\wallpaper-key.json
 ```
 
 Output:
@@ -117,7 +117,7 @@ The zip is the self-update package used by the running engine. The setup exe is 
 For normal users, run:
 
 ```powershell
-.\SalesWallpaperEngine-Setup-0.2.3.exe
+.\SalesWallpaperEngine-Setup-0.2.4.exe
 ```
 
 For manual folder install, extract the zip, then run:
@@ -129,6 +129,12 @@ powershell -ExecutionPolicy Bypass -File .\install-user.ps1
 The script installs to `%LOCALAPPDATA%\SalesWallpaperEngine`, adds a Startup shortcut, starts the tray engine, and shows an install summary window with the program, config, key, and Startup shortcut paths.
 
 ## Releases
+
+### 0.2.4
+
+- **Map labels localization**: the wallpaper page now uses the shared `map-labels` module for depot type and station business-status labels; Chinese maps use 在营/停用/在建 for depot type and 在营/停业/装修 for station status, while Russian maps use Работает/Остановлен/Строится; station/depot marker names also follow the runtime language.
+- **Language auto-switch**: the wallpaper map markers, depot type, and status labels switch with `SALES_RUNTIME_CONFIG.wallpaper.language` (auto/zh/ru), matching the desktop client Kyrgyzstan map and keeping Web maps on Chinese labels.
+- **Independent release**: ships separately from the main SalesDesktop 4.2.0 client; the wallpaper update feed `latest.json` points to 0.2.4 and does not require a main client update.
 
 ### 0.2.3
 

@@ -184,6 +184,84 @@ Invoke-Check "Desktop updater package files" {
     Invoke-External "powershell" $auditArgs $RepoRoot
 }
 
+Invoke-Check "latest.yml js-yaml parse + unique sha512 integrity" {
+    $nodeMods = Join-Path $RepoRoot "SalesDesktop/node_modules"
+    $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+    if (-not $nodeExe) {
+        throw "node executable not found on PATH; cannot validate latest.yml with js-yaml"
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $nodeMods "js-yaml") -PathType Container)) {
+        throw "js-yaml module not found under $nodeMods"
+    }
+    $dlLatest = Join-Path $RepoRoot "SalesDesktop/download/latest.yml"
+    $rbLatest = Join-Path $RepoRoot "SalesDesktop/release_build/latest.yml"
+    $validator = Join-Path $env:TEMP "latest-yml-validate-$(Get-Random).js"
+    $js = @"
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const yaml = require('js-yaml');
+const files = process.argv.slice(2);
+let failures = [];
+for (const f of files) {
+  if (!fs.existsSync(f)) { failures.push('missing ' + f); continue; }
+  const raw = fs.readFileSync(f, 'utf8');
+  let doc;
+  try {
+    doc = yaml.load(raw);
+  } catch (e) {
+    failures.push(f + ': YAML parse failed -> ' + e.message);
+    continue;
+  }
+  const shaLines = (raw.match(/^[ \t]*sha512:/gm) || []).length;
+  if (shaLines !== 1) {
+    failures.push(f + ': expected exactly 1 sha512 key (duplicate key crashes the client parser), found ' + shaLines);
+    continue;
+  }
+  if (!doc || !Array.isArray(doc.files) || !doc.files[0] || !doc.files[0].sha512) {
+    failures.push(f + ': missing files[0].sha512');
+    continue;
+  }
+  if (typeof doc.files[0].size !== 'number') {
+    failures.push(f + ': missing numeric files[0].size');
+    continue;
+  }
+  const installer = path.join(path.dirname(f), doc.files[0].path || doc.path || '');
+  if (fs.existsSync(installer)) {
+    const data = fs.readFileSync(installer);
+    const calc = crypto.createHash('sha512').update(data).digest('base64');
+    if (calc !== doc.files[0].sha512) {
+      failures.push(f + ': sha512/base64 mismatch vs installer ' + path.basename(installer));
+    }
+    if (data.length !== doc.files[0].size) {
+      failures.push(f + ': size mismatch vs installer ' + path.basename(installer) + ' (file=' + data.length + ', latest=' + doc.files[0].size + ')');
+    }
+  }
+}
+if (failures.length) {
+  console.error(failures.join('\n'));
+  process.exit(1);
+}
+console.log('latest.yml validation OK (' + files.length + ' file(s))');
+"@
+    Set-Content -LiteralPath $validator -Value $js -Encoding utf8
+    $prevNodePath = $env:NODE_PATH
+    $env:NODE_PATH = $nodeMods
+    try {
+        & $nodeExe $validator $dlLatest $rbLatest
+        if ($LASTEXITCODE -ne 0) {
+            throw "latest.yml failed js-yaml parse / sha512 integrity check (see output above)"
+        }
+    } finally {
+        Remove-Item -LiteralPath $validator -Force -ErrorAction SilentlyContinue
+        if ($null -eq $prevNodePath) {
+            Remove-Item Env:NODE_PATH -ErrorAction SilentlyContinue
+        } else {
+            $env:NODE_PATH = $prevNodePath
+        }
+    }
+}
+
 Invoke-Check "Nginx download route shape" {
     $nginxConf = Join-Path $RepoRoot "nginx.conf"
     if (-not (Test-Path -LiteralPath $nginxConf -PathType Leaf)) {

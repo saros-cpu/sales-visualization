@@ -53,7 +53,7 @@ export default function ContractsPanel({ products, customerOptions, refresh }) {
     setEditStatus('正在保存合同并重算...');
     try {
       const payload = Object.fromEntries(new FormData(form).entries());
-      await fetch(`/api/admin/contracts/${editId}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error || '保存失败'); return d; });
+      await saveContract(editId, payload);
       setEditStatus('合同已保存，批发金额已重新计算');
       setEditId(null);
       await load(); refresh();

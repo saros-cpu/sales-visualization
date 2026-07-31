@@ -17,7 +17,7 @@ export function taskLabel(value) {
   return {
     exchange_rates: '自动补充汇率',
     market_watch: '自动补充市场观察',
-    retail_snapshots: '自动补充零售快照',
+    retail_snapshots: '自动补充零售/自用油/利润快照',
     retail_accounting_reports: '自动生成吉方日报',
     all: '全部任务',
   }[value] || value || '--';
@@ -37,7 +37,7 @@ export function healthSize(bytes) {
 export function summarizeTask(item) {
   if (item.taskName === 'exchange_rates') return `${item.added || 0} 条新增`;
   if (item.taskName === 'market_watch') return `${item.fetched || 0} 条抓取`;
-  if (item.taskName === 'retail_snapshots') return item.message || '快照已刷新';
+  if (item.taskName === 'retail_snapshots') return item.message || '零售/自用油/利润快照已刷新';
   return item.message || '--';
 }
 

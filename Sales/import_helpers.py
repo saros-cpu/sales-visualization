@@ -422,10 +422,20 @@ def load_entity_lookup(cur):
         FROM entity_aliases
         """
     )
-    return {
-        row[3]: {"entity_type": row[0], "entity_code": row[1], "standard_name": row[2]}
-        for row in cur.fetchall()
-    }
+    lookup = {}
+    for row in cur.fetchall():
+        norm = (row[3] or "").strip()
+        if not norm:
+            # 跳过空别名：entity_aliases 中存在 normalized_alias='' 的脏数据
+            # (映射到 X-43)，空串不应作为合法别名参与匹配。
+            continue
+        entry = {"entity_type": row[0], "entity_code": row[1], "standard_name": row[2]}
+        existing = lookup.get(norm)
+        # 同名别名冲突时，优先采用更完整的 standard_name
+        # (如 Example公司完整双语名 胜过 own_depot 的短名'Example')。
+        if existing is None or len(entry["standard_name"] or "") > len(existing["standard_name"] or ""):
+            lookup[norm] = entry
+    return lookup
 
 
 def lookup_entity(entity_lookup, raw_name):

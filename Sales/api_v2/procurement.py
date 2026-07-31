@@ -4,7 +4,28 @@ from api_v2 import bp_v2
 from .authz import permission_required
 from .data_scope import custom_resource_filter
 from db import get_connection
-from import_helpers import load_product_lookup, lookup_product
+from import_helpers import load_product_lookup, load_entity_lookup, lookup_product, normalize_text
+
+
+def _resolve_standard_name(lookup, *candidates):
+    """按别名归一化解析标准(中俄双语)名称。
+
+    - standard_entity_name 为空时回退到 raw_entity_name（部分采购记录
+      standard_entity_name 未落库，但 raw_entity_name 已是正确对方单位）。
+    - 注意 entity_aliases 中存在 normalized_alias 为 '' 的脏数据(映射到
+      X-43)，归一化结果为空串时不可查表，否则会误命中。
+    """
+    for name in candidates:
+        norm = normalize_text(name or '')
+        if not norm:
+            continue
+        entry = lookup.get(norm)
+        if entry:
+            return entry['standard_name']
+    for name in candidates:
+        if name:
+            return name
+    return ''
 from wholesale_source_policy import detail_source_policy_clause, detail_source_policy_params
 import pymysql
 from datetime import datetime
@@ -69,7 +90,7 @@ def procurement_details():
             offset = (page - 1) * page_size
             cur.execute(f'''
                 SELECT d.id, d.business_date, d.raw_product_name, d.sender_name,
-                       d.standard_entity_name, d.weight_tons, d.weigh_source, d.remark
+                       d.standard_entity_name, d.raw_entity_name, d.weight_tons, d.weigh_source, d.remark
                 FROM wholesale_detail_records d
                 WHERE {" AND ".join(where)}
                 ORDER BY d.business_date DESC, d.id DESC
@@ -78,19 +99,27 @@ def procurement_details():
 
             with conn.cursor() as lookup_cur:
                 product_lookup = load_product_lookup(lookup_cur)
+                entity_lookup = load_entity_lookup(lookup_cur)
             items = []
             for row in cur.fetchall():
                 raw_product_name = row['raw_product_name']
                 product = lookup_product(product_lookup, raw_product_name or '')
                 standard_product_name = product.get('display_name') if product else None
+                sender_raw = row['sender_name']
+                entity_raw = row['standard_entity_name']
+                entity_raw_alt = row.get('raw_entity_name')
+                sender_display = _resolve_standard_name(entity_lookup, sender_raw)
+                entity_display = _resolve_standard_name(entity_lookup, entity_raw, entity_raw_alt)
                 items.append({
                     'id': row['id'],
                     'businessDate': str(row['business_date']),
                     'productName': standard_product_name or raw_product_name,
                     'rawProductName': raw_product_name,
                     'standardProductName': standard_product_name,
-                    'senderName': row['sender_name'],
-                    'entityName': row['standard_entity_name'],
+                    'senderName': sender_display,
+                    'senderRawName': sender_raw,
+                    'entityName': entity_display,
+                    'entityRawName': entity_raw or entity_raw_alt or '',
                     'weightTons': float(row['weight_tons']) if row['weight_tons'] else None,
                     'weighSource': row['weigh_source'],
                     'remark': row['remark'],

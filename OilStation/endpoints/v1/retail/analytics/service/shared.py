@@ -28,6 +28,7 @@ from export_excel import (
     RESOURCE_DENSITY,
     SK4_RSK_MAP,
     SK6_RSK_MAP,
+    SK19_22_24_RSK_MAP,
     SK28_RSK_MAP,
     SK29_RSK_MAP,
     SK30_RSK_MAP,
@@ -184,6 +185,7 @@ def report_resource_key_expr(alias="s"):
         f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 2 THEN 104 "
         f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 5 THEN 106 "
         f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 7 THEN 108 "
+        f"WHEN {alias}.ShopKey IN (19, 22, 24) AND {alias}.ResourceShopKey = 7 THEN 108 "
         f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 7 THEN 103 "
         f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 8 THEN 102 "
         f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 9 THEN 106 "
@@ -254,6 +256,8 @@ def infer_balance_resource_key(shop_key, resource_key, price=None, resource_shop
         return canonical_resource_key(SK30_RSK_MAP.get(rsk, 0))
     if sk == 29 and rsk in SK29_RSK_MAP:
         return canonical_resource_key(SK29_RSK_MAP[rsk])
+    if sk in (19, 22, 24) and rsk in SK19_22_24_RSK_MAP:
+        return canonical_resource_key(SK19_22_24_RSK_MAP[rsk])
     if sk == 30 and rk not in {102, 103}:
         return 0
     corrected = STATION_RK_CORRECTIONS.get((sk, rk))
@@ -302,7 +306,7 @@ def _resource_key_from_report_name(value):
         return 0
     if "-35" in name:
         return 110
-    if "спбт" in name or "сжиж" in name:
+    if "спбт" in name or "сжиж" in name or "газ" in name or "ãàç" in name or "gaz" in name:
         return 108
     if "95" in name:
         return 104
@@ -441,9 +445,9 @@ def _retail_report_workbook_for_month(year_month):
         if index_path.exists():
             index = json.loads(index_path.read_text(encoding="utf-8-sig"))
             item = index.get(year_month) if isinstance(index, dict) else None
-            filename = item.get("file") if isinstance(item, dict) else None
-            if filename:
-                path = export_dir / filename
+            stored_path = (item.get("path") or item.get("file")) if isinstance(item, dict) else None
+            if stored_path:
+                path = export_dir / stored_path
                 if path.exists():
                     return path
     except (OSError, json.JSONDecodeError, TypeError, ValueError):

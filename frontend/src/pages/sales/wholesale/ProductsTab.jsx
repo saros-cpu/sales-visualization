@@ -8,7 +8,7 @@ export default function ProductsTab({ data }) {
     { key: 'transfer', title: '外运油品', note: '只统计吨数', rows: groups.transfer || [] },
     { key: 'procurement', title: '采购油品', note: '只统计吨数', rows: groups.procurement || [] },
     { key: 'processing', title: '代加工油品', note: '只统计吨数', rows: groups.processing || [] },
-    { key: 'unknown', title: '待识别油品', note: '吨数已统计', rows: groups.unknown || [] },
+    { key: 'unknown', title: '待识别批发油品', note: '吨数已统计', rows: groups.unknown || [] },
   ].filter(item => item.rows.length);
   const localRows = groups.local_wholesale || [];
 

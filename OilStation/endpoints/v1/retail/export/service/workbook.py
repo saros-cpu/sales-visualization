@@ -10,7 +10,7 @@ from export_excel import EXPORT_DIR, MONTH_NAMES_RU, openpyxl, os
 REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".monthly_report_index.json"
 WEEKLY_REPORT_DIR = Path(EXPORT_DIR) / "weekly"
 WEEKLY_REPORT_INDEX_PATH = Path(EXPORT_DIR) / ".weekly_report_index.json"
-REPORT_DATA_VERSION = "db-true-mass-ai80-0.721-price-v8-report-half-up-rounding"
+REPORT_DATA_VERSION = "db-true-mass-ai80-0.721-price-v8-report-half-up-rounding-hide-closed-stations"
 WEEKLY_REPORT_NAME_PREFIX = "加油站零售周报表"
 
 
@@ -88,6 +88,11 @@ def _record_report_workbook(year_month, path, last_nonempty_day=None, data_versi
         "file": path.name,
         "updatedAt": path.stat().st_mtime if path.exists() else None,
     }
+    try:
+        rel_path = path.resolve().relative_to(Path(EXPORT_DIR).resolve())
+        item["path"] = rel_path.as_posix()
+    except (OSError, ValueError):
+        item["path"] = path.name
     if last_nonempty_day is not None:
         item["lastNonemptyDay"] = int(last_nonempty_day)
     elif data.get(year_month, {}).get("file") == path.name:
@@ -114,10 +119,13 @@ def _record_report_workbook(year_month, path, last_nonempty_day=None, data_versi
 
 def _indexed_report_workbook(year_month):
     item = _load_report_index().get(year_month) or {}
-    filename = item.get("file")
-    if not filename:
+    stored_path = item.get("path") or item.get("file")
+    if not stored_path:
         return None
-    path = Path(EXPORT_DIR) / filename
+    export_dir = Path(EXPORT_DIR).resolve()
+    path = (export_dir / stored_path).resolve()
+    if path != export_dir and export_dir not in path.parents:
+        return None
     return path if path.exists() else None
 
 
@@ -133,7 +141,7 @@ def _latest_report_workbook(year_month):
     export_dir = Path(EXPORT_DIR)
     if not export_dir.exists():
         return None
-    for path in sorted(export_dir.glob("*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True):
+    for path in sorted(export_dir.rglob("*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True):
         workbook = None
         try:
             workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)

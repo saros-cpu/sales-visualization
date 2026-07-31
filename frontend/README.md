@@ -148,7 +148,7 @@ powershell -ExecutionPolicy Bypass -File D:\SalesVisualization\deploy-production
 ## 认证
 
 - 登录态通过 Flask Session Cookie 维护
-- React 页面打开时自动检查 `/api/auth/me`
+- React 页面打开时自动检查 `/api/v2/auth/status`，Session 有效时同步回填前端 JWT
 - `AuthGuard` 保护销售/批发页面，`AdminGuard` 保护管理后台
 - 未登录自动跳转 `/login`
 

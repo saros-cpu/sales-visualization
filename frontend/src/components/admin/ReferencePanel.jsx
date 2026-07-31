@@ -4,7 +4,7 @@ import { fmtDate, entityTypeLabel } from '../../utils/admin-helpers';
 import { num } from '../../utils/format';
 import { getCustomers, saveCustomer, getEntityAliases, saveEntityAlias, getProducts, saveProductAlias, getEntityOptions } from '../../api/admin';
 
-const salesTypeLabel = v => ({ export_wholesale: '出口批发', local_wholesale: '本地批发', mixed: '混合', unknown: '待识别' }[v] || v || '--');
+const salesTypeLabel = v => ({ export_wholesale: '出口批发', local_wholesale: '本地批发', mixed: '待识别批发', unknown: '待识别批发' }[v] || v || '--');
 
 export default function ReferencePanel({ products, refresh }) {
   const [customers, setCustomers] = useState([]);
@@ -53,8 +53,8 @@ export default function ReferencePanel({ products, refresh }) {
       <div className="section-title"><h2>基础资料</h2><span>油品字典和别名规则</span></div>
       <section className="content-grid reference-grid">
         <section className="panel reference-customer-panel">
-          <div className="panel-head"><h2>客户资料</h2><span>出口/本地批发客户</span></div>
-          <form className="form-grid single-form" onSubmit={handleCustomer}><label>客户名称<input name="name" required /></label><label>客户类型<select name="customerType"><option value="unknown">待识别</option><option value="local_wholesale">本地批发</option><option value="export_wholesale">出口批发</option><option value="mixed">混合</option></select></label><button type="submit">保存客户</button></form>
+          <div className="panel-head"><h2>批发客户归类</h2><span>本地 / 出口 / 待识别</span></div>
+          <form className="form-grid single-form" onSubmit={handleCustomer}><label>客户名称<input name="name" required /></label><label>客户类型<select name="customerType"><option value="unknown">待识别批发</option><option value="local_wholesale">本地批发</option><option value="export_wholesale">出口批发</option></select></label><button type="submit">保存客户</button></form>
           <p className="form-status muted">{customerStatus}</p>
         </section>
         <section className="panel reference-product-panel">
@@ -63,7 +63,7 @@ export default function ReferencePanel({ products, refresh }) {
           <p className="form-status muted">{productAliasStatus}</p>
         </section>
         <section className="panel reference-entity-panel">
-          <div className="panel-head"><h2>实体别名</h2><span>加油站、油库、客户名称识别</span></div>
+          <div className="panel-head"><h2>实体别名</h2><span>加油站、油库、客户别名识别</span></div>
           <form className="form-grid single-form" onSubmit={handleAlias}>
             <label>实体类型<select name="entityType" onChange={e => { setCurrentEntityType(e.target.value); setEntityCode(''); if (stdNameRef.current) stdNameRef.current.value = ''; }}><option value="retail_station">加油站</option><option value="own_depot">自营油库</option><option value="wholesale_customer">批发客户</option><option value="unknown">其他</option></select></label>
             <label>标准实体<select onChange={e => { const idx = parseInt(e.target.value); if (isNaN(idx)) return; const items = entityOptions.filter(o => o.entityType === currentEntityType); const item = items[idx]; if (item) { if (stdNameRef.current) stdNameRef.current.value = item.name; setEntityCode(item.entityCode || ''); } }}><option value="">手动填写</option>{entityOptions.filter(o => o.entityType === currentEntityType).map((item, i) => <option key={i} value={i}>{item.label}</option>)}</select></label>
@@ -76,13 +76,13 @@ export default function ReferencePanel({ products, refresh }) {
           <p className="form-status muted">{aliasStatus}</p>
         </section>
         <section className="panel panel-wide">
-          <div className="panel-head"><h2>客户列表</h2><div className="inline-filter">
-            <select value={cFilter.type} onChange={e => setCFilter(f => ({...f, type: e.target.value}))}><option value="">全部客户</option><option value="local_wholesale">本地批发</option><option value="export_wholesale">出口批发</option><option value="mixed">混合</option><option value="unknown">待识别</option></select>
+          <div className="panel-head"><h2>客户归类列表</h2><div className="inline-filter">
+            <select value={cFilter.type} onChange={e => setCFilter(f => ({...f, type: e.target.value}))}><option value="">全部客户</option><option value="local_wholesale">本地批发</option><option value="export_wholesale">出口批发</option><option value="unknown">待识别批发</option></select>
             <input placeholder="客户名称" value={cFilter.keyword} onChange={e => setCFilter(f => ({...f, keyword: e.target.value}))} onKeyDown={e => e.key === 'Enter' && loadCustomers()} />
             <button type="button" onClick={loadCustomers}>筛选</button>
           </div></div>
           <div className="table-wrap review-scroll"><table><thead><tr><th>客户</th><th>类型</th><th>合同</th><th>明细</th><th>吨数</th><th>更新时间</th></tr></thead><tbody>
-            {customers.length ? customers.map((item, i) => <tr key={i}><td>{item.name}</td><td>{salesTypeLabel(item.customerType)}</td><td>{num.format(item.contractCount || 0)}</td><td>{num.format(item.detailCount || 0)}</td><td>{num.format(item.detailTons || 0)}</td><td>{fmtDate(item.updatedAt || item.createdAt)}</td></tr>) : <tr><td colSpan="6">暂无客户资料</td></tr>}
+            {customers.length ? customers.map((item, i) => <tr key={i}><td>{item.name}</td><td>{salesTypeLabel(item.customerType)}</td><td>{num.format(item.contractCount || 0)}</td><td>{num.format(item.detailCount || 0)}</td><td>{num.format(item.detailTons || 0)}</td><td>{fmtDate(item.updatedAt || item.createdAt)}</td></tr>) : <tr><td colSpan="6">暂无客户归类</td></tr>}
           </tbody></table></div>
         </section>
         <section className="panel panel-wide">

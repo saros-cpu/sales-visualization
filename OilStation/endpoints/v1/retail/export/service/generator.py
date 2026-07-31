@@ -4,10 +4,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from business_time import selling_business_day_subquery, shift_business_date_expr
-from constants import RENOVATION_CARRY_FORWARD_STATIONS, SHOP_KEY_MAP
+from constants import (
+    RENOVATION_CARRY_FORWARD_STATIONS,
+    REPORT_HIDDEN_STATION_KEYS,
+    REPORT_HIDDEN_STATION_NOTE,
+    SHOP_KEY_MAP,
+)
 from export_excel import (
     EXPORT_DIR,
     BalanceMap,
+    Font,
     MetricMap,
     MONTH_NAMES_CN,
     MONTH_NAMES_RU,
@@ -79,6 +85,74 @@ PRICE_LIST_20260719 = {
     (29, 102): 69.50, (29, 103): 82.00, (29, 106): 97.30, (29, 108): 44.70,
     (30, 102): 68.00, (30, 103): 83.30, (30, 106): 96.90,
 }
+
+
+def monthly_report_filename(year, month, generated_day=None):
+    month_cn = MONTH_NAMES_CN.get(int(month), f'{int(month)}月')
+    generated_day = generated_day or (datetime.now() - timedelta(days=1))
+    return f'加油站{month_cn}日销表{generated_day.strftime("%d.%m")}.xlsx'
+
+
+def single_day_report_filename(year, month, day, generated_day=None):
+    month_cn = MONTH_NAMES_CN.get(int(month), f'{int(month)}月')
+    generated_day = generated_day or datetime(int(year), int(month), int(day))
+    return f'加油站{month_cn}零售日报{generated_day.strftime("%m.%d")}.xlsx'
+
+
+def _completed_report_days(year, month, today=None):
+    today = today or datetime.now().date()
+    if hasattr(today, "date"):
+        today = today.date()
+    year = int(year)
+    month = int(month)
+    if (year, month) > (today.year, today.month):
+        return []
+    if (year, month) < (today.year, today.month):
+        last_day = monthrange(year, month)[1]
+    else:
+        completed_day = today - timedelta(days=1)
+        if (completed_day.year, completed_day.month) != (year, month):
+            return []
+        last_day = completed_day.day
+    return [datetime(year, month, day) for day in range(1, last_day + 1)]
+
+
+def _exclusive_month_end_date(year, month):
+    last_day = monthrange(int(year), int(month))[1]
+    return (datetime(int(year), int(month), last_day) + timedelta(days=1)).strftime('%Y-%m-%d')
+
+
+def _single_day_report_result(path, year, month, day):
+    return {
+        "singleDayFile": path.name,
+        "singleDayPath": str(path),
+        "singleDayDate": f"{int(year):04d}-{int(month):02d}-{int(day):02d}",
+    }
+
+
+def _save_single_day_report_from_monthly(monthly_path, year, month, day):
+    if not day:
+        return None
+    sheet_name = f"{int(day):02d}日"
+    monthly_path = Path(monthly_path)
+    if not monthly_path.exists():
+        return None
+    workbook = None
+    try:
+        workbook = openpyxl.load_workbook(monthly_path)
+        if sheet_name not in workbook.sheetnames:
+            return None
+        for worksheet in list(workbook.worksheets):
+            if worksheet.title != sheet_name:
+                workbook.remove(worksheet)
+        output_dir = Path(EXPORT_DIR) / "monthly" / str(int(year)) / "daily"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        filepath = output_dir / single_day_report_filename(year, month, day)
+        workbook.save(filepath)
+        return _single_day_report_result(filepath, year, month, day)
+    finally:
+        if workbook is not None:
+            workbook.close()
 
 
 def _official_price_list_for_day(day_str):
@@ -188,18 +262,35 @@ def _number_format_for_ton_digits(digits):
     return '#,##0' if digits <= 0 else '#,##0.' + ('0' * digits)
 
 
+def _hide_closed_station_report_rows(ws, shop_key, start_row, end_row):
+    if int(shop_key) not in REPORT_HIDDEN_STATION_KEYS:
+        return
+    for row_idx in range(int(start_row), int(end_row) + 1):
+        ws.row_dimensions[row_idx].hidden = True
+
+
+def _append_closed_station_report_note(ws, after_row, max_col):
+    note_row = int(after_row) + 1
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=max_col)
+    _apply_style(ws, note_row, 1, REPORT_HIDDEN_STATION_NOTE, size=9, h_align='left', wrap=True)
+    ws.row_dimensions[note_row].height = 24
+    return note_row
+
+
 def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, contract_data, start_bal, end_bal, loss_data, total_label, allow_fixed_density_fallback=True, include_contract_ton=False, ton_decimals=3):
     current_row = 5
     subtotal_rows = []
     for sk in station_keys:
         info = SHOP_KEY_MAP.get(sk, {"name": f"SK-{sk}", "short": "", "region": ""})
         fuel_keys = _get_station_fuel_keys(sk, start_bal, end_bal, sales_data, ved_data, supply_data)
+        station_start_row = current_row
         current_row = _write_station_block(
             ws, current_row, sk, info, sales_data, ved_data, supply_data,
             start_bal, end_bal, contract_data=contract_data, loss_data=loss_data,
             is_monthly=True, fuel_keys=fuel_keys, allow_fixed_density_fallback=allow_fixed_density_fallback,
             include_contract_ton=include_contract_ton, ton_decimals=ton_decimals,
         )
+        _hide_closed_station_report_rows(ws, sk, station_start_row, current_row - 1)
         ws.cell(row=current_row - 1, column=1, value="所选日期小计")
         subtotal_rows.append(current_row - 1)
 
@@ -229,6 +320,7 @@ def _write_summary_blocks(ws, station_keys, sales_data, ved_data, supply_data, c
             if cell.column in no_fill_cols and not (cell.row in subtotal_rows or cell.row == current_row):
                 cell.fill = PatternFill(fill_type=None)
 
+    _append_closed_station_report_note(ws, current_row, col_end)
     return current_row
 
 
@@ -263,6 +355,7 @@ def generate_range_summary_excel(conn, date_from, date_to, force_refresh=False):
         _build_sheet_data(cur, date_from, range_end, station_keys)
 
     wb = openpyxl.Workbook()
+    wb._fonts[0] = Font(name='Times New Roman', size=11)
     ws = wb.active
     title = f"Финансовый недельный отчет по АЗС / 加油站零售周报表 {date_from} - {date_to}"
     _copy_summary_template(ws, template_path, title)
@@ -290,17 +383,23 @@ def generate_range_summary_excel(conn, date_from, date_to, force_refresh=False):
 
 
 def generate_monthly_excel(conn, year_month, force_refresh=False):
+    y, m = int(year_month.split('-')[0]), int(year_month.split('-')[1])
     cached_workbook = _latest_report_workbook(year_month)
     if not force_refresh and cached_workbook and _can_reuse_report_workbook(year_month, cached_workbook):
-        return {
+        last_nonempty_day = _workbook_last_nonempty_day(cached_workbook)
+        single_day_report = _save_single_day_report_from_monthly(cached_workbook, y, m, last_nonempty_day)
+        result = {
             "status": "ok",
             "file": cached_workbook.name,
             "path": str(cached_workbook),
             "cached": True,
         }
+        if single_day_report:
+            result.update(single_day_report)
+            result["singleDayDownloadUrl"] = f"/api/export/monthly/{year_month}/daily/download"
+        return result
 
     cur = conn.cursor()
-    y, m = int(year_month.split('-')[0]), int(year_month.split('-')[1])
     ym_start, ym_end = get_query_date_range(year_month)
     allow_fixed_density_fallback = _allow_fixed_density_fallback(ym_start)
     station_keys = sorted(SHOP_KEY_MAP.keys())
@@ -310,6 +409,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         _build_sheet_data(cur, ym_start, ym_end, station_keys)
 
     wb = openpyxl.Workbook()
+    wb._fonts[0] = Font(name='Times New Roman', size=11)
 
     ws = wb.active
     ws.freeze_panes = 'E5'
@@ -364,11 +464,13 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     for sk in station_keys:
         info = SHOP_KEY_MAP.get(sk, {'name': f'SK-{sk}', 'short': '', 'region': ''})
         fuel_keys = _get_station_fuel_keys(sk, start_bal, end_bal, sales_data, ved_data, supply_data)
+        station_start_row = current_row
         current_row = _write_station_block(
             ws, current_row, sk, info, sales_data, ved_data, supply_data,
             start_bal, end_bal, contract_data=contract_data, loss_data=loss_data,
             is_monthly=True, fuel_keys=fuel_keys, allow_fixed_density_fallback=allow_fixed_density_fallback
         )
+        _hide_closed_station_report_rows(ws, sk, station_start_row, current_row - 1)
         subtotal_rows.append(current_row - 1)
 
     _apply_style(ws, current_row, 1, '当月总合计', bold=True, size=9, fill=_FILL_TOTAL)
@@ -395,16 +497,9 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                 if not (cell.row in subtotal_rows or cell.row == current_row):
                     cell.fill = PatternFill(fill_type=None)
 
-    days_in_month = (datetime(y, m + 1, 1) - timedelta(days=1)).day if m < 12 else 31
-    actual_days = []
-    for dn in range(1, days_in_month + 1):
-        try:
-            d = datetime(y, m, dn)
-        except ValueError:
-            continue
-        if d > datetime.now():
-            break
-        actual_days.append(d)
+    _append_closed_station_report_note(ws, current_row, 26)
+
+    actual_days = _completed_report_days(y, m)
 
     selling_mass_expr = _selling_mass_expr(
         use_ai80_missing_density_fallback=not allow_fixed_density_fallback
@@ -780,7 +875,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                         'mass': new_mass,
                         'density': _density_from_mass_volume(new_mass, new_vol, ex.get('density', density))}
 
-    month_end_str = (datetime(y, m, days_in_month) + timedelta(days=1)).strftime('%Y-%m-%d')
+    month_end_str = _exclusive_month_end_date(y, m)
     shift_business_day = shift_business_date_expr("s")
     begin_mass_expr = _balance_begin_mass_expr("b")
     end_mass_expr = _balance_end_mass_expr("b")
@@ -1030,12 +1125,14 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         for sk in station_keys:
             info = SHOP_KEY_MAP.get(sk, {'name': f'SK-{sk}', 'short': '', 'region': ''})
             fuel_keys = _get_station_fuel_keys(sk, d_start_bal, d_end_bal, d_sales_daily, d_ved, d_supply)
+            station_start_row = current_row_d
             current_row_d = _write_station_block(
                 ws_d, current_row_d, sk, info, d_sales_daily, d_ved, d_supply,
                 d_start_bal, d_end_bal, contract_data=d_contract,
                 loss_data=d_loss, is_monthly=False, fuel_keys=fuel_keys,
                 allow_fixed_density_fallback=_allow_fixed_density_fallback(day_str)
             )
+            _hide_closed_station_report_rows(ws_d, sk, station_start_row, current_row_d - 1)
             daily_subtotal_rows.append(current_row_d - 1)
 
         _apply_style(ws_d, current_row_d, 1, 'Итого на текущий день', bold=True, size=9, fill=_FILL_TOTAL)
@@ -1065,12 +1162,20 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
                     if not (cell.row in daily_subtotal_rows or cell.row == current_row_d):
                         cell.fill = PatternFill(fill_type=None)
 
-    month_cn = MONTH_NAMES_CN.get(m, f'{m}月')
-    yesterday = datetime.now() - timedelta(days=1)
-    gen_date = yesterday.strftime('%d.%m')
-    filename = f'加油站{y}年{month_cn}日销表{gen_date}.xlsx'
-    filepath = os.path.join(EXPORT_DIR, filename)
-    wb.save(filepath)
-    _record_report_workbook(year_month, Path(filepath), _workbook_last_nonempty_day(Path(filepath)))
+        _append_closed_station_report_note(ws_d, current_row_d, 24)
 
-    return {'status': 'ok', 'file': filename, 'path': filepath, 'cached': False}
+    yesterday = datetime.now() - timedelta(days=1)
+    filename = monthly_report_filename(y, m, yesterday)
+    output_dir = Path(EXPORT_DIR) / "monthly" / str(y)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filepath = output_dir / filename
+    wb.save(filepath)
+    last_nonempty_day = _workbook_last_nonempty_day(Path(filepath))
+    _record_report_workbook(year_month, Path(filepath), last_nonempty_day)
+    single_day_report = _save_single_day_report_from_monthly(filepath, y, m, last_nonempty_day)
+
+    result = {'status': 'ok', 'file': filename, 'path': str(filepath), 'cached': False}
+    if single_day_report:
+        result.update(single_day_report)
+        result["singleDayDownloadUrl"] = f"/api/export/monthly/{year_month}/daily/download"
+    return result

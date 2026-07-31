@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { metricNumber, normalizeRetailYears, sortRankingRows, splitStationName } from './retail-helpers';
+import {
+  formatCnyKpi,
+  formatLitersKpiParts,
+  formatSomKpiParts,
+  formatTonsKpi,
+  latestRetailMonthForYear,
+  metricNumber,
+  normalizeRetailMonthOptions,
+  normalizeRetailYears,
+  preferredRetailMonth,
+  sortRankingRows,
+  splitStationName,
+} from './retail-helpers';
 
 describe('retail ranking helpers', () => {
   it('keeps ranking rows descending without mutating the source', () => {
@@ -26,11 +38,32 @@ describe('retail ranking helpers', () => {
     expect(normalizeRetailYears([], 2027)).toEqual([2027, 2026, 2025, 2024, 2023]);
   });
 
+  it('normalizes retail months by newest month instead of API order', () => {
+    const source = [
+      { month: '2026-01', transactions: 100 },
+      { month: '2026-08', transactions: 120 },
+      { month: 'bad' },
+      '2025-12',
+    ];
+
+    expect(normalizeRetailMonthOptions(source).map(item => item.month)).toEqual(['2026-08', '2026-01', '2025-12']);
+    expect(latestRetailMonthForYear(source, 2026)).toBe('2026-08');
+    expect(preferredRetailMonth(source, '2026-07')).toBe('2026-08');
+    expect(preferredRetailMonth(source, '2026-01')).toBe('2026-01');
+  });
+
   it('splits bilingual station names into Chinese and Russian display lines', () => {
     expect(splitStationName('\u041a\u0430\u0440\u0430-\u0431\u0430\u043b\u0442\u0430 1 / \u5361\u5317')).toEqual({
       primary: '\u5361\u5317',
       secondary: '\u041a\u0430\u0440\u0430-\u0431\u0430\u043b\u0442\u0430 1',
       title: '\u5361\u5317 / \u041a\u0430\u0440\u0430-\u0431\u0430\u043b\u0442\u0430 1',
     });
+  });
+
+  it('uses shared KPI unit formatting for retail amount and volume cards', () => {
+    expect(formatSomKpiParts(12000)).toEqual({ value: '1.2', unit: '\u4e07\u7d22\u59c6' });
+    expect(formatLitersKpiParts(34000)).toEqual({ value: '3.4', unit: '\u4e07L' });
+    expect(formatCnyKpi(12000)).toBe('1.2\u4e07\u5143');
+    expect(formatTonsKpi(12.34)).toBe('12.3\u5428');
   });
 });

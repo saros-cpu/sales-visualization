@@ -36,6 +36,28 @@ def file_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def repair_mojibake(value):
+    """还原被双重编码的中文：UTF-8 字节被误当作 CP1251 解码产生的乱码。
+
+    仅当文本可逆（可 cp1251 编码）且逆解码结果含中文时才修复；
+    其它情况（已正确的中文/俄文/拉丁文/数字）原样返回，安全且幂等。
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    try:
+        candidate = text.encode("cp1251").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return value
+    if candidate == text:
+        return value
+    if any("\u4e00" <= ch <= "\u9fff" for ch in candidate):
+        return candidate
+    return value
+
+
 def clean_str(value):
     if value is None:
         return None
@@ -44,7 +66,7 @@ def clean_str(value):
     text = str(value).strip()
     if not text or text.lower() == "nan":
         return None
-    return text
+    return repair_mojibake(text)
 
 
 def parse_date(value):

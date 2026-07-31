@@ -193,6 +193,7 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     const row = makeBlankRow();
     onAddNew?.(row);
     setEditData(prev => ({ ...prev, [row.id]: { ...row } }));
+    return row;
   }, [makeBlankRow, onAddNew]);
 
   const clearDraft = useCallback(() => {
@@ -257,16 +258,16 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
     });
   }, [onRealTimeSave, t]);
 
-  const focusCell = useCallback((rowIndex: number, colIndex: number) => {
-    const row = dataSource[rowIndex];
+  const focusRowById = useCallback((rowId: number, colIndex: number) => {
     const col = editableColumns[colIndex];
-    if (!row || !col) return;
+    if (!col) return;
     window.setTimeout(() => {
-      const target = document.querySelector<HTMLElement>(`[data-excel-cell="${row.id}::${String(col.dataIndex)}"] input, [data-excel-cell="${row.id}::${String(col.dataIndex)}"] .ant-select-selector`);
+      const selector = `[data-excel-cell="${rowId}::${String(col.dataIndex)}"]`;
+      const target = document.querySelector<HTMLElement>(`${selector} input, ${selector} .ant-select-selector`);
       target?.focus();
       target?.click();
     }, 20);
-  }, [dataSource, editableColumns]);
+  }, [editableColumns]);
 
   const moveCell = useCallback((rowIndex: number, colIndex: number, rowDelta: number, colDelta: number) => {
     let nextRow = rowIndex + rowDelta;
@@ -280,11 +281,17 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
       nextRow -= 1;
     }
     if (nextRow >= dataSource.length) {
-      handleAddNew();
-      nextRow = dataSource.length;
+      // 到达末行：若允许新增（录入表），则新建一行并把焦点移到新行（按 id 聚焦，规避异步更新后索引失效）。
+      if (onAddNew) {
+        const newRow = handleAddNew();
+        focusRowById(newRow.id, nextCol);
+      }
+      return;
     }
-    if (nextRow >= 0) focusCell(nextRow, nextCol);
-  }, [dataSource.length, editableColumns.length, focusCell, handleAddNew]);
+    if (nextRow < 0) nextRow = 0;
+    const row = dataSource[nextRow];
+    if (row) focusRowById(row.id, nextCol);
+  }, [dataSource.length, editableColumns.length, focusRowById, handleAddNew, onAddNew]);
 
   const handlePaste = useCallback((event: React.ClipboardEvent, rowIndex: number, colIndex: number) => {
     const text = event.clipboardData.getData('text');

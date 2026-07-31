@@ -2,8 +2,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fmtDate } from '../../utils/admin-helpers';
 import { num } from '../../utils/format';
+import { splitBilingual } from '../../utils/bilingual';
 import { getWeighRecords, generateWeighDetails, getWeighRecordFilterOptions } from '../../api/admin';
 import ColumnFilter from '../common/ColumnFilter';
+
+// 中俄双语名称统一渲染：中文在上、俄文在下两行，与桌面端显示风格一致。
+function withStandard(raw, standard) {
+  const name = (standard || raw || '').trim();
+  if (!name) return '--';
+  const { top, bottom } = splitBilingual(name);
+  if (!bottom) return name;
+  return (
+    <span style={{ display: 'inline-block', textAlign: 'center', lineHeight: 1.25 }}>
+      <div style={{ fontWeight: 600 }}>{top}</div>
+      <div style={{ fontSize: 12, color: '#8c8c8c', lineHeight: 1.3 }}>{bottom}</div>
+    </span>
+  );
+}
+
 
 export default function WeighPanel() {
   const [tab, setTab] = useState('records');
@@ -48,7 +64,7 @@ export default function WeighPanel() {
   };
 
   const handleGenerate = async () => {
-    setGenStatus('正在生成批发明细...');
+    setGenStatus('正在生成明细表...');
     setGenResult(null);
     try {
       const d = await generateWeighDetails({ dateFrom: '' });
@@ -60,11 +76,11 @@ export default function WeighPanel() {
 
   return (
     <section className="admin-tab active">
-      <div className="section-title"><h2>称重管理</h2><span>称重原始数据查看、生成批发明细</span></div>
+      <div className="section-title"><h2>称重管理</h2><span>称重原始数据查看、生成明细表</span></div>
       <div className="admin-sub-tabs" style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
         {[
           { key: 'records', label: '称重原始数据' },
-          { key: 'generate', label: '生成批发明细' },
+          { key: 'generate', label: '生成明细表' },
         ].map(t => (
           <button key={t.key} type="button" className={tab === t.key ? 'active' : ''} onClick={() => setTab(t.key)} style={{ padding: '6px 14px', cursor: 'pointer', background: tab === t.key ? '#1a3a5c' : '#eee', color: tab === t.key ? '#fff' : '#333', border: 'none', borderRadius: 4 }}>{t.label}</button>
         ))}
@@ -114,8 +130,8 @@ export default function WeighPanel() {
                     <td>{r['编号'] || '--'}</td>
                     <td>{(r['毛重日期'] || r['皮重日期'] || '--').slice(0, 10)}</td>
                     <td>{r['车号'] || '--'}</td>
-                    <td>{r['发货单位'] || '--'}</td>
-                    <td>{r['收货单位'] || '--'}</td>
+                    <td>{withStandard(r['发货单位'], r['标准发货单位'])}</td>
+                    <td>{withStandard(r['收货单位'], r['标准收货单位'])}</td>
                     <td>{r['货名'] || '--'}</td>
                     <td>{r['净重'] != null ? num.format(r['净重']) : '--'}</td>
                     <td>{r.weigh_source || '储运区'}</td>
@@ -136,8 +152,8 @@ export default function WeighPanel() {
 
       {tab === 'generate' && (
         <section className="panel panel-wide">
-          <div className="panel-head"><h2>生成批发明细</h2><span>将称重原始数据（kj_weighing）按映射关系转换为批发明细（wholesale_detail_records）</span></div>
-          <p className="muted">生成逻辑：读取最近 7 天的称重数据 → 按映射表匹配实体和油品 → 自动识别去向类型 → 插入批发明细表。未映射的名称会尝试自动建议并创建低可信度映射。</p>
+          <div className="panel-head"><h2>生成明细表</h2><span>将称重原始数据（kj_weighing）按映射关系转换为明细表（wholesale_detail_records）</span></div>
+          <p className="muted">生成逻辑：读取最近 7 天的称重数据 → 按映射表匹配实体和油品 → 自动识别去向类型 → 插入明细表。未映射的名称会尝试自动建议并创建低可信度映射。</p>
           <button type="button" onClick={handleGenerate} style={{ marginTop: 8 }}>执行生成</button>
           {genStatus && <p className="form-status muted">{genStatus}</p>}
           {genResult && (

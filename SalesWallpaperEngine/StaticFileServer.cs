@@ -19,6 +19,15 @@ internal sealed class StaticFileServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private HttpListener? _listener;
 
+    private const string WallpaperSettingsPath = "/api/wallpaper/settings";
+    private const string WallpaperSettingsPreviewPath = "/api/wallpaper/settings/preview";
+    private const string WallpaperSettingsPreviewCommitPath = "/api/wallpaper/settings/preview/commit";
+    private const string WallpaperEditModePath = "/api/wallpaper/edit-mode";
+    private const string WallpaperRefreshPath = "/api/wallpaper/refresh";
+    private const string WallpaperCheckUpdatePath = "/api/wallpaper/check-update";
+    private const string WallpaperMapPath = "/api/wallpaper/map";
+    private const string WallpaperLatestManifestPath = "/download/wallpaper-engine/latest.json";
+
     private static readonly HashSet<string> SettingsWhitelist = new(StringComparer.OrdinalIgnoreCase)
     {
         "language",
@@ -216,7 +225,7 @@ internal sealed class StaticFileServer : IDisposable
                 return;
             }
 
-            if (path.Equals("/api/wallpaper/settings", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(WallpaperSettingsPath, StringComparison.OrdinalIgnoreCase))
             {
                 if (context.Request.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase))
                 {
@@ -235,25 +244,25 @@ internal sealed class StaticFileServer : IDisposable
                 }
             }
 
-            if (path.Equals("/api/wallpaper/settings/preview", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(WallpaperSettingsPreviewPath, StringComparison.OrdinalIgnoreCase))
             {
                 await HandleSettingsPreview(context);
                 return;
             }
 
-            if (path.Equals("/api/wallpaper/settings/preview/commit", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(WallpaperSettingsPreviewCommitPath, StringComparison.OrdinalIgnoreCase))
             {
                 await HandleSettingsPreviewCommit(context);
                 return;
             }
 
-            if (path.Equals("/api/wallpaper/edit-mode", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(WallpaperEditModePath, StringComparison.OrdinalIgnoreCase))
             {
                 await HandleEditMode(context);
                 return;
             }
 
-            if (path.Equals("/api/wallpaper/refresh", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(WallpaperRefreshPath, StringComparison.OrdinalIgnoreCase))
             {
                 if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
                 {
@@ -265,7 +274,7 @@ internal sealed class StaticFileServer : IDisposable
                 return;
             }
 
-            if (path.Equals("/api/wallpaper/check-update", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(WallpaperCheckUpdatePath, StringComparison.OrdinalIgnoreCase))
             {
                 if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
                 {
@@ -277,13 +286,13 @@ internal sealed class StaticFileServer : IDisposable
                 return;
             }
 
-            if (path.Equals("/api/wallpaper/map", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(WallpaperMapPath, StringComparison.OrdinalIgnoreCase))
             {
                 await ProxyWallpaperMap(context);
                 return;
             }
 
-            if (path.Equals("/download/wallpaper-engine/latest.json", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(WallpaperLatestManifestPath, StringComparison.OrdinalIgnoreCase))
             {
                 await ProxyLatestManifest(context);
                 return;
@@ -304,7 +313,7 @@ internal sealed class StaticFileServer : IDisposable
     private async Task ProxyWallpaperMap(HttpListenerContext context)
     {
         var config = Config;
-        var target = BuildProxyUri($"{config.ApiHost}/api/wallpaper/map", context.Request.Url?.Query ?? "");
+        var target = BuildProxyUri($"{config.ApiHost.TrimEnd('/')}{WallpaperMapPath}", context.Request.Url?.Query ?? "");
         using var request = new HttpRequestMessage(HttpMethod.Get, target);
         if (config.HasWallpaperToken)
         {
@@ -334,12 +343,12 @@ internal sealed class StaticFileServer : IDisposable
     private static bool IsLocalMutation(string method, string path)
     {
         if (!method.Equals("POST", StringComparison.OrdinalIgnoreCase)) return false;
-        return path.Equals("/api/wallpaper/settings", StringComparison.OrdinalIgnoreCase)
-            || path.Equals("/api/wallpaper/settings/preview", StringComparison.OrdinalIgnoreCase)
-            || path.Equals("/api/wallpaper/settings/preview/commit", StringComparison.OrdinalIgnoreCase)
-            || path.Equals("/api/wallpaper/edit-mode", StringComparison.OrdinalIgnoreCase)
-            || path.Equals("/api/wallpaper/refresh", StringComparison.OrdinalIgnoreCase)
-            || path.Equals("/api/wallpaper/check-update", StringComparison.OrdinalIgnoreCase);
+        return path.Equals(WallpaperSettingsPath, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(WallpaperSettingsPreviewPath, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(WallpaperSettingsPreviewCommitPath, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(WallpaperEditModePath, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(WallpaperRefreshPath, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(WallpaperCheckUpdatePath, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsValidLocalApiNonce(string? provided)

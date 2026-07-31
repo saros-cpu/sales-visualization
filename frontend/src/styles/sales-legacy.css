@@ -1317,31 +1317,34 @@ dd {
 
 .wholesale-page .filters {
   padding: 12px;
-  border: 1px solid rgba(255, 167, 38, 0.16);
+  border: 1px solid rgba(0, 180, 255, 0.16);
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(255, 167, 38, 0.10), transparent 46%),
-    rgba(2, 15, 35, 0.30);
+  background: var(--surface-glass);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .wholesale-page .filters button {
-  border-color: rgba(255, 167, 38, 0.46);
-  background: rgba(255, 167, 38, 0.12);
-  color: #ffe1ad;
+  border-color: rgba(0, 180, 255, 0.30);
+  background: var(--surface-soft);
+  color: var(--ink);
 }
 
 .wholesale-page .filters button:hover {
   border-color: rgba(0, 212, 255, 0.58);
-  background: rgba(0, 212, 255, 0.12);
+  background: rgba(0, 212, 255, 0.14);
   color: #dff8ff;
   transform: translateY(-1px);
 }
 
-.wholesale-page select:focus-visible,
-.wholesale-page button:focus-visible {
+.wholesale-page .filters select {
+  border-color: rgba(0, 180, 255, 0.30);
+  background: var(--surface-soft);
+}
+
+.wholesale-page .filters select:focus-visible,
+.wholesale-page .filters button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(255, 167, 38, 0.16);
+  box-shadow: var(--focus-ring);
 }
 
 .wholesale-page .table-wrap {
@@ -3605,5 +3608,315 @@ th {
   .knowledge-list-panel,
   .knowledge-detail-panel {
     min-height: auto;
+  }
+}
+
+.wholesale-page .summary-grid.wholesale-transport-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.wholesale-page .wholesale-transport-metric {
+  min-height: 188px;
+  padding: 22px 22px 18px;
+}
+
+.wholesale-page .wholesale-transport-metric::after,
+.wholesale-page .wholesale-class-metric::after {
+  background: var(--metric-accent);
+}
+
+.wholesale-page .wholesale-transport-metric > span {
+  font-size: 15px;
+}
+
+.wholesale-page .wholesale-transport-metric strong {
+  font-size: 38px;
+}
+
+.wholesale-page .wholesale-transport-metric small,
+.wholesale-page .wholesale-transport-metric dd {
+  font-size: 14px;
+}
+
+.wholesale-page .wholesale-summary-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.wholesale-page .wholesale-class-metric {
+  --wholesale-class-compare-shift: -24px;
+  --wholesale-class-compare-value-size: 28px;
+  display: block;
+  min-height: 154px;
+  padding: 0;
+}
+
+.wholesale-page .wholesale-class-body {
+  display: grid;
+  height: 100%;
+  min-height: 154px;
+  grid-template-columns: minmax(0, 1fr) 136px;
+  align-items: center;
+  column-gap: 12px;
+  padding: 20px 28px 20px 22px;
+}
+
+.wholesale-page .wholesale-class-left {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+}
+
+.wholesale-page .wholesale-class-title {
+  width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 17px;
+  font-weight: 760;
+  line-height: 1.2;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wholesale-page .wholesale-class-value {
+  width: 100%;
+  margin-top: 10px;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 38px;
+  font-weight: 820;
+  line-height: 1;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 18px rgba(0, 212, 255, 0.18);
+}
+
+.wholesale-page .wholesale-class-extra {
+  width: 100%;
+  margin-top: 12px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.3;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wholesale-page .wholesale-class-right {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  transform: translateX(var(--wholesale-class-compare-shift));
+}
+
+.wholesale-page .wholesale-class-compare-line {
+  display: grid;
+  width: max-content;
+  grid-template-columns: 2.8em 116px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.wholesale-page .wholesale-class-compare-label {
+  display: inline-flex;
+  height: var(--wholesale-class-compare-value-size);
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 760;
+  line-height: 1;
+  text-align: right;
+  transform: translateX(-34px);
+}
+
+.wholesale-page .wholesale-class-compare-value {
+  position: relative;
+  display: block;
+  width: 116px;
+  height: var(--wholesale-class-compare-value-size);
+  color: #b8c2d8;
+  font-size: var(--wholesale-class-compare-value-size);
+  font-variant-numeric: tabular-nums;
+  font-weight: 820;
+  line-height: 1;
+}
+
+.wholesale-page .wholesale-class-compare-arrow {
+  display: inline-flex;
+  width: 16px;
+  flex: 0 0 16px;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.wholesale-page .wholesale-class-compare-main {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.wholesale-page .wholesale-class-compare-number {
+  display: block;
+  min-width: 0;
+  overflow: visible;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.wholesale-page .wholesale-class-compare-percent {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 14px;
+  text-align: left;
+  transform: translateY(-50%);
+}
+
+.wholesale-page .wholesale-class-compare-line.is-empty .wholesale-class-compare-value {
+  color: var(--dim);
+}
+
+.wholesale-detail-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+.wholesale-page .detail-metric-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.wholesale-page .detail-metric-cards .card {
+  min-height: 82px;
+  padding: 13px;
+  border: 1px solid rgba(0, 180, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(5, 12, 24, 0.42);
+}
+
+.wholesale-page .detail-metric-cards .card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.wholesale-page .detail-metric-cards .card strong {
+  display: block;
+  margin-top: 10px;
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 980px) {
+  .wholesale-page .detail-metric-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+.wholesale-page .wholesale-detail-filter input,
+.wholesale-page .wholesale-detail-filter select {
+  width: 132px;
+  padding: 6px 9px;
+}
+
+.wholesale-page .wholesale-detail-filter input:nth-child(2),
+.wholesale-page .wholesale-detail-filter input:nth-child(3) {
+  width: 170px;
+}
+
+.wholesale-detail-policy {
+  margin-top: 8px;
+}
+
+.wholesale-detail-table table {
+  min-width: 1220px;
+}
+
+.wholesale-detail-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--muted);
+}
+
+.wholesale-detail-pagination button {
+  width: auto;
+  min-width: 88px;
+}
+
+@media (max-width: 1360px) {
+  .wholesale-page .summary-grid.wholesale-transport-grid,
+  .wholesale-page .wholesale-summary-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .wholesale-page .summary-grid.wholesale-transport-grid,
+  .wholesale-page .wholesale-summary-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wholesale-page .wholesale-transport-metric {
+    min-height: 150px;
+    padding: 16px;
+  }
+
+  .wholesale-page .wholesale-transport-metric strong,
+  .wholesale-page .wholesale-class-value {
+    font-size: 30px;
+  }
+
+  .wholesale-page .wholesale-class-body {
+    grid-template-columns: 1fr;
+    row-gap: 14px;
+    padding: 18px;
+  }
+
+  .wholesale-page .wholesale-class-right {
+    height: auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    transform: none;
+  }
+
+  .wholesale-page .wholesale-class-compare-line {
+    grid-template-columns: 2.4em 100px;
+  }
+
+  .wholesale-page .wholesale-class-compare-value {
+    width: 100px;
   }
 }

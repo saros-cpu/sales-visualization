@@ -10,7 +10,7 @@ const classificationLabel = v => ({
   local_wholesale: '本地批发',
   processing: '代加工',
   procurement: '采购',
-  unknown: '待识别',
+  unknown: '待识别批发',
 }[v] || v || '--');
 
 export default function AuditPanel({ products, customerOptions, refresh }) {
@@ -123,7 +123,7 @@ export default function AuditPanel({ products, customerOptions, refresh }) {
               </div>
             ) : (
               <form id="reviewFixForm" className="form-grid review-correction-form">
-                <label>分类<select name="classification"><option value="">不修改</option><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">代加工</option><option value="procurement">采购</option><option value="unknown">待识别</option></select></label>
+                <label>分类<select name="classification"><option value="">不修改</option><option value="export_wholesale">出口批发</option><option value="local_wholesale">本地批发</option><option value="transfer">外运</option><option value="processing">代加工</option><option value="procurement">采购</option><option value="unknown">待识别批发</option></select></label>
                 <label>油品<select name="productCode"><option value="">不修改</option>{productOpts}</select></label>
                 <label>客户 / 去向<input name="entityName" list="auditCustomerOpts" /></label>
                 <label>提示状态<select name="issueStatus"><option value="">不修改</option><option value="resolved">已解决</option><option value="ignored">忽略</option></select></label>
