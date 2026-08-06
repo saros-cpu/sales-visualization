@@ -19,13 +19,16 @@ export default function BilingualName({ value, raw, bold = true }: BilingualName
   if (!name) return <>{'--'}</>;
 
   const { top, bottom } = splitBilingual(name);
-  const rawTop = raw ? splitBilingual(raw).top : '';
+  // 中文主名比较：同一实体不同写法（分隔符/引号/俄文拼写差异）时不补显原始名
+  const cnPart = (s: string) => (s.match(/[\u4e00-\u9fff]+/g) || []).join('');
+  const cnName = cnPart(name);
+  const cnRaw = raw ? cnPart(raw) : '';
   const showRaw =
     !!raw &&
     !!raw.trim() &&
     raw.trim() !== name &&
     !name.includes(raw.trim()) &&
-    !(top && rawTop && top === rawTop);
+    !(cnName && cnRaw && cnName === cnRaw);
 
   return (
     <span style={{ display: 'inline-block', textAlign: 'center', lineHeight: 1.25 }}>

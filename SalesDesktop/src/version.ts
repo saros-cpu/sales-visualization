@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.4.1';
+export const VERSION = '5.4.2';
 export const BUILD_DATE = '2026-08-15';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.4.2',
+    date: '2026-08-15',
+    type: 'patch',
+    changes: [
+      '修复：双语名称重复显示根治——5.4.1 用「中文主行相等」判定，但手录名中文主行带尾部分隔符（如「Example石油公司 /」）与标准名主行（「Example石油公司」）不完全相等导致判定失效；改为比较双方提取的中文文本（正则 [\\u4e00-\\u9fff]+），同一实体不同写法（分隔符/引号/俄文拼写差异）一律不再补显灰色小字原始名。',
+    ],
+  },
   {
     version: '5.4.1',
     date: '2026-08-15',
