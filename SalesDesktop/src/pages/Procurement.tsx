@@ -51,25 +51,20 @@ export default function Procurement() {
     setPage(1);
   };
 
-  const renderProductName = (_: string, row: ProcurementItem) => {
-    const standard = row.standardProductName || row.productName;
-    const raw = row.rawProductName;
-    if (raw && standard && raw !== standard) {
-      return <span>{standard}<br /><small style={{ color: '#8c8c8c' }}>{raw}</small></span>;
-    }
-    return standard || raw || '--';
-  };
+  const renderProductName = (_: string, row: ProcurementItem) => (
+    <BilingualName value={row.standardProductName || row.productName} raw={row.rawProductName} />
+  );
 
   // 把中俄双语全称拆成「中文在上、俄文在下」两行显示（复用通用组件，与批发查询/过磅记录一致）
   const renderBilingual = (_: string, row: ProcurementItem, field: 'senderName' | 'entityName') => (
-    <BilingualName value={row[field]} />
+    <BilingualName value={row[field]} raw={field === 'senderName' ? row.senderRawName : row.entityRawName} />
   );
 
   const columns = [
     { title: t('common.date'), dataIndex: 'businessDate', key: 'businessDate', width: 140 },
-    { title: t('retail.product'), dataIndex: 'productName', key: 'productName', width: 190, render: renderProductName },
-    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: 200, render: (_: string, row: ProcurementItem) => renderBilingual(_, row, 'senderName') },
-    { title: t('weighing.receiverName'), dataIndex: 'entityName', key: 'entityName', width: 220, render: (_: string, row: ProcurementItem) => renderBilingual(_, row, 'entityName') },
+    { title: t('retail.product'), dataIndex: 'productName', key: 'productName', width: 200, render: renderProductName },
+    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: 220, render: (_: string, row: ProcurementItem) => renderBilingual(_, row, 'senderName') },
+    { title: t('weighing.receiverName'), dataIndex: 'entityName', key: 'entityName', width: 240, render: (_: string, row: ProcurementItem) => renderBilingual(_, row, 'entityName') },
     { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 110 },
     { title: t('common.source'), dataIndex: 'weighSource', key: 'weighSource', width: 120 },
     { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', width: 150 },

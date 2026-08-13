@@ -7,6 +7,7 @@ import { uploadWholesaleDetailXlsx, manualCreateWholesaleDetail, updateWholesale
 import type { ManualWholesaleDetailPayload } from '@/api/trainEntry';
 import { downloadWholesaleDetailsExport, getWholesaleDetails, getWholesaleDetailFilterOptions, type WholesaleItem } from '@/api/wholesale';
 import ExcelTable, { type ColumnDefinition, type ExcelTableHandle } from '@/components/common/ExcelTable';
+import BilingualName from '@/components/common/BilingualName';
 import { KpiGrid } from '@/components/ui/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -164,13 +165,12 @@ export default function TrainEntryPage() {
 
   const sourceLabel = (value?: string) => t(`wholesale.sources.${value || 'unknown'}`, { defaultValue: value || '--' });
   const matchStatusLabel = (value?: string) => t(`common.${value || 'unknown'}`, { defaultValue: value || '--' });
-  const displayCustomerName = (raw?: string, standard?: string) => {
-    return standard || raw || '--';
-  };
-  const displayProductName = (raw?: string, standard?: string) => {
-    const value = standard || raw || '--';
-    return <span>{value}</span>;
-  };
+  const displayCustomerName = (raw?: string, standard?: string) => (
+    <BilingualName value={standard} raw={raw} />
+  );
+  const displayProductName = (raw?: string, standard?: string) => (
+    <BilingualName value={standard} raw={raw} />
+  );
 
   const entryKpis = useMemo(() => {
     const totalTons = data.reduce((sum, row) => sum + Number(row.weightTons || Number(row.weightKg || 0) / 1000), 0);

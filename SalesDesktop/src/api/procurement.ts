@@ -5,7 +5,7 @@ const v2 = (path: string) => path.replace(/^\/api\/v2/, '') || '/';
 
 export interface ProcurementItem {
   id: number; businessDate: string; productName: string; rawProductName?: string; standardProductName?: string; senderName: string;
-  entityName: string; weightTons: number; weighSource: string; remark: string;
+  senderRawName?: string; entityName: string; entityRawName?: string; weightTons: number; weighSource: string; remark: string;
 }
 
 export async function getProcurementDetails(params: {

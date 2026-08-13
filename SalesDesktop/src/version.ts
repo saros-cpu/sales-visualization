@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.4.2';
+export const VERSION = '5.5.0';
 export const BUILD_DATE = '2026-08-15';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.5.0',
+    date: '2026-08-15',
+    type: 'minor',
+    changes: [
+      '统一：采购查询、数据录入明细维护与批发查询/称重列表采用一致的双语名称渲染——发货单位、收货单位、油品列统一走 BilingualName 组件（中文在上、俄文在下两行），原始名与标准名不同且中文主名不一致时才补显灰色小字原始名（同一实体不同写法不再重复显示）。',
+      '优化：采购查询发货/收货单位列补充原始名核对（senderRawName/entityRawName），油品列改为双语两行 + 原始名补充；列宽微调（发货 220/收货 240/油品 200）。',
+      '优化：数据录入（火车录入/批发明细维护）发货单位、收货单位、油品列由单行文本改为中俄双语两行显示，与数据查询保持一致。',
+      '注：权限维护 OrganizationPermissions 中英文映射存在历史遗留重复 key（不影响本次功能），后续单独清理。',
+    ],
+  },
   {
     version: '5.4.2',
     date: '2026-08-15',
