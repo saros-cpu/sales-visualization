@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.5.0';
+export const VERSION = '5.5.1';
 export const BUILD_DATE = '2026-08-15';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.5.1',
+    date: '2026-08-15',
+    type: 'patch',
+    changes: [
+      '修复：称重审核等页面原始名为纯俄文写法（如 Example Petroleum CJSC vs 标准名 Example石油公司CJSC" ExampleCo Petroleum Companyя ExampleCo"）时，5.4.2 的中文比较判定因原始名无中文而失效，仍补显第三行导致名称重复。新增俄文词重叠判定（去掉 CJSC/НПЗ 等通用词后，原始名与标准名俄文词重合 ≥50% 视为同一实体，不再补显）。',
+      '修复：权限维护 OrganizationPermissions 中英文 moduleNames 中 wholesale_entry 键重复（TS1117），已去重，typecheck 恢复通过。',
+    ],
+  },
   {
     version: '5.5.0',
     date: '2026-08-15',

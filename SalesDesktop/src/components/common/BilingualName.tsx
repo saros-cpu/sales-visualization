@@ -23,12 +23,29 @@ export default function BilingualName({ value, raw, bold = true }: BilingualName
   const cnPart = (s: string) => (s.match(/[\u4e00-\u9fff]+/g) || []).join('');
   const cnName = cnPart(name);
   const cnRaw = raw ? cnPart(raw) : '';
+  // 俄文词重叠比较：原始名可能为纯俄文写法（如 CJSC''ExampleCo Petroleum Company ExampleCo'' vs
+  // 标准名 Example石油公司CJSC" ExampleCo Petroleum Companyя ExampleCo"），无中文字符时按俄文词
+  // 重合度判定是否同一实体（去掉 CJSC/НПЗ 等通用法律词，重合 ≥50% 视为同一实体）。
+  const LEGAL_RU_WORDS = new Set(['CJSC', 'ООО', 'ЗАО', 'ОАО', 'ТОО', 'ИП', 'ЧП', 'НПЗ', 'A3C', 'АЗС', 'AZS']);
+  const ruWords = (s: string) => (s.match(/[А-Яа-яЁёA-Za-z]{2,}/g) || [])
+    .map((w) => w.toUpperCase())
+    .filter((w) => !LEGAL_RU_WORDS.has(w));
+  const ruOverlap = (a: string, b: string): boolean => {
+    const wa = ruWords(a);
+    const wb = ruWords(b);
+    if (!wa.length || !wb.length) return false;
+    const setB = new Set(wb);
+    const hit = wa.filter((w) => setB.has(w)).length;
+    return hit / wa.length >= 0.5;
+  };
+  const sameRu = raw ? ruOverlap(raw, name) : false;
   const showRaw =
     !!raw &&
     !!raw.trim() &&
     raw.trim() !== name &&
     !name.includes(raw.trim()) &&
-    !(cnName && cnRaw && cnName === cnRaw);
+    !(cnName && cnRaw && cnName === cnRaw) &&
+    !sameRu;
 
   return (
     <span style={{ display: 'inline-block', textAlign: 'center', lineHeight: 1.25 }}>
