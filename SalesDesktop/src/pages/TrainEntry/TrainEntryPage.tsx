@@ -61,27 +61,27 @@ export default function TrainEntryPage() {
   const [customerOpts, setCustomerOpts] = useState<CustomerOption[]>([]);
 
   const processingSenderValues = useMemo(() => new Set([
-    'Р‘РђР™Р­Р›Р¬-Р—',
-    'OcOO  вЂњРЎРїРµРєС‚СЂСѓРј РџРµС‚СЂРѕР»РµСѓРјвЂќ',
-    'РћРЎРћРћ "РђР РўР­Р›Р¬  Р“Р РЈРџРџ"',
-    'Р‘РµС‚С‚Р° РўСЂРµР№Рґ',
-    'РћСЃРћРћ "РџСЂРѕРјРµС‚РµР№"',
+    'CUSTOMER-H',
+    'OcOO  “CUSTOMER-F”',
+    'CJSC "CUSTOMER-E  ГРУПП"',
+    'CUSTOMER-G',
+    'CJSC "CUSTOMER-J"',
   ]), []);
 
   const senderOptions = useMemo(() => [
     {
-      value: 'дё­е¤§дё­е›ЅзџіжІ№е…¬еЏё / РћСЃРћРћ Р§Р°Р№РЅР° РџРµС‚СЂРѕР»СЊ РљРѕРјРїР°РЅРё Р”Р¶СѓРЅРґР°',
+      value: 'Example石油公司 / Example Petroleum CJSC',
       label: t('wholesaleEntry.senderZd'),
     },
     {
-      value: 'жІ№ж°”е…¬еЏё / РћСЃРћРћ РљС‹СЂРіС‹Р·СЃРєР°СЏ РїСЂРѕРјС‹С€Р»РµРЅРЅР°СЏ РєРѕРјРїР°РЅРёСЏ РЅРµС„С‚СЊ Рё РіР°Р· (РљРџРљ)',
+      value: '油气公司 / CJSC CUSTOMER-S нефть и газ (CUSTOMER-S-АББР)',
       label: t('wholesaleEntry.senderCustomerSAbbr'),
     },
-    { value: 'Р‘РђР™Р­Р›Р¬-Р—', label: t('wholesaleEntry.senderCustomerH') },
-    { value: 'OcOO  вЂњРЎРїРµРєС‚СЂСѓРј РџРµС‚СЂРѕР»РµСѓРјвЂќ', label: t('wholesaleEntry.senderCustomerF') },
-    { value: 'РћРЎРћРћ "РђР РўР­Р›Р¬  Р“Р РЈРџРџ"', label: t('wholesaleEntry.senderCustomerE') },
-    { value: 'Р‘РµС‚С‚Р° РўСЂРµР№Рґ', label: t('wholesaleEntry.senderCustomerG') },
-    { value: 'РћСЃРћРћ "РџСЂРѕРјРµС‚РµР№"', label: t('wholesaleEntry.senderCustomerJ') },
+    { value: 'CUSTOMER-H', label: t('wholesaleEntry.senderCustomerH') },
+    { value: 'OcOO  “CUSTOMER-F”', label: t('wholesaleEntry.senderCustomerF') },
+    { value: 'CJSC "CUSTOMER-E  ГРУПП"', label: t('wholesaleEntry.senderCustomerE') },
+    { value: 'CUSTOMER-G', label: t('wholesaleEntry.senderCustomerG') },
+    { value: 'CJSC "CUSTOMER-J"', label: t('wholesaleEntry.senderCustomerJ') },
   ], [t]);
 
   const transportOptions = useMemo(() => [
@@ -366,7 +366,7 @@ export default function TrainEntryPage() {
       ...centerAlign,
     },
     { title: t('common.classification'), dataIndex: 'classification', key: 'classification', width: 150, editable: true, editorType: 'select', editorOptions: classificationOptions, render: (value) => t(`wholesale.${value}`, { defaultValue: value || '--' }), ...centerAlign },
-    { title: t('common.matchStatus', { defaultValue: 'еЊ№й…ЌзЉ¶жЂЃ' }), dataIndex: 'matchStatus', key: 'matchStatus', width: 110, render: matchStatusLabel, ...centerAlign },
+    { title: t('common.matchStatus', { defaultValue: '匹配状态' }), dataIndex: 'matchStatus', key: 'matchStatus', width: 110, render: matchStatusLabel, ...centerAlign },
     { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: 220, editable: true, render: (value) => value || '--', ...centerAlign },
     { title: t('common.createdAt'), dataIndex: 'createdAt', key: 'createdAt', width: 160, render: (value) => value || '--', ...centerAlign },
   ];

@@ -15,13 +15,13 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `5.4.0`.
-- Current release code commit: tag `v5.4.0`（版本号 5.3.0 → 5.4.0，含 5.3.0 之后全部修复：双语两行显示、列宽自适应/居中、录入回车焦点、采购查询、明细保存 500、乱码根因修复）；previous release was `v5.3.0`.
+- Current released client version: `5.5.1`.
+- Current release code commit: tag `v5.5.1`（提交 `36115a9`，版本号 5.5.0 → 5.5.1，含 5.5.0 之后修复：称重审核纯俄文原始名重复显示根治——BilingualName 俄文词重叠判定、OrganizationPermissions 重复 key TS1117 修复）；previous release was `v5.5.0`（提交 `0568a36`：采购查询/数据录入明细维护双语显示统一）；再往前 v5.4.2（`a3bd703`：BilingualName 中文文本比较根治）、v5.4.1（`3b7ca26`：中文主行相等判定）、v5.4.0（`e102b10`：双语两行显示/列宽自适应/居中/录入回车焦点/采购查询/明细保存 500/乱码根因修复）。注意：v5.2.0（`a8f0b40`）/v5.3.0（`7cb50ff`）原始提交为悬空对象（孤儿分支整理所致），其内容已并入 master 链（`db31927`/`b853522` 等），对应 tag `v5.2.0`/`v5.3.0` 为追溯兜底，非 HEAD 祖先。
 - Production public entry: `https://sales.example.com/`.
 - Production backup entry details are kept only in `docs/配置文档.md`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `https://sales.example.com/download/latest.yml`; fallback endpoint details are kept only in `docs/配置文档.md`.
-- Current installer: `SalesDesktop Setup 5.4.0.exe`.
+- Current installer: `SalesDesktop Setup 5.5.1.exe`.
 - Current wallpaper package: `SalesWallpaperEngine 0.2.5` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
 - The old web wallpaper package is retired and removed. Future wallpaper work must use `SalesWallpaperEngine`.
 - HTTPS certificate: enabled; certificate paths are kept only in `docs/配置文档.md`. HTTP remains active for compatibility.

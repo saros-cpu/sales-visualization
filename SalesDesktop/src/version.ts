@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.5.1';
-export const BUILD_DATE = '2026-08-15';
+export const VERSION = '5.5.2';
+export const BUILD_DATE = '2026-08-16';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.5.2',
+    date: '2026-08-16',
+    type: 'patch',
+    changes: [
+      '修复：数据录入（手工录入/明细维护）发货单位下拉 7 个选项与代加工分类判断的 value 为 CP1251 双重编码乱码，导致纯俄文代加工发货方（CUSTOMER-H/CUSTOMER-F/CUSTOMER-E/CUSTOMER-G/CUSTOMER-J）提交入库仍是乱码、下拉回显匹配失败；已全部还原为正确 UTF-8 文本。',
+      '治理：BilingualName 的 showRaw 判定提取为纯函数 shouldShowRaw 并补单测护栏（覆盖中文主名相同/俄文词重叠≥50%/不同实体补显等场景）；拆分逻辑修复中文主行尾部残留分隔符问题。',
+    ],
+  },
   {
     version: '5.5.1',
     date: '2026-08-15',
