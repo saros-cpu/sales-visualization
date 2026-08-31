@@ -295,11 +295,11 @@ def contract_execution(contract_id):
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             cur.execute('''
-                SELECT c.*, cm.year_month, cm.volume_tons AS executed_tons
+                SELECT c.*, DATE_FORMAT(cm.ym, '%%Y-%%m') AS ym, cm.volume_tons AS executed_tons
                 FROM contracts c
                 LEFT JOIN contract_monthly_volumes cm ON c.id = cm.contract_id
                 WHERE c.id = %s
-                ORDER BY cm.year_month
+                ORDER BY cm.ym
             ''', (contract_id,))
             rows = cur.fetchall()
             if not rows:
@@ -308,9 +308,9 @@ def contract_execution(contract_id):
             contract = dict(rows[0])
             monthly = []
             for row in rows:
-                if row.get('year_month'):
+                if row.get('ym'):
                     monthly.append({
-                        'yearMonth': str(row['year_month']),
+                        'yearMonth': str(row['ym']),
                         'executedTons': float(row['executed_tons']),
                     })
 
@@ -338,14 +338,14 @@ def contract_auto_volume(contract_id):
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             cur.execute('''
-                SELECT DATE_FORMAT(w.business_date, '%%Y-%%m') AS year_month,
-                       SUM(w.net_weight / 1000) AS volume_tons
+                SELECT DATE_FORMAT(w.business_date, '%%Y-%%m') AS ym,
+                       SUM(w.weight_tons) AS volume_tons
                 FROM wholesale_detail_records w
                 WHERE w.contract_id = %s
-                GROUP BY year_month
-                ORDER BY year_month
+                GROUP BY ym
+                ORDER BY ym
             ''', (contract_id,))
-            monthly = [{'yearMonth': r['year_month'], 'volumeTons': round(float(r['volume_tons']), 3)} for r in cur.fetchall()]
+            monthly = [{'yearMonth': r['ym'], 'volumeTons': round(float(r['volume_tons']), 3)} for r in cur.fetchall()]
             return jsonify({'code': 0, 'message': 'success', 'data': monthly})
     finally:
         conn.close()
