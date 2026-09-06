@@ -528,5 +528,63 @@ class _FakeWholesaleRecalculationCursor(_FakeWholesaleLookupCursor):
         return None
 
 
+class LookupEntityCatalogFallbackTest(unittest.TestCase):
+    """lookup_entity 零售板块 catalog 兜底：新增站点别名未登记也能识别为外运站点。"""
+
+    def _build_lookup(self):
+        # 模拟 entity_aliases 中无该站点别名（仅有其他实体）
+        return {
+            "CJSC CUSTOMER-K": {"entity_type": "wholesale_customer", "entity_code": "2", "standard_name": "CJSC CUSTOMER-K"},
+            "S-36": {"entity_type": "retail_station", "entity_code": "18", "standard_name": "S-36"},
+        }
+
+    def test_new_station_without_alias_resolves_via_catalog(self):
+        import import_helpers
+        import shared_utils
+
+        original = shared_utils.retail_station_catalog_cached
+        shared_utils.retail_station_catalog_cached = lambda: {
+            31: {"name": "新站北", "short": "Новый Стан"},
+        }
+        try:
+            result = import_helpers.lookup_entity(self._build_lookup(), "Новый Стан")
+        finally:
+            shared_utils.retail_station_catalog_cached = original
+        self.assertEqual(result, {
+            "entity_type": "retail_station",
+            "entity_code": "31",
+            "standard_name": "Новый Стан",
+        })
+
+    def test_new_station_with_azs_prefix_and_latin_homoglyph(self):
+        import import_helpers
+        import shared_utils
+
+        original = shared_utils.retail_station_catalog_cached
+        shared_utils.retail_station_catalog_cached = lambda: {
+            5: {"name": "STN-09", "short": "S-10"},
+        }
+        try:
+            result = import_helpers.lookup_entity(self._build_lookup(), "АЗС   S-10")
+        finally:
+            shared_utils.retail_station_catalog_cached = original
+        self.assertEqual(result["entity_type"], "retail_station")
+        self.assertEqual(result["entity_code"], "5")
+
+    def test_customer_not_shadowed_by_catalog(self):
+        import import_helpers
+        import shared_utils
+
+        original = shared_utils.retail_station_catalog_cached
+        shared_utils.retail_station_catalog_cached = lambda: {
+            5: {"name": "STN-09", "short": "S-10"},
+        }
+        try:
+            result = import_helpers.lookup_entity(self._build_lookup(), "CJSC CUSTOMER-K")
+        finally:
+            shared_utils.retail_station_catalog_cached = original
+        self.assertEqual(result["entity_type"], "wholesale_customer")
+
+
 if __name__ == "__main__":
     unittest.main()

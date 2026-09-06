@@ -449,6 +449,14 @@ body {
   overflow-x: auto !important;
 }
 
+/* 关键修复：让 antd 表格容器按内容宽度展开（15列约2228px），
+   由外层 .client-fit-table-scroll(overflow:auto) 负责横向滚动，
+   避免被 flex 父容器宽度钳制导致右侧列被截断且无法滚动。 */
+.train-entry-table-scroll .ant-table-wrapper {
+  width: max-content;
+  min-width: 100%;
+}
+
 .train-entry-table-scroll .ant-table-thead > tr > th,
 .train-entry-table-scroll .ant-table-tbody > tr > td {
   text-align: center;

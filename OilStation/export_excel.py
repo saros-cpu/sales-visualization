@@ -69,10 +69,13 @@ SK4_RSK_MAP = {
     7: 108,
 }
 
-# SK=30 STN-59：现场确认仅保留 92 和 80，不再展示柴油罐。
+# SK=30 STN-59：RSK=7→92、RSK=8→80、RSK=9→柴油。
+# RSK=9 柴油罐自 2026-09-03 首次进油（8666 L），此前一直空罐；原映射缺 RSK=9，
+# 导致该罐的进/销/存全部被丢弃，月报里STN-59没有柴油行。
 SK30_RSK_MAP = {
     7: 103,   # АИ-92
     8: 102,   # АИ-80
+    9: 106,   # Д/Т
 }
 
 # SK=29 STN-57：测试数据清理后 EndPrice=0，价格推断失效
@@ -97,6 +100,104 @@ STATION_RK_CORRECTIONS = {
     # 4月14日及之后：RK 编号已改变，依赖 EndPrice 价格推断更可靠
     # 故 SK=6 不做静态映射，使用 SK6_RSK_MAP 通过 ResourceShopKey 精确区分
 }
+
+# ============================================================================
+# 站点油罐→油品 固化映射（2026-09-04 立项，防液化气/油品错分复发）
+# 数据依据：全历史逐罐审计（2024-2026 selling 逐罐分年推断稳定性），规则：
+#   ① 液化气罐与既有特殊站罐 = 前置权威（物理罐位事实，优先于 ResourceKey）；
+#   ② 全历史单一油品的罐 = 无条件固化；
+#   ③ 2025-01-01 起单一油品但 2024 年曾装他油的罐 = 带生效日固化（历史仍走价格分桶）；
+#   ④ 2025 年后仍多油品的罐（仅 SK21 t2）不固化，由 scripts/validate_tank_map.py 盯防。
+# 维护约定：新增站点/油罐/罐换装时只改这两个字典，并运行校验脚本；
+#   详见《docs/客户名及自有站点名维护.md》「站点油罐-油品映射」章节。
+# ============================================================================
+# 前置权威层：无条件生效，优先于 ResourceKey 判定
+STATION_TANK_RESOURCE_MAP_PRIMARY = {
+    # 液化气罐（RSK 精确；防调价越过 p<=45 价格阈值后复发错分）
+    (2, 7): 108, (3, 7): 108, (4, 7): 108, (5, 8): 108, (8, 6): 108,
+    (13, 7): 108, (14, 6): 108, (19, 7): 108, (22, 7): 108, (24, 7): 108, (26, 7): 108,
+    # STN-55 SK=28（6 罐，ResourceKey 恒为 0）
+    (28, 7): 102, (28, 8): 103, (28, 9): 104, (28, 10): 109, (28, 11): 110, (28, 12): 108,
+    # STN-11 SK=6（supply.Density 验证）
+    (6, 1): 103, (6, 2): 104, (6, 3): 102, (6, 5): 106,
+    # STN-57 SK=29（测试数据清理后 EndPrice=0，价格推断失效）
+    (29, 7): 103, (29, 8): 102, (29, 9): 106, (29, 10): 108,
+    # STN-59 SK=30（罐9 2026-09-03 首次进油）
+    (30, 7): 103, (30, 8): 102, (30, 9): 106,
+}
+
+# 固化兜底层：ResourceKey<100 且有价时先于价格分桶；(罐号, 油品, 生效日)
+STATION_TANK_RESOURCE_MAP = {
+    # 无条件固化（全历史单一油品）
+    (1, 2): (102, None),
+    (2, 2): (102, None),
+    (3, 3): (102, None),
+    (8, 3): (102, None),
+    (9, 3): (102, None),
+    (12, 3): (102, None),
+    (13, 3): (102, None),
+    (18, 1): (103, None), (18, 3): (102, None),
+    (19, 1): (103, None), (19, 3): (102, None),
+    (20, 1): (103, None), (20, 3): (102, None),
+    (21, 3): (102, None),
+    (22, 1): (103, None), (22, 3): (102, None),
+    (23, 1): (103, None), (23, 3): (102, None),
+    (25, 1): (103, None), (25, 3): (102, None),
+    (26, 1): (103, None), (26, 3): (102, None),
+    (27, 1): (103, None),
+    # 2025-01-01 起固化（2024 年该罐曾有其他油品，更早历史仍走价格分桶）
+    (1, 1): (103, '2025-01-01'), (1, 5): (106, '2025-01-01'),
+    (2, 1): (103, '2025-01-01'), (2, 5): (106, '2025-01-01'),
+    (3, 1): (103, '2025-01-01'), (3, 2): (104, '2025-01-01'), (3, 5): (106, '2025-01-01'),
+    (4, 1): (103, '2025-01-01'), (4, 2): (104, '2025-01-01'), (4, 5): (106, '2025-01-01'),
+    (5, 1): (103, '2025-01-01'), (5, 2): (104, '2025-01-01'), (5, 5): (106, '2025-01-01'), (5, 7): (102, '2025-01-01'),
+    (7, 1): (103, '2025-01-01'), (7, 2): (102, '2025-01-01'), (7, 5): (106, '2025-01-01'),
+    (8, 1): (103, '2025-01-01'), (8, 5): (106, '2025-01-01'),
+    (9, 1): (103, '2025-01-01'), (9, 2): (104, '2025-01-01'), (9, 5): (106, '2025-01-01'),
+    (10, 1): (103, '2025-01-01'), (10, 2): (104, '2025-01-01'), (10, 4): (102, '2025-01-01'), (10, 5): (106, '2025-01-01'),
+    (11, 1): (103, '2025-01-01'), (11, 2): (104, '2025-01-01'), (11, 5): (106, '2025-01-01'),
+    (12, 1): (103, '2025-01-01'), (12, 2): (104, '2025-01-01'), (12, 5): (106, '2025-01-01'),
+    (13, 1): (103, '2025-01-01'), (13, 2): (104, '2025-01-01'), (13, 5): (106, '2025-01-01'),
+    (14, 1): (103, '2025-01-01'), (14, 3): (102, '2025-01-01'), (14, 5): (106, '2025-01-01'),
+    (15, 1): (103, '2025-01-01'), (15, 2): (102, '2025-01-01'), (15, 5): (106, '2025-01-01'),
+    (16, 1): (103, '2025-01-01'), (16, 3): (102, '2025-01-01'), (16, 5): (106, '2025-01-01'),
+    (17, 1): (103, '2025-01-01'), (17, 2): (104, '2025-01-01'), (17, 3): (102, '2025-01-01'), (17, 5): (106, '2025-01-01'),
+    (18, 5): (106, '2025-01-01'),
+    (19, 5): (106, '2025-01-01'),
+    (20, 2): (104, '2025-01-01'), (20, 5): (106, '2025-01-01'),
+    (21, 1): (103, '2025-01-01'), (21, 5): (106, '2025-01-01'),
+    (22, 5): (106, '2025-01-01'),
+    (23, 2): (104, '2025-01-01'), (23, 5): (106, '2025-01-01'),
+    (24, 1): (103, '2025-01-01'), (24, 3): (102, '2025-01-01'), (24, 5): (106, '2025-01-01'),
+    (25, 5): (106, '2025-01-01'),
+    (26, 2): (104, '2025-01-01'), (26, 5): (106, '2025-01-01'),
+    (27, 2): (104, '2025-01-01'), (27, 3): (102, '2025-01-01'), (27, 5): (106, '2025-01-01'),
+}
+# 未固化留观罐（2025+ 仍多油品，由校验护栏盯防）：(21, 2) —— 2025+ 出现过 4/102/103
+
+
+def tank_resource_code(shop_key, rsk, tx_date=None):
+    """查「站点油罐→油品」固化映射，返回标准 ResourceCode 或 None。
+
+    先查前置权威层（无条件），再查固化兜底层（date_from 非空时要求
+    tx_date >= date_from，tx_date 为空则跳过带生效日的条目）。
+    """
+    if rsk is None:
+        return None
+    try:
+        sk, tank = int(shop_key or 0), int(rsk)
+    except (TypeError, ValueError):
+        return None
+    code = STATION_TANK_RESOURCE_MAP_PRIMARY.get((sk, tank))
+    if code:
+        return code
+    entry = STATION_TANK_RESOURCE_MAP.get((sk, tank))
+    if entry:
+        code, dfrom = entry
+        if not dfrom or (tx_date and str(tx_date)[:10] >= dfrom):
+            return code
+    return None
+
 
 MONTH_NAMES_RU = {1:'Январь',2:'Февраль',3:'Март',4:'Апрель',5:'Май',6:'Июнь',
                   7:'Июль',8:'Август',9:'Сентябрь',10:'Октябрь',11:'Ноябрь',12:'Декабрь'}
@@ -153,6 +254,90 @@ def _supply_mass_expr(prefix=''):
         f"{p}Volume * NULLIF({p}DensityTTN, 0), "
         f"{p}Volume * NULLIF({p}DocDensity, 0), 0)"
     )
+
+
+def selling_inferred_resource_key_sql(alias='', date_col='TransactionDatetime'):
+    """selling 表油品推断的唯一权威 SQL CASE 表达式。
+
+    判定顺序（2026-09-04 起由固化映射字典驱动）：
+      1. 前置权威层 STATION_TANK_RESOURCE_MAP_PRIMARY（物理罐位事实，含全部液化气罐
+         与既有特殊站映射，优先于 ResourceKey）；
+      2. (7, 15) 的 RK=104 实为 АИ-80 修正；
+      3. ResourceKey >= 100 直接透传；
+      4. BasePrice <= 0 透传原始 ResourceKey（0 由调用方跳过）；
+      5. 固化兜底层 STATION_TANK_RESOURCE_MAP（带生效日，先于价格分桶）；
+      6. 价格分桶兜底（未登记罐）。
+    历史教训：这段推断曾在 generator.py / export_excel.py / retail_bridge.py
+    等 20 处逐字复制。2026-08-02（提交 06c3dd8）只给「库存(balance)」侧补上了
+    SK=19/22/24 液化气罐的 RSK 映射，其余副本没同步 —— 结果 19/22/24 号站的
+    液化气销售（单价 45.9/47.8，越过 p<=45 阈值）与入库全被判成 АИ-80，
+    而库存仍归 СПБТ，出现「库存不动却在卖」的错账。
+    任何油品/油罐口径变更都必须只改 STATION_TANK_RESOURCE_MAP(_PRIMARY) 两个字典。
+    """
+    p = f'{alias}.' if alias else ''
+    lines = []
+    for (sk, rsk), code in sorted(STATION_TANK_RESOURCE_MAP_PRIMARY.items()):
+        lines.append(f"WHEN {p}ShopKey = {sk} AND {p}ResourceShopKey = {rsk} THEN {code}")
+    lines.append(f"WHEN {p}ShopKey IN (7, 15) AND {p}ResourceKey = 104 THEN 102")
+    lines.append(f"WHEN {p}ResourceKey >= 100 THEN {p}ResourceKey")
+    lines.append(f"WHEN {p}BasePrice <= 0 THEN {p}ResourceKey")
+    for (sk, rsk), (code, dfrom) in sorted(STATION_TANK_RESOURCE_MAP.items()):
+        cond = f"{p}ShopKey = {sk} AND {p}ResourceShopKey = {rsk}"
+        if dfrom:
+            cond += f" AND {p}{date_col} >= '{dfrom}'"
+        lines.append(f"WHEN {cond} THEN {code}")
+    lines.append(f"WHEN {p}BasePrice <= 45 THEN 108")
+    lines.append(f"WHEN {p}BasePrice <= 65 THEN 102")
+    lines.append(f"WHEN {p}BasePrice <= 78 THEN 103")
+    lines.append(f"WHEN {p}BasePrice <= 83 THEN 104")
+    lines.append("ELSE 106")
+    return "CASE\n        " + "\n        ".join(lines) + "\n    END"
+
+
+def infer_supply_resource_key(shop_key, orig_rk, rsk, ref_price=0, avg_density=0,
+                              rsk_std_map=None, tx_date=None):
+    """supply（入库/转运）油品推断的唯一权威实现，返回标准 ResourceKey。
+
+    与 selling_inferred_resource_key_sql 保持同一套站点油罐口径：优先按站点的
+    ResourceShopKey 精确映射（前置权威层 + 固化兜底层，日期感知），未覆盖时
+    回退 selling 参考价/密度推断。
+    返回 <100 表示无法推断，调用方应跳过该行。
+    """
+    sk = int(shop_key or 0)
+    orig_rk = int(orig_rk or 0)
+    if orig_rk >= 100:
+        return STATION_RK_CORRECTIONS.get((sk, orig_rk), orig_rk)
+    if rsk is not None:
+        try:
+            rsk = int(rsk)
+        except (TypeError, ValueError):
+            rsk = None
+        if rsk is not None:
+            if sk in (28, 29, 30):
+                # 既有口径：整站 RSK 映射，未登记罐号回退 orig_rk（保持原行为）
+                mapped = STATION_TANK_RESOURCE_MAP_PRIMARY.get((sk, rsk))
+                return mapped if mapped is not None else orig_rk
+            # 前置权威层（液化气罐等）+ 固化兜底层（日期感知）
+            pinned = tank_resource_code(sk, rsk, tx_date)
+            if pinned:
+                return pinned
+            if rsk_std_map and (sk, rsk) in rsk_std_map:
+                return rsk_std_map[(sk, rsk)]
+    ref_price = float(ref_price or 0)
+    avg_density = float(avg_density or 0)
+    if ref_price > 0:
+        if ref_price <= 45:
+            return 108
+        if ref_price <= 65:
+            return 102
+        if ref_price <= 78:
+            return 103
+        if ref_price <= 83:
+            return 106 if avg_density > 0.82 else 104
+        return 106
+    if avg_density > 0:
+        return 106 if avg_density > 0.82 else 103
+    return 0
 
 
 def _balance_begin_mass_expr(prefix='b'):
@@ -285,34 +470,6 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
     selling_by_business_day = selling_business_day_subquery("selling", ym_start, ym_end, station_keys)
     allow_fixed_density_fallback = _allow_fixed_density_fallback(ym_start)
 
-    # 价格分桶 SQL 表达式：对旧编码/RK=0 在数据库层面直接按价格分组为标准 ResourceKey
-    # SK=28(STN-55)有6个油罐全部 RK=0，用 ResourceShopKey 精确映射
-    RK_BUCKET_EXPR = """
-        CASE
-            WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-            WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-            WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-            WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-            WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-            WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-            WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-            WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-            WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-            WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-            WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-            WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-            WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-            WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-            WHEN ResourceKey >= 100 THEN ResourceKey
-            WHEN BasePrice <= 0    THEN ResourceKey
-            WHEN BasePrice <= 45   THEN 108
-            WHEN BasePrice <= 65   THEN 102
-            WHEN BasePrice <= 78   THEN 103
-            WHEN BasePrice <= 83   THEN 104
-            ELSE 106
-        END
-    """
 
     def _merge_sales(d, sk, rk, row_data):
         """将 row_data 累加到 d[sk][rk]（处理同 sk+rk 多条记录合并）"""
@@ -346,34 +503,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
     )
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(CASE WHEN BasePaymentTypeKey = 1 AND COALESCE(DerivedPaymentTypeKey, 0) <> 5 THEN Volume ELSE 0 END) as cash_vol,
             SUM(CASE WHEN BasePaymentTypeKey = 1 AND COALESCE(DerivedPaymentTypeKey, 0) <> 5 THEN ShopCost ELSE 0 END) as cash_amt,
             SUM(CASE WHEN BasePaymentTypeKey = 2 OR DerivedPaymentTypeKey = 5 THEN Volume ELSE 0 END) as card_vol,
@@ -391,34 +521,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         WHERE business_day >= %s AND business_day < %s
           AND (DerivedPaymentTypeKey IS NULL OR DerivedPaymentTypeKey NOT IN (2, 3, 4))
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END
+            {selling_inferred_resource_key_sql()}
     """, (ym_start, ym_end))
     sales_data = {}
     for r in cur.fetchall():
@@ -452,34 +555,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
     # 查询自用油（DerivedPayType=2），按价格分桶分组
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(Volume) as ved_vol,
             SUM({selling_mass_expr}) as ved_mass,
             SUM({selling_mass_expr}) / NULLIF(SUM(Volume), 0) as weighted_density
@@ -487,34 +563,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 2
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END
+            {selling_inferred_resource_key_sql()}
     """, (ym_start, ym_end))
     ved_data = MetricMap()
     ved_data.mass = {}
@@ -538,34 +587,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
     # 查询合同销售（DerivedPayType=3），按价格分桶分组
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(Volume) as contract_vol,
             SUM(ShopCost) as contract_amt,
             SUM(ShopCost) / NULLIF(SUM(Volume), 0) as contract_price,
@@ -575,34 +597,7 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 3
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END
+            {selling_inferred_resource_key_sql()}
     """, (ym_start, ym_end))
     contract_data = {}
     for r in cur.fetchall():
@@ -751,44 +746,15 @@ def _build_sheet_data(cur, ym_start, ym_end, station_keys):
         rsk = r[4]
         mass = _round_half_up(float(r[5] or 0), 3)
 
-        if orig_rk >= 100:
-            rk = orig_rk  # 标准编码，直接使用
-            # 修正非标准 RK（如 SK=7/15 的 RK=104 实际是 80 号）
-            corrected = STATION_RK_CORRECTIONS.get((sk, rk))
-            if corrected:
-                rk = corrected
-        elif sk == 28 and rsk is not None:
-            # SK=28 专用：通过 ResourceShopKey 精确映射
-            rk = SK28_RSK_MAP.get(int(rsk), orig_rk)
-        elif sk == 30 and rsk is not None:
-            rk = SK30_RSK_MAP.get(int(rsk), orig_rk)
-        elif sk == 29 and rsk is not None:
-            rk = SK29_RSK_MAP.get(int(rsk), orig_rk)
-        elif rsk is not None and (sk, int(rsk)) in _rsk_std_map_monthly:
-            # 用 balance 表建立的 RSK→标准RK 映射
-            rk = _rsk_std_map_monthly[(sk, int(rsk))]
-        else:
-            # 优先查 selling 价格参照表
-            ref_price = selling_price_ref.get((sk, orig_rk), 0)
-            if ref_price > 0:
-                # 价格区间推断（与 daily_supply_cache 部分保持一致）
-                if ref_price <= 45:   rk = 108  # СПБТ
-                elif ref_price <= 65: rk = 102  # АИ-80
-                elif ref_price <= 78: rk = 103  # АИ-92
-                elif ref_price <= 83:
-                    rk = 104  # АИ-95
-                    # 低价柴油密度>0.82时覆盖
-                    if avg_density > 0.82:
-                        rk = 106
-                else:                 rk = 106  # Д/Т
-            elif avg_density > 0:
-                # 无价格参照时用密度推断：柴油 >0.82，汽油各型号无法区分时默认 АИ-92
-                if avg_density > 0.82:
-                    rk = 106  # Д/Т
-                else:
-                    rk = 103  # 汽油类，默认 АИ-92（保守估计）
-            else:
-                continue  # 无法推断，跳过
+        # 统一走 infer_supply_resource_key：站点油罐(RSK)精确映射优先，
+        # 未覆盖时回退 selling 参考价 / 密度推断。禁止在此处再写分支副本。
+        rk = infer_supply_resource_key(
+            sk, orig_rk, rsk,
+            ref_price=selling_price_ref.get((sk, orig_rk), 0),
+            avg_density=avg_density,
+            rsk_std_map=_rsk_std_map_monthly,
+            tx_date=ym_start,
+        )
         if rk < 100:
             continue
         if sk not in supply_data:
@@ -1198,27 +1164,7 @@ def _build_daily_sheet_data(cur, day, station_keys):
 
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(CASE WHEN BasePaymentTypeKey = 1 AND COALESCE(DerivedPaymentTypeKey, 0) <> 5 THEN Volume ELSE 0 END) as cash_vol,
             SUM(CASE WHEN BasePaymentTypeKey = 1 AND COALESCE(DerivedPaymentTypeKey, 0) <> 5 THEN ShopCost ELSE 0 END) as cash_amt,
             SUM(CASE WHEN BasePaymentTypeKey = 2 OR DerivedPaymentTypeKey = 5 THEN Volume ELSE 0 END) as card_vol,
@@ -1232,27 +1178,7 @@ def _build_daily_sheet_data(cur, day, station_keys):
         WHERE business_day >= %s AND business_day < %s
           AND (DerivedPaymentTypeKey IS NULL OR DerivedPaymentTypeKey NOT IN (2, 3, 4))
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END
+            {selling_inferred_resource_key_sql()}
     """, (day_start, day_end))
     sales_data = {}
     for r in cur.fetchall():
@@ -1278,53 +1204,13 @@ def _build_daily_sheet_data(cur, day, station_keys):
 
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(Volume) as ved_vol
         FROM {selling_by_business_day}
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 2
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END
+            {selling_inferred_resource_key_sql()}
     """, (day_start, day_end))
     ved_data = {}
     for r in cur.fetchall():
@@ -1340,27 +1226,7 @@ def _build_daily_sheet_data(cur, day, station_keys):
     # 查询合同销售（DPT=3）
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(Volume) as contract_vol,
             SUM(ShopCost) as contract_amt,
             SUM(ShopCost) / NULLIF(SUM(Volume), 0) as contract_price
@@ -1368,27 +1234,7 @@ def _build_daily_sheet_data(cur, day, station_keys):
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 3
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END
+            {selling_inferred_resource_key_sql()}
     """, (day_start, day_end))
     contract_data = {}
     for r in cur.fetchall():
@@ -1891,7 +1737,7 @@ def _write_station_block(ws, row, shop_key, info, sales_data, ved_data, supply_d
     return sub_row + 1
 
 
-def _infer_resource_code_daily(rc, price, rsk=None, sk=None):
+def _infer_resource_code_daily(rc, price, rsk=None, sk=None, tx_date=None):
     """推断 ResourceCode：与 _build_sheet_data 内的逻辑一致
     - SK=28 且 rsk 有值时，通过 SK28_RSK_MAP 映射
     - SK=6 STN-11且 rsk 有值时，通过 SK6_RSK_MAP 精确映射（解决价格相近导致油品混淆问题）
@@ -1899,6 +1745,8 @@ def _infer_resource_code_daily(rc, price, rsk=None, sk=None):
     - 其他站通过价格区间推断
     - STATION_RK_CORRECTIONS 修正非标准 RK 映射（如 SK=7/15 的 RK=104）
     - SK=28 特殊：fuelbalance.ResourceCode 全为0，需通过价格判断
+    - 全站固化映射（2026-09-04）：价格分桶前先查 STATION_TANK_RESOURCE_MAP(_PRIMARY)，
+      tx_date 用于带生效日的固化条目（2025-01-01 起固化的罐）
     """
     if rc >= 100:
         if sk is not None:
@@ -1935,6 +1783,11 @@ def _infer_resource_code_daily(rc, price, rsk=None, sk=None):
             return corrected
     if sk == 28 and rsk is not None:
         return SK28_RSK_MAP.get(int(rsk), rc)
+    # 全站固化映射（2026-09-04）：液化气罐前置 + RSK 固化兜底，先于价格分桶
+    if rsk is not None:
+        pinned = tank_resource_code(sk, rsk, tx_date)
+        if pinned:
+            return pinned
     # SK=28 特殊：fuelbalance.ResourceCode 全为0，需通过价格判断油品类型
     # 用户确认：SK=28 的 -35号柴油(110) 价格是 95
     if sk == 28:

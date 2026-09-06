@@ -13,6 +13,7 @@ ROUTE_PERMISSION_MAP: dict[str, tuple[str, ...]] = {
     "retail_inventory": ("retail:view",),
     "retail_price": ("retail:view",),
     "retail_kpi": ("retail:view",),
+    "retail_report_synopsis": ("retail:view",),
     "station_trend_anomaly": ("retail:view",),
     "station_data_check": ("retail:view",),
     "station_status": ("retail:view",),
@@ -78,6 +79,7 @@ CHART_CAPABLE_ROUTES = {
     "retail_resource_share",
     "retail_inventory",
     "retail_kpi",
+    "retail_report_synopsis",
     "station_trend_anomaly",
     "dashboard_summary",
     "self_use_summary",
@@ -122,6 +124,7 @@ REFERENCE_CATALOG_SOURCES = {
     "report_center_exports",
     "dashboard_cockpit",
     "system_health",
+    "retail_station_catalog",
 }
 DATA_SOURCE_CONTRACTS: dict[str, dict[str, Any]] = {
     "retail_snapshots": {
@@ -293,6 +296,13 @@ DATA_SOURCE_CONTRACTS: dict[str, dict[str, Any]] = {
         "answerability": "answer_from_reference_catalog",
         "note": "站点/油库位置是基础目录数据，直接读坐标目录。",
     },
+    "retail_station_catalog": {
+        "sourceKind": "project_reference_catalog",
+        "snapshotStatus": "none",
+        "snapshotNeed": "not_required_for_current_assistant",
+        "answerability": "answer_from_reference_catalog",
+        "note": "外运站点清单来自零售板块站点主数据（catalog）；识别规则与装卸车明细口径为项目既定只读说明。",
+    },
     "market_watch": {
         "sourceKind": "published_knowledge",
         "snapshotStatus": "published_market_notes",
@@ -341,6 +351,13 @@ DATA_SOURCE_CONTRACTS: dict[str, dict[str, Any]] = {
         "snapshotNeed": "not_required_for_current_assistant",
         "answerability": "answer_now_from_readonly_records",
         "note": "火车外运录入是业务明细记录，按时间只读查询即可。",
+    },
+    "retail_report_synopsis": {
+        "sourceKind": "confirmed_snapshot",
+        "snapshotStatus": "existing",
+        "snapshotNeed": "existing_sufficient",
+        "answerability": "answer_from_existing_snapshot",
+        "note": "月度/年度报告摘要复用零售快照、库存和比较数据，按模板生成报告文本。",
     },
 }
 FORBIDDEN_ASSISTANT_ACTIONS = [

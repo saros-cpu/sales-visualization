@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
   base: './',
   build: {
     outDir: isWallpaperBuild ? 'dist-wallpaper' : 'dist',
+    emptyOutDir: isWallpaperBuild ? false : true,
     rollupOptions: {
       input: isWallpaperBuild
         ? { wallpaper: path.resolve(__dirname, 'wallpaper.html') }
@@ -57,6 +58,7 @@ export default defineConfig(({ mode }) => {
     },
   },
   server: {
+    host: true,
     port: 5173,
     fs: {
       allow: ['..'],

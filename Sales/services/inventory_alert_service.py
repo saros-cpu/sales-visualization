@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -9,11 +11,19 @@ from typing import Any
 from shared_utils import OILSTATION_ROOT
 
 
-DEFAULT_LOOKBACK_DAYS = 30
+DEFAULT_LOOKBACK_DAYS = 7
 DEFAULT_THRESHOLD_DAYS = 3
 DEFAULT_MIN_SAMPLE_DAYS = 3
 DEFAULT_WARNING_PERCENT = 50.0
 DEFAULT_CRITICAL_PERCENT = 30.0
+
+# Per-resource 7-day average daily sales come from a live query against the
+# retail ocw.selling table that is expensive (~28s on production). Daily sales
+# barely change within a day, so cache the result for a while to keep the
+# wallpaper map response fast (the frontend times out after 15s).
+_RESOURCE_SALES_CACHE: dict[tuple[date, int], tuple[float, dict[tuple[int, int], float]]] = {}
+_RESOURCE_SALES_CACHE_LOCK = threading.Lock()
+_RESOURCE_SALES_CACHE_TTL_SECONDS = float(os.getenv("SALES_WALLPAPER_RESOURCE_SALES_TTL", "1800"))
 
 
 def _num(value: Any) -> float:
@@ -312,3 +322,129 @@ def build_low_inventory_alerts(
             "generatedAt": datetime.now().isoformat(timespec="seconds"),
         },
     }
+
+
+def load_station_avg_daily_sales(
+    as_of: date | str | None = None,
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+) -> dict[int, float]:
+    """Return per-station average daily sales volume over a lookback window.
+
+    The system only records station-level daily sales (no per-resource
+    breakdown), so this is the denominator used to estimate how many days a
+    given tank's remaining inventory will last.
+
+    Returns a mapping of ``shop_key`` -> average daily volume (float). Stations
+    without enough positive samples are omitted.
+    """
+    effective_as_of = _as_day(as_of)
+    start = effective_as_of - timedelta(days=max(1, lookback_days) - 1)
+    sales = _load_daily_sales_by_station(start, effective_as_of)
+    result: dict[int, float] = {}
+    for shop_key, day_map in sales.items():
+        volumes = [v for v in day_map.values() if v > 0]
+        if volumes:
+            result[shop_key] = sum(volumes) / len(volumes)
+    return result
+
+
+def load_resource_avg_daily_sales(
+    as_of: date | str | None = None,
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+) -> dict[tuple[int, int], float]:
+    """Per (shop_key, resource_key) average daily sales over a lookback window.
+
+    Reads per-station / per-product daily sales from the retail source (the
+    same read-only bridge the snapshot pipeline uses) and returns a mapping of
+    ``(shop_key, resource_key)`` -> average daily liters, averaged over the
+    days that had positive sales. Resource keys are normalized (109/110 -> 106)
+    so they line up with the inventory payload's ``resourceKey``.
+
+    Returns an empty dict on any failure so callers can fall back gracefully.
+    """
+    effective_as_of = _as_day(as_of)
+    start = effective_as_of - timedelta(days=max(1, lookback_days) - 1)
+    end = effective_as_of + timedelta(days=1)
+    cache_key = (effective_as_of, max(1, lookback_days))
+    now = time.time()
+    with _RESOURCE_SALES_CACHE_LOCK:
+        cached_hit = _RESOURCE_SALES_CACHE.get(cache_key)
+        if cached_hit is not None and now - cached_hit[0] < _RESOURCE_SALES_CACHE_TTL_SECONDS:
+            return cached_hit[1]
+    try:
+        from retail_bridge import fetch_retail_rows_by_shop_resource, normalize_resource_key
+    except Exception:
+        logging.exception("wallpaper per-resource sales: import failed")
+        return {}
+    try:
+        rows = fetch_retail_rows_by_shop_resource(start, end)
+    except Exception:
+        logging.exception("wallpaper per-resource sales: query failed")
+        return {}
+    by_key: dict[tuple[int, int], list[float]] = {}
+    for shop_key, _business_day, resource_key, liters in rows:
+        sk = _int(shop_key)
+        rk = normalize_resource_key(_int(resource_key))
+        if sk is None or not rk:
+            continue
+        by_key.setdefault((sk, rk), []).append(_num(liters))
+    result: dict[tuple[int, int], float] = {}
+    for key, day_volumes in by_key.items():
+        positive = [v for v in day_volumes if v > 0]
+        if positive:
+            result[key] = sum(positive) / len(positive)
+    with _RESOURCE_SALES_CACHE_LOCK:
+        _RESOURCE_SALES_CACHE[cache_key] = (now, result)
+    return result
+
+
+def attach_wallpaper_sellable_days(
+    stations: list[dict[str, Any]],
+    *,
+    as_of: date | str | None = None,
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+) -> None:
+    """In-place: write ``daysRemaining`` onto each tank resource row.
+
+    ``daysRemaining`` = tank remaining inventory / station-level average daily
+    sales over the lookback window. Rows without inventory or with no sales
+    history get ``None``. This feeds the wallpaper inventory panel's sellable
+    days column and is independent of the low-inventory alert thresholds.
+    """
+    try:
+        avg_by_resource = load_resource_avg_daily_sales(as_of, lookback_days)
+    except Exception:
+        avg_by_resource = {}
+    try:
+        avg_by_station = load_station_avg_daily_sales(as_of, lookback_days)
+    except Exception:
+        avg_by_station = {}
+    if not avg_by_resource and not avg_by_station:
+        return
+    try:
+        from retail_bridge import normalize_resource_key
+    except Exception:
+        def normalize_resource_key(rk):
+            rk = int(rk or 0)
+            return 106 if rk in (109, 110) else rk
+
+    for station in stations:
+        if not isinstance(station, dict):
+            continue
+        shop_key = _int(station.get("shopKey"))
+        if shop_key is None:
+            continue
+        station_avg = avg_by_station.get(shop_key) or 0.0
+        for row in (station.get("inventoryByResource") or []):
+            if not isinstance(row, dict):
+                continue
+            inventory = _num(row.get("inventory"))
+            rk = normalize_resource_key(_int(row.get("resourceKey")))
+            # Prefer this tank's own product sales; fall back to the station's
+            # blended average when a product has no sales history.
+            avg_daily = avg_by_resource.get((shop_key, rk)) or station_avg
+            if avg_daily > 0 and inventory > 0:
+                row["daysRemaining"] = round(inventory / avg_daily, 2)
+            else:
+                row["daysRemaining"] = None
+

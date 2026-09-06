@@ -11,6 +11,8 @@ if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
 import api
+import routes_wallpaper as wallpaper_api
+from routes_wallpaper import _wallpaper_amount_cny_by_average, _wallpaper_status_label
 
 
 FAKE_CONSTANTS = SimpleNamespace(
@@ -85,12 +87,12 @@ class WallpaperMapTests(unittest.TestCase):
         self.client = api.app.test_client()
 
     def request_payload(self, headers=None, query_string=None):
-        with patch.object(api, "_wallpaper_oilstation_constants", return_value=FAKE_CONSTANTS), \
-             patch.object(api, "_wallpaper_active_statuses", return_value={}), \
-             patch.object(api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
-             patch.object(api, "_wallpaper_sales_summary", return_value=SALES_SUMMARY), \
-             patch.object(api, "_wallpaper_exchange_summary", return_value=EXCHANGE_SUMMARY), \
-             patch.object(api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}):
+        with patch.object(wallpaper_api, "_wallpaper_oilstation_constants", return_value=FAKE_CONSTANTS), \
+             patch.object(wallpaper_api, "_wallpaper_active_statuses", return_value={}), \
+             patch.object(wallpaper_api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
+             patch.object(wallpaper_api, "_wallpaper_sales_summary", return_value=SALES_SUMMARY), \
+             patch.object(wallpaper_api, "_wallpaper_exchange_summary", return_value=EXCHANGE_SUMMARY), \
+             patch.object(wallpaper_api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}):
             response = self.client.get("/api/wallpaper/map", headers=headers or {}, query_string=query_string or {})
         self.assertEqual(response.status_code, 200)
         return response.get_json()["data"]
@@ -143,8 +145,8 @@ class WallpaperMapTests(unittest.TestCase):
             def close(self):
                 return None
 
-        with patch.object(api, "get_connection", return_value=FakeConnection()):
-            amount_cny, avg_cny = api._wallpaper_amount_cny_by_average(
+        with patch.object(wallpaper_api, "get_connection", return_value=FakeConnection()):
+            amount_cny, avg_cny = _wallpaper_amount_cny_by_average(
                 123000,
                 "2026-07-01",
                 "2026-07-03",
@@ -167,12 +169,12 @@ class WallpaperMapTests(unittest.TestCase):
                 "MAP_ZERO_INVENTORY_STATIONS": {1},
             }
         )
-        with patch.object(api, "_wallpaper_oilstation_constants", return_value=constants), \
-             patch.object(api, "_wallpaper_active_statuses", return_value={}), \
-             patch.object(api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
-             patch.object(api, "_wallpaper_sales_summary", return_value=SALES_SUMMARY), \
-             patch.object(api, "_wallpaper_exchange_summary", return_value=EXCHANGE_SUMMARY), \
-             patch.object(api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}), \
+        with patch.object(wallpaper_api, "_wallpaper_oilstation_constants", return_value=constants), \
+             patch.object(wallpaper_api, "_wallpaper_active_statuses", return_value={}), \
+             patch.object(wallpaper_api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
+             patch.object(wallpaper_api, "_wallpaper_sales_summary", return_value=SALES_SUMMARY), \
+             patch.object(wallpaper_api, "_wallpaper_exchange_summary", return_value=EXCHANGE_SUMMARY), \
+             patch.object(wallpaper_api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}), \
              patch.dict(os.environ, {"SALES_WALLPAPER_TOKEN": "secret"}, clear=False):
             response = self.client.get("/api/wallpaper/map", headers={"X-Wallpaper-Token": "secret"})
         self.assertEqual(response.status_code, 200)
@@ -209,10 +211,10 @@ class WallpaperMapTests(unittest.TestCase):
                 "expectedResumeAt": None,
             }
         }
-        with patch.object(api, "_wallpaper_oilstation_constants", return_value=constants), \
-             patch.object(api, "_wallpaper_active_statuses", return_value=stale_statuses), \
-             patch.object(api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
-             patch.object(api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}), \
+        with patch.object(wallpaper_api, "_wallpaper_oilstation_constants", return_value=constants), \
+             patch.object(wallpaper_api, "_wallpaper_active_statuses", return_value=stale_statuses), \
+             patch.object(wallpaper_api, "_wallpaper_station_details", return_value=DETAILS_PAYLOAD), \
+             patch.object(wallpaper_api, "build_low_inventory_alerts", return_value={"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}), \
              patch.dict(os.environ, {"SALES_WALLPAPER_TOKEN": ""}, clear=False):
             response = self.client.get("/api/wallpaper/map")
         self.assertEqual(response.status_code, 200)
@@ -223,9 +225,9 @@ class WallpaperMapTests(unittest.TestCase):
         self.assertEqual(station["closedReason"], "")
 
     def test_wallpaper_status_label_normalizes_business_terms(self):
-        self.assertEqual(api._wallpaper_status_label("normal", status_label="normal"), "在营")
-        self.assertEqual(api._wallpaper_status_label("closed", closed_reason="装修停业"), "装修")
-        self.assertEqual(api._wallpaper_status_label("closed", closed_reason="修路占道，无法营业"), "停业")
+        self.assertEqual(_wallpaper_status_label("normal", status_label="normal"), "在营")
+        self.assertEqual(_wallpaper_status_label("closed", closed_reason="装修停业"), "装修")
+        self.assertEqual(_wallpaper_status_label("closed", closed_reason="修路占道，无法营业"), "停业")
 
 
 if __name__ == "__main__":

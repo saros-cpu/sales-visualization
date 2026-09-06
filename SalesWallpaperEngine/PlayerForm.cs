@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
@@ -18,10 +19,17 @@ internal sealed class PlayerForm : Form
     private bool _pointerScriptBusy;
     private bool _refreshScriptBusy;
 
+    // Low-level mouse hook so wheel events reach the wallpaper (the OS does not
+    // forward WM_MOUSEWHEEL to a window parked behind the desktop shell).
+    private static PlayerForm? _instance;
+    private static NativeMethods.HookProc? _mouseHookDelegate;
+    private static IntPtr _mouseHookHandle;
+
     public PlayerForm(string url, string userDataDir)
     {
         _url = url;
         _userDataDir = userDataDir;
+        _instance = this;
 
         Text = "SalesWallpaperEnginePlayer";
         Name = "SalesWallpaperEnginePlayer";
@@ -69,8 +77,14 @@ internal sealed class PlayerForm : Form
             Directory.CreateDirectory(_userDataDir);
             var options = new CoreWebView2EnvironmentOptions(
                 "--disable-features=msSmartScreenProtection --autoplay-policy=no-user-gesture-required");
+            // Always use the system Evergreen/Edge WebView2 runtime (CreateAsync(null)).
+            // Matches pre-0.2.11 behavior: Windows 10/11 ship WebView2, so no bundled
+            // runtime folder is required. Hand-copied Fixed Version runtime folders are
+            // not consulted at all — they caused side-by-side configuration errors and
+            // a black player in 0.2.11/0.2.12.
             var environment = await CoreWebView2Environment.CreateAsync(null, _userDataDir, options);
             await _webView.EnsureCoreWebView2Async(environment);
+            InstallWheelHook();
 
             _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             _webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
@@ -108,6 +122,12 @@ internal sealed class PlayerForm : Form
         catch (Exception ex)
         {
             AppLogger.Error("webview init failed", ex);
+            var detail = ex.InnerException?.Message ?? ex.Message;
+            MessageBox.Show(
+                $"壁纸 WebView2 初始化失败：\n{detail}\n\n壁纸引擎使用系统 WebView2 运行时（Windows 10/11 一般自带）。如持续失败，请安装 WebView2 运行时后重试。",
+                "Sales Wallpaper Engine",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
             Close();
         }
     }
@@ -190,8 +210,72 @@ internal sealed class PlayerForm : Form
         }
     }
 
+    private void InstallWheelHook()
+    {
+        if (_mouseHookHandle != IntPtr.Zero) return;
+        // Low-level hooks must be passed a NULL module handle.
+        _mouseHookDelegate = MouseHookCallback;
+        _mouseHookHandle = NativeMethods.SetWindowsHookEx(
+            NativeMethods.WH_MOUSE_LL, _mouseHookDelegate, IntPtr.Zero, 0);
+        if (_mouseHookHandle == IntPtr.Zero)
+        {
+            AppLogger.Warn($"wheel hook install failed err={Marshal.GetLastWin32Error()}");
+        }
+    }
+
+    private void UninstallWheelHook()
+    {
+        if (_mouseHookHandle != IntPtr.Zero)
+        {
+            NativeMethods.UnhookWindowsHookEx(_mouseHookHandle);
+            _mouseHookHandle = IntPtr.Zero;
+        }
+        _mouseHookDelegate = null;
+    }
+
+    // Called on the low-level hook thread; queue the real work on the UI thread.
+    private static IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && wParam == (IntPtr)NativeMethods.WM_MOUSEWHEEL)
+        {
+            var hook = Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
+            int delta = (short)(hook.mouseData >> 16);
+            var self = _instance;
+            if (self != null)
+            {
+                self.BeginInvoke(new Action<int, int, int>(self.ForwardWheel), hook.pt.x, hook.pt.y, delta);
+            }
+        }
+        return NativeMethods.CallNextHookEx(_mouseHookHandle, nCode, wParam, lParam);
+    }
+
+    // Forward a wheel gesture to the element actually under the cursor, but only
+    // when it lands on the inventory panel (avoids hijacking the map or other apps).
+    private void ForwardWheel(int x, int y, int delta)
+    {
+        if (_webView.CoreWebView2 == null || _webView.IsDisposed) return;
+        var script =
+            "(function(){" +
+            "try{" +
+            "var d=window.devicePixelRatio||1;" +
+            "var cx=" + x + "/d, cy=" + y + "/d;" +
+            "var el=document.elementFromPoint(cx,cy);" +
+            "if(!el)return;" +
+            "if(!el.closest('.wallpaper-inventory'))return;" +
+            "el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:" + (-delta) + ",deltaX:0,clientX:cx,clientY:cy,deltaMode:0}));" +
+            "}catch(e){}" +
+            "})();";
+        _ = _webView.CoreWebView2.ExecuteScriptAsync(script);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        base.WndProc(ref m);
+    }
+
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        UninstallWheelHook();
         SystemEvents.PowerModeChanged -= SystemEvents_PowerModeChanged;
         SystemEvents.SessionSwitch -= SystemEvents_SessionSwitch;
         _pointerTimer.Stop();

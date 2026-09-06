@@ -26,8 +26,7 @@ DAILY_BRIEFING_EXCHANGE_RATE = 87.50
 DAILY_BRIEFING_REMARK = (
     "备注：\n"
     "1.销量单位：吨；价格单位：美元/吨。当日统计数据为前一天实际销售数据。\n"
-    "2.柴油无库存，批发未销售；加油站限量销售。待外购柴油到厂后，恢复批发销售，解禁零售限量。\n"
-    "3.加油站价格：日销售价格按当日实际价格显示；同油品存在多区域、多价格，按加权均价显示。"
+    "2.加油站价格：日销售价格按当日实际价格显示；同油品存在多区域、多价格，按加权均价显示。"
 )
 TONS_DIGITS = 3
 TONS_NUMBER_FORMAT = "0.000"
@@ -35,7 +34,7 @@ PRICE_DIGITS = 2
 PRICE_NUMBER_FORMAT = "0.00_ "
 # OpenXML width that Excel displays as ColumnWidth 16.0.
 DAILY_BRIEFING_DATA_COLUMN_WIDTH = 16.7109375
-DAILY_BRIEFING_TEMPLATE_VERSION = "daily_briefing_20260815_wholesale_db_v2"
+DAILY_BRIEFING_TEMPLATE_VERSION = "daily_briefing_20260902_no_wholesale_volume_v4"
 
 PRODUCT_ROWS = [
     (5, "95#汽油", {104}),
@@ -47,23 +46,7 @@ PRODUCT_ROWS = [
     (11, "液化气", {108}),
 ]
 
-# 批发明细 product_id → 模板行号；柴油涵盖 K5/常柴等全部柴油产品。
-WHOLESALE_PRODUCT_TO_ROW = {
-    3: 5,   # 95#汽油
-    2: 6,   # 92#汽油
-    1: 7,   # 80#汽油
-    5: 8,   # 柴油
-    6: 8,
-    7: 8,
-    8: 9,   # 催化柴油
-    9: 10,  # 油浆
-    4: 11,  # 液化气
-}
-
-# 批发来源边界，与 Sales/wholesale_source_policy.py 的 detail_source_policy_clause 保持同步。
-WHOLESALE_SOURCE_CUTOFF = date(2026, 6, 1)
-# 批发量口径：本地/出口/待识别批发；外运、代加工、采购、内部用油不统计。
-WHOLESALE_CLASSIFICATIONS = ("local_wholesale", "export_wholesale", "unknown")
+# 批发量列（C 日 / H 月 / J 年）按业务要求停止填充，仅保留 D/E 手工维护的批发价。
 
 
 def normalize_daily_briefing_date(value=None):
@@ -521,53 +504,6 @@ def _retail_price_usd_per_ton(values, exchange_rate=DAILY_BRIEFING_EXCHANGE_RATE
     return _round_half_up(amount / tons / rate, PRICE_DIGITS)
 
 
-def _wholesale_briefing_tons(start, end):
-    """批发量按模板行汇总；来源边界与 Sales/wholesale_source_policy.py 一致。"""
-    totals = _empty_tons()
-    if not start or not end or start >= end:
-        return totals
-    placeholders = ", ".join(["%s"] * len(WHOLESALE_CLASSIFICATIONS))
-    query = f"""
-        SELECT d.product_id, SUM(d.weight_tons) AS total_tons
-        FROM wholesale_detail_records d
-        WHERE d.business_date >= %s AND d.business_date < %s
-          AND d.classification IN ({placeholders})
-          AND (
-              (d.business_date < %s AND d.batch_id IS NULL)
-              OR (d.business_date >= %s AND d.batch_id IS NOT NULL)
-          )
-        GROUP BY d.product_id
-    """
-    params = [
-        start.isoformat(), end.isoformat(),
-        *WHOLESALE_CLASSIFICATIONS,
-        WHOLESALE_SOURCE_CUTOFF.isoformat(), WHOLESALE_SOURCE_CUTOFF.isoformat(),
-    ]
-    try:
-        conn = pymysql.connect(**sales_db_config())
-        try:
-            with conn.cursor() as cur:
-                cur.execute(query, params)
-                rows = cur.fetchall()
-        finally:
-            conn.close()
-    except Exception:
-        return totals
-    raw = {}
-    for product_id, total_tons in rows or []:
-        try:
-            product_id = int(product_id)
-        except (TypeError, ValueError):
-            continue
-        row_no = WHOLESALE_PRODUCT_TO_ROW.get(product_id)
-        if not row_no:
-            continue
-        raw[row_no] = _safe_float(raw.get(row_no)) + _safe_float(total_tons)
-    for row_no, value in raw.items():
-        totals[row_no] = _round_half_up(value, TONS_DIGITS)
-    return totals
-
-
 def _load_wholesale_briefing_prices():
     """批发价维护值 {模板行: (大客户价, 散户价)}，未维护或读取失败时返回空。"""
     prices = {}
@@ -596,7 +532,6 @@ def _load_wholesale_briefing_prices():
 
 
 def _write_daily_briefing_sheet(ws, report_date, day_totals, month_tons, year_tons,
-                                wholesale_day=None, wholesale_month=None, wholesale_year=None,
                                 wholesale_prices=None):
     _apply_template_layout(ws)
     day_tons = _template_tons_from_totals(day_totals)
@@ -621,10 +556,10 @@ def _write_daily_briefing_sheet(ws, report_date, day_totals, month_tons, year_to
     ws["J4"] = "批发量"
     ws["K4"] = "零售量"
 
-    for row, product_name, resource_keys in PRODUCT_ROWS:
-        ws.cell(row=row, column=1, value=f"=ROW()-2")
+    for serial, (row, product_name, resource_keys) in enumerate(PRODUCT_ROWS, start=1):
+        ws.cell(row=row, column=1, value=serial)
         ws.cell(row=row, column=2, value=product_name)
-        ws.cell(row=row, column=3, value=wholesale_day.get(row, 0))
+        # 第 3 列（日批发量）按业务要求留空，不再从批发明细汇总。
         large_price, retail_price = wholesale_prices.get(row, (None, None))
         if large_price is not None:
             ws.cell(row=row, column=4, value=large_price)
@@ -637,8 +572,7 @@ def _write_daily_briefing_sheet(ws, report_date, day_totals, month_tons, year_to
                 ws.cell(row=row, column=7, value=daily_price)
             ws.cell(row=row, column=9, value=month_tons.get(row, 0))
             ws.cell(row=row, column=11, value=year_tons.get(row, 0))
-        ws.cell(row=row, column=8, value=wholesale_month.get(row, 0))
-        ws.cell(row=row, column=10, value=wholesale_year.get(row, 0))
+        # 第 8 列（月批发量）、第 10 列（年批发量）同样留空。
 
     ws["B12"] = "小计"
     for column in ("C", "F", "H", "I", "J", "K"):
@@ -679,9 +613,6 @@ def generate_daily_briefing_excel(conn, report_date_value=None, force_refresh=Fa
     month_tons = _period_tons_by_cache_or_query(conn, report_date.replace(day=1), report_date)
     year_tons = _year_tons_by_cache_or_query(conn, report_date)
 
-    wholesale_day = _wholesale_briefing_tons(sales_day, report_date)
-    wholesale_month = _wholesale_briefing_tons(report_date.replace(day=1), report_date)
-    wholesale_year = _wholesale_briefing_tons(date(report_date.year, 1, 1), report_date)
     wholesale_prices = _load_wholesale_briefing_prices()
 
     wb = Workbook()
@@ -689,7 +620,7 @@ def generate_daily_briefing_excel(conn, report_date_value=None, force_refresh=Fa
     wb.properties.keywords = DAILY_BRIEFING_TEMPLATE_VERSION
     ws = wb.active
     _write_daily_briefing_sheet(ws, report_date, day_totals, month_tons, year_tons,
-                                wholesale_day, wholesale_month, wholesale_year, wholesale_prices)
+                                wholesale_prices)
     try:
         wb.calculation.fullCalcOnLoad = True
         wb.calculation.forceFullCalc = True

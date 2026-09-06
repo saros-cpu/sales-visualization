@@ -1,6 +1,7 @@
 from pathlib import Path
 import re
 import sys
+import time
 import unittest
 
 
@@ -9,6 +10,7 @@ SALES_ROOT = PROJECT_ROOT / "Sales"
 if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
+import api_v2.token_revocation as token_revocation  # noqa: E402
 from flask_jwt_extended import create_access_token  # noqa: E402
 import api as sales_api  # noqa: E402
 import api_v2.auth as auth_v2  # noqa: E402
@@ -194,6 +196,221 @@ class ApiContractTest(unittest.TestCase):
                 offenders.append(str(path.relative_to(PROJECT_ROOT)))
         self.assertEqual([], offenders)
 
+    def test_analysis_sales_download_requires_export_permission(self):
+        download_permission = sales_api._external_api_permission(
+            "/api/export/analysis/sales/download/2026-07.html"
+        )
+        self.assertEqual(download_permission, ("retail:export", "wholesale:export"))
+        self.assertNotIn(
+            "/api/export/analysis/sales/download/", sales_api.PUBLIC_API_PREFIXES
+        )
+        general_sales = sales_api._external_api_permission(
+            "/api/export/analysis/sales/2026-07"
+        )
+        self.assertEqual(general_sales, "retail:export")
+
+    def test_login_rate_limiter_blocks_after_max_failures(self):
+        original_failures = auth_v2._login_failures
+        try:
+            auth_v2._login_failures = {}
+            ip = "198.51.100.10"
+            for _ in range(auth_v2._LOGIN_MAX_FAILURES):
+                auth_v2._record_login_failure(ip, "admin")
+            self.assertTrue(auth_v2._login_rate_limited(ip, "admin"))
+            self.assertFalse(auth_v2._login_rate_limited(ip, "other_user"))
+        finally:
+            auth_v2._login_failures = original_failures
+
+    def test_login_rate_limiter_blocks_ip_across_usernames(self):
+        original_failures = auth_v2._login_failures
+        try:
+            auth_v2._login_failures = {}
+            ip = "203.0.113.11"
+            for i in range(auth_v2._LOGIN_MAX_IP_FAILURES):
+                auth_v2._record_login_failure(ip, f"user_{i}")
+            self.assertTrue(auth_v2._login_rate_limited(ip, "fresh_user"))
+        finally:
+            auth_v2._login_failures = original_failures
+
+    def test_login_rate_limiter_clears_on_success(self):
+        original_failures = auth_v2._login_failures
+        try:
+            auth_v2._login_failures = {}
+            ip = "203.0.113.12"
+            for _ in range(auth_v2._LOGIN_MAX_FAILURES):
+                auth_v2._record_login_failure(ip, "admin")
+            self.assertTrue(auth_v2._login_rate_limited(ip, "admin"))
+            auth_v2._clear_login_failures(ip, "admin")
+            self.assertFalse(auth_v2._login_rate_limited(ip, "admin"))
+        finally:
+            auth_v2._login_failures = original_failures
+
+    def test_login_rate_limiter_window_expires(self):
+        original_failures = auth_v2._login_failures
+        try:
+            auth_v2._login_failures = {}
+            ip = "203.0.113.13"
+            for _ in range(auth_v2._LOGIN_MAX_FAILURES):
+                auth_v2._record_login_failure(ip, "admin")
+            bucket = auth_v2._login_failures[(ip, "admin")]
+            # 模拟窗口过期：把全部时间戳推到窗口之外
+            stale = time.monotonic() - auth_v2._LOGIN_WINDOW_SECONDS - 10
+            for i in range(len(bucket)):
+                bucket[i] = stale
+            self.assertFalse(auth_v2._login_rate_limited(ip, "admin"))
+        finally:
+            auth_v2._login_failures = original_failures
+
+    def test_token_revocation_memory_fallback_when_db_down(self):
+        original_store = token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI
+        original_loaded = token_revocation._loaded_from_db
+        original_conn = token_revocation.get_connection
+
+        def _db_down(*args, **kwargs):
+            raise RuntimeError("db unavailable")
+
+        try:
+            token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI = {}
+            token_revocation._loaded_from_db = True
+            token_revocation.get_connection = _db_down
+            payload = {"jti": "test-jti-1", "exp": int(time.time()) + 3600}
+            self.assertEqual(1, token_revocation.revoke_jwt_payload(payload))
+            self.assertTrue(token_revocation.is_token_revoked_payload(payload))
+            self.assertFalse(
+                token_revocation.is_token_revoked_payload(
+                    {"jti": "other-jti", "exp": int(time.time()) + 3600}
+                )
+            )
+        finally:
+            token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI = original_store
+            token_revocation._loaded_from_db = original_loaded
+            token_revocation.get_connection = original_conn
+
+    def test_token_revocation_purges_expired_entries(self):
+        original_store = token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI
+        original_loaded = token_revocation._loaded_from_db
+        original_conn = token_revocation.get_connection
+
+        def _db_down(*args, **kwargs):
+            raise RuntimeError("db unavailable")
+
+        try:
+            token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI = {}
+            token_revocation._loaded_from_db = True
+            token_revocation.get_connection = _db_down
+            now = int(time.time())
+            token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI["expired-jti"] = now - 10
+            token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI["live-jti"] = now + 3600
+            self.assertTrue(
+                token_revocation.is_token_revoked_payload({"jti": "live-jti", "exp": now + 3600})
+            )
+            self.assertFalse(
+                token_revocation.is_token_revoked_payload({"jti": "expired-jti", "exp": now - 10})
+            )
+            self.assertNotIn("expired-jti", token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI)
+            self.assertIn("live-jti", token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI)
+        finally:
+            token_revocation._REVOKED_TOKEN_EXPIRY_BY_JTI = original_store
+            token_revocation._loaded_from_db = original_loaded
+            token_revocation.get_connection = original_conn
+
+    def test_reference_options_requires_admin(self):
+        import routes_data as routes_data_module  # noqa: E402
+
+        original_conn = sales_api.get_connection
+        original_has_users = sales_api.has_users
+        original_requires_change = sales_api.user_requires_password_change
+        original_rd_conn = routes_data_module.get_connection
+        client = sales_api.app.test_client()
+        try:
+            sales_api.get_connection = lambda: _FakeStatusConnection({"user_count": 1})
+            sales_api.has_users = lambda cur: True
+            sales_api.user_requires_password_change = lambda cur, user_id: False
+            routes_data_module.get_connection = lambda: _FakeReferenceConnection()
+
+            with client.session_transaction() as sess:
+                sess["user"] = {
+                    "id": 2,
+                    "username": "operator",
+                    "displayName": "操作员",
+                    "role": "operator",
+                    "mustChangePassword": False,
+                }
+            response = client.get("/api/reference/options")
+            self.assertEqual(403, response.status_code)
+
+            with client.session_transaction() as sess:
+                sess["user"] = {
+                    "id": 1,
+                    "username": "admin",
+                    "displayName": "管理员",
+                    "role": "admin",
+                    "mustChangePassword": False,
+                }
+            response = client.get("/api/reference/options")
+            self.assertEqual(200, response.status_code)
+            payload = response.get_json(silent=True) or {}
+            self.assertEqual("AI-92", (payload.get("products") or [{}])[0].get("code"))
+            self.assertEqual("ООО Тест", (payload.get("customers") or [{}])[0].get("name"))
+        finally:
+            sales_api.get_connection = original_conn
+            sales_api.has_users = original_has_users
+            sales_api.user_requires_password_change = original_requires_change
+            routes_data_module.get_connection = original_rd_conn
+
+    def test_import_upload_rejects_non_excel_extension(self):
+        import io
+        import routes_data as routes_data_module  # noqa: E402
+        client = sales_api.app.test_client()
+        with client.session_transaction() as sess:
+            sess["user"] = {
+                "id": 1, "username": "admin",
+                "displayName": "管理员", "role": "admin",
+                "mustChangePassword": False,
+            }
+        data = {"file": (io.BytesIO(b"MZ\x90\x00"), "evil.exe")}
+        response = client.post("/api/import/upload", data=data,
+                               content_type="multipart/form-data")
+        self.assertEqual(400, response.status_code)
+        payload = response.get_json(silent=True) or {}
+        self.assertIn("xlsx", payload.get("error", ""))
+
+    def test_import_upload_cleans_temp_file_on_failure(self):
+        import io
+        import tempfile
+        import shutil
+        import routes_data as routes_data_module  # noqa: E402
+
+        tmp_root = Path(tempfile.mkdtemp(prefix="sec9_upload_test"))
+        original_root = routes_data_module.UPLOAD_ROOT
+        original_import_fn = routes_data_module.import_wholesale_single_sheet
+
+        def _explode(path):
+            raise RuntimeError("intentional import failure")
+
+        routes_data_module.UPLOAD_ROOT = tmp_root
+        routes_data_module.import_wholesale_single_sheet = _explode
+        try:
+            client = sales_api.app.test_client()
+            with client.session_transaction() as sess:
+                sess["user"] = {
+                    "id": 1, "username": "admin",
+                    "displayName": "管理员", "role": "admin",
+                    "mustChangePassword": False,
+                }
+            data = {
+                "file": (io.BytesIO(b"fake-xlsx-payload"), "test.xlsx"),
+                "uploadType": "wholesale-detail-single",
+            }
+            response = client.post("/api/import/upload", data=data,
+                                   content_type="multipart/form-data")
+            self.assertEqual(500, response.status_code)
+            self.assertEqual([], list(tmp_root.iterdir()))
+        finally:
+            routes_data_module.UPLOAD_ROOT = original_root
+            routes_data_module.import_wholesale_single_sheet = original_import_fn
+            shutil.rmtree(tmp_root, ignore_errors=True)
+
     def test_assistant_rule_engine_fast_path_skips_llm_for_deterministic_routes(self):
         station_payload = {"ok": True, "answer": "当前停业站点", "assistantPlan": {"route": "station_status"}}
         retail_payload = {"ok": True, "answer": "零售摘要", "assistantPlan": {"route": "retail_summary"}}
@@ -264,6 +481,36 @@ class _FakeSessionStatusCursor:
         if "SELECT id, username, display_name, role, must_change_password" in self.last_query:
             return self.user
         return {"user_count": 1}
+
+
+class _FakeReferenceConnection:
+    def __init__(self):
+        self.cursor_instance = _FakeReferenceCursor()
+
+    def cursor(self, cursor_class=None):
+        return self.cursor_instance
+
+    def close(self):
+        pass
+
+
+class _FakeReferenceCursor:
+    def __init__(self):
+        self.last_query = ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=None):
+        self.last_query = sql
+
+    def fetchall(self):
+        if "FROM products" in self.last_query:
+            return [("AI-92", "АИ-92")]
+        return [("ООО Тест", "local_wholesale")]
 
 
 if __name__ == "__main__":

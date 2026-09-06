@@ -637,6 +637,89 @@ PROJECT_ASSISTANT_CAPABILITIES: list[dict[str, Any]] = [
         "question": "客户端发布包和回滚策略是什么",
         "expected": {"route": "settings_summary", "domain": "settings"},
     },
+    {
+        "id": "wholesale_transfer_stations",
+        "module": "批发 / 外运站点",
+        "question": "外运站点有哪些",
+        "expected": {"route": "wholesale_transfer_stations", "domain": "wholesale"},
+    },
+    {
+        "id": "wholesale_transfer_rule",
+        "module": "批发 / 外运识别规则",
+        "question": "外运站点是怎么识别的",
+        "expected": {"route": "wholesale_transfer_stations", "domain": "wholesale"},
+    },
+    {
+        "id": "wholesale_loading_detail_rule",
+        "module": "批发 / 装卸车明细口径",
+        "question": "装卸车明细报表口径是什么",
+        "expected": {"route": "wholesale_transfer_stations", "domain": "wholesale"},
+    },
+    {
+        "id": "retail_contract_volume",
+        "module": "零售分析 / 合同销量",
+        "question": "本月零售合同销量多少",
+        "expected": {"route": "retail_inventory", "domain": "retail", "periodStart": "2026-07-01"},
+    },
+    {
+        "id": "retail_contract_amount",
+        "module": "零售分析 / 合同销量",
+        "question": "零售合同金额多少",
+        "expected": {"route": "retail_inventory", "domain": "retail"},
+    },
+    {
+        "id": "retail_inventory_days",
+        "module": "零售分析 / 库存天数",
+        "question": "各站库存还能卖几天",
+        "expected": {"route": "retail_inventory", "domain": "retail"},
+    },
+    {
+        "id": "retail_inventory_pct",
+        "module": "零售分析 / 库存占比",
+        "question": "各站库存占比多少",
+        "expected": {"route": "retail_inventory", "domain": "retail"},
+    },
+    {
+        "id": "retail_region_cny",
+        "module": "零售分析 / 区域人民币",
+        "question": "各区域销售额折合人民币多少",
+        "expected": {
+            "route": "retail_ranking",
+            "domain": "retail",
+            "metric": "amount",
+            "dimensions": ["region"],
+        },
+    },
+    {
+        "id": "retail_monthly_report",
+        "module": "零售分析 / 月度报告",
+        "question": "7月销售月报小结",
+        "expected": {"route": "retail_report_synopsis", "domain": "retail", "periodStart": "2026-07-01"},
+    },
+    {
+        "id": "retail_annual_report",
+        "module": "零售分析 / 年度报告",
+        "question": "年度报告",
+        "expected": {"route": "retail_report_synopsis", "domain": "retail", "periodStart": "2026-01-01"},
+    },
+    {
+        "id": "colloquial_inventory_days",
+        "module": "AI助手 / 中式问法",
+        "question": "油快卖完了还能撑几天",
+        "expected": {"route": "retail_inventory", "domain": "retail"},
+    },
+    {
+        "id": "colloquial_contract_volume",
+        "module": "AI助手 / 中式问法",
+        "question": "合同执行情况怎么样",
+        "expected": {"route": "contract_summary", "domain": "contract"},
+    },
+    {
+        "id": "colloquial_monthly_summary",
+        "module": "AI助手 / 中式问法",
+        "question": "本月小结",
+        "expected": {"route": "retail_report_synopsis", "domain": "retail", "periodStart": "2026-07-01"},
+    },
 ]
 
 

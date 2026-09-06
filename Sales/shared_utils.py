@@ -80,6 +80,16 @@ def ensure_auth_schema(cur):
             ADD COLUMN password_reset_at TIMESTAMP NULL AFTER password_changed_at
             """
         )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS system_revoked_tokens (
+            jti VARCHAR(64) PRIMARY KEY,
+            expires_at BIGINT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_system_revoked_tokens_expires (expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+    )
 
 
 def user_requires_password_change(cur, user_id):

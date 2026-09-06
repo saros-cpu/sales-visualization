@@ -19,9 +19,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 import pandas as pd
-from flask import jsonify, request
+from flask import current_app, jsonify, request
 from pymysql.err import IntegrityError
-from werkzeug.utils import secure_filename
 
 from shared_utils import (
     admin_or_permission, admin_required, log_operation,
@@ -38,6 +37,7 @@ from config import NBKR_DAILY_XML_URL
 from db import get_connection
 from import_helpers import (
     classify_wholesale_movement,
+    dedup_wholesale_detail_cross_batch,
     detail_transport_mode,
     get_or_create_customer, load_entity_lookup, load_product_lookup,
     lookup_entity, lookup_product,
@@ -1251,6 +1251,7 @@ def register_data_routes(app):
             conn.close()
 
     @app.route("/api/reference/options")
+    @admin_required
     def api_reference_options():
         conn = get_connection()
         try:
@@ -1270,16 +1271,21 @@ def register_data_routes(app):
         file = request.files.get("file")
         if not file or not file.filename:
             return jsonify({"error": "请选择 Excel 文件"}), 400
+        suffix = Path(file.filename).suffix.lower()
+        if suffix not in (".xlsx", ".xls"):
+            return jsonify({"error": "仅支持 .xlsx/.xls 格式的 Excel 文件"}), 400
         UPLOAD_ROOT.mkdir(exist_ok=True)
-        filename = secure_filename(file.filename) or "upload.xlsx"
-        suffix = Path(filename).suffix or ".xlsx"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=UPLOAD_ROOT) as tmp:
             file.save(tmp.name)
             saved_path = tmp.name
         try:
             if request.form.get("uploadType") == "wholesale-detail-single":
                 upload_type = "wholesale-detail-single"
-                batch_id = import_wholesale_single_sheet(saved_path)
+                # 同来源重传去重场景：跳过 recalculate_wholesale_batch，
+                # 保留导入时按文件来源权威盖章的 classification（AGENTS.md 禁令）。
+                # 默认关闭，仅服务端直调显式置 1 时生效。
+                skip_recalc = request.form.get("skip_recalc") in ("1", "true", "True", "yes", "on")
+                batch_id = import_wholesale_single_sheet(saved_path, skip_recalc=skip_recalc)
                 recalc = None
                 conn = get_connection()
                 try:
@@ -1330,7 +1336,13 @@ def register_data_routes(app):
                 "recalculation": recalc,
             })
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            current_app.logger.exception("Failed to process wholesale upload")
+            return jsonify({"error": "数据处理失败，请稍后重试"}), 500
+        finally:
+            try:
+                Path(saved_path).unlink()
+            except OSError:
+                pass
 
 
     @app.route("/api/manual/wholesale-detail", methods=["POST"])
@@ -1421,6 +1433,10 @@ def register_data_routes(app):
                     """,
                     (business_date, f"Manual detail product is not mapped: {raw_product}"),
                 )
+            # 手工录入保存后也参与跨批次去重：与既有上传/手工行按自然键对比，
+            # 若与更早的行重复则删除本次手工行（保留最早一份）。
+            # 火车按「磅单号+车号」判定，不会误删同磅单号的不同车皮。
+            dedup_result = dedup_wholesale_detail_cross_batch(cur, batch_id)
             result = recalculate_wholesale_batch(cur, batch_id)
             log_operation(
                 cur,
@@ -1432,10 +1448,16 @@ def register_data_routes(app):
                     "classification": classification,
                     "entityName": raw_entity,
                     "transportMode": transport_mode,
+                    "dedupDeleted": dedup_result.get("deleted", 0),
                 },
             )
             conn.commit()
-            return jsonify({"ok": True, "batchId": batch_id, "recalculation": result})
+            return jsonify({
+                "ok": True,
+                "batchId": batch_id,
+                "recalculation": result,
+                "dedup": dedup_result,
+            })
         except Exception:
             conn.rollback()
             raise
@@ -1552,82 +1574,59 @@ def register_data_routes(app):
         month = int(parts[1]) if len(parts) > 1 else None
         start, end = period_bounds(year, month)
         source_policy = detail_source_policy_clause("d")
+        # 复用数据查询（/api/v2/wholesale/details/export）的报表布局：
+        # 列宽自适应、油品/收发货单位中俄文上下显示、名称标准化（Example全称、加油站完整名称、客户标准名）。
+        # 延迟导入避免 routes_data <-> api_v2 循环依赖。
+        from api_v2.wholesale import (
+            _build_detail_export_workbook,
+            _build_summary_rows,
+            _row_to_detail_item,
+            load_detail_entity_display_lookup,
+        )
+        from import_helpers import load_sender_standard_lookup
+        import io
+        import pymysql
+        from flask import send_file
+
         conn = get_connection()
         try:
-            cur = conn.cursor()
-            cur.execute(f"""
-                SELECT d.business_date,
-                       COALESCE(NULLIF(p.display_name, ''), d.raw_product_name) AS product_name,
-                       d.weigh_serial_no,
-                       d.vehicle_no,
-                       d.sender_name,
-                       COALESCE(NULLIF(d.standard_entity_name, ''), d.raw_entity_name) AS entity_name,
-                       d.weight_tons,
-                       d.classification,
-                       d.transport_mode,
-                       CASE
-                         WHEN d.batch_id IS NULL THEN COALESCE(NULLIF(d.weigh_source, ''), 'weighing')
-                         WHEN b.note LIKE 'Imported %% wholesale detail rows from single sheet.%%'
-                           THEN 'wholesale_detail_single'
-                         WHEN b.source_type = 'contract_excel'
-                           THEN 'wholesale_detail_single'
-                         ELSE COALESCE(b.source_type, 'manual')
-                       END AS display_source_type,
-                       d.remark
-                FROM wholesale_detail_records d
-                LEFT JOIN products p ON p.id = d.product_id
-                LEFT JOIN import_batches b ON b.id = d.batch_id
-                WHERE d.business_date >= %s AND d.business_date < %s
-                  AND {source_policy}
-                ORDER BY d.business_date, d.id
-            """, (start, end, *detail_source_policy_params()))
-            rows = cur.fetchall()
-            import io
-            from openpyxl import Workbook
-            from openpyxl.styles import Font
-            wb = Workbook()
-            wb._fonts[0] = Font(name='Times New Roman', size=11)
-            ws = wb.active
-            ws.title = "明细表"
-            headers = ["序号", "日期", "油品名称", "磅单号", "车号",
-                       "发货单位", "收货单位", "重量(吨)", "分类", "运输方式", "数据来源", "备注"]
-            ws.append(headers)
-            classification_labels = {
-                "local_wholesale": "本地批发",
-                "export_wholesale": "出口批发",
-                "transfer": "外运",
-                "processing": "代加工",
-                "procurement": "采购",
-                "unknown": "待识别批发",
-                "other": "其他",
-            }
-            transport_labels = {"truck": "汽车", "train": "火车"}
-            source_labels = {
-                "weighing": "称重生成",
-                "manual": "手工录入",
-                "manual_entry": "手工录入",
-                "contract_excel": "明细表上传",
-                "wholesale_detail_single": "明细表上传",
-                "train_entry": "火车录入",
-            }
-            for idx, r in enumerate(rows, 1):
-                ws.append([
-                    idx,
-                    r[0].isoformat() if r[0] else "",
-                    r[1] or "", r[2] or "", r[3] or "",
-                    r[4] or "", r[5] or "",
-                    _round_half_up(r[6], 3) if r[6] else 0,
-                    classification_labels.get(r[7], r[7] or ""),
-                    transport_labels.get(r[8], r[8] or ""),
-                    source_labels.get(r[9], r[9] or ""),
-                    r[10] or "",
-                ])
-                ws.cell(row=idx + 1, column=8).number_format = "#,##0.000"
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                cur.execute(f"""
+                    SELECT d.id, d.batch_id, d.source_row_number, d.business_date,
+                           d.raw_product_name, p.display_name AS standard_product_name,
+                           COALESCE(NULLIF(p.display_name, ''), d.raw_product_name) AS display_product_name,
+                           d.vehicle_no, d.weigh_serial_no, d.raw_entity_name, d.sender_name,
+                           d.entity_type, d.entity_code, d.standard_entity_name,
+                           COALESCE(NULLIF(d.standard_entity_name, ''), d.raw_entity_name) AS display_entity_name,
+                           d.classification, d.weight_kg, d.weight_tons, d.match_status,
+                           d.weigh_source, d.transport_mode, d.remark, d.created_at,
+                           b.source_type AS batch_source_type,
+                           CASE
+                             WHEN d.batch_id IS NULL THEN COALESCE(NULLIF(d.weigh_source, ''), 'weighing')
+                             WHEN b.note LIKE 'Imported %% wholesale detail rows from single sheet.%%'
+                               THEN 'wholesale_detail_single'
+                             WHEN b.source_type = 'contract_excel'
+                               THEN 'wholesale_detail_single'
+                             ELSE COALESCE(b.source_type, 'manual')
+                           END AS display_source_type
+                    FROM wholesale_detail_records d
+                    LEFT JOIN products p ON p.id = d.product_id
+                    LEFT JOIN import_batches b ON b.id = d.batch_id
+                    WHERE d.business_date >= %s AND d.business_date < %s
+                      AND {source_policy}
+                    ORDER BY d.business_date, d.id
+                """, (start, end, *detail_source_policy_params()))
+                rows = cur.fetchall()
+                sender_lookup = load_sender_standard_lookup(cur)
+                entity_display_lookup = load_detail_entity_display_lookup(cur)
+                items = [_row_to_detail_item(row, sender_lookup, entity_display_lookup) for row in rows]
+                summary_rows_by_category = _build_summary_rows(items)
+                wb = _build_detail_export_workbook(items, summary_rows_by_category)
+                wb["明细表"].title = "装卸车明细"
             output = io.BytesIO()
             wb.save(output)
             output.seek(0)
-            from flask import send_file
-            return send_file(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", as_attachment=True, download_name=f"明细表_{year_month}.xlsx")
+            return send_file(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", as_attachment=True, download_name=f"装卸车明细_{year_month}.xlsx")
         finally:
             conn.close()
 

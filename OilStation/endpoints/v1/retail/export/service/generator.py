@@ -40,8 +40,10 @@ from export_excel import (
     _supply_mass_expr,
     _write_station_block,
     get_column_letter,
+    infer_supply_resource_key,
     openpyxl,
     os,
+    selling_inferred_resource_key_sql,
 )
 from endpoints.v1.retail.common.query import get_query_date_range
 from endpoints.v1.retail.export.service.workbook import (
@@ -506,33 +508,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     )
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(CASE WHEN BasePaymentTypeKey = 1 AND COALESCE(DerivedPaymentTypeKey, 0) <> 5 THEN Volume ELSE 0 END) as cash_vol,
             SUM(CASE WHEN BasePaymentTypeKey = 1 AND COALESCE(DerivedPaymentTypeKey, 0) <> 5 THEN ShopCost ELSE 0 END) as cash_amt,
             SUM(CASE WHEN BasePaymentTypeKey = 2 OR DerivedPaymentTypeKey = 5 THEN Volume ELSE 0 END) as card_vol,
@@ -551,33 +527,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         WHERE business_day >= %s AND business_day < %s
           AND (DerivedPaymentTypeKey IS NULL OR DerivedPaymentTypeKey NOT IN (2, 3, 4))
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END,
+            {selling_inferred_resource_key_sql()},
             business_day
     """, (ym_start + ' 00:00:00', ym_end + ' 00:00:00'))
     daily_sales_cache = {}
@@ -628,34 +578,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
 
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(Volume) as ved_vol,
             business_day as day_date,
             SUM({selling_mass_expr}) as ved_mass,
@@ -664,33 +587,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 2
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END,
+            {selling_inferred_resource_key_sql()},
             business_day
     """, (ym_start + ' 00:00:00', ym_end + ' 00:00:00'))
     daily_ved_cache = {}
@@ -745,33 +642,12 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         rsk = r[5]
         mass = _round_half_up(float(r[6] or 0), 3)
 
-        if orig_rk >= 100:
-            rk = orig_rk
-            corrected = STATION_RK_CORRECTIONS.get((sk, rk))
-            if corrected:
-                rk = corrected
-        elif sk == 28 and rsk is not None:
-            rk = SK28_RSK_MAP.get(int(rsk), orig_rk)
-        elif sk == 30 and rsk is not None:
-            rk = SK30_RSK_MAP.get(int(rsk), orig_rk)
-        elif sk == 29 and rsk is not None:
-            rk = SK29_RSK_MAP.get(int(rsk), orig_rk)
-        else:
-            ref_price = supply_price_ref.get((sk, orig_rk), 0)
-            if ref_price > 0:
-                if ref_price <= 45:   rk = 108
-                elif ref_price <= 65: rk = 102
-                elif ref_price <= 78: rk = 103
-                elif ref_price <= 83:
-                    rk = 104
-                    if avg_density > 0.82:
-                        rk = 106
-                else:                 rk = 106
-            elif avg_density > 0:
-                rk = 106 if avg_density > 0.82 else 103
-            else:
-                continue
-
+        rk = infer_supply_resource_key(
+            sk, orig_rk, rsk,
+            ref_price=supply_price_ref.get((sk, orig_rk), 0),
+            avg_density=avg_density,
+            tx_date=ds,
+        )
         if rk < 100:
             continue
         d_day = _daily_metric_map(daily_supply_cache, ds)
@@ -783,34 +659,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
 
     cur.execute(f"""
         SELECT ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END as inferred_rk,
+            {selling_inferred_resource_key_sql()} as inferred_rk,
             SUM(Volume) as contract_vol,
             SUM(ShopCost) as contract_amt,
             SUM(ShopCost) / NULLIF(SUM(Volume), 0) as contract_price,
@@ -821,33 +670,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         WHERE business_day >= %s AND business_day < %s
           AND DerivedPaymentTypeKey = 3
         GROUP BY ShopKey,
-            CASE
-                WHEN ShopKey = 28 AND ResourceShopKey = 7  THEN 102
-                WHEN ShopKey = 28 AND ResourceShopKey = 8  THEN 103
-                WHEN ShopKey = 28 AND ResourceShopKey = 9  THEN 104
-                WHEN ShopKey = 28 AND ResourceShopKey = 10 THEN 109
-                WHEN ShopKey = 28 AND ResourceShopKey = 11 THEN 110
-                WHEN ShopKey = 28 AND ResourceShopKey = 12 THEN 108
-                WHEN ShopKey = 6  AND ResourceShopKey = 1  THEN 103
-                WHEN ShopKey = 6  AND ResourceShopKey = 2  THEN 104
-                WHEN ShopKey = 6  AND ResourceShopKey = 3  THEN 102
-                WHEN ShopKey = 6  AND ResourceShopKey = 5  THEN 106
-                WHEN ShopKey IN (7, 15) AND ResourceKey = 104 THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 29 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 29 AND ResourceShopKey = 9  THEN 106
-                WHEN ShopKey = 29 AND ResourceShopKey = 10 THEN 108
-                WHEN ShopKey = 30 AND ResourceShopKey = 7  THEN 103
-                WHEN ShopKey = 30 AND ResourceShopKey = 8  THEN 102
-                WHEN ShopKey = 30 AND ResourceShopKey = 9  THEN 106
-                WHEN ResourceKey >= 100 THEN ResourceKey
-                WHEN BasePrice <= 0    THEN ResourceKey
-                WHEN BasePrice <= 45   THEN 108
-                WHEN BasePrice <= 65   THEN 102
-                WHEN BasePrice <= 78   THEN 103
-                WHEN BasePrice <= 83   THEN 104
-                ELSE 106
-            END,
+            {selling_inferred_resource_key_sql()},
             business_day
     """, (ym_start + ' 00:00:00', ym_end + ' 00:00:00'))
     daily_contract_cache = {}
@@ -913,7 +736,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             if corrected:
                 rk = corrected
         else:
-            rk = _infer_resource_code_daily(rk, r[9], rsk=r[11], sk=sk)
+            rk = _infer_resource_code_daily(rk, r[9], rsk=r[11], sk=sk, tx_date=str(r[10]))
         if rk < 100:
             continue
         ds = str(r[10])
@@ -970,7 +793,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         rc = int(r[1])
         if sk == 29 and rc < 100:
             continue
-        rk = _infer_resource_code_daily(rc, r[2], sk=sk)
+        rk = _infer_resource_code_daily(rc, r[2], sk=sk, tx_date=str(r[3]))
         ds = str(r[3])
         if (sk, rk) not in daily_price_cache.get(ds, {}):
             daily_price_cache.setdefault(ds, {})[(sk, rk)] = _round_half_up(float(r[2] or 0), 2)
@@ -991,7 +814,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
     for r in cur.fetchall():
         sk = int(r[0])
         rsk = r[4] if len(r) > 4 else None
-        rk = _infer_resource_code_daily(int(r[1]), r[2], rsk=rsk, sk=sk)
+        rk = _infer_resource_code_daily(int(r[1]), r[2], rsk=rsk, sk=sk, tx_date=str(r[3]))
         ds = str(r[3])
         if float(r[2] or 0) <= 0:
             continue
@@ -999,6 +822,20 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
         if (sk, rk) not in seen:
             seen.add((sk, rk))
             daily_price_cache.setdefault(ds, {})[(sk, rk)] = _round_half_up(float(r[2] or 0), 2)
+
+    # 价格结转：无营业日（当日无逐站价）的站点，沿用最近一个前一日的同站同油品价格。
+    # 处理装修/停业等无销售日（如 15 号站 20 号起无营业 -> 价格沿用 19 号，直到有数据为止）。
+    # 仅填补缺失，不覆盖真实价格；全新站点（无历史价）仍回退官方价表。
+    _price_day_strs = [d.strftime('%Y-%m-%d') for d in actual_days]
+    for _i in range(1, len(_price_day_strs)):
+        _prev_day = _price_day_strs[_i - 1]
+        _cur_day = _price_day_strs[_i]
+        _prev_prices = daily_price_cache.get(_prev_day)
+        if not _prev_prices:
+            continue
+        _cur_prices = daily_price_cache.setdefault(_cur_day, {})
+        for _pkey, _pval in _prev_prices.items():
+            _cur_prices.setdefault(_pkey, _pval)
 
     pre_month_bal = _new_balance_map()
     pre_month_bal_dt = {}
@@ -1022,7 +859,7 @@ def generate_monthly_excel(conn, year_month, force_refresh=False):
             if corrected:
                 rk = corrected
         else:
-            rk = _infer_resource_code_daily(rk, r[5], rsk=r[6], sk=sk)
+            rk = _infer_resource_code_daily(rk, r[5], rsk=r[6], sk=sk, tx_date=str(r[7])[:10])
         if rk < 100:
             continue
         key = (sk, rk)

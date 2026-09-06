@@ -130,6 +130,24 @@ The script installs to `%LOCALAPPDATA%\SalesWallpaperEngine`, adds a Startup sho
 
 ## Releases
 
+### 0.2.23
+
+- **Transparent expanded inventory panel**: the expanded panel body now has a transparent background and no visible scrollbar, so the desktop wallpaper shows through while the list scrolls; scrolling itself is unchanged (`overflow-y` stays scrollable).
+- **Inventory panel typography**: wider panel (360px max width) with larger text (13px rows / 11px headers) and rebalanced grid columns keep all four column headers fully visible in both Chinese (站点/油品/液位/预计天数) and Russian (АЗС/Топливо/Уровень/Дней).
+- **One-decimal fill percentage**: fuel level percentages show one decimal place instead of integers.
+
+### 0.2.9 – 0.2.21
+
+- **Runtime pre-check fix (0.2.9)**: the environment pre-check no longer false-reports "missing runtime"; detection uses registry plus multi-path disk probing and moves to host-process startup so a player exit cannot white-screen the wallpaper.
+- **WebView2 system-runtime convergence (0.2.10–0.2.14)**: drops the false-negative .NET check, supports side-by-side Fixed Version runtimes, surfaces WebView2 init errors with fallback to the system runtime, then converges on the system WebView2 Runtime only and ignores incomplete local `WebView2Runtime` folders.
+- **Inventory panel fixes (0.2.15–0.2.16)**: inventory list filter fix with a scrollable list, then hardened scrolling behavior.
+- **Inventory sellable-days caliber**: fuel rows above 60% level stay hidden, below 10% count as tank-bottom oil shown as 0 days, and 10–60% show sellable days computed by the backend from per-fuel daily sales in `ocw.selling` (`daysRemaining` per tank).
+- **WH_MOUSE_LL global wheel hook**: map wheel zoom keeps working even though the wallpaper sits beneath the desktop icon layer.
+- **Localized station names**: map marker names follow the wallpaper runtime language (Chinese/Russian).
+- **Bundled-key persistence**: setup packages bake in the wallpaper key and redeploy it to `%APPDATA%\sales-wallpaper-engine` on install and on every auto-update, fixing 授权未通过 after updates.
+- **Backend performance fix**: per-shop daily-sales indexes plus a 30-minute TTL cache bring the authorized wallpaper endpoint back under the client timeout (previously 40s+ responses).
+- **Uninstall script**: complete uninstall covering the install dir, appdata folder, Startup shortcut, and HKCU Run residue.
+
 ### 0.2.4
 
 - **Map labels localization**: the wallpaper page now uses the shared `map-labels` module for depot type and station business-status labels; Chinese maps use 在营/停用/在建 for depot type and 在营/停业/装修 for station status, while Russian maps use Работает/Остановлен/Строится; station/depot marker names also follow the runtime language.

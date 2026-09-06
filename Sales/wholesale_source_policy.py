@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 
-WHOLESALE_SOURCE_CUTOFF = date(2026, 6, 1)
+WHOLESALE_SOURCE_CUTOFF = date(2025, 1, 1)
 WHOLESALE_WEIGHING_END_DATE = WHOLESALE_SOURCE_CUTOFF - timedelta(days=1)
 
 

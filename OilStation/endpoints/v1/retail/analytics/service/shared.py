@@ -33,6 +33,8 @@ from export_excel import (
     SK29_RSK_MAP,
     SK30_RSK_MAP,
     STATION_RK_CORRECTIONS,
+    STATION_TANK_RESOURCE_MAP,
+    STATION_TANK_RESOURCE_MAP_PRIMARY,
     _allow_fixed_density_fallback,
     _selling_mass_expr,
 )
@@ -169,34 +171,34 @@ def report_bonus_amount_expr(alias="s"):
 
 
 def report_resource_key_expr(alias="s"):
+    """快照/KPI 侧油品推断表达式（与 export_excel 固化映射字典同源）。
+
+    前置权威层由 STATION_TANK_RESOURCE_MAP_PRIMARY 生成（含全部液化气罐）；
+    SK4 汽柴油罐（t1/t2/t5）沿用快照侧既有无条件口径；尾部注入固化兜底层
+    （带生效日），与月报 selling_inferred_resource_key_sql 同一套罐位事实。
+    """
+    a = f"{alias}."
+    front = []
+    for (sk, rsk), code in sorted(STATION_TANK_RESOURCE_MAP_PRIMARY.items()):
+        front.append(f"WHEN {a}ShopKey = {sk} AND {a}ResourceShopKey = {rsk} THEN {code} ")
+    # SK4 汽柴油罐：快照侧既有无条件口径（与日销表 _infer_resource_code_daily 一致）
+    front.append(f"WHEN {a}ShopKey = 4 AND {a}ResourceShopKey = 1 THEN 103 ")
+    front.append(f"WHEN {a}ShopKey = 4 AND {a}ResourceShopKey = 2 THEN 104 ")
+    front.append(f"WHEN {a}ShopKey = 4 AND {a}ResourceShopKey = 5 THEN 106 ")
+    pins = []
+    for (sk, rsk), (code, dfrom) in sorted(STATION_TANK_RESOURCE_MAP.items()):
+        cond = f"WHEN {a}ShopKey = {sk} AND {a}ResourceShopKey = {rsk}"
+        if dfrom:
+            cond += f" AND {a}TransactionDatetime >= '{dfrom}'"
+        pins.append(f"{cond} THEN {code} ")
     return (
         "CASE "
-        f"WHEN {alias}.ShopKey = 28 AND {alias}.ResourceShopKey = 7 THEN 102 "
-        f"WHEN {alias}.ShopKey = 28 AND {alias}.ResourceShopKey = 8 THEN 103 "
-        f"WHEN {alias}.ShopKey = 28 AND {alias}.ResourceShopKey = 9 THEN 104 "
-        f"WHEN {alias}.ShopKey = 28 AND {alias}.ResourceShopKey = 10 THEN 109 "
-        f"WHEN {alias}.ShopKey = 28 AND {alias}.ResourceShopKey = 11 THEN 110 "
-        f"WHEN {alias}.ShopKey = 28 AND {alias}.ResourceShopKey = 12 THEN 108 "
-        f"WHEN {alias}.ShopKey = 6 AND {alias}.ResourceShopKey = 1 THEN 103 "
-        f"WHEN {alias}.ShopKey = 6 AND {alias}.ResourceShopKey = 2 THEN 104 "
-        f"WHEN {alias}.ShopKey = 6 AND {alias}.ResourceShopKey = 3 THEN 102 "
-        f"WHEN {alias}.ShopKey = 6 AND {alias}.ResourceShopKey = 5 THEN 106 "
-        f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 1 THEN 103 "
-        f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 2 THEN 104 "
-        f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 5 THEN 106 "
-        f"WHEN {alias}.ShopKey = 4 AND {alias}.ResourceShopKey = 7 THEN 108 "
-        f"WHEN {alias}.ShopKey IN (19, 22, 24) AND {alias}.ResourceShopKey = 7 THEN 108 "
-        f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 7 THEN 103 "
-        f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 8 THEN 102 "
-        f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 9 THEN 106 "
-        f"WHEN {alias}.ShopKey = 29 AND {alias}.ResourceShopKey = 10 THEN 108 "
-        f"WHEN {alias}.ShopKey = 30 AND {alias}.ResourceShopKey = 7 THEN 103 "
-        f"WHEN {alias}.ShopKey = 30 AND {alias}.ResourceShopKey = 8 THEN 102 "
-        f"WHEN {alias}.ShopKey = 30 AND {alias}.ResourceShopKey = 9 THEN 106 "
-        f"WHEN {alias}.ShopKey IN (7, 15) AND {alias}.ResourceKey = 104 THEN 102 "
+        + "".join(front)
+        + f"WHEN {alias}.ShopKey IN (7, 15) AND {alias}.ResourceKey = 104 THEN 102 "
         f"WHEN {alias}.ResourceKey IN (102, 103, 104, 106, 108, 109, 110) THEN {alias}.ResourceKey "
         f"WHEN {alias}.BasePrice <= 0 THEN {alias}.ResourceKey "
-        f"WHEN {alias}.BasePrice <= 45 THEN 108 "
+        + "".join(pins)
+        + f"WHEN {alias}.BasePrice <= 45 THEN 108 "
         f"WHEN {alias}.BasePrice <= 65 THEN 102 "
         f"WHEN {alias}.BasePrice <= 78 THEN 103 "
         f"WHEN {alias}.BasePrice <= 83 THEN 104 "
@@ -258,6 +260,9 @@ def infer_balance_resource_key(shop_key, resource_key, price=None, resource_shop
         return canonical_resource_key(SK29_RSK_MAP[rsk])
     if sk in (19, 22, 24) and rsk in SK19_22_24_RSK_MAP:
         return canonical_resource_key(SK19_22_24_RSK_MAP[rsk])
+    # 液化气罐前置权威（2026-09-04 固化映射）：覆盖既有链未含的罐（SK2/3/5/8/13/14/26）
+    if rsk and (sk, rsk) in STATION_TANK_RESOURCE_MAP_PRIMARY:
+        return canonical_resource_key(STATION_TANK_RESOURCE_MAP_PRIMARY[(sk, rsk)])
     if sk == 30 and rk not in {102, 103}:
         return 0
     corrected = STATION_RK_CORRECTIONS.get((sk, rk))

@@ -5,13 +5,10 @@ from pathlib import Path
 from openpyxl import Workbook
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-OILSTATION_ROOT = PROJECT_ROOT / "OilStation"
-if str(OILSTATION_ROOT) not in sys.path:
-    sys.path.insert(0, str(OILSTATION_ROOT))
+from retail_internal import import_oilstation
 
-from constants import REPORT_HIDDEN_STATION_NOTE
-from endpoints.v1.retail.export.service import generator
+REPORT_HIDDEN_STATION_NOTE = import_oilstation("constants").REPORT_HIDDEN_STATION_NOTE
+generator = import_oilstation("endpoints.v1.retail.export.service.generator")
 
 
 class RetailReportHiddenStationsTests(unittest.TestCase):

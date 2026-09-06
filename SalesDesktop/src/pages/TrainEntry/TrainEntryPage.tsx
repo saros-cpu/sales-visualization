@@ -173,7 +173,11 @@ export default function TrainEntryPage() {
   );
 
   const entryKpis = useMemo(() => {
-    const totalTons = data.reduce((sum, row) => sum + Number(row.weightTons || Number(row.weightKg || 0) / 1000), 0);
+    // 合计必须先用整数 weight_kg 累加再除以 1000；若直接累加浮点 weightTons，
+    // 浮点误差会让总额落在 22622.2129999… 这种“差一点到 .213”的位置，
+    // 而 antd Statistic 对 precision 是【截断】而非四舍五入，会显示成 22622.212（少 1 公斤）。
+    const totalKg = data.reduce((sum, row) => sum + Number(row.weightKg || 0), 0);
+    const totalTons = Number((totalKg / 1000).toFixed(3));
     const draftCount = draftRows.length;
     const manualRows = data.filter((row) => (row.sourceType || '') === 'manual').length;
     const importedRows = data.filter((row) => row.id > 0 && (row.sourceType || '') !== 'manual').length;
@@ -332,18 +336,18 @@ export default function TrainEntryPage() {
 
   const centerAlign = { align: 'center' as const };
   const columns: ColumnDefinition<EntryRow>[] = [
-    { title: t('common.source'), dataIndex: 'sourceType', key: 'sourceType', width: 130, render: sourceLabel, ...centerAlign },
-    { title: t('wholesaleEntry.sourceRow'), dataIndex: 'sourceRowNumber', key: 'sourceRowNumber', width: 90, render: (value) => value || '--', ...centerAlign },
-    { title: t('wholesaleEntry.entryDate'), dataIndex: 'businessDate', key: 'businessDate', width: 118, editable: true, required: true, editorType: 'date', ...centerAlign },
-    { title: t('common.transportMode'), dataIndex: 'transportMode', key: 'transportMode', width: 100, editable: true, editorType: 'select', editorOptions: transportOptions, render: (value) => t(`transport.${value}`, { defaultValue: value || '--' }), ...centerAlign },
-    { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: 120, editable: true, render: (value) => value || '--', ...centerAlign },
+    { title: t('common.source'), dataIndex: 'sourceType', key: 'sourceType', width: 75, render: sourceLabel, ...centerAlign },
+    { title: t('wholesaleEntry.sourceRow'), dataIndex: 'sourceRowNumber', key: 'sourceRowNumber', width: 60, render: (value) => value || '--', ...centerAlign },
+    { title: t('wholesaleEntry.entryDate'), dataIndex: 'businessDate', key: 'businessDate', width: 110, editable: true, required: true, editorType: 'date', ...centerAlign },
+    { title: t('common.transportMode'), dataIndex: 'transportMode', key: 'transportMode', width: 80, editable: true, editorType: 'select', editorOptions: transportOptions, render: (value) => t(`transport.${value}`, { defaultValue: value || '--' }), ...centerAlign },
+    { title: t('weighing.weighSerialNo'), dataIndex: 'weighSerialNo', key: 'weighSerialNo', width: 100, editable: true, render: (value) => value || '--', ...centerAlign },
     { title: t('common.productName'), dataIndex: 'productName', key: 'productName', width: 180, editable: true, required: true, editorType: 'select', editorOptions: productOpts, render: (_, row) => displayProductName(row.productName || row.rawProductName, row.standardProductName), ...centerAlign },
-    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 120, editable: true, render: (value) => value || '--', ...centerAlign },
+    { title: t('common.vehicleNo'), dataIndex: 'vehicleNo', key: 'vehicleNo', width: 100, editable: true, render: (value) => value || '--', ...centerAlign },
     {
       title: t('common.senderUnit'),
       dataIndex: 'senderName',
       key: 'senderName',
-      width: 260,
+      width: 240,
       editable: true,
       required: true,
       editorType: 'select',
@@ -351,13 +355,13 @@ export default function TrainEntryPage() {
       render: (_, row) => displayCustomerName(row.senderName, row.standardSenderName),
       ...centerAlign,
     },
-    { title: t('common.receiverUnit'), dataIndex: 'entityName', key: 'entityName', width: 240, editable: true, required: true, editorType: 'select', editorOptions: customerOpts, render: (_, row) => displayCustomerName(row.entityName || row.rawEntityName, row.standardEntityName), ...centerAlign },
-    { title: t('common.weightKg'), dataIndex: 'weightKg', key: 'weightKg', width: 120, editable: true, required: true, editorType: 'number', render: (value) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 3 }), ...centerAlign },
+    { title: t('common.receiverUnit'), dataIndex: 'entityName', key: 'entityName', width: 220, editable: true, required: true, editorType: 'select', editorOptions: customerOpts, render: (_, row) => displayCustomerName(row.entityName || row.rawEntityName, row.standardEntityName), ...centerAlign },
+    { title: t('common.weightKg'), dataIndex: 'weightKg', key: 'weightKg', width: 110, editable: true, required: true, editorType: 'number', render: (value) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 3 }), ...centerAlign },
     {
       title: t('common.weightTons'),
       dataIndex: 'weightTons',
       key: 'weightTons',
-      width: 110,
+      width: 100,
       render: (_: unknown, row: EntryRow) => {
         const kg = row.weightKg;
         const tons = kg !== undefined && kg !== null && kg !== '' ? Number(kg) / 1000 : Number(row.weightTons || 0);
@@ -365,10 +369,10 @@ export default function TrainEntryPage() {
       },
       ...centerAlign,
     },
-    { title: t('common.classification'), dataIndex: 'classification', key: 'classification', width: 150, editable: true, editorType: 'select', editorOptions: classificationOptions, render: (value) => t(`wholesale.${value}`, { defaultValue: value || '--' }), ...centerAlign },
-    { title: t('common.matchStatus', { defaultValue: '匹配状态' }), dataIndex: 'matchStatus', key: 'matchStatus', width: 110, render: matchStatusLabel, ...centerAlign },
-    { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: 220, editable: true, render: (value) => value || '--', ...centerAlign },
-    { title: t('common.createdAt'), dataIndex: 'createdAt', key: 'createdAt', width: 160, render: (value) => value || '--', ...centerAlign },
+    { title: t('common.classification'), dataIndex: 'classification', key: 'classification', width: 130, editable: true, editorType: 'select', editorOptions: classificationOptions, render: (value) => t(`wholesale.${value}`, { defaultValue: value || '--' }), ...centerAlign },
+    { title: t('common.matchStatus', { defaultValue: '匹配状态' }), dataIndex: 'matchStatus', key: 'matchStatus', width: 80, render: matchStatusLabel, ...centerAlign },
+    { title: t('common.remark'), dataIndex: 'remark', key: 'remark', width: 200, editable: true, render: (value) => value || '--', ...centerAlign },
+    { title: t('common.createdAt'), dataIndex: 'createdAt', key: 'createdAt', width: 120, render: (value) => value || '--', ...centerAlign },
   ];
   const manualHiddenColumns = new Set(['sourceType', 'sourceRowNumber', 'weightTons', 'matchStatus', 'createdAt']);
   const manualColumns = columns.filter((col) => !manualHiddenColumns.has(col.key));

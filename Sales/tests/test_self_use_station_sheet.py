@@ -6,13 +6,11 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-OILSTATION_ROOT = PROJECT_ROOT / "OilStation"
-if str(OILSTATION_ROOT) not in sys.path:
-    sys.path.insert(0, str(OILSTATION_ROOT))
+from retail_internal import import_oilstation
 
-from endpoints.v1.retail.export.controller import _write_self_use_station_sheet
-from constants import REPORT_HIDDEN_STATION_NOTE
+controller = import_oilstation("endpoints.v1.retail.export.controller")
+_write_self_use_station_sheet = controller._write_self_use_station_sheet
+REPORT_HIDDEN_STATION_NOTE = import_oilstation("constants").REPORT_HIDDEN_STATION_NOTE
 
 
 def _styles():

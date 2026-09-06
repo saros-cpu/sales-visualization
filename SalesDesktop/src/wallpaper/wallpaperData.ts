@@ -26,6 +26,7 @@ export interface WallpaperStation {
   }>;
   inventoryAsOf?: string;
   snapshotGeneratedAt?: string;
+  daysRemaining?: number | null;
 }
 
 export interface WallpaperDepot {

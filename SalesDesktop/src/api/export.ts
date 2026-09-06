@@ -184,7 +184,7 @@ export async function downloadWholesaleReport(params: { year: number; month?: nu
 export async function downloadWholesaleDetails(yearMonth: string) {
   await downloadBlob(
     absoluteUrl(ApiPaths.reports.wholesaleDetails(yearMonth)),
-    `明细表_${yearMonth}.xlsx`,
+    `装卸车明细_${yearMonth}.xlsx`,
   );
 }
 

@@ -165,6 +165,27 @@ internal static class AppUpdater
 
             Write-Log "copy"
             Copy-Item -Path (Join-Path $staging "*") -Destination $TargetDir -Recurse -Force
+
+            Write-Log "deploy key to appdata"
+            $keyDeployDir = Join-Path $env:APPDATA "sales-wallpaper-engine"
+            $keyDeployed = $false
+            $protectedKeySrc = Join-Path $staging "wallpaper-key.protected.json"
+            if (Test-Path -LiteralPath $protectedKeySrc) {
+                New-Item -ItemType Directory -Force -Path $keyDeployDir | Out-Null
+                Copy-Item -LiteralPath $protectedKeySrc -Destination (Join-Path $keyDeployDir "wallpaper-key.protected.json") -Force
+                $keyDeployed = $true
+                Write-Log "deployed protected wallpaper key"
+            }
+            $plainKeySrc = Join-Path $staging "wallpaper-key.json"
+            if (Test-Path -LiteralPath $plainKeySrc) {
+                New-Item -ItemType Directory -Force -Path $keyDeployDir | Out-Null
+                Copy-Item -LiteralPath $plainKeySrc -Destination (Join-Path $keyDeployDir "wallpaper-key.json") -Force
+                $keyDeployed = $true
+                Write-Log "deployed plain wallpaper key"
+            }
+            if (-not $keyDeployed) {
+                Write-Log "no bundled wallpaper key in package; keeping existing appdata key"
+            }
         } catch {
             Write-Log ("apply failed: " + $_.Exception.Message)
             exit 1

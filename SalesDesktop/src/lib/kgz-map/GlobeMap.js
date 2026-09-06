@@ -18,6 +18,13 @@ const DEFAULTS = {
 
 const DEG2RAD = Math.PI / 180;
 
+// 整改任务4b：tooltip 走 innerHTML，站名等业务数据统一转义后拼入
+function escapeHtml(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
 const POINT_PALETTE = {
   depot: 0x22d3ee,
   station: 0x34d399,
@@ -971,7 +978,7 @@ export class GlobeMap {
       const sub = isHQ
         ? (this.isRu() ? 'Кыргызстан, CTY-01' : '吉尔吉斯斯坦REG-01')
         : this.getPlaceName(p);
-      this.tooltip.innerHTML = `<strong>${this.getPointName(p)}</strong><span>${sub}</span>`;
+      this.tooltip.innerHTML = `<strong>${escapeHtml(this.getPointName(p))}</strong><span>${escapeHtml(sub)}</span>`;
       this.tooltip.style.transform = `translate(${event.offsetX + 16}px, ${event.offsetY + 16}px)`;
       this.tooltip.classList.add('visible');
       this.requestRender();

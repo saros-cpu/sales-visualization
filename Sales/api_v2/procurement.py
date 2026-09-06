@@ -90,7 +90,8 @@ def procurement_details():
             offset = (page - 1) * page_size
             cur.execute(f'''
                 SELECT d.id, d.business_date, d.raw_product_name, d.sender_name,
-                       d.standard_entity_name, d.raw_entity_name, d.weight_tons, d.weigh_source, d.remark
+                       d.standard_entity_name, d.raw_entity_name, d.weight_tons, d.weigh_source, d.remark,
+                       d.transport_mode, d.batch_id
                 FROM wholesale_detail_records d
                 WHERE {" AND ".join(where)}
                 ORDER BY d.business_date DESC, d.id DESC
@@ -110,6 +111,7 @@ def procurement_details():
                 entity_raw_alt = row.get('raw_entity_name')
                 sender_display = _resolve_standard_name(entity_lookup, sender_raw)
                 entity_display = _resolve_standard_name(entity_lookup, entity_raw, entity_raw_alt)
+                source_label = '报表上传' if row.get('batch_id') else (row['weigh_source'] or '称重来源')
                 items.append({
                     'id': row['id'],
                     'businessDate': str(row['business_date']),
@@ -121,8 +123,8 @@ def procurement_details():
                     'entityName': entity_display,
                     'entityRawName': entity_raw or entity_raw_alt or '',
                     'weightTons': float(row['weight_tons']) if row['weight_tons'] else None,
-                    'weighSource': row['weigh_source'],
-                    'remark': row['remark'],
+                    'weighSource': source_label,
+                    'remark': '火车' if row.get('transport_mode') == 'train' else ('汽车' if row.get('transport_mode') == 'truck' else (row['remark'] or '')),
                 })
             return jsonify({'code': 0, 'message': 'success', 'data': {'items': items, 'total': total, 'page': page, 'page_size': page_size}})
     finally:

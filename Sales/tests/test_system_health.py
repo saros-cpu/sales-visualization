@@ -12,6 +12,7 @@ if str(SALES_ROOT) not in sys.path:
 import daily_maintenance
 import routes_data
 from api_v2 import system
+from retail_internal import import_oilstation
 from api_v2.system import (
     _action_center,
     _accounting_failed_items_from_summary,
@@ -466,9 +467,7 @@ class SystemHealthActionCenterTests(unittest.TestCase):
     def test_retail_254_monthly_archive_task_records_success(self):
         records = []
         calls = []
-        if str(system.OILSTATION_ROOT) not in sys.path:
-            sys.path.insert(0, str(system.OILSTATION_ROOT))
-        from endpoints.v1.retail.export.service import report254_monthly
+        report254_monthly = import_oilstation("endpoints.v1.retail.export.service.report254_monthly")
 
         def fake_generator(month, apply=True):
             calls.append({"month": month, "apply": apply})
@@ -504,9 +503,7 @@ class SystemHealthActionCenterTests(unittest.TestCase):
         self.assertEqual(records[0]["status"], "success")
 
     def test_retail_254_monthly_archive_paths_are_year_and_month_nested(self):
-        if str(system.OILSTATION_ROOT) not in sys.path:
-            sys.path.insert(0, str(system.OILSTATION_ROOT))
-        from endpoints.v1.retail.export.service import report254_monthly
+        report254_monthly = import_oilstation("endpoints.v1.retail.export.service.report254_monthly")
 
         root = Path(r"D:\archive")
         self.assertEqual(
@@ -533,9 +530,7 @@ class SystemHealthActionCenterTests(unittest.TestCase):
             Path(inspect.getsourcefile(sales_config)).resolve(),
             SALES_ROOT / "config.py",
         )
-        if str(system.OILSTATION_ROOT) not in sys.path:
-            sys.path.insert(0, str(system.OILSTATION_ROOT))
-        from endpoints.v1.retail.export.service import report254_monthly
+        report254_monthly = import_oilstation("endpoints.v1.retail.export.service.report254_monthly")
 
         connect_source = Path(inspect.getsourcefile(report254_monthly.connect)).resolve()
         self.assertEqual(
@@ -556,18 +551,14 @@ class SystemHealthActionCenterTests(unittest.TestCase):
         )
 
     def test_accounting_handover_lpg_balance_mapping_for_legacy_resource_key_zero(self):
-        if str(system.OILSTATION_ROOT) not in sys.path:
-            sys.path.insert(0, str(system.OILSTATION_ROOT))
-        from scripts.generate_accounting_handover_reports import infer_resource
+        infer_resource = import_oilstation("scripts.generate_accounting_handover_reports").infer_resource
 
         for shop_key in (19, 22, 24):
             self.assertEqual(infer_resource(shop_key, 0, 7), 108)
 
     def test_retail_254_monthly_archive_task_fails_when_nothing_applied(self):
         records = []
-        if str(system.OILSTATION_ROOT) not in sys.path:
-            sys.path.insert(0, str(system.OILSTATION_ROOT))
-        from endpoints.v1.retail.export.service import report254_monthly
+        report254_monthly = import_oilstation("endpoints.v1.retail.export.service.report254_monthly")
 
         original_generator = report254_monthly.generate_monthly_254_archive
         original_recorder = system.record_automation_task

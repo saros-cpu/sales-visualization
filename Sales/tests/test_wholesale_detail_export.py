@@ -164,6 +164,118 @@ class WholesaleDetailExportTests(unittest.TestCase):
         )
         self.assertEqual(value, "")
 
+    def test_transfer_summary_name_depot_without_azs_prefix(self):
+        # 油库显示目录名（不带 АЗС 前缀）
+        value = wholesale._build_transfer_summary_name(
+            "АЗС Нефтебаза CTY-05",
+            "STN-63 S-64",
+            entity_type="own_depot",
+            entity_code="south_CTY-30_depot",
+        )
+        self.assertEqual(value, "S-64")
+
+    def test_is_transfer_party_recognizes_retail_station_with_wrong_classification(self):
+        # 分类误标为 local_wholesale，但实体是零售站点 → 仍视为外运
+        self.assertTrue(wholesale._is_transfer_party({
+            "entityType": "retail_station",
+            "entityCode": "20",
+            "standardEntityName": "S-40",
+            "classification": "local_wholesale",
+        }))
+
+    def test_is_transfer_party_rejects_internal_use_depot(self):
+        self.assertFalse(wholesale._is_transfer_party({
+            "entityType": "own_depot",
+            "entityCode": "internal_use",
+            "standardEntityName": "内部用油",
+        }))
+
+    def test_transfer_summary_reroutes_retail_station_wrong_classification(self):
+        import shared_utils
+
+        original = shared_utils.retail_station_catalog_cached
+        shared_utils.retail_station_catalog_cached = lambda: {
+            20: {"name": "STN-39", "short": "S-40"},
+        }
+        try:
+            rows = wholesale._build_summary_rows([
+                {
+                    "classification": "local_wholesale",
+                    "rawEntityName": "S-40",
+                    "standardEntityName": "S-40",
+                    "entityType": "retail_station",
+                    "entityCode": "20",
+                    "standardProductName": "92#汽油",
+                    "weightTons": 2.5,
+                    "weightKg": 2500,
+                },
+                {
+                    "classification": "transfer",
+                    "rawEntityName": "S-40",
+                    "standardEntityName": "S-40",
+                    "entityType": "retail_station",
+                    "entityCode": "20",
+                    "standardProductName": "80#汽油",
+                    "weightTons": 1,
+                    "weightKg": 1000,
+                },
+            ])
+        finally:
+            shared_utils.retail_station_catalog_cached = original
+        self.assertNotIn("S-40", [r["companyName"] for r in rows["wholesale"]])
+        self.assertEqual(len(rows["transfer"]), 2)
+        for row in rows["transfer"]:
+            self.assertEqual(row["companyName"], "АЗС S-40")
+            self.assertEqual(row["stationNumber"], 20)
+
+    def test_transfer_summary_sorted_by_station_number(self):
+        import shared_utils
+
+        original = shared_utils.retail_station_catalog_cached
+        shared_utils.retail_station_catalog_cached = lambda: {
+            6: {"name": "STN-11", "short": "S-12"},
+            18: {"name": "巴雷克奇2", "short": "S-36"},
+        }
+        try:
+            rows = wholesale._build_summary_rows([
+                {
+                    "classification": "transfer",
+                    "rawEntityName": "S-36",
+                    "standardEntityName": "S-36",
+                    "entityType": "retail_station",
+                    "entityCode": "18",
+                    "standardProductName": "80#汽油",
+                    "weightTons": 1,
+                    "weightKg": 1000,
+                },
+                {
+                    "classification": "transfer",
+                    "rawEntityName": "S-12",
+                    "standardEntityName": "S-12",
+                    "entityType": "retail_station",
+                    "entityCode": "6",
+                    "standardProductName": "80#汽油",
+                    "weightTons": 1,
+                    "weightKg": 1000,
+                },
+                {
+                    "classification": "transfer",
+                    "rawEntityName": "АЗС Нефтебаза CTY-05",
+                    "standardEntityName": "STN-63 S-64",
+                    "entityType": "own_depot",
+                    "entityCode": "south_CTY-30_depot",
+                    "standardProductName": "80#汽油",
+                    "weightTons": 1,
+                    "weightKg": 1000,
+                },
+            ])
+        finally:
+            shared_utils.retail_station_catalog_cached = original
+        station_numbers = [row["stationNumber"] for row in rows["transfer"]]
+        names = [row["companyName"] for row in rows["transfer"]]
+        self.assertEqual(station_numbers, [6, 18, None])
+        self.assertEqual(names, ["АЗС S-12", "АЗС S-36", "S-64"])
+
 if __name__ == "__main__":
     unittest.main()
 

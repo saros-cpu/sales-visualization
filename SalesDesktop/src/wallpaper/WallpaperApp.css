@@ -180,7 +180,7 @@
   color: #9fb5ca;
   font-size: 12px;
   line-height: 1.2;
-  text-align: right;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -271,7 +271,7 @@
   color: #7f98af;
   font-size: 10px;
   line-height: 1.2;
-  text-align: right;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -339,4 +339,168 @@
 
 .wallpaper-edit-mode .wallpaper-hud-grip {
   opacity: 0.95;
+}
+
+/* ── Inventory panel (right-upper corner) ── */
+.wallpaper-inventory {
+  position: fixed;
+  top: 30px;
+  right: 28px;
+  z-index: 50;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: rgba(202, 216, 230, 0.92);
+  min-width: 200px;
+  max-width: 420px;
+  user-select: none;
+}
+
+.wallpaper-inventory-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 12px;
+  pointer-events: auto;
+  border: none;
+  border-radius: 8px;
+  background: rgba(5, 14, 28, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(148, 179, 211, 0.18);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.wallpaper-inventory-toggle:hover {
+  background: rgba(15, 30, 55, 0.85);
+}
+
+.wallpaper-inventory-icon {
+  font-size: 14px;
+}
+
+.wallpaper-inventory-label {
+  flex: 1;
+  text-align: left;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.wallpaper-inventory-count {
+  background: rgba(255, 107, 107, 0.25);
+  color: #ff8a80;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  line-height: 1.4;
+}
+
+.wallpaper-inventory-arrow {
+  font-size: 10px;
+  transition: transform 0.2s;
+  transform: rotate(-90deg);
+}
+
+.wallpaper-inventory-arrow.is-open {
+  transform: rotate(0deg);
+}
+
+.wallpaper-inventory-body {
+  margin-top: 4px;
+  pointer-events: auto;
+  border-radius: 8px;
+  /* NOTE: do NOT put backdrop-filter on this scroll container.
+     WebView2/Chromium fails to repaint a backdrop-filtered scroll
+     layer, so the scrollbar shows but content never moves. */
+  background: transparent;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  max-height: 460px;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.wallpaper-inventory-body::-webkit-scrollbar {
+  width: 0;
+  display: none;
+}
+
+.wallpaper-inventory-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.85fr) minmax(0, 0.5fr);
+  gap: 0;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: rgba(148, 179, 211, 0.65);
+  border-bottom: 1px solid rgba(148, 179, 211, 0.12);
+}
+
+.wallpaper-inventory-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.wallpaper-inventory-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.85fr) minmax(0, 0.5fr);
+  gap: 0;
+  padding: 4px 10px;
+  line-height: 1.45;
+  border-bottom: 1px solid rgba(148, 179, 211, 0.06);
+  transition: background 0.12s;
+}
+
+.wallpaper-inventory-row:last-child {
+  border-bottom: none;
+}
+
+.wallpaper-inventory-row:hover {
+  background: rgba(148, 179, 211, 0.06);
+}
+
+.inv-station {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.inv-fuel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.inv-fill {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-days {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.inv-days.is-critical {
+  color: #ff5252;
+}
+
+.inv-days.is-warning {
+  color: #ffa726;
+}
+
+.wallpaper-inventory.is-collapsed .wallpaper-inventory-body {
+  display: none;
 }

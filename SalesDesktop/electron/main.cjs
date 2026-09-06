@@ -286,6 +286,23 @@ function createWindow() {
     mainWindow.loadURL(`app://${appProtocolHost}/index.html`);
   }
 
+  // SEC-1: Restrict navigation to app:// and localhost (dev) only
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const allowedProtocols = isDev
+      ? ['http://localhost', 'http://127.0.0.1']
+      : [`app://${appProtocolHost}`];
+    const allowed = allowedProtocols.some((prefix) => url.startsWith(prefix));
+    if (!allowed) {
+      console.warn('[security] blocked navigation:', url);
+      event.preventDefault();
+    }
+  });
+
+  // SEC-1: Deny all new window creation
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
+  });
+
   mainWindow.webContents.on('before-input-event', (event, input) => {
     const key = String(input.key || '').toLowerCase();
     if (key === 'f11') {

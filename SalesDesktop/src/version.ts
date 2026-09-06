@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.6.0';
-export const BUILD_DATE = '2026-08-16';
+export const VERSION = '5.6.1';
+export const BUILD_DATE = '2026-09-05';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.6.1',
+    date: '2026-09-05',
+    type: 'patch',
+    changes: [
+      '安全：站点地图 tooltip 输出统一 HTML 转义（escapeHtml），站名等业务数据不再直接拼入 innerHTML，杜绝注入风险。',
+      '修复（服务端同步生效，无需依赖本次升级）：采购/批发标准货名判定根治——直馏汽油（Дистиллят легкий из нефти... 直溜汽油）此前因关键词判定顺序被误显示为原油，已调序修复并更正 35 行历史数据；明细维护、采购查询现统一显示「直馏汽油Прямогонная нафта」。',
+    ],
+  },
   {
     version: '5.6.0',
     date: '2026-08-16',

@@ -411,7 +411,9 @@ const ExcelTable = forwardRef(function ExcelTableInner<T extends { id: number }>
       if (e.key === 'Escape') setEditing(false);
       if (e.ctrlKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        saveAllChanges().catch(() => {});
+        saveAllChanges().catch((err) => {
+          message.error(t('common.saveFailed'));
+        });
       }
       onKeyDown?.(e);
     };

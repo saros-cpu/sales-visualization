@@ -33,7 +33,11 @@ from endpoints.v1.retail.common.currency import (
     cny_from_kgs_average,
     load_cny_rates as _common_load_cny_rates,
 )
-from endpoints.v1.retail.analytics.service.shared import _resource_key_from_report_name, _to_float
+from endpoints.v1.retail.analytics.service.shared import (
+    _resource_key_from_report_name,
+    _station_key_from_report_cell,
+    _to_float,
+)
 from endpoints.v1.retail.analytics.service.shared import *
 
 PROJECT_ROOT = Path(__file__).resolve().parents[6]
@@ -821,9 +825,10 @@ def _station_map_details_from_report_snapshot():
                 price = _to_float(row[22] if len(row) > 22 else None)
             else:
                 inventory = _to_float(row[21] if len(row) > 21 else None)
+                direct_price = _to_float(row[11] if len(row) > 11 else None)
                 sale_volume = _to_float(row[18] if len(row) > 18 else None)
                 sale_amount = _to_float(row[20] if len(row) > 20 else None)
-                price = round(sale_amount / sale_volume, 2) if sale_volume else 0.0
+                price = direct_price if direct_price else (round(sale_amount / sale_volume, 2) if sale_volume else None)
             if not inventory and not price:
                 continue
             bucket = rows_by_station[current_shop_key].setdefault(rk, {
@@ -833,7 +838,7 @@ def _station_map_details_from_report_snapshot():
                 "price": None,
             })
             bucket["inventory"] += inventory
-            if price:
+            if price is not None:
                 bucket["price"] = round(price, 2)
 
         for shop_key, by_resource in rows_by_station.items():

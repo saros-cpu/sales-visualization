@@ -9,7 +9,25 @@ if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
 from scripts.import_wholesale_excel import classify_detail, detect_transport_mode, detail_transport_mode, find_detail_columns, pair_key
-from import_helpers import _wholesale_detail_duplicate_key
+from import_helpers import _wholesale_detail_duplicate_key, smart_product_code
+
+
+class SmartProductCodeTest(unittest.TestCase):
+    def test_naphtha_full_scientific_name_beats_crude_keyword(self):
+        # 直馏汽油俄语学名含 "из нефти"，判定顺序必须先石脑油后原油（2026-09-05 修复）
+        self.assertEqual(
+            smart_product_code("Дистият легкий из нефти и газового конденсата 直溜汽油"),
+            "STRAIGHT_RUN_GASOLINE",
+        )
+
+    def test_naphtha_variants(self):
+        self.assertEqual(smart_product_code("нафта直溜汽油"), "STRAIGHT_RUN_GASOLINE")
+        self.assertEqual(smart_product_code("Прямогонный бензин 直馏汽油"), "STRAIGHT_RUN_GASOLINE")
+        self.assertEqual(smart_product_code("Легкий дистиллят直溜汽油"), "STRAIGHT_RUN_GASOLINE")
+
+    def test_plain_crude_still_crude(self):
+        self.assertEqual(smart_product_code("Нефть сырая 原油"), "CRUDE_OIL")
+        self.assertEqual(smart_product_code("нефть"), "CRUDE_OIL")
 
 
 class WholesaleDetailColumnDetectionTest(unittest.TestCase):
@@ -22,6 +40,16 @@ class WholesaleDetailColumnDetectionTest(unittest.TestCase):
         self.assertEqual(detail_transport_mode("processing", "TRAIN-001", "Ж/Д", "代加工412"), "truck")
         self.assertEqual(detail_transport_mode("processing", "01KG000AA", None, "代加工 火车"), "train")
         self.assertEqual(detail_transport_mode("transfer", "01KG000AA", None, "火车"), "train")
+
+    def test_sheet_name_overrides_when_row_data_has_no_train_marker(self):
+        self.assertEqual(detail_transport_mode("procurement", "01KG000AA", None, "代加工412", sheet_name="火车汇总МАЗУТ"), "train")
+        self.assertEqual(detail_transport_mode("procurement", "01KG000AA", None, "代加工412", sheet_name="汽车原油蜡油 НЕФТЬ АВТО"), "truck")
+        self.assertEqual(detail_transport_mode("procurement", "01KG000AA", None, None, sheet_name="火车直馏汽油代加工 нафта"), "train")
+        self.assertEqual(detail_transport_mode("procurement", None, None, None, sheet_name="火车转汽车MTBE"), "train")
+        self.assertEqual(detail_transport_mode("local_wholesale", "01KG000AA", None, None, sheet_name=None), "truck")
+
+    def test_remark_train_marker_still_works_with_sheet_name(self):
+        self.assertEqual(detail_transport_mode("procurement", None, None, "火车", sheet_name="汽车原油蜡油"), "train")
 
     def test_processing_summary_pair_does_not_override_sender_receiver_rule(self):
         entity_lookup = {
@@ -157,9 +185,26 @@ class WholesaleDetailDuplicateKeyTest(unittest.TestCase):
         b = self._row(id=2, weight_kg=27001)
         self.assertNotEqual(_wholesale_detail_duplicate_key(a), _wholesale_detail_duplicate_key(b))
 
-    def test_missing_company_or_weight_returns_none(self):
-        self.assertIsNone(_wholesale_detail_duplicate_key(self._row(standard_entity_name=None, raw_entity_name=None)))
+    def test_truck_row_with_serial_ignores_company_name(self):
+        # 汽车（有磅单号）去重键 = (业务日期, 油品, SERIAL:磅单号, 重量)，不含收/发货单位
+        key = _wholesale_detail_duplicate_key(
+            self._row(standard_entity_name=None, raw_entity_name=None)
+        )
+        self.assertEqual(key, ("2026-08-10", "AI92", "SERIAL:12026080002", "27000"))
+
+    def test_missing_weight_or_company_and_serial_returns_none(self):
+        # 既无重量、又无磅单号且无单位时无法参与去重
         self.assertIsNone(_wholesale_detail_duplicate_key(self._row(weight_kg=None)))
+        self.assertIsNone(
+            _wholesale_detail_duplicate_key(
+                self._row(
+                    weigh_serial_no=None,
+                    standard_entity_name=None,
+                    raw_entity_name=None,
+                    vehicle_no=None,
+                )
+            )
+        )
 
 
 class _FakeCursor:

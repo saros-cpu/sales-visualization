@@ -1,0 +1,1511 @@
+{
+ "note": "Flask url_map snapshot (pre api.py split). Regenerate with scripts/dump_route_table.py",
+ "count": 214,
+ "rules": [
+  {
+   "rule": "/",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "index"
+  },
+  {
+   "rule": "/<path:path>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "spa_catchall"
+  },
+  {
+   "rule": "/_next/<path:filename>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "react_static"
+  },
+  {
+   "rule": "/admin",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "admin_page"
+  },
+  {
+   "rule": "/api/<path:api_path>",
+   "methods": [
+    "DELETE",
+    "GET",
+    "PATCH",
+    "POST",
+    "PUT"
+   ],
+   "endpoint": "retail_api_proxy"
+  },
+  {
+   "rule": "/api/admin/automation-tasks",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_automation_tasks"
+  },
+  {
+   "rule": "/api/admin/automation-tasks/run",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_run_automation_task"
+  },
+  {
+   "rule": "/api/admin/contracts",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_contracts"
+  },
+  {
+   "rule": "/api/admin/contracts/<int:contract_id>",
+   "methods": [
+    "PATCH"
+   ],
+   "endpoint": "api_admin_update_contract"
+  },
+  {
+   "rule": "/api/admin/contracts/execution",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_contracts_execution"
+  },
+  {
+   "rule": "/api/admin/customers",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_customers"
+  },
+  {
+   "rule": "/api/admin/customers",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_save_customer"
+  },
+  {
+   "rule": "/api/admin/entity-aliases",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_entity_aliases"
+  },
+  {
+   "rule": "/api/admin/entity-aliases",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_save_entity_alias"
+  },
+  {
+   "rule": "/api/admin/entity-options",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_entity_options"
+  },
+  {
+   "rule": "/api/admin/exchange-rates",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_exchange_rates"
+  },
+  {
+   "rule": "/api/admin/exchange-rates",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_save_exchange_rate"
+  },
+  {
+   "rule": "/api/admin/exchange-rates/fetch-missing",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_fetch_missing_exchange_rates"
+  },
+  {
+   "rule": "/api/admin/import-batches",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_import_batches"
+  },
+  {
+   "rule": "/api/admin/import-batches/<int:batch_id>/rollback",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_rollback_import_batch"
+  },
+  {
+   "rule": "/api/admin/market-watch",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_market_watch"
+  },
+  {
+   "rule": "/api/admin/market-watch",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_save_market_watch"
+  },
+  {
+   "rule": "/api/admin/market-watch/fetch",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_fetch_market_watch"
+  },
+  {
+   "rule": "/api/admin/operation-logs",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_operation_logs"
+  },
+  {
+   "rule": "/api/admin/product-aliases",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_create_product_alias"
+  },
+  {
+   "rule": "/api/admin/products",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_products"
+  },
+  {
+   "rule": "/api/admin/retail-station-statuses",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_retail_station_statuses"
+  },
+  {
+   "rule": "/api/admin/retail-station-statuses",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_create_retail_station_status"
+  },
+  {
+   "rule": "/api/admin/retail-station-statuses/<int:status_id>/close",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_close_retail_station_status"
+  },
+  {
+   "rule": "/api/admin/system-health",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_system_health"
+  },
+  {
+   "rule": "/api/admin/system-health/refresh-cache",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_refresh_retail_cache"
+  },
+  {
+   "rule": "/api/admin/system/restart",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_restart_service"
+  },
+  {
+   "rule": "/api/admin/users",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_users"
+  },
+  {
+   "rule": "/api/admin/users",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_create_user"
+  },
+  {
+   "rule": "/api/admin/weigh/audit",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoint": "api_admin_weigh_audit"
+  },
+  {
+   "rule": "/api/admin/weigh/auto-audit",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_weigh_auto_audit"
+  },
+  {
+   "rule": "/api/admin/weigh/generate",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_weigh_generate"
+  },
+  {
+   "rule": "/api/admin/weigh/mappings/entities",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoint": "api_admin_weigh_entity_mappings"
+  },
+  {
+   "rule": "/api/admin/weigh/mappings/entities/<int:mapping_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_admin_delete_weigh_entity_mapping"
+  },
+  {
+   "rule": "/api/admin/weigh/mappings/products",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoint": "api_admin_weigh_product_mappings"
+  },
+  {
+   "rule": "/api/admin/weigh/mappings/products/<int:mapping_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_admin_delete_weigh_product_mapping"
+  },
+  {
+   "rule": "/api/admin/weigh/records",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_weigh_records"
+  },
+  {
+   "rule": "/api/admin/weigh/records/filter-options",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_admin_weigh_records_filter_options"
+  },
+  {
+   "rule": "/api/admin/wholesale/deduplicate",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_deduplicate_wholesale"
+  },
+  {
+   "rule": "/api/admin/wholesale/organize",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_admin_organize_wholesale"
+  },
+  {
+   "rule": "/api/auth/bootstrap",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_auth_bootstrap"
+  },
+  {
+   "rule": "/api/auth/change-password",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_auth_change_password"
+  },
+  {
+   "rule": "/api/auth/login",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_auth_login"
+  },
+  {
+   "rule": "/api/auth/logout",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_auth_logout"
+  },
+  {
+   "rule": "/api/auth/status",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_auth_status"
+  },
+  {
+   "rule": "/api/data-assistant/query",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_data_assistant_query"
+  },
+  {
+   "rule": "/api/densities",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_densities"
+  },
+  {
+   "rule": "/api/densities",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_create_density"
+  },
+  {
+   "rule": "/api/download/<filename>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "download_desktop"
+  },
+  {
+   "rule": "/api/exchange-rates",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_exchange_rates"
+  },
+  {
+   "rule": "/api/export/analysis/sales/download/<path:filename>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_download_sales_analysis"
+  },
+  {
+   "rule": "/api/export/analysis/sales/monthly/<year_month>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_export_sales_monthly"
+  },
+  {
+   "rule": "/api/export/analysis/sales/yearly/<int:year>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_export_sales_yearly"
+  },
+  {
+   "rule": "/api/export/analysis/wholesale/monthly/<year_month>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_export_wholesale_monthly"
+  },
+  {
+   "rule": "/api/export/analysis/wholesale/yearly/<int:year>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_export_wholesale_yearly"
+  },
+  {
+   "rule": "/api/export/exchange-rates",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_export_exchange_rates_excel"
+  },
+  {
+   "rule": "/api/export/wholesale/details/<year_month>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_export_wholesale_details"
+  },
+  {
+   "rule": "/api/health",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "health"
+  },
+  {
+   "rule": "/api/home/exchange-current",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_home_exchange_current"
+  },
+  {
+   "rule": "/api/home/market-watch",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_home_market_watch"
+  },
+  {
+   "rule": "/api/import/upload",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_import_upload"
+  },
+  {
+   "rule": "/api/manual/contract",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_manual_contract"
+  },
+  {
+   "rule": "/api/manual/wholesale-detail",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_manual_wholesale_detail"
+  },
+  {
+   "rule": "/api/periods",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_periods"
+  },
+  {
+   "rule": "/api/reference/options",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_reference_options"
+  },
+  {
+   "rule": "/api/retail/pages",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_retail_pages"
+  },
+  {
+   "rule": "/api/retail/station-catalog",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_retail_station_catalog"
+  },
+  {
+   "rule": "/api/retail/station-statuses",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_retail_station_statuses"
+  },
+  {
+   "rule": "/api/review/correct",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_review_correct"
+  },
+  {
+   "rule": "/api/review/details",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_review_details"
+  },
+  {
+   "rule": "/api/summary",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_summary"
+  },
+  {
+   "rule": "/api/v2/aliases/customers",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.alias_customers"
+  },
+  {
+   "rule": "/api/v2/aliases/customers",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.save_alias_customer"
+  },
+  {
+   "rule": "/api/v2/aliases/customers/merge",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.merge_alias_customer"
+  },
+  {
+   "rule": "/api/v2/aliases/entities",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.alias_entities"
+  },
+  {
+   "rule": "/api/v2/aliases/entities",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_entity_alias"
+  },
+  {
+   "rule": "/api/v2/aliases/entities/<int:alias_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_v2.delete_entity_alias"
+  },
+  {
+   "rule": "/api/v2/aliases/entities/list",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.alias_entities_list"
+  },
+  {
+   "rule": "/api/v2/aliases/products",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.alias_products"
+  },
+  {
+   "rule": "/api/v2/aliases/products",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_product_alias"
+  },
+  {
+   "rule": "/api/v2/aliases/products/<int:alias_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_v2.delete_product_alias"
+  },
+  {
+   "rule": "/api/v2/aliases/products/list",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.alias_products_list"
+  },
+  {
+   "rule": "/api/v2/aliases/suggest",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.alias_suggest"
+  },
+  {
+   "rule": "/api/v2/aliases/unmatched",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.alias_unmatched"
+  },
+  {
+   "rule": "/api/v2/aliases/unmatched/ignore",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.ignore_unmatched_aliases"
+  },
+  {
+   "rule": "/api/v2/assistant/feedback",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.assistant_feedback"
+  },
+  {
+   "rule": "/api/v2/assistant/quality-dashboard",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.assistant_quality_dashboard"
+  },
+  {
+   "rule": "/api/v2/assistant/query",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.assistant_query"
+  },
+  {
+   "rule": "/api/v2/assistant/query/stream",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.assistant_query_stream"
+  },
+  {
+   "rule": "/api/v2/assistant/status",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.assistant_status"
+  },
+  {
+   "rule": "/api/v2/assistant/tools",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.assistant_tools"
+  },
+  {
+   "rule": "/api/v2/audit-logs",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_audit_logs"
+  },
+  {
+   "rule": "/api/v2/audit-logs/export",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.export_audit_logs"
+  },
+  {
+   "rule": "/api/v2/auth/bootstrap",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.bootstrap"
+  },
+  {
+   "rule": "/api/v2/auth/change-password",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.change_password"
+  },
+  {
+   "rule": "/api/v2/auth/login",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.login"
+  },
+  {
+   "rule": "/api/v2/auth/logout",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.logout"
+  },
+  {
+   "rule": "/api/v2/auth/me",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.me"
+  },
+  {
+   "rule": "/api/v2/auth/refresh",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.refresh"
+  },
+  {
+   "rule": "/api/v2/auth/status",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.status"
+  },
+  {
+   "rule": "/api/v2/cockpit",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.cockpit"
+  },
+  {
+   "rule": "/api/v2/contracts",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.contract_list"
+  },
+  {
+   "rule": "/api/v2/contracts",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_contract"
+  },
+  {
+   "rule": "/api/v2/contracts/<int:contract_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_v2.delete_contract"
+  },
+  {
+   "rule": "/api/v2/contracts/<int:contract_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_contract"
+  },
+  {
+   "rule": "/api/v2/contracts/<int:contract_id>/auto-volume",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.contract_auto_volume"
+  },
+  {
+   "rule": "/api/v2/contracts/<int:contract_id>/execution",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.contract_execution"
+  },
+  {
+   "rule": "/api/v2/contracts/batch",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.batch_create_contracts"
+  },
+  {
+   "rule": "/api/v2/dashboard/market-watch",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.market_watch"
+  },
+  {
+   "rule": "/api/v2/dashboard/overview",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.overview"
+  },
+  {
+   "rule": "/api/v2/knowledge/articles",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_knowledge_articles"
+  },
+  {
+   "rule": "/api/v2/knowledge/articles",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_knowledge_article"
+  },
+  {
+   "rule": "/api/v2/knowledge/articles/<int:article_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_v2.archive_knowledge_article"
+  },
+  {
+   "rule": "/api/v2/knowledge/articles/<int:article_id>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.get_knowledge_article"
+  },
+  {
+   "rule": "/api/v2/knowledge/articles/<int:article_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_knowledge_article"
+  },
+  {
+   "rule": "/api/v2/knowledge/articles/<int:article_id>/attachments",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.upload_knowledge_attachment"
+  },
+  {
+   "rule": "/api/v2/knowledge/attachments/<int:attachment_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_v2.delete_knowledge_attachment"
+  },
+  {
+   "rule": "/api/v2/knowledge/attachments/<int:attachment_id>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.download_knowledge_attachment"
+  },
+  {
+   "rule": "/api/v2/knowledge/attachments/reindex",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.reindex_knowledge_attachments"
+  },
+  {
+   "rule": "/api/v2/knowledge/bootstrap",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.knowledge_bootstrap"
+  },
+  {
+   "rule": "/api/v2/knowledge/search",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.search_knowledge"
+  },
+  {
+   "rule": "/api/v2/management/cockpit/templates/<template_key>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_cockpit_template"
+  },
+  {
+   "rule": "/api/v2/management/configs/<path:config_key>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_config"
+  },
+  {
+   "rule": "/api/v2/management/dictionary-items",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_dictionary_item"
+  },
+  {
+   "rule": "/api/v2/management/dictionary-items/<int:item_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_dictionary_item"
+  },
+  {
+   "rule": "/api/v2/management/overview",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.management_overview"
+  },
+  {
+   "rule": "/api/v2/map/stations",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.map_stations"
+  },
+  {
+   "rule": "/api/v2/materials",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_materials"
+  },
+  {
+   "rule": "/api/v2/materials",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_material"
+  },
+  {
+   "rule": "/api/v2/materials/<int:material_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_v2.delete_material"
+  },
+  {
+   "rule": "/api/v2/materials/<int:material_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_material"
+  },
+  {
+   "rule": "/api/v2/materials/categories",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_categories"
+  },
+  {
+   "rule": "/api/v2/materials/depots",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_depots"
+  },
+  {
+   "rule": "/api/v2/materials/inbound",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_inbound"
+  },
+  {
+   "rule": "/api/v2/materials/inbound",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_inbound"
+  },
+  {
+   "rule": "/api/v2/materials/inbound/<int:inbound_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_inbound"
+  },
+  {
+   "rule": "/api/v2/materials/inventory",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.get_inventory"
+  },
+  {
+   "rule": "/api/v2/materials/orders",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_orders"
+  },
+  {
+   "rule": "/api/v2/materials/orders",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_order"
+  },
+  {
+   "rule": "/api/v2/materials/orders/<int:order_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_order"
+  },
+  {
+   "rule": "/api/v2/materials/orders/<int:order_id>/status",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_order_status"
+  },
+  {
+   "rule": "/api/v2/organization/departments",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_department"
+  },
+  {
+   "rule": "/api/v2/organization/departments/<int:dept_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_department"
+  },
+  {
+   "rule": "/api/v2/organization/overview",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.organization_overview"
+  },
+  {
+   "rule": "/api/v2/organization/roles",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_role"
+  },
+  {
+   "rule": "/api/v2/organization/roles/<int:role_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_role"
+  },
+  {
+   "rule": "/api/v2/organization/roles/<role_code>/data-scopes",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_role_data_scopes"
+  },
+  {
+   "rule": "/api/v2/organization/roles/<role_code>/permissions",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_role_permissions"
+  },
+  {
+   "rule": "/api/v2/procurement/details",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.procurement_details"
+  },
+  {
+   "rule": "/api/v2/procurement/products",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.procurement_products"
+  },
+  {
+   "rule": "/api/v2/profit/cost-items",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_profit_cost_items"
+  },
+  {
+   "rule": "/api/v2/profit/cost-items",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.upsert_profit_cost_items"
+  },
+  {
+   "rule": "/api/v2/profit/cost-types",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.profit_cost_types"
+  },
+  {
+   "rule": "/api/v2/profit/purchase-prices",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_profit_purchase_prices"
+  },
+  {
+   "rule": "/api/v2/profit/purchase-prices",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.upsert_profit_purchase_prices"
+  },
+  {
+   "rule": "/api/v2/profit/wholesale-briefing-prices",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_wholesale_briefing_prices"
+  },
+  {
+   "rule": "/api/v2/profit/wholesale-briefing-prices",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.upsert_wholesale_briefing_prices"
+  },
+  {
+   "rule": "/api/v2/retail/alert-insights",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.get_retail_alert_insights"
+  },
+  {
+   "rule": "/api/v2/suppliers",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.supplier_list"
+  },
+  {
+   "rule": "/api/v2/system/accounting-reports/generate",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.generate_accounting_reports"
+  },
+  {
+   "rule": "/api/v2/system/accounting-reports/status",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.accounting_report_status"
+  },
+  {
+   "rule": "/api/v2/system/automation-tasks",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.automation_tasks"
+  },
+  {
+   "rule": "/api/v2/system/automation-tasks/run",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.run_automation_task"
+  },
+  {
+   "rule": "/api/v2/system/devtools-open",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.record_devtools_open"
+  },
+  {
+   "rule": "/api/v2/system/health",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.system_health"
+  },
+  {
+   "rule": "/api/v2/train-entry",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_train_entry"
+  },
+  {
+   "rule": "/api/v2/train-entry/<int:entry_id>",
+   "methods": [
+    "DELETE"
+   ],
+   "endpoint": "api_v2.delete_train_entry"
+  },
+  {
+   "rule": "/api/v2/train-entry/<int:entry_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_train_entry"
+  },
+  {
+   "rule": "/api/v2/train-entry/batch",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.batch_create_train_entry"
+  },
+  {
+   "rule": "/api/v2/train-entry/list",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_train_entries"
+  },
+  {
+   "rule": "/api/v2/transfer/loss",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.transfer_loss"
+  },
+  {
+   "rule": "/api/v2/transfer/loss/years",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.transfer_loss_years"
+  },
+  {
+   "rule": "/api/v2/users",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_users"
+  },
+  {
+   "rule": "/api/v2/users",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.create_user"
+  },
+  {
+   "rule": "/api/v2/users/<int:user_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_user"
+  },
+  {
+   "rule": "/api/v2/users/<int:user_id>/permissions",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_permissions"
+  },
+  {
+   "rule": "/api/v2/users/<int:user_id>/reset-password",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.reset_password"
+  },
+  {
+   "rule": "/api/v2/users/permissions",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_role_permissions"
+  },
+  {
+   "rule": "/api/v2/users/permissions",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.save_role_permissions"
+  },
+  {
+   "rule": "/api/v2/users/permissions/modules",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.list_modules"
+  },
+  {
+   "rule": "/api/v2/weighing/batch-review",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.weighing_batch_review"
+  },
+  {
+   "rule": "/api/v2/weighing/batch-verify",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.weighing_batch_verify"
+  },
+  {
+   "rule": "/api/v2/weighing/filter-options",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.weighing_filter_options"
+  },
+  {
+   "rule": "/api/v2/weighing/history",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.weighing_history"
+  },
+  {
+   "rule": "/api/v2/weighing/list",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.weighing_list"
+  },
+  {
+   "rule": "/api/v2/weighing/verify",
+   "methods": [
+    "POST"
+   ],
+   "endpoint": "api_v2.weighing_verify"
+  },
+  {
+   "rule": "/api/v2/wholesale/details",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.wholesale_details"
+  },
+  {
+   "rule": "/api/v2/wholesale/details/<int:detail_id>",
+   "methods": [
+    "PUT"
+   ],
+   "endpoint": "api_v2.update_wholesale_detail"
+  },
+  {
+   "rule": "/api/v2/wholesale/details/export",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.export_wholesale_details"
+  },
+  {
+   "rule": "/api/v2/wholesale/details/filter-options",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.wholesale_detail_filter_options"
+  },
+  {
+   "rule": "/api/v2/wholesale/export-detail",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_v2.wholesale_export_detail"
+  },
+  {
+   "rule": "/api/wallpaper/map",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_wallpaper_map"
+  },
+  {
+   "rule": "/api/wholesale",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_wholesale"
+  },
+  {
+   "rule": "/api/wholesale/weigh-details",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_wholesale_weigh_details"
+  },
+  {
+   "rule": "/api/wholesale/weigh-details/filter-options",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "api_wholesale_weigh_details_filter_options"
+  },
+  {
+   "rule": "/assets/<path:filename>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "shared_asset"
+  },
+  {
+   "rule": "/echarts.min.js",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "echarts_js"
+  },
+  {
+   "rule": "/kgz-map/<path:filename>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "kgz_map_legacy_asset"
+  },
+  {
+   "rule": "/login",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "login_page"
+  },
+  {
+   "rule": "/map",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "map_page"
+  },
+  {
+   "rule": "/retail",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "retail_page"
+  },
+  {
+   "rule": "/retail-app/",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "retail_app_file"
+  },
+  {
+   "rule": "/retail-app/",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "retail_app_file"
+  },
+  {
+   "rule": "/retail-app/<path:filename>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "retail_app_file"
+  },
+  {
+   "rule": "/retail/",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "retail_page"
+  },
+  {
+   "rule": "/retail/<path:page>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "retail_page"
+  },
+  {
+   "rule": "/wholesale",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "wholesale_page"
+  },
+  {
+   "rule": "/wholesale/",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "wholesale_page"
+  },
+  {
+   "rule": "/wholesale/<section>",
+   "methods": [
+    "GET"
+   ],
+   "endpoint": "wholesale_page"
+  }
+ ]
+}

@@ -1,5 +1,8 @@
 using System.Security.Principal;
+using System.IO;
 using System.Windows.Forms;
+using Microsoft.Win32;
+using Microsoft.Web.WebView2.Core;
 
 namespace SalesWallpaperEngine;
 
@@ -7,9 +10,21 @@ internal static class Program
 {
     private static Mutex? _mutex;
 
-    [STAThread]
-    private static void Main(string[] args)
-    {
+        [STAThread]
+        private static void Main(string[] args)
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += (sender, e) =>
+            {
+                AppLogger.Error("unhandled UI exception", e.Exception);
+                MessageBox.Show($"程序发生未处理错误：\n{e.Exception.Message}", "Sales Wallpaper Engine", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            };
+            AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+            {
+                if (e.ExceptionObject is Exception ex)
+                    AppLogger.Error("unhandled non-UI exception", ex);
+            };
+
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);

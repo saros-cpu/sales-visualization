@@ -8,13 +8,11 @@ from openpyxl import Workbook
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SALES_ROOT = PROJECT_ROOT / "Sales"
-OILSTATION_ROOT = PROJECT_ROOT / "OilStation"
-OILSTATION_SCRIPTS = OILSTATION_ROOT / "scripts"
-for path in (str(OILSTATION_ROOT), str(OILSTATION_SCRIPTS), str(SALES_ROOT)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
+if str(SALES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SALES_ROOT))
+from retail_internal import import_oilstation
 
-import generate_accounting_handover_reports as handover
+handover = import_oilstation("generate_accounting_handover_reports")
 
 
 def workbook_with_main_rows(rows: list[dict]):

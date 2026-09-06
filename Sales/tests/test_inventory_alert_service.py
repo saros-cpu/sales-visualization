@@ -8,10 +8,13 @@ SALES_ROOT = Path(__file__).resolve().parents[1]
 if str(SALES_ROOT) not in sys.path:
     sys.path.insert(0, str(SALES_ROOT))
 
-from services.inventory_alert_service import build_low_inventory_alerts
+from services.inventory_alert_service import build_low_inventory_alerts, DEFAULT_LOOKBACK_DAYS
 
 
 class InventoryAlertServiceTests(unittest.TestCase):
+    def test_default_lookback_is_7_days(self):
+        self.assertEqual(DEFAULT_LOOKBACK_DAYS, 7)
+
     def test_capacity_percentage_drives_warning_and_critical_alerts(self):
         payload = build_low_inventory_alerts(
             [

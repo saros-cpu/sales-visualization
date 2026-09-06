@@ -932,7 +932,7 @@
     "id": "leadership_half_year_region_volume",
     "question": "上半年各区域卖了多少升",
     "expected": {
-      "route": "retail_summary",
+      "route": "retail_ranking",
       "domain": "retail",
       "metric": "volume",
       "dimensions": ["region"],
@@ -1142,6 +1142,154 @@
     "question": "把购油价改成100",
     "expected": {
       "actionRequest": true
+    }
+  },
+  {
+    "id": "wholesale_transfer_stations_list",
+    "question": "外运站点有哪些",
+    "expected": {
+      "route": "wholesale_transfer_stations",
+      "domain": "wholesale",
+      "intent": "summary",
+      "metric": "count",
+      "dimensions": ["station"]
+    }
+  },
+  {
+    "id": "wholesale_transfer_stations_identify",
+    "question": "外运站点怎么识别",
+    "expected": {
+      "route": "wholesale_transfer_stations",
+      "domain": "wholesale",
+      "intent": "summary",
+      "metric": "count",
+      "dimensions": ["station"]
+    }
+  },
+  {
+    "id": "wholesale_transfer_stations_caliber",
+    "question": "装卸车明细口径是什么",
+    "expected": {
+      "route": "wholesale_transfer_stations",
+      "domain": "wholesale",
+      "intent": "summary",
+      "metric": "count"
+    }
+  },
+  {
+    "id": "wholesale_transfer_stations_combo",
+    "question": "外运站点清单和识别规则",
+    "expected": {
+      "route": "wholesale_transfer_stations",
+      "domain": "wholesale",
+      "intent": "summary",
+      "metric": "count",
+      "dimensions": ["station"]
+    }
+  },
+  {
+    "id": "procurement_year_tons",
+    "question": "今年采购了多少吨",
+    "expected": {
+      "route": "procurement_summary",
+      "domain": "procurement",
+      "intent": "summary",
+      "metric": "tons",
+      "periodStart": "2026-01-01"
+    }
+  },
+  {
+    "id": "procurement_year_amount",
+    "question": "今年采购了多少钱",
+    "expected": {
+      "route": "procurement_summary",
+      "domain": "procurement",
+      "intent": "summary",
+      "metric": "amount",
+      "periodStart": "2026-01-01"
+    }
+  },
+  {
+    "id": "procurement_trend",
+    "question": "采购趋势怎么样",
+    "expected": {
+      "route": "procurement_summary",
+      "domain": "procurement",
+      "intent": "summary",
+      "metric": "tons"
+    }
+  },
+  {
+    "id": "compound_separate_tons",
+    "question": "采购和批发分别多少吨",
+    "expected": {
+      "route": "compound_query",
+      "domain": "separate_procurement_wholesale",
+      "intent": "compound",
+      "metric": "tons"
+    }
+  },
+  {
+    "id": "compound_combined_tons",
+    "question": "采购和批发合计多少吨",
+    "expected": {
+      "route": "combined_summary",
+      "domain": "combined",
+      "intent": "summary",
+      "metric": "tons"
+    }
+  },
+  {
+    "id": "compound_separate_short",
+    "question": "采购和批发分别多少",
+    "expected": {
+      "route": "compound_query",
+      "domain": "separate_procurement_wholesale",
+      "intent": "compound",
+      "metric": "tons"
+    }
+  },
+  {
+    "id": "yesterday_single_day_volume",
+    "question": "昨日零售销量",
+    "expected": {
+      "route": "retail_summary",
+      "domain": "retail",
+      "intent": "summary",
+      "metric": "volume",
+      "periodStart": "2026-07-21",
+      "periodEnd": "2026-07-22",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "monthly_contract_volume_full_month",
+    "question": "8月份零售合同销量",
+    "expected": {
+      "route": "retail_inventory",
+      "domain": "retail",
+      "metric": "volume",
+      "periodStart": "2026-08-01",
+      "periodEnd": "2026-09-01",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "monthly_contract_volume_no_retail_is_wholesale",
+    "question": "8月份合同销量",
+    "expected": {
+      "route": "contract_summary",
+      "domain": "contract",
+      "needsClarification": false
+    }
+  },
+  {
+    "id": "contract_register_stays_separate",
+    "question": "快到期合同有哪些",
+    "expected": {
+      "route": "contract_summary",
+      "domain": "contract",
+      "needsClarification": false
     }
   }
 ]

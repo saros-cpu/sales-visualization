@@ -26,6 +26,7 @@ import {
   parseRefreshAtLocalTime,
   shouldRunDailyRefreshCatchUp,
 } from './wallpaperRefresh';
+import InventoryPanel from './InventoryPanel';
 
 const CACHE_KEY = 'sales-wallpaper-map-cache-v1';
 const WALLPAPER_API_HOST_KEY = 'sales_wallpaper_api_host';
@@ -981,6 +982,21 @@ export default function WallpaperApp() {
           />
         )}
       </section>
+
+      <InventoryPanel
+        stations={(localizePayload(payload, lang)?.stations || []).map((s) => ({
+          shopKey: s.shopKey,
+          name: s.name,
+          short: s.short,
+          inventoryByResource: s.inventoryByResource,
+          inventoryFillPercent: s.inventoryFillPercent,
+          daysRemaining: s.daysRemaining,
+          status: s.status,
+          statusType: s.statusType,
+          inventoryZeroedByMapRule: s.inventoryZeroedByMapRule,
+        }))}
+        lang={lang}
+      />
 
       {showSalesSummary || showExchangeRates ? (
         <section

@@ -157,34 +157,72 @@ def _wholesale_detail_duplicate_key(row):
     vehicle_no = _first_row_value(row, "vehicle_no", 7)
     weigh_serial_no = _first_row_value(row, "weigh_serial_no", 9)
     weight_kg = _first_row_value(row, "weight_kg", 8)
-    # 同一来源文件重传时，raw_entity_name（原始单元格文本）高度一致，
-    # 而 standard_entity_name 在不同导入批次间的归一化可能不一致（如
-    # “АЗС S-06” 一次被归一为 “ИП CUSTOMER-W”、另一次为 “S-06”）。
-    # 因此优先用 raw_entity_name 作为公司去重依据，standard 作为兜底。
-    company_name = raw_entity_name or standard_entity_name
-    if not company_name or weight_kg is None:
-        return None
-    # 身份标识优先级：磅单号 > 车号 > 行号（行号仅同文件内有意义，跨批次不参与）
-    if weigh_serial_no and normalize_text(weigh_serial_no):
-        identity = "SERIAL:" + normalize_text(weigh_serial_no)
-    elif vehicle_no and normalize_text(vehicle_no):
-        identity = "VEH:" + normalize_text(vehicle_no)
+    transport_mode = _first_row_value(row, "transport_mode", 10) or ""
+    if isinstance(transport_mode, str):
+        transport_mode = transport_mode.lower()
+    serial_n = normalize_text(weigh_serial_no)
+    vehicle_n = normalize_text(vehicle_no)
+    if transport_mode == "train":
+        # 火车：磅单号整趟车共用，车号（车皮号）才是单车皮标识。
+        # 同磅单号 + 同车号 才视为同一车皮；同磅单号不同车号 = 不同车皮（真实数据，非重复）。
+        # 以 raw_entity_name（原始单元格文本）为主、standard 兜底作公司键，
+        # 避免同一来源重传时 standard 归一漂移导致漏去重。
+        company_name = raw_entity_name or standard_entity_name
+        if not company_name or weight_kg is None:
+            return None
+        if serial_n and vehicle_n:
+            identity = "TRAIN:" + serial_n + ":" + vehicle_n
+        elif serial_n:
+            identity = "TRAINS:" + serial_n + ":" + str(source_row_number)
+        elif vehicle_n:
+            identity = "TRAINV:" + vehicle_n
+        else:
+            identity = "TRAINR:" + str(source_row_number)
+        return (
+            str(business_date),
+            normalize_text(raw_product_name),
+            normalize_text(company_name),
+            identity,
+            str(weight_kg),
+        )
     else:
-        identity = "ROW:" + str(source_row_number)
-    return (
-        str(business_date),
-        normalize_text(raw_product_name),
-        normalize_text(company_name),
-        identity,
-        str(weight_kg),
-    )
+        # 汽车/其他：按领域规则「汽车数据磅单号唯一」，磅单号即唯一身份。
+        # 因此公司名称（收/发货方）不参与去重键——否则同一车次的
+        # 手工录入与上传因公司名文本写法不同（同形字 3/З、缩写 CTY-05/АЗС、
+        # 全称/简称等）会被判为不同记录而漏去重。
+        if weight_kg is None:
+            return None
+        if serial_n:
+            identity = "SERIAL:" + serial_n
+            return (
+                str(business_date),
+                normalize_text(raw_product_name),
+                identity,
+                str(weight_kg),
+            )
+        # 无磅单号时退化为 车号(+公司) / 行号，保留公司键以区分不同车次。
+        company_name = raw_entity_name or standard_entity_name
+        if not company_name:
+            return None
+        if vehicle_n:
+            identity = "VEH:" + vehicle_n
+        else:
+            identity = "ROW:" + str(source_row_number)
+        return (
+            str(business_date),
+            normalize_text(raw_product_name),
+            normalize_text(company_name),
+            identity,
+            str(weight_kg),
+        )
 
 
 def delete_duplicate_wholesale_detail_rows(cur, batch_id=None):
     cur.execute(
         """
         SELECT id, batch_id, source_row_number, business_date, raw_product_name,
-               standard_entity_name, raw_entity_name, vehicle_no, weight_kg, weigh_serial_no
+               standard_entity_name, raw_entity_name, vehicle_no, weight_kg, weigh_serial_no,
+               transport_mode
         FROM wholesale_detail_records
         WHERE batch_id IS NOT NULL
         ORDER BY batch_id, source_row_number, id
@@ -249,7 +287,8 @@ def dedup_wholesale_detail_cross_batch(cur, batch_id):
     cur.execute(
         f"""
         SELECT id, batch_id, source_row_number, business_date, raw_product_name,
-               standard_entity_name, raw_entity_name, vehicle_no, weight_kg, weigh_serial_no
+               standard_entity_name, raw_entity_name, vehicle_no, weight_kg, weigh_serial_no,
+               transport_mode
         FROM wholesale_detail_records
         WHERE batch_id IS NOT NULL AND batch_id <> %s
           AND business_date IN ({date_placeholders})
@@ -267,7 +306,8 @@ def dedup_wholesale_detail_cross_batch(cur, batch_id):
     cur.execute(
         """
         SELECT id, batch_id, source_row_number, business_date, raw_product_name,
-               standard_entity_name, raw_entity_name, vehicle_no, weight_kg, weigh_serial_no
+               standard_entity_name, raw_entity_name, vehicle_no, weight_kg, weigh_serial_no,
+               transport_mode
         FROM wholesale_detail_records
         WHERE batch_id = %s
         """,
@@ -352,11 +392,16 @@ def smart_product_code(raw_name):
     if "ГАЗОЙЛ" in text or "GAZOIL" in text or "GASOIL" in text or "VACUUM" in text or "ВАКУМ" in text or "ВАКУУМ" in text or "蜡油" in text:
         return "VGO"
 
+    # 直馏汽油判定必须在原油(НЕФТ)之前：直馏汽油俄语学名
+    # «Дистиллят легкий из нефти и газового конденсата» 天然含 "из нефти"，
+    # 若先判 НЕФТ 会被误归为原油（2026-09-05 修复，35 行受影响）。
+    # "直溜汽油"为源文件固定写法（别字），标准名仍以"直馏汽油"为准。
+    if "ПРЯМОГОН" in text or "НАФТА" in text or "直馏汽油" in text or "直溜汽油" in text:
+        return "STRAIGHT_RUN_GASOLINE"
+
     if "НЕФТ" in text or "СЫРОЙ" in text or "BITUM" in text or "原油" in text or "混合油" in text:
         return "CRUDE_OIL"
 
-    if "ПРЯМОГОН" in text or "НАФТА" in text or "直馏汽油" in text:
-        return "STRAIGHT_RUN_GASOLINE"
     if ("ЛЕГК" in text and "БЕНЗИН" in text) or "轻质汽油" in text:
         return "LIGHT_GASOLINE"
     if ("КАТАЛИЧЕСКОГО КРЕКИНГА" in text and "БЕНЗИН" in text) or "催化汽油" in text:
@@ -438,9 +483,58 @@ def load_entity_lookup(cur):
     return lookup
 
 
+_LATIN_TO_CYRILLIC_HOMOGLYPHS = str.maketrans(
+    {
+        "K": "К", "A": "А", "E": "Е", "O": "О", "P": "Р",
+        "C": "С", "T": "Т", "M": "М", "B": "В", "X": "Х",
+        "H": "Н", "Y": "У",
+    }
+)
+
+
+def _homoglyph_cyrillic(text):
+    """拉丁同形字母 → 西里尔（如 'S-10' 的拉丁 K → 'S-10'），用于站点名匹配。"""
+    return str(text or "").translate(_LATIN_TO_CYRILLIC_HOMOGLYPHS)
+
+
+def _station_catalog_key(text):
+    return _homoglyph_cyrillic(normalize_station_name(text))
+
+
+def _lookup_station_catalog(station_normalized):
+    """零售板块站点目录精确匹配：名称命中站点 short/name 即视为自有站点（外运目标）。
+
+    与 entity_aliases 解耦——新增站点即使别名未登记也能识别（站点权威优先，
+    防止同名客户别名抢占站点）。未命中返回 None。
+    """
+    probe = _homoglyph_cyrillic(station_normalized)
+    if not probe:
+        return None
+    try:
+        from shared_utils import retail_station_catalog_cached
+
+        catalog = retail_station_catalog_cached()
+    except Exception:
+        return None
+    for shop_key, info in (catalog or {}).items():
+        display = (info.get("short") or info.get("name") or "").strip()
+        for name in (info.get("short"), info.get("name")):
+            if name and _station_catalog_key(name) == probe:
+                return {
+                    "entity_type": "retail_station",
+                    "entity_code": str(shop_key),
+                    "standard_name": display,
+                }
+    return None
+
+
 def lookup_entity(entity_lookup, raw_name):
     normalized = normalize_text(raw_name)
     station_normalized = normalize_station_name(raw_name)
+    # catalog 兜底放在别名解析之前：站点权威优先，防新增站点别名缺失/客户别名抢占
+    catalog_hit = _lookup_station_catalog(station_normalized)
+    if catalog_hit:
+        return catalog_hit
     entity = entity_lookup.get(normalized)
     if entity:
         return entity
@@ -900,9 +994,11 @@ def detect_transport_mode(*values):
     return "truck"
 
 
-def detail_transport_mode(classification, vehicle_no=None, weigh_serial_no=None, remark=None):
+def detail_transport_mode(classification, vehicle_no=None, weigh_serial_no=None, remark=None, sheet_name=None):
     if normalize_wholesale_classification(classification) == "processing":
         return detect_transport_mode(remark)
+    if sheet_name and any(marker in normalize_text(sheet_name) for marker in TRAIN_TRANSPORT_MARKERS):
+        return "train"
     return detect_transport_mode(vehicle_no, weigh_serial_no, remark)
 
 

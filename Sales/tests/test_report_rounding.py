@@ -5,17 +5,20 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SALES_ROOT = PROJECT_ROOT / "Sales"
-OILSTATION_ROOT = PROJECT_ROOT / "OilStation"
-for path in (str(OILSTATION_ROOT), str(SALES_ROOT)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
+if str(SALES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SALES_ROOT))
 
 from analysis_reports import _fmt as sales_report_fmt
 from analysis_reports import _round_half_up as sales_report_round
 from openpyxl import Workbook
 
-from export_excel import BalanceMap, _excel_round_formula, _round_half_up as oil_report_round
-from export_excel import _write_station_block
+from retail_internal import import_oilstation
+
+_oil_export_excel = import_oilstation("export_excel")
+BalanceMap = _oil_export_excel.BalanceMap
+_excel_round_formula = _oil_export_excel._excel_round_formula
+oil_report_round = _oil_export_excel._round_half_up
+_write_station_block = _oil_export_excel._write_station_block
 
 
 class ReportRoundingTests(unittest.TestCase):

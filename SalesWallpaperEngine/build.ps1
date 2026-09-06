@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$Version = "0.2.3",
+    [string]$Version = "0.2.23",
     [string]$IncludeKeyPath = "",
     [switch]$PlainBundledKey,
     [switch]$SkipWallpaperAssets,
@@ -98,6 +98,10 @@ function New-ProtectedWallpaperKeyFile {
     [System.IO.File]::WriteAllText($DestinationPath, $json, [System.Text.UTF8Encoding]::new($false))
 }
 
+if (Test-Path $distWallpaper) {
+    [System.IO.Directory]::Delete($distWallpaper, $true)
+}
+
 if (-not $SkipWallpaperAssets) {
     Push-Location $desktopDir
     try {
@@ -116,7 +120,7 @@ if (Test-Path $wwwroot) {
     if (-not $resolved.StartsWith($PSScriptRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing to clear unexpected wwwroot: $resolved"
     }
-    Remove-Item -LiteralPath $resolved -Recurse -Force
+    [System.IO.Directory]::Delete($resolved, $true)
 }
 New-Item -ItemType Directory -Force -Path $wwwroot | Out-Null
 Copy-Item -Path (Join-Path $distWallpaper "*") -Destination $wwwroot -Recurse -Force
@@ -205,7 +209,7 @@ if (Test-Path $appOut) {
     if (-not $resolvedAppOut.StartsWith($publishRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing to clear unexpected publish output: $resolvedAppOut"
     }
-    Remove-Item -LiteralPath $resolvedAppOut -Recurse -Force
+    [System.IO.Directory]::Delete($resolvedAppOut, $true)
 }
 New-Item -ItemType Directory -Force -Path $publishRoot | Out-Null
 
@@ -218,8 +222,17 @@ dotnet publish (Join-Path $PSScriptRoot "SalesWallpaperEngine.csproj") `
     -p:FileVersion=$Version `
     -o $appOut
 
+if ($IncludeKeyPath) {
+    $resolvedBundleKey = (Resolve-Path $IncludeKeyPath).Path
+    if ($PlainBundledKey) {
+        Copy-Item -LiteralPath $resolvedBundleKey -Destination (Join-Path $appOut "wallpaper-key.json") -Force
+    } else {
+        New-ProtectedWallpaperKeyFile -SourcePath $resolvedBundleKey -DestinationPath (Join-Path $appOut "wallpaper-key.protected.json")
+    }
+}
+
 if (Test-Path $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
+    [System.IO.File]::Delete($zipPath)
 }
 Compress-Archive -Path (Join-Path $appOut "*") -DestinationPath $zipPath -Force
 
@@ -238,7 +251,7 @@ if (-not $NoInstaller) {
             if (-not $resolvedInstallerPayload.StartsWith($publishRoot, [StringComparison]::OrdinalIgnoreCase)) {
                 throw "Refusing to clear unexpected installer payload: $resolvedInstallerPayload"
             }
-            Remove-Item -LiteralPath $resolvedInstallerPayload -Recurse -Force
+            [System.IO.Directory]::Delete($resolvedInstallerPayload, $true)
         }
         New-Item -ItemType Directory -Force -Path $installerPayload | Out-Null
 
@@ -335,7 +348,7 @@ $($sourceFileLines -join "`r`n")
         [System.IO.File]::WriteAllText($sedPath, $sed, [System.Text.Encoding]::ASCII)
 
         if (Test-Path $setupPath) {
-            Remove-Item -LiteralPath $setupPath -Force
+            [System.IO.File]::Delete($setupPath)
         }
         & $iexpress /N /Q $sedPath
         $iexpressExitCode = $LASTEXITCODE
@@ -378,7 +391,7 @@ if (-not $NoPublishDownload) {
     if ($setupSize -gt 0) {
         $downloadSetupPath = Join-Path $downloadDir (Split-Path $setupPath -Leaf)
         if (Test-Path $downloadSetupPath) {
-            Remove-Item -LiteralPath $downloadSetupPath -Force
+            [System.IO.File]::Delete($downloadSetupPath)
         }
         Copy-Item -LiteralPath $setupPath -Destination $downloadSetupPath -Force
         $installerUrl = "$publicBase/$(Split-Path $setupPath -Leaf)"
@@ -393,7 +406,13 @@ if (-not $NoPublishDownload) {
         installerSha256 = $setupHash
         package = "SalesWallpaperEngine"
         notes = @(
-            "SalesWallpaperNative retired and replaced by a new host/player engine.",
+            "Inventory panel: expanded panel now uses a transparent background with no visible scrollbar, so the desktop wallpaper shows through while the list scrolls.",
+            "Inventory panel: wider panel with larger text and rebalanced columns keeps all four column headers fully visible in both Chinese and Russian.",
+            "Inventory panel: fuel level percentages now show one decimal place.",
+            "Authorization: the wallpaper token is now baked into the package and deployed to %APPDATA%/sales-wallpaper-engine on install and on every auto-update, so the engine stays authorized after updates (previously an auto-update could wipe the install-dir token and leave the wallpaper showing 授权未通过). The bundled key uses the default apiHost https://sales.example.com.",
+            "Inventory panel: station names now follow the system language like the rest of the wallpaper (Chinese station names on Chinese Windows, Russian on Russian systems). Previously the panel read raw station names and always showed the Russian short name; it now runs the same localizeMapPoint logic the map uses.",
+            "Inventory panel: adjusted the sellable-days column. Tanks below 10% fill are treated as bottom oil (cannot be sold) and show 0 days; tanks above 60% fill are hidden; tanks between 10% and 60% show sellable days estimated from the station's 7-day average daily sales (remaining tank inventory divided by station average daily sales).",
+            "Inventory panel: fixed wheel scrolling for real. The wallpaper window sits behind the desktop shell, so Windows never delivers WM_MOUSEWHEEL to it; 0.2.17's CSS/JS changes alone could not help. 0.2.18 installs a system-wide low-level mouse hook (WH_MOUSE_LL) that captures wheel gestures and dispatches them on the element under the cursor (restricted to the inventory panel), so the list now scrolls via the mouse wheel.",
             "Uses a local loopback proxy for wallpaper map data and a dedicated desktop attach path.",
             "Forwards global mouse position into the WebView canvas so station hover works behind desktop icons.",
             "Hides the in-page wallpaper settings button when running in SalesWallpaperEngine.",

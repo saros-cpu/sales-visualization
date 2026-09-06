@@ -51,6 +51,8 @@ export default function Procurement() {
     setPage(1);
   };
 
+  const centerAlign = { align: 'center' as const };
+
   const renderProductName = (_: string, row: ProcurementItem) => (
     <BilingualName value={row.standardProductName || row.productName} raw={row.rawProductName} />
   );
@@ -61,13 +63,13 @@ export default function Procurement() {
   );
 
   const columns = [
-    { title: t('common.date'), dataIndex: 'businessDate', key: 'businessDate', width: 140 },
-    { title: t('retail.product'), dataIndex: 'productName', key: 'productName', width: 200, render: renderProductName },
-    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: 220, render: (_: string, row: ProcurementItem) => renderBilingual(_, row, 'senderName') },
-    { title: t('weighing.receiverName'), dataIndex: 'entityName', key: 'entityName', width: 240, render: (_: string, row: ProcurementItem) => renderBilingual(_, row, 'entityName') },
-    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 110 },
-    { title: t('common.source'), dataIndex: 'weighSource', key: 'weighSource', width: 120 },
-    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', width: 150 },
+    { title: t('common.date'), dataIndex: 'businessDate', key: 'businessDate', width: 140, ...centerAlign },
+    { title: t('retail.product'), dataIndex: 'productName', key: 'productName', width: 200, render: renderProductName, ...centerAlign },
+    { title: t('weighing.senderName'), dataIndex: 'senderName', key: 'senderName', width: 220, render: (_: string, row: ProcurementItem) => renderBilingual(_, row, 'senderName'), ...centerAlign },
+    { title: t('weighing.receiverName'), dataIndex: 'entityName', key: 'entityName', width: 240, render: (_: string, row: ProcurementItem) => renderBilingual(_, row, 'entityName'), ...centerAlign },
+    { title: t('common.weightTons'), dataIndex: 'weightTons', key: 'weightTons', width: 110, ...centerAlign },
+    { title: t('common.source'), dataIndex: 'weighSource', key: 'weighSource', width: 120, ...centerAlign },
+    { title: t('weighing.remark'), dataIndex: 'remark', key: 'remark', width: 150, ...centerAlign },
   ];
 
   return (

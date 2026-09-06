@@ -48,7 +48,7 @@ from summary_service import available_periods, period_bounds, summarize_combined
 from text_utils import clean_str, normalize_station_name, normalize_text, parse_date, parse_decimal
 from wholesale_service import exchange_rates, summarize_wholesale_page
 from retail_internal import open_oilstation
-from services.inventory_alert_service import build_low_inventory_alerts
+from services.inventory_alert_service import build_low_inventory_alerts, attach_wallpaper_sellable_days
 
 
 from shared_utils import (
@@ -60,6 +60,11 @@ from shared_utils import (
 from routes_assistant import register_assistant_routes
 from routes_data import register_data_routes
 from routes_admin import register_admin_routes
+from routes_assets import register_assets_routes
+from routes_wallpaper import register_wallpaper_routes
+from routes_retail_legacy import register_retail_legacy_routes
+from routes_download import register_download_routes
+from routes_health import register_health_routes
 
 
 def _env_bool(name, default=False):
@@ -81,9 +86,12 @@ app.config.update(
 app.config['JWT_SECRET_KEY'] = os.getenv('SALES_JWT_SECRET', SECRET_KEY)
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=2)
 app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=7)
-app.config['JWT_TOKEN_LOCATION'] = ['headers']
 app.config['JWT_HEADER_NAME'] = 'Authorization'
 app.config['JWT_HEADER_TYPE'] = 'Bearer'
+# SALES_AUTH_COOKIE_MODE: off | dual | cookie —— Web 端 JWT 迁 HttpOnly Cookie 开关
+# （auth_cookie.apply_auth_config 会按开关调整 JWT_TOKEN_LOCATION 等；Desktop 5.6.0 走 header 不受影响）
+from auth_cookie import apply_auth_config
+apply_auth_config(app)
 jwt = JWTManager(app)
 from api_v2.token_revocation import is_token_revoked_payload
 
@@ -145,30 +153,12 @@ def handle_options_preflight():
         resp = app.make_default_options_response()
         return add_cors_headers(resp)
 
-APP_BUILD = "2026-07-22-salesdesktop-v3.8.21"
+APP_BUILD = "2026-08-16-salesdesktop-v5.6.0"
 PROJECT_ROOT = Path(__file__).resolve().parent
 OILSTATION_ROOT = PROJECT_ROOT.parent / "OilStation"
 SHARED_ASSETS_ROOT = PROJECT_ROOT.parent / "assets"
 FRONTEND_DIST = PROJECT_ROOT.parent / "frontend" / "dist"
-UPLOAD_ROOT = PROJECT_ROOT / "uploads"
 
-RETAIL_API_PREFIXES = (
-    "years",
-    "months",
-    "kpi",
-    "dashboard",
-    "resources",
-    "monthly",
-    "station",
-    "station-map-details",
-    "stations",
-    "daily",
-    "regions",
-    "retail",
-    "export",
-    "integration",
-    "assistant",
-)
 
 PUBLIC_PATHS = {
     "/login",
@@ -191,7 +181,6 @@ PUBLIC_API_PREFIXES = (
     "/api/wallpaper/",
     "/api/v2/",
     "/api/download/",
-    "/api/export/analysis/sales/download/",
 )
 
 PASSWORD_CHANGE_ALLOWED_PATHS = {
@@ -212,6 +201,7 @@ EXTERNAL_API_PERMISSION_PREFIXES = (
     ("/api/export/exchange-rates", "exchange:view"),
     ("/api/export/analysis/wholesale", "wholesale:export"),
     ("/api/export/wholesale", "wholesale:export"),
+    ("/api/export/analysis/sales/download", ("retail:export", "wholesale:export")),
     ("/api/export/analysis/sales", "retail:export"),
     ("/api/export/analysis/monthly", "retail:export"),
     ("/api/export/analysis/yearly", "retail:export"),
@@ -242,7 +232,7 @@ EXTERNAL_API_PERMISSION_PREFIXES = (
 )
 
 
-def _external_api_permission(path: str) -> str | None:
+def _external_api_permission(path: str) -> str | tuple[str, ...] | None:
     if not path.startswith("/api/"):
         return None
     for prefix, permission_code in EXTERNAL_API_PERMISSION_PREFIXES:
@@ -256,8 +246,8 @@ def _enforce_external_api_permission(path: str, user_id, role: str | None):
         if role != "admin":
             return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
         return None
-    permission_code = _external_api_permission(path)
-    if not permission_code or role == "admin":
+    permission_codes = _external_api_permission(path)
+    if not permission_codes or role == "admin":
         return None
     if not user_id:
         return jsonify({"code": 4003, "message": "forbidden", "data": None}), 403
@@ -270,7 +260,8 @@ def _enforce_external_api_permission(path: str, user_id, role: str | None):
         from api_v2.permission_service import has_permission
 
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            allowed = has_permission(cur, numeric_user_id, permission_code, role)
+            codes = permission_codes if isinstance(permission_codes, tuple) else (permission_codes,)
+            allowed = any(has_permission(cur, numeric_user_id, code, role) for code in codes)
             conn.commit()
         if allowed:
             return None
@@ -374,695 +365,75 @@ def require_session():
 # After confirming Nginx production, remove these routes — Flask should only
 # ── React SPA routes ──
 # Serve React frontend for all main page routes
-@app.route("/")
-def index():
-    return send_from_directory(str(FRONTEND_DIST), "index.html")
-
-
-@app.route("/login")
-def login_page():
-    return send_from_directory(str(FRONTEND_DIST), "index.html")
-
-
-@app.route("/admin")
-def admin_page():
-    return send_from_directory(str(FRONTEND_DIST), "index.html")
-
-
-@app.route("/wholesale")
-@app.route("/wholesale/")
-@app.route("/wholesale/<section>")
-def wholesale_page(section=None):
-    return send_from_directory(str(FRONTEND_DIST), "index.html")
-
-
-@app.route("/retail")
-@app.route("/retail/")
-@app.route("/retail/<path:page>")
-def retail_page(page=None):
-    return send_from_directory(str(FRONTEND_DIST), "index.html")
-
-
-@app.route("/api/retail/pages")
-def api_retail_pages():
-    base = "/retail"
-    return jsonify({
-        "baseUrl": base,
-        "pages": [
-            {"key": "dashboard", "label": "零售主页", "url": f"{base}"},
-            {"key": "monthly", "label": "月度", "url": f"{base}/monthly"},
-            {"key": "region", "label": "区域", "url": f"{base}/region"},
-            {"key": "station", "label": "站点", "url": f"{base}/station"},
-            {"key": "resource", "label": "油品", "url": f"{base}/resource"},
-            {"key": "report", "label": "报表", "url": f"{base}/report"},
-            {"key": "alert", "label": "预警", "url": f"{base}/alert"},
-        ],
-    })
-
-
-_WALLPAPER_CONSTANTS_MODULE = None
-
-
-def _wallpaper_oilstation_constants():
-    global _WALLPAPER_CONSTANTS_MODULE
-    if _WALLPAPER_CONSTANTS_MODULE is not None:
-        return _WALLPAPER_CONSTANTS_MODULE
-    spec = importlib.util.spec_from_file_location(
-        "sales_wallpaper_oilstation_constants",
-        OILSTATION_ROOT / "constants.py",
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    _WALLPAPER_CONSTANTS_MODULE = module
-    return module
-
-
-def _wallpaper_active_statuses():
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        return active_station_statuses(cur)
-    finally:
-        conn.close()
-
-
-def _wallpaper_station_details():
-    try:
-        response = open_oilstation("/api/station-map-details")
-        if response.status_code >= 400:
-            return {}
-        payload = response.get_json(silent=True)
-        return payload if isinstance(payload, dict) else {}
-    except Exception:
-        logging.exception("wallpaper station details unavailable")
-        return {}
-
-
-def _wallpaper_oilstation_json(path, query_string=None):
-    response = open_oilstation(path, query_string=query_string)
-    if response.status_code >= 400:
-        raise RuntimeError(response.get_data(as_text=True) or f"{path} failed")
-    payload = response.get_json(silent=True)
-    return payload if isinstance(payload, dict) else {}
-
-
-def _wallpaper_float(value):
-    try:
-        return round(float(value or 0), 2)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _wallpaper_round_half_up(value, places=2):
-    try:
-        decimal_value = Decimal(str(value or 0))
-        quantizer = Decimal("1").scaleb(-places)
-        return float(decimal_value.quantize(quantizer, rounding=ROUND_HALF_UP))
-    except (InvalidOperation, TypeError, ValueError):
-        return 0.0
-
-
-def _wallpaper_rate_float(value):
-    try:
-        if value is None:
-            return None
-        return round(float(value), 4)
-    except (TypeError, ValueError):
-        return None
-
-
-def _wallpaper_display_end(start_value, exclusive_end_value):
-    start_text = str(start_value or "").strip()[:10]
-    end_text = str(exclusive_end_value or "").strip()[:10]
-    if not end_text:
-        return ""
-    try:
-        start_day = date.fromisoformat(start_text) if start_text else None
-        end_day = date.fromisoformat(end_text)
-    except ValueError:
-        return end_text
-    if start_day and end_day > start_day:
-        return (end_day - timedelta(days=1)).isoformat()
-    return end_day.isoformat()
-
-
-def _wallpaper_avg_cny_rate(start_value, exclusive_end_value):
-    try:
-        start_day = date.fromisoformat(str(start_value or "")[:10])
-        end_day = date.fromisoformat(str(exclusive_end_value or "")[:10])
-    except ValueError:
-        return None
-    if end_day <= start_day:
-        return None
-
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT cny_kgs
-            FROM exchange_rates
-            WHERE rate_date >= %s AND rate_date < %s
-              AND cny_kgs IS NOT NULL
-            """,
-            (start_day, end_day),
-        )
-        values = []
-        for (cny_kgs,) in cur.fetchall():
-            try:
-                value = Decimal(str(cny_kgs))
-            except (InvalidOperation, TypeError, ValueError):
-                continue
-            if value > 0:
-                values.append(value)
-    finally:
-        conn.close()
-
-    if not values:
-        return None
-    avg = (sum(values) / Decimal(len(values))).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-    return float(avg)
-
-
-def _wallpaper_amount_cny_by_average(amount, start_value, exclusive_end_value):
-    avg_cny = _wallpaper_avg_cny_rate(start_value, exclusive_end_value)
-    if not avg_cny:
-        return None, None
-    amount_cny = _wallpaper_round_half_up(Decimal(str(amount or 0)) / Decimal(str(avg_cny)), 2)
-    return amount_cny, avg_cny
-
-
-def _wallpaper_sales_summary():
-    now = datetime.now()
-    year = now.year
-    year_payload = _wallpaper_oilstation_json(
-        "/api/kpi/yearly",
-        {"year": year, "inventory": 0},
-    )
-    month_payload = _wallpaper_oilstation_json("/api/kpi")
-
-    year_summary = year_payload.get("summary") or {}
-    month_summary = month_payload.get("summary") or {}
-    month_label = str(month_payload.get("month") or year_summary.get("activeMonth") or f"{year}-{now.month:02d}")
-    month_start = str(month_summary.get("queryStart") or f"{month_label}-01")[:10]
-    month_end_exclusive = str(
-        month_summary.get("queryEndExclusive")
-        or month_summary.get("queryEnd")
-        or ""
-    )[:10]
-    year_start = str(year_summary.get("queryStart") or f"{year}-01-01")[:10]
-    year_end_exclusive = str(
-        year_summary.get("queryEndExclusive")
-        or year_summary.get("queryEnd")
-        or ""
-    )[:10]
-
-    year_amount = _wallpaper_float(year_summary.get("totalSales") or year_summary.get("totalAmount"))
-    month_amount = _wallpaper_float(month_summary.get("totalSales") or month_summary.get("totalAmount"))
-    year_amount_cny, year_avg_cny = _wallpaper_amount_cny_by_average(year_amount, year_start, year_end_exclusive)
-    month_amount_cny, month_avg_cny = _wallpaper_amount_cny_by_average(month_amount, month_start, month_end_exclusive)
-
-    return {
-        "year": int(year_payload.get("year") or year),
-        "yearStart": year_start,
-        "yearEnd": _wallpaper_display_end(year_start, year_end_exclusive),
-        "yearEndExclusive": year_end_exclusive,
-        "yearVolumeLiters": _wallpaper_float(year_summary.get("totalLiters") or year_summary.get("totalVolume")),
-        "yearTons": _wallpaper_float(year_summary.get("totalTons") or year_summary.get("tons")),
-        "yearAmount": year_amount,
-        "yearAmountCny": year_amount_cny,
-        "yearAvgCnyKgs": year_avg_cny,
-        "month": month_label,
-        "monthStart": month_start,
-        "monthEnd": _wallpaper_display_end(month_start, month_end_exclusive),
-        "monthEndExclusive": month_end_exclusive,
-        "monthVolumeLiters": _wallpaper_float(month_summary.get("totalLiters") or month_summary.get("totalVolume")),
-        "monthTons": _wallpaper_float(month_summary.get("totalTons") or month_summary.get("tons")),
-        "monthAmount": month_amount,
-        "monthAmountCny": month_amount_cny,
-        "monthAvgCnyKgs": month_avg_cny,
-    }
-
-
-def _wallpaper_exchange_summary():
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT rate_date, usd_kgs, cny_kgs, source, is_manual
-            FROM exchange_rates
-            WHERE rate_date <= CURDATE()
-              AND (usd_kgs IS NOT NULL OR cny_kgs IS NOT NULL)
-            ORDER BY rate_date DESC
-            LIMIT 1
-            """
-        )
-        row = cur.fetchone()
-        if not row:
-            return {"available": False}
-        rate_date, usd_kgs, cny_kgs, source, is_manual = row
-        return {
-            "available": True,
-            "date": rate_date.isoformat() if rate_date else None,
-            "usdKgs": _wallpaper_rate_float(usd_kgs),
-            "cnyKgs": _wallpaper_rate_float(cny_kgs),
-            "source": source or "",
-            "isManual": bool(is_manual),
-            "isToday": rate_date == date.today() if rate_date else False,
-        }
-    finally:
-        conn.close()
-
-
-def _wallpaper_full_access():
-    trusted_ips = {
-        item.strip()
-        for item in os.getenv("SALES_WALLPAPER_TRUSTED_IPS", "").split(",")
-        if item.strip()
-    }
-    request_ip = (
-        request.headers.get("X-Real-IP")
-        or (request.headers.get("X-Forwarded-For") or "").split(",", 1)[0]
-        or request.remote_addr
-        or ""
-    ).strip()
-    if request_ip and request_ip in trusted_ips:
-        return True
-
-    expected = os.getenv("SALES_WALLPAPER_TOKEN", "").strip()
-    if not expected:
-        return False
-    provided = (request.headers.get("X-Wallpaper-Token") or "").strip()
-    if not provided and _env_flag("SALES_WALLPAPER_ALLOW_QUERY_TOKEN"):
-        provided = (request.args.get("token") or "").strip()
-    return hmac.compare_digest(provided, expected)
-
-
-def _wallpaper_status_label(status="", status_type="", status_label="", closed_reason="", status_note=""):
-    raw_label = str(status_label or "").strip()
-    status_text = str(status or "").strip()
-    type_text = str(status_type or "").strip()
-    reason = str(closed_reason or status_note or "").strip()
-    combined = f"{raw_label} {status_text} {type_text} {reason}".lower()
-
-    if "装修" in raw_label or "装修" in reason or any(
-        word in combined for word in ("renovation", "maintenance", "construction", "decorat")
-    ):
-        return "装修"
-    if "停业" in raw_label or "停业" in reason or any(
-        word in combined for word in ("closed", "stopped", "suspended", "inactive")
-    ):
-        return "停业"
-    if raw_label in {"在营", "正常", "正常营业"}:
-        return "在营"
-    if raw_label in {"关注", "预警"}:
-        return "关注"
-    if raw_label == "异常":
-        return "异常"
-
-    key = (type_text or status_text or raw_label).lower()
-    if key in {"normal", "open", "active", "operating", "online"}:
-        return "在营"
-    if key in {"warning", "warn", "attention"}:
-        return "关注"
-    if raw_label and raw_label.lower() not in {"normal", "closed", "warning", "warn"}:
-        return raw_label
-    if key and key != "normal":
-        return "异常"
-    return "在营"
-
-
-def _wallpaper_default_station_status(shop_key, constants_module):
-    closed_stations = getattr(constants_module, "CLOSED_STATIONS", {}) or {}
-    force_normal = getattr(constants_module, "FORCE_NORMAL_STATIONS", set()) or set()
-    if shop_key in closed_stations and shop_key not in force_normal:
-        closed_reason = closed_stations.get(shop_key) or ""
-        return {
-            "status": "closed",
-            "statusType": "closed",
-            "statusLabel": _wallpaper_status_label("closed", "closed", closed_reason=closed_reason),
-            "closedReason": closed_reason,
-            "affectsSales": True,
-            "affectsInventory": shop_key in (getattr(constants_module, "MAP_ZERO_INVENTORY_STATIONS", set()) or set()),
-            "suppressAlerts": shop_key in (getattr(constants_module, "MAP_ZERO_INVENTORY_STATIONS", set()) or set()),
-            "statusNote": closed_reason,
-            "expectedResumeAt": None,
-        }
-    return _wallpaper_normal_station_status()
-
-
-def _wallpaper_normal_station_status():
-    return {
-        "status": "normal",
-        "statusType": "normal",
-        "statusLabel": "在营",
-        "closedReason": "",
-        "affectsSales": False,
-        "affectsInventory": False,
-        "suppressAlerts": False,
-        "statusNote": "",
-        "expectedResumeAt": None,
-    }
-
-
-def _wallpaper_zero_inventory_detail(detail, shop_key, constants_module):
-    zero_keys = set(getattr(constants_module, "MAP_ZERO_INVENTORY_STATIONS", set()) or set())
-    if shop_key not in zero_keys:
-        return detail or {}
-    closed_stations = getattr(constants_module, "CLOSED_STATIONS", {}) or {}
-    mapped = dict(detail or {})
-    rows = []
-    for row in mapped.get("inventoryByResource") or []:
-        if not isinstance(row, dict):
-            continue
-        capacity = float(row.get("capacity") or 0)
-        item = dict(row)
-        item["inventory"] = 0.0
-        if "fillPercent" in item or capacity > 0:
-            item["fillPercent"] = 0.0
-            item["fillStatus"] = "critical" if capacity > 0 else "unknown"
-        rows.append(item)
-    capacity = float(mapped.get("inventoryCapacity") or 0)
-    mapped["inventory"] = 0.0
-    mapped["inventoryByResource"] = rows
-    mapped["inventoryZeroedByMapRule"] = True
-    mapped["inventoryZeroReason"] = closed_stations.get(shop_key) or "停业，库存清零"
-    if capacity > 0:
-        mapped["inventoryFillPercent"] = 0.0
-        mapped["inventoryFillStatus"] = "critical"
-    elif "inventoryFillStatus" in mapped:
-        mapped["inventoryFillStatus"] = mapped.get("inventoryFillStatus") or "unknown"
-    return mapped
-
-
-@app.route("/api/wallpaper/map")
-def api_wallpaper_map():
-    constants_module = _wallpaper_oilstation_constants()
-    include_sensitive = _wallpaper_full_access()
-    details_payload = _wallpaper_station_details() if include_sensitive else {}
-    sales_summary = None
-    exchange_summary = None
-    if include_sensitive:
-        try:
-            sales_summary = _wallpaper_sales_summary()
-        except Exception:
-            logging.exception("wallpaper sales summary unavailable")
-        try:
-            exchange_summary = _wallpaper_exchange_summary()
-        except Exception:
-            logging.exception("wallpaper exchange summary unavailable")
-    detail_items = details_payload.get("items") if isinstance(details_payload, dict) else []
-    detail_by_shop = {
-        int(item.get("shopKey")): item
-        for item in detail_items or []
-        if isinstance(item, dict) and item.get("shopKey") is not None
-    }
-    try:
-        statuses = _wallpaper_active_statuses()
-    except Exception:
-        logging.exception("wallpaper station statuses unavailable")
-        statuses = {}
-
-    stations = []
-    shop_coords = getattr(constants_module, "SHOP_COORDS", {}) or {}
-    shop_catalog = getattr(constants_module, "SHOP_KEY_MAP", {}) or {}
-    for raw_shop_key, info in sorted(shop_catalog.items(), key=lambda item: int(item[0])):
-        shop_key = int(raw_shop_key)
-        coords = shop_coords.get(shop_key) or {}
-        status = statuses.get(shop_key) or _wallpaper_default_station_status(shop_key, constants_module)
-        if shop_key in (getattr(constants_module, "FORCE_NORMAL_STATIONS", set()) or set()):
-            status = _wallpaper_normal_station_status()
-        detail = _wallpaper_zero_inventory_detail(detail_by_shop.get(shop_key) or {}, shop_key, constants_module)
-        status_label = _wallpaper_status_label(
-            status.get("status", "normal"),
-            status.get("statusType", "normal"),
-            status.get("statusLabel", ""),
-            status.get("closedReason", ""),
-            status.get("statusNote", ""),
-        )
-        station = {
-            "shopKey": shop_key,
-            "name": info.get("name", ""),
-            "short": info.get("short", ""),
-            "region": info.get("region", ""),
-            "lng": coords.get("lng"),
-            "lat": coords.get("lat"),
-            "type": "station",
-            "size": 0.28,
-            "status": status.get("status", "normal"),
-            "statusType": status.get("statusType", "normal"),
-            "statusLabel": status_label,
-            "closedReason": status.get("closedReason", ""),
-            "statusNote": status.get("statusNote", ""),
-            "expectedResumeAt": status.get("expectedResumeAt"),
-            "affectsSales": bool(status.get("affectsSales")),
-            "affectsInventory": bool(status.get("affectsInventory")),
-            "suppressAlerts": bool(status.get("suppressAlerts")),
-        }
-        if include_sensitive:
-            station.update({
-                "inventory": float(detail.get("inventory") or 0),
-                "inventoryByResource": detail.get("inventoryByResource") or [],
-                "prices": detail.get("prices") or [],
-                "inventoryCapacity": detail.get("inventoryCapacity"),
-                "inventoryFillPercent": detail.get("inventoryFillPercent"),
-                "inventoryFillStatus": detail.get("inventoryFillStatus") or "unknown",
-                "inventoryZeroedByMapRule": bool(detail.get("inventoryZeroedByMapRule")),
-                "inventoryZeroReason": detail.get("inventoryZeroReason") or "",
-                "inventoryAsOf": detail.get("inventoryAsOf") or "",
-                "snapshotGeneratedAt": detail.get("snapshotGeneratedAt") or details_payload.get("snapshotGeneratedAt") or "",
-            })
-        stations.append(station)
-
-    depots = []
-    for name, info in sorted((getattr(constants_module, "DEPOT_COORDS", {}) or {}).items()):
-        status = info.get("status") or "normal"
-        status_type = info.get("statusType") or status
-        closed_reason = info.get("closedReason", "")
-        depots.append({
-            "name": name,
-            "short": info.get("short", ""),
-            "region": info.get("region", ""),
-            "lng": info.get("lng"),
-            "lat": info.get("lat"),
-            "type": info.get("type", "depot"),
-            "size": 0.2,
-            "status": status,
-            "statusType": status_type,
-            "statusLabel": _wallpaper_status_label(
-                status,
-                status_type,
-                info.get("statusLabel", ""),
-                closed_reason,
-            ),
-            "closedReason": closed_reason,
-        })
-
-    active_station_count = sum(1 for item in stations if item.get("status") == "normal")
-    closed_station_count = sum(1 for item in stations if item.get("status") == "closed")
-    warning_station_count = sum(1 for item in stations if item.get("status") not in {"normal", "closed"})
-    inventory_total = round(sum(float(item.get("inventory") or 0) for item in stations), 2) if include_sensitive else None
-    inventory_alerts = {"items": [], "summary": {"alertCount": 0, "criticalCount": 0, "warningCount": 0}}
-    if include_sensitive:
-        try:
-            inventory_alerts = build_low_inventory_alerts(stations)
-            alerts_by_shop = {}
-            for item in inventory_alerts.get("items", []):
-                if item.get("shopKey") is None:
-                    continue
-                alerts_by_shop.setdefault(int(item.get("shopKey")), []).append(item)
-            for station in stations:
-                alerts = alerts_by_shop.get(int(station.get("shopKey") or 0)) or []
-                if alerts:
-                    station["inventoryAlert"] = alerts[0]
-                    station["inventoryAlerts"] = alerts
-        except Exception:
-            logging.exception("wallpaper inventory alerts unavailable")
-    payload = {
-        "source": "wallpaper_public_map",
-        "updatedAt": datetime.now().isoformat(timespec="seconds"),
-        "snapshotGeneratedAt": details_payload.get("snapshotGeneratedAt") or details_payload.get("updatedAt") or "",
-        "sensitiveData": include_sensitive,
-        "stations": stations,
-        "depots": depots,
-        "summary": {
-            "stationCount": len(stations),
-            "activeStationCount": active_station_count,
-            "closedStationCount": closed_station_count,
-            "warningStationCount": warning_station_count,
-            "depotCount": len(depots),
-            "activeDepotCount": sum(1 for item in depots if item.get("status") == "normal"),
-            "inventoryLiters": inventory_total,
-            "inventoryAlertCount": inventory_alerts.get("summary", {}).get("alertCount", 0) if include_sensitive else None,
-            "inventoryCriticalCount": inventory_alerts.get("summary", {}).get("criticalCount", 0) if include_sensitive else None,
-            "inventoryWarningCount": inventory_alerts.get("summary", {}).get("warningCount", 0) if include_sensitive else None,
-        },
-    }
-    if include_sensitive and sales_summary:
-        payload["salesSummary"] = sales_summary
-    if include_sensitive and exchange_summary:
-        payload["exchangeSummary"] = exchange_summary
-    if include_sensitive:
-        payload["inventoryAlerts"] = inventory_alerts.get("items", [])
-        payload["inventoryAlertSummary"] = inventory_alerts.get("summary", {})
-    return jsonify({"code": 0, "data": payload})
-
-
-@app.route("/retail-app/")
-@app.route("/retail-app/")
-@app.route("/retail-app/<path:filename>")
-def retail_app_file(filename=""):
-    if not filename or filename.startswith("api/"):
-        if filename.startswith("api/"):
-            return proxy_oilstation_api(filename[4:])
-        return redirect("/retail")
-    ext = Path(filename).suffix.lower()
-    if ext in {".html", ".htm"}:
-        return send_from_directory(str(FRONTEND_DIST), "index.html")
-    response = send_from_directory(OILSTATION_ROOT, filename)
-    if ext in {".css", ".js", ".json", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".woff", ".woff2"}:
-        response.headers["Cache-Control"] = "public, max-age=86400"
-    return response
-
-
-def proxy_oilstation_api(api_path):
-    # v2 API paths are handled by the v2 blueprint — don't proxy them
-    if api_path.split("/", 1)[0] == "v2":
-        return jsonify({"error": "not_found"}), 404
-    if api_path.split("/", 1)[0] not in RETAIL_API_PREFIXES:
-        return jsonify({"error": "not_found"}), 404
-
-    headers = {}
-    if request.content_type:
-        headers["Content-Type"] = request.content_type
-    if request.headers.get("Accept"):
-        headers["Accept"] = request.headers["Accept"]
-
-    data = None if request.method in {"GET", "HEAD"} else request.get_data()
-    response = open_oilstation(
-        f"/api/{api_path}",
-        method=request.method,
-        query_string=request.query_string.decode("utf-8", errors="ignore"),
-        data=data,
-        headers=headers,
-    )
-
-    content_type = response.headers.get("Content-Type", "")
-    if response.status_code < 400 and "application/json" in content_type and request.method == "GET":
-        top = api_path.split("/", 1)[0]
-        if top in {"dashboard", "monthly", "station", "stations", "regions"}:
-            payload = response.get_json(silent=True)
-            if payload is not None:
-                payload = enrich_retail_station_statuses(payload)
-                return jsonify(payload), response.status_code
-
-    proxied = Response(
-        response.get_data(),
-        status=response.status_code,
-        content_type=response.headers.get("Content-Type", "application/octet-stream"),
-    )
-    for header in ("Content-Disposition", "Cache-Control"):
-        value = response.headers.get(header)
-        if value:
-            proxied.headers[header] = value
-    return proxied
-
-
-@app.route("/api/<path:api_path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-def retail_api_proxy(api_path):
-    return proxy_oilstation_api(api_path)
-
-
-@app.route("/assets/<path:filename>")
-def shared_asset(filename):
-    allowed = {"echarts.min.js", "kgz_merged.json"}
-    if filename.startswith("kgz-map/"):
-        response = send_from_directory(SHARED_ASSETS_ROOT, filename)
-        response.headers["Cache-Control"] = "public, max-age=604800"
-        return response
-    if filename not in allowed:
-        return jsonify({"error": "not_found"}), 404
-    response = send_from_directory(OILSTATION_ROOT, filename)
-    response.headers["Cache-Control"] = "public, max-age=604800"
-    return response
-
-
-@app.route("/kgz-map/<path:filename>")
-def kgz_map_legacy_asset(filename):
-    response = send_from_directory(SHARED_ASSETS_ROOT / "kgz-map", filename)
-    response.headers["Cache-Control"] = "public, max-age=604800"
-    return response
-
-
-# ── React SPA static assets ──
-@app.route("/_next/<path:filename>")
-def react_static(filename):
-    response = send_from_directory(str(FRONTEND_DIST / "_next"), filename)
-    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    return response
-
-
-# ── Root-level static files used by React SPA (echarts, etc.) ──
-@app.route("/echarts.min.js")
-def echarts_js():
-    response = send_from_directory(str(OILSTATION_ROOT), "echarts.min.js")
-    response.headers["Cache-Control"] = "public, max-age=604800"
-    return response
-
-
-# ── 3D 地图页面 ──
-@app.route("/map")
-def map_page():
-    map_html = SHARED_ASSETS_ROOT / "kgz-map" / "full-map.html"
-    if map_html.exists():
-        return send_from_directory(str(map_html.parent), "full-map.html")
-    return jsonify({"error": "map_not_found"}), 404
-
-
-# ── SPA catch-all ──
-# Any route not matched above serves the React SPA index.html
-@app.route("/<path:path>")
-def spa_catchall(path):
-    # Don't catch API or file routes
-    if path.startswith("api/") or path.startswith("retail-app/"):
-        return jsonify({"error": "not_found"}), 404
-    # Try serving from OilStation for legacy static assets
-    oilstation_file = OILSTATION_ROOT / path
-    if oilstation_file.is_file():
-        response = send_from_directory(str(OILSTATION_ROOT), path)
-        response.headers["Cache-Control"] = "public, max-age=86400"
-        return response
-    index_path = FRONTEND_DIST / "index.html"
-    if index_path.exists():
-        return send_from_directory(str(FRONTEND_DIST), "index.html")
-    return jsonify({"error": "frontend not built"}), 503
-
-
-@app.route("/api/download/<filename>")
-def download_desktop(filename: str):
-    allowed_installer = re.fullmatch(r"SalesDesktop Setup \d+\.\d+\.\d+\.exe(?:\.blockmap)?", filename)
-    if filename != "latest.yml" and not allowed_installer:
-        return jsonify({"error": "not_found"}), 404
-    desktop_root = PROJECT_ROOT.parent / "SalesDesktop"
-    candidates = [
-        desktop_root / "download" / filename,
-        desktop_root / filename,
-        desktop_root / "release_build" / filename,
-    ]
-    filepath = next((item for item in candidates if item.is_file()), None)
-    if filepath is None:
-        return jsonify({"error": "file_not_ready"}), 404
-    return send_from_directory(str(filepath.parent), filepath.name, as_attachment=True)
-
-
-@app.route("/api/health")
-def health():
-    return jsonify({"ok": True, "project": "销售数据可视化"})
-
-
-# Register route modules
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ── 自 api.py 拆分出的路由模块（纯搬移，行为零变化）──
+register_assets_routes(app)
+register_retail_legacy_routes(app)
+register_wallpaper_routes(app)
+register_download_routes(app)
+register_health_routes(app)
+
 register_data_routes(app)
 register_admin_routes(app)
 register_assistant_routes(app)

@@ -327,7 +327,12 @@ def _is_report_hidden_station(shop_key):
         return False
 
 
-def _workbook_report_ym(path):
+def _workbook_report_ym(path, require_daily_sheets=False):
+    """识别工作簿所属月份；``require_daily_sheets`` 为真时排除无日 sheet 的空壳。
+
+    空壳来源：对尚未开始（或已完成日不在该月）的月份请求导出时，
+    ``_completed_report_days`` 返回空列表，产出的工作簿只有「总表」没有日分页。
+    """
     workbook = None
     try:
         workbook = load_workbook(path, read_only=True, data_only=True)
@@ -339,24 +344,90 @@ def _workbook_report_ym(path):
             (value for name, value in REPORT_MONTH_NAME_TO_NUMBER.items() if name in title),
             None,
         )
-        if year_match and month:
-            return f"{int(year_match.group(1))}-{month:02d}"
+        if not (year_match and month):
+            return None
+        if require_daily_sheets and not any(
+            name.endswith("日") and name[:2].isdigit() for name in workbook.sheetnames
+        ):
+            return None
+        return f"{int(year_match.group(1))}-{month:02d}"
     except Exception:
         return None
     finally:
         if workbook is not None:
             workbook.close()
-    return None
+
+
+def _iter_report_workbook_candidates(export_dir: Path, ym: str):
+    """按命中概率排序产出候选工作簿路径。
+
+    导出服务把月度日销表写入 ``exports/monthly/<年份>/``，早期文件则散落在
+    ``exports`` 根目录。先扫这两个高概率目录，再递归兜底，避免全量 rglob
+    逐个 openpyxl 打开上百个工作簿。
+    """
+    seen = set()
+    directories = [export_dir / "monthly" / str(ym).split("-")[0], export_dir]
+    for directory in directories:
+        if not directory.exists():
+            continue
+        try:
+            paths = sorted(directory.glob("*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True)
+        except OSError:
+            continue
+        for path in paths:
+            key = str(path).lower()
+            if key not in seen:
+                seen.add(key)
+                yield path
+    try:
+        remaining = sorted(
+            (p for p in export_dir.rglob("*.xlsx") if str(p).lower() not in seen),
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return
+    for path in remaining:
+        yield path
 
 
 def _find_report_workbook_for_ym(ym):
+    """定位指定月份的日销表工作簿。
+
+    口径必须与导出服务的 ``_latest_report_workbook`` 保持一致：先读
+    ``.monthly_report_index.json``，再递归扫描 exports。历史上这里只用非递归的
+    ``glob`` 扫根目录，而导出结果落在 ``monthly/<年份>/`` 子目录，导致每月首个
+    自然月（根目录尚无该月历史文件）必然找不到工作簿，快照刷新直接失败。
+    """
     export_dir = Path(EXPORT_DIR)
     if not export_dir.exists():
         return None
-    for path in sorted(export_dir.glob("*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True):
-        if _workbook_report_ym(path) == ym:
+    index_path = export_dir / ".monthly_report_index.json"
+    if index_path.exists():
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8-sig"))
+            item = index.get(ym) if isinstance(index, dict) else None
+            stored_path = (item.get("path") or item.get("file")) if isinstance(item, dict) else None
+            if stored_path:
+                export_root = export_dir.resolve()
+                try:
+                    candidate = (export_dir / stored_path).resolve()
+                except OSError:
+                    candidate = None
+                if candidate is not None and candidate.exists():
+                    # 与导出服务一致：拒绝指向 exports 之外的索引记录
+                    if candidate == export_root or export_root in candidate.parents:
+                        return candidate
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+    shell_fallback = None
+    for path in _iter_report_workbook_candidates(export_dir, ym):
+        if _workbook_report_ym(path, require_daily_sheets=True) == ym:
             return path
-    return None
+        if shell_fallback is None and _workbook_report_ym(path) == ym:
+            # 只有总表的空壳：留作最后的降级选项，交给上层的 db supplement 补数
+            shell_fallback = path
+    return shell_fallback
 
 
 def _report_extras_from_workbook(ym):
@@ -1017,8 +1088,12 @@ def _month_dataset(year_month):
 
 def _year_dataset(year):
     start = f"{year}-01-01"
-    current_year = datetime.now().year
-    end = datetime.now().strftime("%Y-%m-%d") if year == current_year else f"{year + 1}-01-01"
+    today = datetime.now()
+    if year == today.year:
+        # 只统计已结束的完整月份：区间终点取当月 1 号，自动排除"本月至今"
+        end = f"{year}-{today.month:02d}-01"
+    else:
+        end = f"{year + 1}-01-01"
     data = _period_dataset_from_month_slices(start, end, include_monthly=True)
     data.update({
         "kind": "yearly",
@@ -1172,6 +1247,24 @@ def _station_js_rows(stations):
     return rows
 
 
+_ECHARTS_JS_CACHE = None
+
+
+def _echarts_script_tag():
+    global _ECHARTS_JS_CACHE
+    if _ECHARTS_JS_CACHE is None:
+        path = PROJECT_ROOT / "OilStation" / "echarts.min.js"
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception:
+            content = ""
+        if content and "</script" not in content.lower():
+            _ECHARTS_JS_CACHE = f"<script>{content}</script>"
+        else:
+            _ECHARTS_JS_CACHE = '<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>'
+    return _ECHARTS_JS_CACHE
+
+
 def _render_html_report(data):
     summary = data["summary"]
     comparison = data.get("comparison", {})
@@ -1181,19 +1274,30 @@ def _render_html_report(data):
     regions = sorted(data.get("regions") or [], key=lambda item: item.get("amount", 0), reverse=True)
     monthly_table = ""
     period_label = _period_label(data)
+    cny_conversion = data.get("cnyConversion") or {}
+    has_cny_conversion = bool(cny_conversion.get("available"))
+    avg_cny_kgs = cny_conversion.get("avgCnyKgs")
     if data["kind"] == "yearly":
         monthly_items = data.get("monthly", [])
-        monthly_table = _table_rows(monthly_items, [
+        if has_cny_conversion and avg_cny_kgs:
+            for _mi in monthly_items:
+                _mi["amountCnyAvg"] = _round_half_up(float(_mi.get("amount") or 0) / avg_cny_kgs, 2)
+        monthly_columns = [
             ("月份", lambda x: "合计" if x.get("month") == "合计" else f"{x.get('month')}月"),
             ("销量(L)", lambda x: _fmt(x.get("volume"), 2)),
             ("销量(吨)", lambda x: _fmt(x.get("tons"), 3)),
             ("销售金额(索姆)", lambda x: _fmt(x.get("amount"), 2)),
-        ], total_row={
+        ]
+        monthly_total = {
             "month": "合计",
             "volume": _sum_key(monthly_items, "volume"),
             "tons": _sum_key(monthly_items, "tons"),
             "amount": _sum_key(monthly_items, "amount"),
-        })
+        }
+        if has_cny_conversion and avg_cny_kgs:
+            monthly_columns.append(("折算人民币(元)", lambda x: _fmt(x.get("amountCnyAvg"), 2)))
+            monthly_total["amountCnyAvg"] = _sum_key(monthly_items, "amountCnyAvg")
+        monthly_table = _table_rows(monthly_items, monthly_columns, total_row=monthly_total)
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     cash_sales = float(summary.get("cashSales") or 0)
@@ -1203,19 +1307,18 @@ def _render_html_report(data):
     end_inventory = float(summary.get("endInventory") or 0)
     end_inventory_tons = float(summary.get("endInventoryTons") or 0)
     contract_volume = float(summary.get("contractVolume") or 0)
-    cny_conversion = data.get("cnyConversion") or {}
-    has_cny_conversion = bool(cny_conversion.get("available"))
-    avg_cny_kgs = cny_conversion.get("avgCnyKgs")
     total_sales_cny = summary.get("totalSalesCnyAvg")
+    _kind = data.get("kind")
+    cny_period_word = "本年累计平均" if _kind == "yearly" else ("本月平均" if _kind == "monthly" else "期间平均")
     cny_amount_phrase = (
-        f"，按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 折算人民币 {_fmt(total_sales_cny, 2)} 元"
+        f"，按{cny_period_word} CNY/KGS {_fmt(avg_cny_kgs, 4)} 折算人民币 {_fmt(total_sales_cny, 2)} 元"
         if has_cny_conversion else ""
     )
     sales_kpi_sub = f"精确：{_fmt(summary['totalSales'], 2)} 索姆"
     if has_cny_conversion:
         sales_kpi_sub += f"<br>折人民币：{_fmt(total_sales_cny, 2)} 元"
     cny_conclusion = (
-        f"人民币金额按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，便于中国管理口径复核。"
+        f"人民币金额按{cny_period_word} CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，便于中国管理口径复核。"
         if has_cny_conversion else "后续可继续补充汇率折人民币口径。"
     )
     top_station = _top_name(active_stations)
@@ -1239,6 +1342,11 @@ def _render_html_report(data):
     resource_rows = _resource_js_rows(resources)
     region_rows = _region_js_rows(regions)
     station_rows = _station_js_rows(stations)
+    if has_cny_conversion and avg_cny_kgs:
+        for _rr in region_rows:
+            _rr["amountCnyAvg"] = _round_half_up(float(_rr.get("amount") or 0) / avg_cny_kgs, 2)
+        for _sr in station_rows:
+            _sr["amountCnyAvg"] = _round_half_up(float(_sr.get("amount") or 0) / avg_cny_kgs, 2)
     station_chart_height = max(460, min(1100, len(station_rows) * 28 + 80))
     exchange_info = data.get("exchangeRates") or {}
     exchange_rows = exchange_info.get("rows") or []
@@ -1257,8 +1365,8 @@ def _render_html_report(data):
     )
     if has_cny_conversion:
         exchange_summary += (
-            f"本报告人民币金额按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
-            f"公式为索姆金额 ÷ 月平均汇率；本期销售额折算人民币 {_fmt(total_sales_cny, 2)} 元。"
+            f"本报告人民币金额按{cny_period_word} CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
+            f"公式为索姆金额 ÷ {cny_period_word}汇率；本期销售额折算人民币 {_fmt(total_sales_cny, 2)} 元。"
         )
     if exchange_info.get("missingCount"):
         exchange_summary += f"缺少 {exchange_info.get('missingCount')} 天快照，请在后台财务维护补齐。"
@@ -1266,18 +1374,26 @@ def _render_html_report(data):
         exchange_summary = exchange_info.get("error")
     month_compare_block = ""
     year_compare_block = ""
-    def compare_tile(label, current_text, mom_value=None, yoy_value=None, mom_label="环比", yoy_label="同比"):
+    def compare_tile(label, current_text, mom_value=None, yoy_value=None, mom_label="环比", yoy_label="同比", current_sub=None):
         mom_color = "#27ae60" if (mom_value or 0) >= 0 else "#c0392b"
         yoy_color = "#27ae60" if (yoy_value or 0) >= 0 else "#c0392b"
         mom_line = f"<div class=\"compare-line\"><span>{html.escape(mom_label)}</span><strong style=\"color:{mom_color}\">{html.escape(_fmt_pct(mom_value))}</strong></div>" if mom_value is not None else ""
         yoy_line = f"<div class=\"compare-line\"><span>{html.escape(yoy_label)}</span><strong style=\"color:{yoy_color}\">{html.escape(_fmt_pct(yoy_value))}</strong></div>" if yoy_value is not None else ""
+        # current_sub 不复用 html.escape，因为内容由数值构造，需要保留 <br> 换行（与 KPI 卡片副行一致）
+        sub_line = f"<div class=\"compare-sub\">{current_sub}</div>" if current_sub else ""
         return (
             "<div class=\"compare-tile\">"
             f"<div class=\"compare-label\">{html.escape(label)}</div>"
             f"<div class=\"compare-current\">{html.escape(current_text)}</div>"
+            f"{sub_line}"
             f"{mom_line}{yoy_line}"
             "</div>"
         )
+    # 现金/刷卡折人民币（与销售金额口径一致：索姆 ÷ 期间平均 CNY/KGS），供月度、年度同比卡片副行共用
+    cash_cny = _round_half_up(cash_sales / avg_cny_kgs, 2) if (has_cny_conversion and avg_cny_kgs) else None
+    card_cny = _round_half_up(card_sales / avg_cny_kgs, 2) if (has_cny_conversion and avg_cny_kgs) else None
+    cash_sub = f"折人民币：{_fmt(cash_cny, 2)} 元" if cash_cny is not None else ""
+    card_sub = f"折人民币：{_fmt(card_cny, 2)} 元" if card_cny is not None else ""
     if data["kind"] == "monthly":
         prev_label = comparison.get("prevLabel") or "上月"
         yoy_label = comparison.get("yoyLabel") or "上年同期"
@@ -1287,8 +1403,8 @@ def _render_html_report(data):
       <div class="compare-grid">
         {compare_tile("销售总量", _volume_short(total_liters) + "升", comparison.get("momVolume"), comparison.get("yoyVolume"))}
         {compare_tile("销售金额", _money_short(total_sales) + "索姆", comparison.get("momSales"), comparison.get("yoySales"))}
-        {compare_tile("现金支付", _money_short(cash_sales) + "索姆", comparison.get("momCash"), comparison.get("yoyCash"))}
-        {compare_tile("刷卡支付", _money_short(card_sales) + "索姆", comparison.get("momCard"), comparison.get("yoyCard"))}
+        {compare_tile("现金支付", _money_short(cash_sales) + "索姆", comparison.get("momCash"), comparison.get("yoyCash"), current_sub=cash_sub)}
+        {compare_tile("刷卡支付", _money_short(card_sales) + "索姆", comparison.get("momCard"), comparison.get("yoyCard"), current_sub=card_sub)}
       </div>
       <div class="analysis-note">
         <strong>📊 同比环比分析要点：</strong><br>
@@ -1301,14 +1417,21 @@ def _render_html_report(data):
 """
     if data["kind"] == "yearly":
         yoy_label = comparison.get("yoyLabel") or "上年同期"
+        # 总量/金额副行复用第一行 KPI 卡片的「升/吨」「索姆/人民币」分行展示方式
+        year_volume_text = _volume_short(total_liters) + "升"
+        year_volume_sub = f"折算：{_fmt(summary.get('totalTons'), 3)} 吨" if summary.get('totalTons') else ""
+        year_sales_text = _money_short(total_sales)
+        year_sales_sub = f"精确：{_fmt(total_sales, 2)} 索姆"
+        if has_cny_conversion:
+            year_sales_sub += f"<br>折人民币：{_fmt(total_sales_cny, 2)} 元"
         year_compare_block = f"""
     <div class="card">
       <div class="card-title">📈 年度同比分析（本年累计 vs {html.escape(yoy_label)}）</div>
       <div class="compare-grid">
-        {compare_tile("销售总量", _volume_short(total_liters) + "升", None, comparison.get("yoyVolume"), yoy_label="同比")}
-        {compare_tile("销售金额", _money_short(total_sales) + "索姆", None, comparison.get("yoySales"), yoy_label="同比")}
-        {compare_tile("现金支付", _money_short(cash_sales) + "索姆", None, comparison.get("yoyCash"), yoy_label="同比")}
-        {compare_tile("刷卡支付", _money_short(card_sales) + "索姆", None, comparison.get("yoyCard"), yoy_label="同比")}
+        {compare_tile("销售总量", year_volume_text, None, comparison.get("yoyVolume"), yoy_label="同比", current_sub=year_volume_sub)}
+        {compare_tile("销售金额", year_sales_text, None, comparison.get("yoySales"), yoy_label="同比", current_sub=year_sales_sub)}
+        {compare_tile("现金支付", _money_short(cash_sales) + "索姆", None, comparison.get("yoyCash"), yoy_label="同比", current_sub=cash_sub)}
+        {compare_tile("刷卡支付", _money_short(card_sales) + "索姆", None, comparison.get("yoyCard"), yoy_label="同比", current_sub=card_sub)}
       </div>
       <div class="analysis-note">
         <strong>📊 年度同比分析要点：</strong><br>
@@ -1322,6 +1445,7 @@ def _render_html_report(data):
         "volume": _sum_key(station_rows_by_volume, "volume"),
         "contractVolume": _sum_key(station_rows_by_volume, "contractVolume"),
         "amount": _sum_key(station_rows_by_volume, "amount"),
+        "amountCnyAvg": _sum_key(station_rows_by_volume, "amountCnyAvg"),
         "cash": _sum_key(station_rows_by_volume, "cash"),
         "card": _sum_key(station_rows_by_volume, "card"),
         "endInventory": _sum_key(station_rows_by_volume, "endInventory"),
@@ -1334,7 +1458,8 @@ def _render_html_report(data):
             f"<td>{_fmt(item['volume'], 2)}</td>"
             f"<td>{_fmt(item['contractVolume'], 2) if item['contractVolume'] else '--'}</td>"
             f"<td>{_fmt(item['amount'], 2)}</td>"
-            f"<td>{_fmt(item['cash'], 2)}</td>"
+            + (f"<td>{_fmt(item.get('amountCnyAvg'), 2)}</td>" if has_cny_conversion else "")
+            + f"<td>{_fmt(item['cash'], 2)}</td>"
             f"<td>{_fmt(item['card'], 2)}</td>"
             f"<td>{_fmt(item['endInventory'], 2) if item['endInventory'] else '--'}</td></tr>"
         )
@@ -1344,7 +1469,8 @@ def _render_html_report(data):
         f"<td>{_fmt(station_total['volume'], 2)}</td>"
         f"<td>{_fmt(station_total['contractVolume'], 2)}</td>"
         f"<td>{_fmt(station_total['amount'], 2)}</td>"
-        f"<td>{_fmt(station_total['cash'], 2)}</td>"
+        + (f"<td>{_fmt(station_total.get('amountCnyAvg'), 2)}</td>" if has_cny_conversion else "")
+        + f"<td>{_fmt(station_total['cash'], 2)}</td>"
         f"<td>{_fmt(station_total['card'], 2)}</td>"
         f"<td>{_fmt(station_total['endInventory'], 2)}</td></tr>"
     )
@@ -1352,6 +1478,7 @@ def _render_html_report(data):
         "region": "合计",
         "volume": _sum_key(region_rows, "volume"),
         "amount": _sum_key(region_rows, "amount"),
+        "amountCnyAvg": _sum_key(region_rows, "amountCnyAvg"),
         "stationCount": sum(int(item.get("stationCount") or 0) for item in region_rows),
     }
     resource_total = {
@@ -1368,13 +1495,16 @@ def _render_html_report(data):
     if has_cny_conversion:
         resource_columns.append(("折算人民币(元)", lambda x: _fmt(x.get("amountCnyAvg"), 2)))
     resource_columns.append(("销量占比", lambda x: _percent(x.get("volume"), summary.get("totalLiters"))))
-    region_table = _table_rows(region_rows, [
+    region_columns = [
         ("区域", lambda x: x.get("region", "")),
         ("销量(L)", lambda x: _fmt(x.get("volume"), 2)),
         ("销售金额(索姆)", lambda x: _fmt(x.get("amount"), 2)),
-        ("金额占比", lambda x: _percent(x.get("amount"), total_sales)),
-        ("站点数", lambda x: x.get("stationCount", 0)),
-    ], "data-table region-table", total_row=region_total)
+    ]
+    if has_cny_conversion:
+        region_columns.append(("折算人民币(元)", lambda x: _fmt(x.get("amountCnyAvg"), 2)))
+    region_columns.append(("金额占比", lambda x: _percent(x.get("amount"), total_sales)))
+    region_columns.append(("站点数", lambda x: x.get("stationCount", 0)))
+    region_table = _table_rows(region_rows, region_columns, "data-table region-table", total_row=region_total)
     resource_table = _table_rows(resource_rows, resource_columns, "data-table resource-table", total_row=resource_total)
 
     return f"""<!doctype html>
@@ -1383,7 +1513,7 @@ def _render_html_report(data):
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{html.escape(data['title'])}</title>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    {_echarts_script_tag()}
   <style>
     * {{ margin:0; padding:0; box-sizing:border-box; }}
     body {{ font-family:'Microsoft YaHei', Arial, sans-serif; background:#f0f2f5; color:#333; }}
@@ -1405,7 +1535,8 @@ def _render_html_report(data):
     .compare-line {{ display:flex; justify-content:center; gap:8px; font-size:13px; line-height:1.7; }}
     .compare-sub {{ font-size:12px; color:#aaa; margin-top:4px; }}
     .analysis-note {{ background:#f0f6ff; border-left:3px solid #2e6da4; padding:14px 18px; border-radius:0 8px 8px 0; font-size:13px; line-height:1.9; }}
-    .card {{ background:#fff; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:24px; }}
+    .card {{ background:#fff; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:24px; overflow:hidden; }}
+    .two-col > .card, .three-col > .card {{ min-width:0; }}
     .card-title {{ font-size:16px; font-weight:700; color:#1a3a5c; margin-bottom:18px; padding-bottom:10px; border-bottom:2px solid #e8edf3; display:flex; align-items:center; gap:8px; }}
     .card-title::before {{ content:''; display:inline-block; width:4px; height:18px; background:#2e6da4; border-radius:2px; }}
     .two-col {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px; }}
@@ -1472,7 +1603,7 @@ def _render_html_report(data):
     <div class="card"><div class="card-title">⛽ 油品结构明细</div>{resource_table}</div>
     <div class="card"><div class="card-title">🗺️ 区域表现明细</div>{region_table}</div>
     <div class="card"><div class="card-title">📋 加油站销售数据明细（全部在营站点）</div><div style="overflow-x:auto"><table class="data-table station-table">
-      <thead><tr><th>排名</th><th>加油站</th><th>区域</th><th>销售总量(升)</th><th>合同量(升)</th><th>销售金额(索姆)</th><th>现金(索姆)</th><th>刷卡(索姆)</th><th>期末库存(升)</th></tr></thead>
+      <thead><tr><th>排名</th><th>加油站</th><th>区域</th><th>销售总量(升)</th><th>合同量(升)</th><th>销售金额(索姆)</th>{'<th>折算人民币(元)</th>' if has_cny_conversion else ''}<th>现金(索姆)</th><th>刷卡(索姆)</th><th>期末库存(升)</th></tr></thead>
       <tbody>{''.join(station_table_rows)}</tbody>
     </table></div><div class="note">注：数据来源于零售报表同一口径，销售总量含合同销售；只统计已结束班组数据；站点明细显示全部在营站点。</div></div>
 
@@ -1495,6 +1626,9 @@ def _render_html_report(data):
     const exchangeRows = {json.dumps(exchange_rows, ensure_ascii=False)};
     const totalCash = {cash_sales};
     const totalCard = {card_sales};
+    const charts = [];
+    var _origEchartsInit = echarts.init;
+    echarts.init = function(el) {{ var c = _origEchartsInit(el); if (c) charts.push(c); return c; }};
     echarts.init(document.getElementById('chartPay')).setOption({{
       tooltip: {{ trigger:'item', formatter:'{{b}}: {{c}} ({{d}}%)' }},
       legend: {{ bottom:0 }},
@@ -1551,6 +1685,10 @@ def _render_html_report(data):
         ]
       }});
     }}
+    function _resizeCharts() {{ charts.forEach(function(c){{ if (c && c.resize) c.resize(); }}); }}
+    window.addEventListener('resize', _resizeCharts);
+    window.addEventListener('load', _resizeCharts);
+    if (window.requestAnimationFrame) requestAnimationFrame(_resizeCharts); else setTimeout(_resizeCharts, 0);
   </script>
 </body>
 </html>"""

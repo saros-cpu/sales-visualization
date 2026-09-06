@@ -32,12 +32,11 @@ def _safe_float(value):
 
 
 def _attach_average_rate_cny(data):
-    if data.get("kind") != "monthly":
-        return data
     exchange_info = data.get("exchangeRates") or {}
     avg_cny = _safe_float(exchange_info.get("avgCny"))
+    kind = data.get("kind") or "period"
     conversion = {
-        "method": "monthly_average_cny_kgs",
+        "method": f"{kind}_average_cny_kgs",
         "available": avg_cny > 0,
         "avgCnyKgs": avg_cny if avg_cny > 0 else None,
     }
@@ -99,6 +98,8 @@ def _docx_document_xml_v2(data):
     has_cny_conversion = bool(cny_conversion.get("available"))
     avg_cny_kgs = cny_conversion.get("avgCnyKgs") or exchange_info.get("avgCny")
     total_sales_cny = summary.get("totalSalesCnyAvg")
+    _kind = data.get("kind")
+    cny_period_word = "本年累计平均" if _kind == "yearly" else ("本月平均" if _kind == "monthly" else "期间平均")
     period_label = _period_label(data)
 
     def para(text="", bold=False, size=21, align=None, color="333333", spacing=120):
@@ -143,7 +144,7 @@ def _docx_document_xml_v2(data):
             "<w:right w:val=\"single\" w:sz=\"4\" w:color=\"D9E2EC\"/>"
             "<w:insideH w:val=\"single\" w:sz=\"4\" w:color=\"D9E2EC\"/>"
             "<w:insideV w:val=\"single\" w:sz=\"4\" w:color=\"D9E2EC\"/>"
-            "</w:tblBorders></w:tblPr>"
+            "</w:tblBorders></w:tblPr>" + "<w:tblGrid>" + "".join(f'<w:gridCol w:w="{int(w) if w else 9026 // len(headers)}"/>' for w in widths) + "</w:tblGrid>"
         ]
         body.append("<w:tr>" + "".join(cell(header, bold=True, shade="1A3A5C", width=widths[index]) for index, header in enumerate(headers)) + "</w:tr>")
         for row in rows:
@@ -172,8 +173,8 @@ def _docx_document_xml_v2(data):
     if has_cny_conversion:
         cny_note_parts = [
             para(
-                f"• 人民币金额按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
-                "公式为索姆金额 ÷ 月平均汇率。",
+                f"• 人民币金额按{cny_period_word} CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
+                f"公式为索姆金额 ÷ {cny_period_word}汇率。",
                 spacing=60,
             )
         ]
@@ -225,7 +226,7 @@ def _docx_document_xml_v2(data):
     )
     if has_cny_conversion:
         exchange_text += (
-            f"本报告人民币金额按本月平均 CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
+            f"本报告人民币金额按{cny_period_word} CNY/KGS {_fmt(avg_cny_kgs, 4)} 统一折算，"
             f"本期销售额折算人民币 {_fmt(total_sales_cny, 2)} 元。"
         )
     month_compare_parts = []
@@ -239,8 +240,8 @@ def _docx_document_xml_v2(data):
                 [
                     ["销售总量", f"{_fmt(summary.get('totalLiters'), 2)} 升", _fmt_pct(comparison.get("momVolume")), _fmt_pct(comparison.get("yoyVolume"))],
                     ["销售金额", f"{_fmt(summary.get('totalSales'), 2)} 索姆", _fmt_pct(comparison.get("momSales")), _fmt_pct(comparison.get("yoySales"))],
-                    ["现金支付", f"{_fmt(cash_sales, 2)} 索姆", _fmt_pct(comparison.get("momCash")), _fmt_pct(comparison.get("yoyCash"))],
-                    ["刷卡支付", f"{_fmt(card_sales, 2)} 索姆", _fmt_pct(comparison.get("momCard")), _fmt_pct(comparison.get("yoyCard"))],
+                    ["现金支付", f"{_fmt(cash_sales, 2)} 索姆" + (f"（折 {_fmt(_round_half_up(cash_sales / avg_cny_kgs, 2), 2)} 元）" if (has_cny_conversion and avg_cny_kgs) else ""), _fmt_pct(comparison.get("momCash")), _fmt_pct(comparison.get("yoyCash"))],
+                    ["刷卡支付", f"{_fmt(card_sales, 2)} 索姆" + (f"（折 {_fmt(_round_half_up(card_sales / avg_cny_kgs, 2), 2)} 元）" if (has_cny_conversion and avg_cny_kgs) else ""), _fmt_pct(comparison.get("momCard")), _fmt_pct(comparison.get("yoyCard"))],
                 ],
             ),
             para(
@@ -258,30 +259,42 @@ def _docx_document_xml_v2(data):
             table(
                 ["指标", "本年累计", "同比"],
                 [
-                    ["销售总量", f"{_fmt(summary.get('totalLiters'), 2)} 升", _fmt_pct(comparison.get("yoyVolume"))],
-                    ["销售金额", f"{_fmt(summary.get('totalSales'), 2)} 索姆", _fmt_pct(comparison.get("yoySales"))],
-                    ["现金支付", f"{_fmt(cash_sales, 2)} 索姆", _fmt_pct(comparison.get("yoyCash"))],
-                    ["刷卡支付", f"{_fmt(card_sales, 2)} 索姆", _fmt_pct(comparison.get("yoyCard"))],
+                    ["销售总量", f"{_fmt(summary.get('totalLiters'), 2)} 升（{_fmt(summary.get('totalTons'), 3)} 吨）", _fmt_pct(comparison.get("yoyVolume"))],
+                    ["销售金额", f"{_fmt(summary.get('totalSales'), 2)} 索姆" + (f"（折 {_fmt(total_sales_cny, 2)} 元）" if has_cny_conversion else ""), _fmt_pct(comparison.get("yoySales"))],
+                    ["现金支付", f"{_fmt(cash_sales, 2)} 索姆" + (f"（折 {_fmt(_round_half_up(cash_sales / avg_cny_kgs, 2), 2)} 元）" if (has_cny_conversion and avg_cny_kgs) else ""), _fmt_pct(comparison.get("yoyCash"))],
+                    ["刷卡支付", f"{_fmt(card_sales, 2)} 索姆" + (f"（折 {_fmt(_round_half_up(card_sales / avg_cny_kgs, 2), 2)} 元）" if (has_cny_conversion and avg_cny_kgs) else ""), _fmt_pct(comparison.get("yoyCard"))],
                 ],
             ),
         ]
+        monthly_rows = []
+        for _mt in data.get("monthly", []):
+            row = [
+                f"{_mt.get('month')}月",
+                _fmt(_mt.get("volume"), 2),
+                _fmt(_mt.get("tons"), 3),
+                _fmt(_mt.get("amount"), 2),
+            ]
+            if has_cny_conversion and avg_cny_kgs:
+                row.append(_fmt(_round_half_up(_safe_float(_mt.get("amount")) / avg_cny_kgs, 2), 2))
+            monthly_rows.append(row)
+        trend_headers = ["月份", "销量（升）", "折算吨数", "销售金额（索姆）"]
+        trend_widths = [1200, 2400, 1800, 2600]
+        if has_cny_conversion and avg_cny_kgs:
+            trend_headers.append("折算人民币（元）")
+            trend_widths.append(2600)
+        if data.get("monthly"):
+            total_row = [
+                "合计",
+                _fmt(_sum_key(data.get("monthly", []), "volume"), 2),
+                _fmt(_sum_key(data.get("monthly", []), "tons"), 3),
+                _fmt(_sum_key(data.get("monthly", []), "amount"), 2),
+            ]
+            if has_cny_conversion and avg_cny_kgs:
+                total_row.append(_fmt(_round_half_up(_sum_key(data.get("monthly", []), "amount") / avg_cny_kgs, 2), 2))
+            monthly_rows.append(total_row)
         yearly_trend_parts = [
             heading("四、月度趋势"),
-            table(
-                ["月份", "销量（升）", "折算吨数", "销售金额（索姆）"],
-                [[
-                    f"{item.get('month')}月",
-                    _fmt(item.get("volume"), 2),
-                    _fmt(item.get("tons"), 3),
-                    _fmt(item.get("amount"), 2),
-                ] for item in data.get("monthly", [])] + ([[
-                    "合计",
-                    _fmt(_sum_key(data.get("monthly", []), "volume"), 2),
-                    _fmt(_sum_key(data.get("monthly", []), "tons"), 3),
-                    _fmt(_sum_key(data.get("monthly", []), "amount"), 2),
-                ]] if data.get("monthly") else []),
-                [1200, 2400, 1800, 2600],
-            ),
+            table(trend_headers, monthly_rows, trend_widths),
         ]
     overview_heading = "五、经营概览" if data["kind"] == "yearly" else "三、经营概览"
     resource_heading = "六、油品结构明细" if data["kind"] == "yearly" else "四、油品结构明细"
@@ -289,6 +302,83 @@ def _docx_document_xml_v2(data):
     station_heading = "八、加油站销售数据明细（全部在营站点）" if data["kind"] == "yearly" else "六、加油站销售数据明细（全部在营站点）"
     conclusion_heading = "九、核心结论" if data["kind"] == "yearly" else "七、核心结论"
     exchange_heading = "十、汇率信息" if data["kind"] == "yearly" else "八、汇率信息"
+
+    region_docx_headers = ["区域", "销量（升）", "销售金额（索姆）"]
+    region_docx_rows = []
+    for _rgn in regions:
+        _rgn_row = [
+            _rgn.get("region") or "--",
+            _fmt(_rgn.get("volume"), 2),
+            _fmt(_rgn.get("amount"), 2),
+        ]
+        if has_cny_conversion and avg_cny_kgs:
+            _rgn_row.append(_fmt(_round_half_up(_safe_float(_rgn.get("amount")) / avg_cny_kgs, 2), 2))
+        # 逐区域行补齐「金额占比」「站点数」，与表头及合计行列数对齐（此前缺失导致这两列在区域行丢失）
+        _rgn_row.extend([
+            _percent(_rgn.get("amount"), total_sales),
+            int(_rgn.get("stationCount") or 0),
+        ])
+        region_docx_rows.append(_rgn_row)
+    if has_cny_conversion and avg_cny_kgs:
+        region_docx_headers.append("折算人民币（元）")
+    region_docx_headers.extend(["金额占比", "站点数"])
+    if regions:
+        _rgn_total = [
+            "合计",
+            _fmt(_sum_key(regions, "volume"), 2),
+            _fmt(_sum_key(regions, "amount"), 2),
+        ]
+        if has_cny_conversion and avg_cny_kgs:
+            _rgn_total.append(_fmt(_round_half_up(_sum_key(regions, "amount") / avg_cny_kgs, 2), 2))
+        _rgn_total.extend([
+            _percent(_sum_key(regions, "amount"), total_sales),
+            sum(int(item.get("stationCount") or 0) for item in regions),
+        ])
+        region_docx_rows.append(_rgn_total)
+
+    station_docx_headers = ["排名", "加油站", "区域", "销售总量（升）", "合同量（升）", "销售金额（索姆）"]
+    station_docx_widths = [520, 1450, 860, 1080, 880, 1220]
+    if has_cny_conversion and avg_cny_kgs:
+        station_docx_headers.append("折算人民币（元）")
+        station_docx_widths.append(1220)
+    station_docx_headers.extend(["现金", "刷卡", "期末库存（升）"])
+    station_docx_widths.extend([1080, 1080, 1080])
+    station_docx_rows = []
+    for _idx, _st in enumerate(sorted(stations, key=lambda row: row.get("volume") or 0, reverse=True), start=1):
+        _st_row = [
+            _idx,
+            station_name_lines(_st),
+            region_name_lines(_st.get("region")),
+            _fmt(_st.get("volume"), 2),
+            _fmt(_st.get("contractVolume"), 2) if _st.get("contractVolume") else "--",
+            _fmt(_st.get("amount"), 2),
+        ]
+        if has_cny_conversion and avg_cny_kgs:
+            _st_row.append(_fmt(_round_half_up(_safe_float(_st.get("amount")) / avg_cny_kgs, 2), 2))
+        _st_row.extend([
+            _fmt(_st.get("cashSales") or _st.get("cash"), 2),
+            _fmt(_st.get("cardSales") or _st.get("card"), 2),
+            _fmt(_st.get("endInventory"), 2) if _st.get("endInventory") else "--",
+        ])
+        station_docx_rows.append(_st_row)
+    if stations:
+        _st_total = [
+            "合计",
+            "全部在营站点",
+            "全部区域",
+            _fmt(_sum_key(stations, "volume"), 2),
+            _fmt(_sum_key(stations, "contractVolume"), 2),
+            _fmt(_sum_key(stations, "amount"), 2),
+        ]
+        if has_cny_conversion and avg_cny_kgs:
+            _st_total.append(_fmt(_round_half_up(_sum_key(stations, "amount") / avg_cny_kgs, 2), 2))
+        _st_total.extend([
+            _fmt(_sum_key(stations, "cashSales"), 2),
+            _fmt(_sum_key(stations, "cardSales"), 2),
+            _fmt(_sum_key(stations, "endInventory"), 2),
+        ])
+        station_docx_rows.append(_st_total)
+
     body_parts = [
         para("Example石油公司零售板块", bold=True, size=36, align="center", color="1A3A5C", spacing=120),
         para(_docx_report_title(data), bold=True, size=32, align="center", color="1A3A5C", spacing=120),
@@ -327,48 +417,9 @@ def _docx_document_xml_v2(data):
             resource_rows,
         ),
         heading(region_heading),
-        table(
-            ["区域", "销量（升）", "销售金额（索姆）", "金额占比", "站点数"],
-            [[
-                item.get("region") or "--",
-                _fmt(item.get("volume"), 2),
-                _fmt(item.get("amount"), 2),
-                _percent(item.get("amount"), total_sales),
-                item.get("stationCount", 0),
-            ] for item in regions] + ([[
-                "合计",
-                _fmt(_sum_key(regions, "volume"), 2),
-                _fmt(_sum_key(regions, "amount"), 2),
-                _percent(_sum_key(regions, "amount"), total_sales),
-                sum(int(item.get("stationCount") or 0) for item in regions),
-            ]] if regions else []),
-        ),
+        table(region_docx_headers, region_docx_rows),
         heading(station_heading),
-        table(
-            ["排名", "加油站", "区域", "销售总量（升）", "合同量（升）", "销售金额（索姆）", "现金", "刷卡", "期末库存（升）"],
-            [[
-                index,
-                station_name_lines(item),
-                region_name_lines(item.get("region")),
-                _fmt(item.get("volume"), 2),
-                _fmt(item.get("contractVolume"), 2) if item.get("contractVolume") else "--",
-                _fmt(item.get("amount"), 2),
-                _fmt(item.get("cashSales") or item.get("cash"), 2),
-                _fmt(item.get("cardSales") or item.get("card"), 2),
-                _fmt(item.get("endInventory"), 2) if item.get("endInventory") else "--",
-            ] for index, item in enumerate(sorted(stations, key=lambda row: row.get("volume") or 0, reverse=True), start=1)] + ([[
-                "合计",
-                "全部在营站点",
-                "全部区域",
-                _fmt(_sum_key(stations, "volume"), 2),
-                _fmt(_sum_key(stations, "contractVolume"), 2),
-                _fmt(_sum_key(stations, "amount"), 2),
-                _fmt(_sum_key(stations, "cashSales"), 2),
-                _fmt(_sum_key(stations, "cardSales"), 2),
-                _fmt(_sum_key(stations, "endInventory"), 2),
-            ]] if stations else []),
-            [520, 1450, 860, 1080, 880, 1220, 1080, 1080, 1080],
-        ),
+        table(station_docx_headers, station_docx_rows, station_docx_widths),
         heading(conclusion_heading),
         table(
             ["经营亮点", "关注风险", "综合评价"],

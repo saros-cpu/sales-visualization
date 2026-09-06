@@ -419,6 +419,27 @@ def _should_use_rule_engine_fast_path(source_payload: dict[str, Any], use_llm: b
     return str(plan.get("route") or "") in RULE_ENGINE_FAST_PATH_ROUTES
 
 
+def _mark_llm_fallback(result: dict[str, Any]) -> dict[str, Any]:
+    """LLM 增强失败但规则引擎已产出结构化答案时，把状态修正为 ok + assistant-fallback。"""
+    if not isinstance(result, dict):
+        return result
+    agent = result.get("agent") if isinstance(result.get("agent"), dict) else {}
+    if agent.get("status") != "failed" or not str(result.get("answer") or "").strip():
+        return result
+    error = agent.get("error")
+    agent.update({
+        "status": "ok",
+        "llmUsed": False,
+        "model": "assistant-fallback",
+        "error": None,
+        "llmError": error,
+    })
+    result["agent"] = agent
+    result["sourceAnswer"] = str(result.get("sourceAnswer") or result.get("answer") or "")
+    result["fallback"] = True
+    return result
+
+
 def _finalize_rule_engine_response(
     user_id: int | None,
     question: str,
@@ -557,6 +578,9 @@ def assistant_query():
         use_llm=use_llm,
         user_context=user_context,
     )
+    # LLM 增强失败/超时时，规则引擎的结构化答案仍然完整可用：
+    # 标记为 ok + assistant-fallback，避免前端/日志把“拿到了答案”误记为 failed。
+    result = _mark_llm_fallback(result)
     if knowledge_snippets:
         result["knowledge"] = knowledge_snippets
         result["knowledgeReferences"] = build_knowledge_references(knowledge_snippets)

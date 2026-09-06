@@ -5,13 +5,10 @@ import unittest
 from datetime import date, datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-OILSTATION_ROOT = PROJECT_ROOT / "OilStation"
-if str(OILSTATION_ROOT) not in sys.path:
-    sys.path.insert(0, str(OILSTATION_ROOT))
+from retail_internal import import_oilstation
 
-from endpoints.v1.retail.export.service import generator
-from endpoints.v1.retail.export.service import workbook
+generator = import_oilstation("endpoints.v1.retail.export.service.generator")
+workbook = import_oilstation("endpoints.v1.retail.export.service.workbook")
 
 
 class RetailReportWorkbookNamingTests(unittest.TestCase):

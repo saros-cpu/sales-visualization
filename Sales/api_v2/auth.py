@@ -1,4 +1,5 @@
 """桌面端认证 API — 使用 JWT（跨域 Electron 无法使用 Session Cookie）"""
+import logging
 from flask import request, jsonify, session
 from flask_jwt_extended import (
     create_access_token, create_refresh_token,
@@ -10,8 +11,76 @@ from db import get_connection
 from shared_utils import ensure_auth_schema, has_users
 from .permission_service import get_effective_auth
 from .token_revocation import revoke_jwt_payload
+from auth_cookie import attach_auth_cookies, clear_auth_cookies
 import pymysql
-from datetime import timedelta
+from collections import deque
+
+import threading
+import time
+
+# 登录失败限速（防暴力破解）：内存滑动窗口。生产为单 Waitress 进程（threads=12），
+# 多线程共享一份计数即可；Nginx 已传 X-Forwarded-For，按真实客户端 IP 计数。
+_LOGIN_WINDOW_SECONDS = 15 * 60
+_LOGIN_MAX_FAILURES = 5
+_LOGIN_MAX_IP_FAILURES = 20
+_LOGIN_MAX_TRACKED = 10_000
+
+_login_lock = threading.Lock()
+_login_failures: dict[tuple, deque] = {}
+
+
+def _client_ip() -> str:
+    forwarded = request.headers.get('X-Forwarded-For')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+
+def _prune_login_failures(now: float) -> None:
+    cutoff = now - _LOGIN_WINDOW_SECONDS
+    for key in list(_login_failures):
+        bucket = _login_failures[key]
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+        if not bucket:
+            del _login_failures[key]
+
+
+def _login_rate_limited(ip: str, username: str) -> bool:
+    now = time.monotonic()
+    with _login_lock:
+        if len(_login_failures) > _LOGIN_MAX_TRACKED:
+            _prune_login_failures(now)
+        for key in ((ip, username), ('ip', ip)):
+            bucket = _login_failures.get(key)
+            if not bucket:
+                continue
+            while bucket and bucket[0] <= now - _LOGIN_WINDOW_SECONDS:
+                bucket.popleft()
+            if not bucket:
+                del _login_failures[key]
+                continue
+            limit = _LOGIN_MAX_FAILURES if key[0] != 'ip' else _LOGIN_MAX_IP_FAILURES
+            if len(bucket) >= limit:
+                return True
+    return False
+
+
+def _record_login_failure(ip: str, username: str) -> None:
+    now = time.monotonic()
+    with _login_lock:
+        if len(_login_failures) > _LOGIN_MAX_TRACKED:
+            _prune_login_failures(now)
+        for key in ((ip, username), ('ip', ip)):
+            bucket = _login_failures.setdefault(key, deque())
+            while bucket and bucket[0] <= now - _LOGIN_WINDOW_SECONDS:
+                bucket.popleft()
+            bucket.append(now)
+
+
+def _clear_login_failures(ip: str, username: str) -> None:
+    with _login_lock:
+        _login_failures.pop((ip, username), None)
 
 
 def _get_user_authz(user_id, role):
@@ -52,13 +121,16 @@ def _create_tokens(user):
             'role': user['role'],
             'mustChangePassword': bool(user.get('must_change_password')),
         },
-        expires_delta=timedelta(hours=2)
     )
     refresh_token = create_refresh_token(
         identity=identity,
-        expires_delta=timedelta(days=7)
     )
     return access_token, refresh_token
+
+
+def _tokens_payload(user):
+    payload = _auth_payload(user, include_tokens=True)
+    return payload, payload['accessToken'], payload['refreshToken']
 
 
 def _auth_payload(user, include_tokens=False):
@@ -112,7 +184,10 @@ def status():
         # Web sessions may be restored from the Flask session cookie after a
         # reload; return fresh JWTs so v2 API calls do not bounce back to login.
         data.update(_auth_payload(user, include_tokens=True))
-    return jsonify({'code': 0, 'message': 'success', 'data': data})
+    resp = jsonify({'code': 0, 'message': 'success', 'data': data})
+    if user and 'accessToken' in data:
+        return attach_auth_cookies(resp, data['accessToken'], data.get('refreshToken'))
+    return resp
 
 
 @bp_v2.route('/auth/bootstrap', methods=['POST'])
@@ -144,7 +219,9 @@ def bootstrap():
             'role': 'admin',
             'must_change_password': False,
         }
-        return jsonify({'code': 0, 'message': 'success', 'data': _auth_payload(user, include_tokens=True)})
+        payload = _auth_payload(user, include_tokens=True)
+        resp = jsonify({'code': 0, 'message': 'success', 'data': payload})
+        return attach_auth_cookies(resp, payload['accessToken'], payload['refreshToken'])
     except Exception:
         conn.rollback()
         raise
@@ -162,6 +239,10 @@ def login():
     if not username or not password:
         return jsonify({'code': 4221, 'message': '请输入用户名和密码', 'data': None}), 422
 
+    client_ip = _client_ip()
+    if _login_rate_limited(client_ip, username):
+        return jsonify({'code': 4290, 'message': '登录失败次数过多，请15分钟后再试', 'data': None}), 429
+
     conn = get_connection()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
@@ -173,6 +254,7 @@ def login():
             user = cur.fetchone()
 
         if not user or not check_password_hash(user['password_hash'], password):
+            _record_login_failure(client_ip, username)
             return jsonify({'code': 4001, 'message': '用户名或密码错误', 'data': None}), 401
 
         if not user['is_active']:
@@ -182,11 +264,11 @@ def login():
             cur.execute('UPDATE system_users SET last_login_at = NOW() WHERE id = %s', (user['id'],))
         conn.commit()
 
-        return jsonify({
-            'code': 0,
-            'message': 'success',
-            'data': _auth_payload(user, include_tokens=True)
-        })
+        _clear_login_failures(client_ip, username)
+
+        payload = _auth_payload(user, include_tokens=True)
+        resp = jsonify({'code': 0, 'message': 'success', 'data': payload})
+        return attach_auth_cookies(resp, payload['accessToken'], payload['refreshToken'])
     finally:
         conn.close()
 
@@ -211,14 +293,14 @@ def refresh():
                 'role': user['role'],
                 'mustChangePassword': bool(user.get('must_change_password')),
             },
-            expires_delta=timedelta(hours=2)
         )
     finally:
         conn.close()
-    return jsonify({
+    resp = jsonify({
         'code': 0, 'message': 'success',
         'data': {'accessToken': access_token}
     })
+    return attach_auth_cookies(resp, access_token)
 
 
 @bp_v2.route('/auth/logout', methods=['POST'])
@@ -235,9 +317,10 @@ def logout():
         try:
             revoked_count += revoke_jwt_payload(decode_token(refresh_token))
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Failed to decode refresh token for revocation", exc_info=True)
     session.clear()
-    return jsonify({'code': 0, 'message': 'success', 'data': {'revoked': revoked_count}})
+    resp = jsonify({'code': 0, 'message': 'success', 'data': {'revoked': revoked_count}})
+    return clear_auth_cookies(resp)
 
 
 @bp_v2.route('/auth/me', methods=['GET'])

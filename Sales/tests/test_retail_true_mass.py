@@ -7,20 +7,17 @@ from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SALES_ROOT = PROJECT_ROOT / "Sales"
-OILSTATION_ROOT = PROJECT_ROOT / "OilStation"
-for path in (str(OILSTATION_ROOT), str(SALES_ROOT)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
+if str(SALES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SALES_ROOT))
+from retail_internal import import_oilstation
 
-from endpoints.v1.retail.analytics.service.core import (  # noqa: E402
-    _total_tons_from_daily_resource,
-    _total_tons_from_resource_summary,
-)
-from endpoints.v1.retail.analytics.service.shared import (  # noqa: E402
-    add_resource_tons,
-    format_resource_rows,
-    retail_daily_payload_mass_needs_refresh,
-)
+_core = import_oilstation("endpoints.v1.retail.analytics.service.core")
+_total_tons_from_daily_resource = _core._total_tons_from_daily_resource
+_total_tons_from_resource_summary = _core._total_tons_from_resource_summary
+_shared = import_oilstation("endpoints.v1.retail.analytics.service.shared")
+add_resource_tons = _shared.add_resource_tons
+format_resource_rows = _shared.format_resource_rows
+retail_daily_payload_mass_needs_refresh = _shared.retail_daily_payload_mass_needs_refresh
 from retail_bridge import summarize_from_oilstation  # noqa: E402
 
 

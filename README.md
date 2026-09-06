@@ -6,6 +6,83 @@
 
 ## 版本更新记录
 
+### 2026-09-05 (v5.6.1)
+
+- **版本号**：5.6.0 → 5.6.1（patch）。
+- **安全加固（客户端）**：站点地图 tooltip 输出统一 HTML 转义（`GlobeMap.js` escapeHtml），站名等业务数据不再直接拼入 innerHTML，杜绝注入风险。
+- **服务端同步修复（无需依赖本次升级，重启后端即生效）**：采购/批发标准货名判定根治——直馏汽油（«Дистиллят легкий из нефти и газового конденсата» 直溜汽油）因 `smart_product_code` 关键词判定顺序（НЕФТ 原油先于 НАФТА/直馏汽油）被误显示为原油；调序修复 + 补源文件写法「直溜汽油」关键词，并更正 35 行历史数据 `product_id` 12→23；明细维护、采购查询现统一显示「直馏汽油Прямогонная нафта」。回归测试 `SmartProductCodeTest` 3 例（全量 345 passed）。
+- **随本版入库的后端工作（9/4 WIP 收尾，服务端已在运行）**：api.py 单体瘦身 -699 行拆分为 5 个职责模块（assets/wallpaper/retail_legacy/download/health）+ 路由表快照护栏；Web 端 JWT HttpOnly Cookie 三态开关（`SALES_AUTH_COOKIE_MODE`，默认 off 行为零变化，桌面端走 header 不受影响）；AI 助手路由精度增强 + `assistant-log-digest` 日志巡检命令；nginx CSP-Report-Only 试探头。
+- **发布**：安装包 `SalesDesktop Setup 5.6.1.exe`，更新 feed `latest.yml` 指向 5.6.1。
+
+### 2026-09-04（站点油罐-油品固化映射，防错分复发）
+
+- **背景**：同日第二项整治。全历史逐罐审计（2024-2026 selling 分年推断稳定性）显示：50 罐全历史单油品、66 罐 2024 曾装他油而 2025 起稳定（真实换装）、仅 SK21 罐2 2025+ 仍多码。且近期全品类调价已集体越过旧价格桶边界（80#≈69>65、92#≈84>78、95#≈92+>83），未固化罐随时会重演液化气式错分。
+- **固化映射**：`export_excel.py` 新增 `STATION_TANK_RESOURCE_MAP_PRIMARY`（前置权威 28 条，含全部液化气罐）+ `STATION_TANK_RESOURCE_MAP`（固化兜底 89 条，换装罐带 `2025-01-01` 生效日）；月报/周报 SQL、入库 Python、日表、快照/KPI `report_resource_key_expr`、库存 `infer_balance_resource_key` 全部改由字典驱动。
+- **零回归验证**：selling SQL 新旧对账全表 0 差异；report expr 0 差异；日表函数 0 差异；supply 侧仅 SK6 STN-11 2026-07/08 出现真实修正（80# 罐部分入库曾被价格桶误判为 92#、95# 罐部分记录曾被丢弃），已重算 2026-07/08 月报并重建相关周报。
+- **校验护栏**：新增 `scripts/validate_tank_map.py`（未登记罐告警 / 价格漂移告警，退出码可接定时任务）；维护流程写入《客户名及自有站点名维护.md》§10。
+- **发布边界**：纯后端改动，**不更新客户端版本号、不重新发布安装包**；`REPORT_DATA_VERSION` 追加 `tank-map-pin` 使缓存失效。
+
+### 2026-09-04（零售报表液化气错分 80# 根治，后端热修）
+
+- **根因**：SK19/22/24（STN-37/STN-43/STN-47）液化气罐（RSK=7）销售/入库记录 `ResourceKey=0`，走价格分桶兜底；2026-07-31 液化气调价至 45.9/47.8 越过 `≤45` 阈值后被错判为 АИ-80（RK=102）。2026-08-02 的 `06c3dd8` 只修了 balance 侧，selling/supply 侧遗漏。
+- **单一事实源**：`OilStation/export_excel.py` 新增 `selling_inferred_resource_key_sql()`（selling 侧 SQL CASE）与 `infer_supply_resource_key()`（supply 侧 Python），`generator.py` 改为调用这两处，删除约 20 份散落的推断副本；`_infer_resource_code_daily()` 同步含 SK19/22/24 RSK7、SK29 RSK10、SK28 RSK12、SK4 RSK7 → 108 映射。
+- **存量修复**：全部 21 个月（2025-01~2026-09）日销表强制重算（含补生成此前缺失的 2026-07）；`REPORT_DATA_VERSION` 追加 `lpg-rsk-infer-fix-20260904`，41 份周报表全部重建；月度快照按月重建（2026-07 小幅补正，年度快照家族随之刷新）——快照增量逻辑只追加新日不回算旧日，工作簿修复后必须手动重建。
+- **对账**：月报/周报/月度与年度快照/每日汇报表/利润报表的 СПБТ 值与 DB 逐升一致；液化气入库仅存在于 2026-02/06/07/08 四个月，其余月份空值经 DB 证实为「确无入库」而非丢数。
+- **发布边界**：纯后端改动（`OilStation/export_excel.py`、`endpoints/.../export/service/generator.py`、`workbook.py`），SalesDesktop 客户端零改动，**不更新客户端版本号、不重新发布安装包**。
+
+### 2026-09-02（每日汇报表批发量停填，后端热修）
+
+- **业务口径调整**：每日汇报表日/月/年三个批发量列（C/H/J）停止填值，报表只保留汇率、汇报日期、零售量、零售价以及月/年零售量；批发价 D/E 两列继续取 `wholesale_briefing_prices` 手工维护值（会出现有价无量，属预期）。
+- **备注精简**：删除第 2 条「柴油无库存，批发未销售；加油站限量销售…」（固定文本、不随实际库存变化），原第 3 条顺延为第 2 条。
+- **代码清理**：移除批发量汇总 `_wholesale_briefing_tons` 及其配套映射与分类常量；`_write_daily_briefing_sheet` 相应精简；回归测试断言改为「C/H/J 必须为空」，并新增备注旧文案防回归断言。
+- **缓存失效**：模板缓存版本 `daily_briefing_20260824_serial_v3` → `v4`，已存在的旧格式文件在下次下载时校验失配后自动重生成；按业务确认，8/19–9/2 期间的历史文件不批量重建。
+- **发布边界**：纯后端改动（`OilStation/.../export/service/daily_briefing.py` + 测试），SalesDesktop 客户端零改动，**不更新客户端版本号、不重新发布安装包**。
+
+### 2026-09-02（零售快照自动任务假失败修复，后端热修）
+
+- **假失败根治**：`refresh_current_snapshots.py` 每日 08:30 零售/自用油/利润快照任务因 `_find_report_workbook_for_ym()`（`OilStation/endpoints/v1/retail/analysis_report/service/common.py`）只扫描 `exports/` 根目录 `*.xlsx`，找不到 2026-08-05 起改存到 `exports/monthly/{year}/` 的当月日销表工作簿（索引记录在 `.monthly_report_index.json`），输出 `skip workbook snapshots` 并以退出码 1 结束，导致 `daily_maintenance.py --task retail_snapshots` 抛 RuntimeError（所有数据步骤实际均成功，属假失败）。
+- **修复**：查找逻辑先读 `.monthly_report_index.json`（取 `path`/`file` 拼 `EXPORT_DIR` 并查存在性），命中即返回，未命中再回退原根目录 glob + 标题月份解析；与 `analytics/service/shared.py` 既有索引解析保持一致。
+- **验证**：`daily_maintenance.py --task retail_snapshots` 重跑退出码 0，日志 `ok workbook snapshots 2026-09: 加油站九月份日销表01.09.xlsx; day snapshots=1`，`day_01.json` 及当月月快照（monthly/stations/regions/daily）已生成，`retail_snapshots finished with success`；`py_compile`/`compileall` 与 `git diff --check` 通过。
+- **发布边界**：本次只部署后端查找逻辑，不更新 `SalesDesktop` 客户端版本号，也不重新发布主客户端安装包。
+
+### 2026-08-24（每日汇报表序号后端热修，已部署）
+
+- **每日汇报表序号修复**：报表中心「每日汇报表」A 列序号由 Excel 行号公式 `=ROW()-2` 改为静态整数 1..7（95#汽油=1 … 液化气=7），根治序号从 3 开始的显示错误；缓存模板版本升级为 `daily_briefing_20260824_serial_v3`，已生成的旧文件在下次下载时自动校验失配并重生成。纯后端修复（`daily_briefing.py` + 回归断言），不改客户端、不动其他报表。
+- **部署与线上验证**：已重启生产服务（提交 `eba5ba4`，进程随计划任务重建），并用 admin 账号从公网入口实际下载 `2026-08-10` 旧缓存日报表验证：序号 A5:A11 = [1..7]、小计公式完好、旧文件自动重生成。客户端零改动，外网客户端无需升级（版本保持 `5.6.0`）。
+
+### 2026-08-21（壁纸端 SalesWallpaperEngine 0.2.21 → 0.2.23）
+
+- **库存面板展开态透明化**：展开面板主体背景改为透明并隐藏滚动条（`scrollbar-width:none` + `::-webkit-scrollbar` 隐藏），滚动行为保留，桌面壁纸透出可见。
+- **库存面板排版升级**：面板加宽至 360px、行文字 13px、表头 11px，四列网格列宽重排（1fr/0.75fr/0.5fr/0.55fr）+ 表头不换行；中俄文四列表头（站点/油品/液位/预计天数 与 АЗС/Топливо/Уровень/Дней）均完整显示无裁剪。
+- **液位百分比一位小数**：库存行液位百分比由整数改为一位小数显示。
+- **发布边界**：独立壁纸线发版，主客户端保持 `5.6.0` 不动；typecheck/build 双绿，Playwright 视觉QA（计算样式断言+像素统计透明性验证+表头无重叠检查）通过。
+
+### 2026-08-20（壁纸端 SalesWallpaperEngine 0.2.13 → 0.2.21）
+
+- **WebView2 运行时收敛**：0.2.13–0.2.14 改为优先并最终仅使用系统已安装的 WebView2 Runtime，忽略不完整的本地 `WebView2Runtime` 目录、移除 .NET 等运行时前置检查，根治误报“缺少环境”；0.2.10–0.2.12 为铺垫（去掉 .NET 检查假阴性、支持 Fixed Version 并排运行时、初始化失败回退系统运行时且错误可见）。
+- **库存面板修复**：库存面板过滤修复 + 列表可滚动（0.2.15），滚动行为加固（0.2.16）。
+- **库存口径升级（可售天数）**：液位 >60% 的油品行隐藏；<10% 视为罐底油按 0 天展示；10–60% 显示按分油品日销推算的可售天数——后端 `47883ec` 从 `ocw.selling` 取各油品日销计算每罐 `daysRemaining`。
+- **WH_MOUSE_LL 全局滚轮钩子**：壁纸位于桌面图标层之下时地图滚轮缩放不再失效。
+- **站点名本地化**：地图点位站名随壁纸运行时语言显示中文/俄文。
+- **打包烧 key 且持久化**：安装包烧入授权 key，安装及每次自动更新都重新部署到 `%APPDATA%\sales-wallpaper-engine`，根治自动更新后 key 丢失导致“授权未通过”。
+- **配套后端性能修复**：分站日销查询增加 per-shop 索引 + 30 分钟 TTL 缓存（`cdd1e83`），壁纸授权接口从 40s+ 响应降回客户端超时线内；新增完整卸载脚本 uninstall.ps1（`8bb6ce0`，覆盖安装目录/appdata/启动快捷方式/HKCU Run 残留）。
+
+### 2026-08-17（批发数据治理：报表全量入库 + 客户主数据合并 + 严格重分类）
+
+- **物流报表全量入库**：2025-01~2026-08 共 40 份外购/外运/外销/代加工报表入库并完成去重；`WHOLESALE_SOURCE_CUTOFF` 切换为 `2025-01-01`，KPI 自 2025-01 起以报表上传行为准（称重行保留但被 cutoff 排除）。报表入库后禁止 `recalculate_wholesale_batch`（会按实体类型重算并摧毁 KPI 分类）。
+- **严格五分类收口**：按三大预设权威重分类——外购文件全部 `procurement`；外运站点仅认零售板块权威目录（30 站 + 2 油库，去污染别名）；预设出口/本地客户决定 `export/local_wholesale`。已纠正数百行（`CJSC"CUSTOMER-A"` 211 行 出口→本地、`АЗС S-24` 43 行 本地→外运），另有 48 行三组按用户裁定 出口（CUSTOMER-B/CUSTOMER-C/CUSTOMER-D）。
+- **客户主数据全量合并**：`customers` 强匹配碰撞键 172 组（387 条）全部合并，删 215 条冗余；宽松键（去 Ь/Ъ/Й 同音）第二轮再合并 7 组；`CUSTOMER-I Групп`=同一家出口批发公司按用户裁定并入 `CUSTOMER-G Оил Групп`（#14146）并翻 6 行。合并后 export+local 客户 1086（local 1004 / export 82 / unknown 19），业务行分类分布逐字节不变。
+- **新维护文档**：新增 `docs/客户名及自有站点名维护.md`，覆盖客户标准名、重复名合并规则（strong_key/宽松键/canonical 铁律）、批发五分类逻辑、自有站点名维护（零售目录权威）、合并执行流程与已知坑，作为后续客户/站点/分类维护的权威手册。
+
+### 2026-08-16 (v5.6.0)
+
+- **装卸车明细 Excel 对齐数据查询导出**：报表中心「明细表 Excel」改名为「装卸车明细」，表内格式完全对齐数据查询导出——中俄文双语两行（油品/收发货单位）、列宽自适应、名称标准化（Example全称/外运站点完整名/客户标准名）、冻结首行+自动筛选；产出 4 张表（装卸车明细 + 批发汇总表 + 代加工汇总表 + 外运汇总表），下载文件名同步为 `装卸车明细_{年月}.xlsx`。
+- **外运归口以实体为准**：收/发货方实体为零售板块站点或站/库性质自有油库时一律按外运处理（明细显示 АЗС 前缀、汇总归外运表），不受分类字段误标影响；油库显示目录名（S-64）不带 АЗС 前缀；外运汇总表按加油站编号升序排列，无编号油库排最后。
+- **entity_aliases 站点别名冲突根治**：9 个站点名曾被误登记为客户别名导致导入分类判批发，已删客户别名、补登站点别名；`lookup_entity` 增加零售板块 catalog 精确匹配兜底（拉丁/西里尔同形归一），新增站点进 catalog 后自动识别为外运，无需别名登记。
+- **AI 助手外运站点知识问答**：支持「外运站点有哪些/怎么识别/装卸车明细口径」等问法，30 个零售站点 + 2 座自有油库清单实时取自零售板块 catalog。
+- **AI 助手批发问答分类增强**：批发/外运/代加工/采购不混合回答；装车/卸车维度分火车/汽车；每种问答分油品明细 + 合计（批发含金额）。
+- **版本号**：5.5.2 → 5.6.0。
+
 ### 2026-08-16 (v5.5.2)
 
 - **数据录入发货单位下拉乱码修复**：`TrainEntryPage` 手工录入/明细维护的发货单位下拉 7 个选项 value 与代加工分类判断值为 CP1251 双重编码乱码，纯俄文代加工发货方（CUSTOMER-H/CUSTOMER-F/CUSTOMER-E/CUSTOMER-G/CUSTOMER-J）提交入库仍为乱码、下拉回显匹配失败；已全部还原为正确 UTF-8（Example/油气/代加工公司），「匹配状态」列标题乱码同步修复。
@@ -1147,6 +1224,8 @@ powershell -ExecutionPolicy Bypass -File D:\SalesVisualization\register-nginx-ta
 - 批发合同金额按合同有效期内登记价格计算，不因后续价格变化回算。
 - 上传新的合同或批发统计后，可在后台“批发维护”中点击“一键整理批发数据”，统一处理油品智能识别、重复批次、合同匹配、金额重算和待复核提示。
 - 对疑似重复录入的批发明细，可在后台“批发维护”中点击“一键去重”；系统只生成审核提示，不会自动删除或修改明细。
+- 批发数据源（2025-01-01 切换）：KPI 以 `wholesale_detail_records` 为准，`business_date >= 2025-01-01 且 batch_id IS NOT NULL` 的报表上传/手工录入行为业务来源，称重自动明细（`batch_id IS NULL` 或更早日期）仅作历史；边界由 `Sales/wholesale_source_policy.py` 的 `WHOLESALE_SOURCE_CUTOFF = date(2025,1,1)` 控制。
+- 批发五分类（权威口径见 `docs/客户名及自有站点名维护.md`）：外购文件 → `procurement`；外运站点（零售板块目录 30 站 + 2 油库）→ `transfer`；外销/外运文件中收货方按 `customers.customer_type` 拆 `local_wholesale`/`export_wholesale`；代加工独立保留 `processing`；内部用油 `other`。
 - 汇率来源以吉尔吉斯斯坦国家银行 NBKR 为准。
 - 汇率缺失时进入待补齐状态，可后台一键获取或人工录入。
 
@@ -1567,6 +1646,6 @@ D:\SalesVisualization\ops-refresh-retail-snapshots.bat
 
 - Production HTTPS is enabled: `https://sales.example.com/`.
 - HTTP domain traffic redirects to HTTPS; backup endpoint and certificate paths are kept only in `docs/配置文档.md`.
-- SalesDesktop source version is now `5.1.0` (packaged and deployed for the wholesale-detail bilingual export/filter release); the publicly deployed line is now `5.1.0`. New packaged builds default to the HTTPS API and update feed, upgrade legacy public HTTP config to HTTPS, and keep manual fallback details only in configuration.
+- SalesDesktop source version is now `5.6.0` (packaged and deployed for the 装卸车明细 bilingual Excel alignment + transfer-entity routing release); the publicly deployed line is now `5.6.0`. New packaged builds default to the HTTPS API and update feed, upgrade legacy public HTTP config to HTTPS, and keep manual fallback details only in configuration.
 - System Health now includes a manual task for generating the previous completed month's original-software 254 monthly archive on the server; it saves in place and does not download a package to the client.
-- SalesWallpaperEngine source version remains `0.2.5`; the wholesale-detail 5.1.0 release does not require a new wallpaper package.
+- SalesWallpaperEngine source version is now `0.2.23`; the wallpaper line moved independently through 0.2.13–0.2.21 (system WebView2 runtime convergence, inventory panel/sellable-days polish, WH_MOUSE_LL wheel hook, localized station names, bundled-key persistence across auto-updates) and the public feed points to `0.2.23`.

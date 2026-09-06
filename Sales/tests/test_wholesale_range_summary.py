@@ -75,9 +75,10 @@ class WholesaleRangeSummaryTests(unittest.TestCase):
         self.assertEqual(data["comparison"]["local_wholesale"]["momTons"], 12.5)
 
     def test_lpg_annual_gap_warning_requires_before_cutoff_missing_raw_source(self):
+        # cutoff 已回切到 2025-01-01；区间起点必须早于 cutoff 才要求称重源
         warnings = wholesale_data_quality_warnings(
             {"lpgTankSource": {"tableExists": True, "rawRows": 0}},
-            date(2026, 1, 1),
+            date(2024, 1, 1),
             date(2027, 1, 1),
         )
 

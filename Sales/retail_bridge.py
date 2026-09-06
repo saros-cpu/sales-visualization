@@ -192,8 +192,10 @@ def summarize_from_oilstation(cur, year, month=None):
     }
 
 
-def fetch_retail_rows(start, end):
-    inferred_resource_expr = """
+# Canonical resource-key inference shared by all per-station/per-resource
+# retail sales queries. Maps the raw selling.row (shop + resource shop key /
+# resource key / base price) onto the 102/103/104/106/108/109/110 scheme.
+_INFERRED_RESOURCE_EXPR = """
         CASE
             WHEN s.ShopKey = 28 AND s.ResourceShopKey = 7  THEN 102
             WHEN s.ShopKey = 28 AND s.ResourceShopKey = 8  THEN 103
@@ -219,6 +221,10 @@ def fetch_retail_rows(start, end):
             ELSE 106
         END
     """
+
+
+def fetch_retail_rows(start, end):
+    inferred_resource_expr = _INFERRED_RESOURCE_EXPR
     conn = get_retail_connection()
     try:
         cur = conn.cursor()
@@ -237,6 +243,47 @@ def fetch_retail_rows(start, end):
                   AND s.TransactionDatetime < %s
                   AND (s.DerivedPaymentTypeKey IS NULL OR s.DerivedPaymentTypeKey NOT IN (2, 3, 4))
                 GROUP BY DATE(s.TransactionDatetime), {inferred_resource_expr}
+                """,
+                (shop_key, start, end),
+            )
+            rows.extend(cur.fetchall())
+        return rows
+    finally:
+        conn.close()
+
+
+def fetch_retail_rows_by_shop_resource(start, end):
+    """Return per (shop_key, resource_key) daily liters over [start, end).
+
+    Unlike :func:`fetch_retail_rows` this keeps ``ShopKey`` in the result so
+    callers can attribute sales to a specific station's specific product.
+    Each row is ``(shop_key, business_day, resource_key, liters)``.
+
+    The query is executed per shop (loop over SHOP_KEYS) so the composite
+    index ``Index_ST`` (ShopKey + TransactionDatetime) is actually used. A
+    single table-wide pass with a functional GROUP BY measured ~28s on the
+    production ocw.selling table, which blew past the wallpaper frontend's
+    15s timeout and caused the wallpaper to report 授权未通过.
+    """
+    inferred = _INFERRED_RESOURCE_EXPR
+    conn = get_retail_connection()
+    try:
+        cur = conn.cursor()
+        rows = []
+        for shop_key in SHOP_KEYS:
+            cur.execute(
+                f"""
+                SELECT
+                    s.ShopKey,
+                    DATE(s.TransactionDatetime) AS business_day,
+                    {inferred} AS resource_key,
+                    COALESCE(SUM(s.Volume), 0) AS liters
+                FROM selling s FORCE INDEX (Index_ST)
+                WHERE s.ShopKey = %s
+                  AND s.TransactionDatetime >= %s
+                  AND s.TransactionDatetime < %s
+                  AND (s.DerivedPaymentTypeKey IS NULL OR s.DerivedPaymentTypeKey NOT IN (2, 3, 4))
+                GROUP BY s.ShopKey, DATE(s.TransactionDatetime), {inferred}
                 """,
                 (shop_key, start, end),
             )

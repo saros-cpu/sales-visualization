@@ -3,36 +3,17 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[2]
-OILSTATION_ROOT = ROOT / "OilStation"
+from retail_internal import import_oilstation
 
-_SENTINEL = object()
-_TOP_LEVEL_MODULES = ("business_time", "cache_store", "config", "constants", "db", "export_excel")
-_saved_modules = {name: sys.modules.get(name, _SENTINEL) for name in _TOP_LEVEL_MODULES}
-_saved_path = list(sys.path)
-for name in _TOP_LEVEL_MODULES:
-    sys.modules.pop(name, None)
-try:
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
-    if str(OILSTATION_ROOT) not in sys.path:
-        sys.path.insert(0, str(OILSTATION_ROOT))
-    from endpoints.v1.retail.analytics.service import core as retail_core  # noqa: E402
-    from endpoints.v1.retail.analytics.service.core import (  # noqa: E402
-        _fuelbalance_capacity_by_resource_from_rows,
-        _infer_fuelbalance_resource_key,
-        _station_map_depots,
-        _station_map_details_cache_current,
-        _station_map_details_has_capacity,
-        _station_map_details_has_depots,
-    )
-finally:
-    sys.path[:] = _saved_path
-    for name, module in _saved_modules.items():
-        if module is _SENTINEL:
-            sys.modules.pop(name, None)
-        else:
-            sys.modules[name] = module
+retail_core = import_oilstation("endpoints.v1.retail.analytics.service.core")
+from endpoints.v1.retail.analytics.service.core import (  # noqa: E402
+    _fuelbalance_capacity_by_resource_from_rows,
+    _infer_fuelbalance_resource_key,
+    _station_map_depots,
+    _station_map_details_cache_current,
+    _station_map_details_has_capacity,
+    _station_map_details_has_depots,
+)
 
 
 class StationMapInventoryCapacityTests(unittest.TestCase):

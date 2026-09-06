@@ -15,20 +15,20 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `5.5.2`.
-- Current release code commit: tag `v5.5.2`（提交 `513258a`，版本号 5.5.1 → 5.5.2，含 5.5.1 之后修复：数据录入发货单位乱码字面量修复、BilingualName showRaw 判定提取纯函数+测试护栏、版本链文档同步）；previous release was `v5.5.1`（提交 `36115a9`：称重审核纯俄文原始名重复显示根治——BilingualName 俄文词重叠判定、OrganizationPermissions 重复 key TS1117 修复）；再往前 v5.5.0（`0568a36`：采购查询/数据录入明细维护双语显示统一）、v5.4.2（`a3bd703`：BilingualName 中文文本比较根治）、v5.4.1（`3b7ca26`：中文主行相等判定）、v5.4.0（`e102b10`：双语两行显示/列宽自适应/居中/录入回车焦点/采购查询/明细保存 500/乱码根因修复）。注意：v5.2.0（`a8f0b40`）/v5.3.0（`7cb50ff`）原始提交为悬空对象（孤儿分支整理所致），其内容已并入 master 链（`db31927`/`b853522` 等），对应 tag `v5.2.0`/`v5.3.0` 为追溯兜底，非 HEAD 祖先。
+- Current released client version: `5.6.1`.
+- Current release code commit: tag `v5.6.1`（站点地图 tooltip escapeHtml XSS 加固；同版入库 9/4 后端 WIP：api.py 拆分 5 模块+路由表快照护栏、JWT HttpOnly Cookie 三态开关默认 off、AI 助手路由精度+日志巡检、nginx CSP-Report-Only；同期服务端修复：直馏汽油标准名误判原油根治+35 行数据更正 `a23891e`）；previous release was `v5.6.0`（提交 `2af5f3c`：装卸车明细双语 Excel 对齐 + 外运实体归口）；wallpaper engine `v0.2.9`（提交 `eb4ed0f`：修正 0.2.8 运行时前置检查误报“缺少环境”的假阴性——改为查注册表+多路径磁盘探测，并把检查移到宿主进程启动处避免播放子进程退出导致白屏），已推进至 `v0.2.21`（0.2.13–0.2.21：系统 WebView2 运行时收敛、库存面板过滤/滚动修复、WH_MOUSE_LL 全局滚轮钩子、库存口径 >60% 隐藏/<10% 罐底油 0 天/10–60% 可售天数、站点名本地化、打包烧 key 且自动更新重部署到 %APPDATA%\sales-wallpaper-engine；配套后端 per-shop 索引+30min TTL 缓存性能修复 `cdd1e83`、可售天数 `47883ec`、卸载脚本 `8bb6ce0`），最新为 `v0.2.23`（库存面板展开态透明背景+隐藏滚动条、四列表头完整显示且字号随列宽放大、液位百分比一位小数）；再往前 v5.5.2（`513258a`：数据录入发货单位乱码字面量修复、BilingualName showRaw 判定提取纯函数+测试护栏、版本链文档同步）、v5.5.1（`36115a9`：称重审核纯俄文原始名重复显示根治）、v5.5.0（`0568a36`：采购查询/数据录入明细维护双语显示统一）、v5.4.2（`a3bd703`：BilingualName 中文文本比较根治）、v5.4.1（`3b7ca26`：中文主行相等判定）、v5.4.0（`e102b10`：双语两行显示/列宽自适应/居中/录入回车焦点/采购查询/明细保存 500/乱码根因修复）。注意：v5.2.0（`a8f0b40`）/v5.3.0（`7cb50ff`）原始提交为悬空对象（孤儿分支整理所致），其内容已并入 master 链（`db31927`/`b853522` 等），对应 tag `v5.2.0`/`v5.3.0` 为追溯兜底，非 HEAD 祖先。
 - Production public entry: `https://sales.example.com/`.
 - Production backup entry details are kept only in `docs/配置文档.md`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `https://sales.example.com/download/latest.yml`; fallback endpoint details are kept only in `docs/配置文档.md`.
-- Current installer: `SalesDesktop Setup 5.5.2.exe`.
-- Current wallpaper package: `SalesWallpaperEngine 0.2.5` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
+- Current installer: `SalesDesktop Setup 5.6.1.exe`.
+- Current wallpaper package: `SalesWallpaperEngine 0.2.23` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
 - The old web wallpaper package is retired and removed. Future wallpaper work must use `SalesWallpaperEngine`.
 - HTTPS certificate: enabled; certificate paths are kept only in `docs/配置文档.md`. HTTP remains active for compatibility.
 - Shared API/report path contracts live in `shared/api-contracts.js`; Web, desktop, and wallpaper callers should add paths there before using them in app-specific wrappers.
 - Shared retail display helpers live in `shared/retail-core.js`, and shared assistant frontend helpers live in `shared/assistant-ui.js`; do not duplicate month selection, tons/amount extraction, station name splitting, KPI formatting, assistant table merging, or assistant context helpers in individual pages.
 - Web routes are page-level lazy loaded through `frontend/src/App.jsx`; new heavy Web pages should follow that pattern so the first screen does not load every module.
-- Current 5.1.0 wholesale rule: wholesale, procurement, outsourced processing, and own transfer use one unified classification model. Sender example/oil-gas company to customer is wholesale, customer to example/oil-gas company is procurement, customer to customer is outsourced processing, and own transfer must resolve to a retail-board owned station/depot. Business reporting uses weighing-generated details before `2026-06-01` and uploaded/manual details from `2026-06-01`; query/export/auto-generation clamp weighing details to `2026-05-31` and earlier (`WHOLESALE_WEIGHING_END_DATE` in `Sales/wholesale_source_policy.py`); do not infer missing LPG tank-area totals from LPG product rows because the tank area can also load AI-80/AI-92 and reports cannot reliably identify tank-area source.
+- Current wholesale classification (2025-01-01 source cutover): KPI reads `wholesale_detail_records.classification` stored values; report/uploaded rows (`batch_id IS NOT NULL` and `business_date >= 2025-01-01`) are authoritative, weighing rows (`batch_id IS NULL` or before cutoff) are excluded. Classification is stamped at import by source-file type under three preset authorities: (1) 外购/raw-material procurement files → `procurement` regardless of names; (2) own transfer stations = retail-board catalog (`retail_station_catalog()`) + own_depot only, never polluted `entity_aliases.retail_station` aliases; (3) customers.customer_type decides `local_wholesale` vs `export_wholesale` for sales/transfer files. `processing` (outsourced processing, 52 rows) is kept as its own category even inside procurement files. Never run `recalculate_wholesale_batch` after report import (it re-derives classification from sender/receiver entity types, ignores stored values, and destroys KPI categories). Full rules in `docs/客户名及自有站点名维护.md`. `WHOLESALE_SOURCE_CUTOFF = date(2025,1,1)` in `Sales/wholesale_source_policy.py`.
 - Wholesale detail query/export (5.1.0): filter options come from `/api/v2/wholesale/details/filter-options` and `/api/v2/weighing/filter-options`; bilingual export `/api/v2/wholesale/details/export` renders Chinese+Russian two-line cells; customer/sender/receiver/product names resolve to standard names via customer maintenance and aliases.
 
 ## Report Boundaries
@@ -43,7 +43,9 @@ Future agents, tools, and maintainers must treat this file as the project memory
   - For Chinese management.
   - Matches the desktop template layout named `ProductTeam销售日报表YYYY.MM.DD.xlsx`; runtime generation should not depend on a user desktop file being present.
   - Report date is the selected briefing date; daily retail data uses the previous day, and monthly/yearly retail totals run through the previous day.
-  - Only retail filling is implemented for now. Wholesale columns are intentionally left blank.
+  - Wholesale volume columns (C daily / H monthly / J yearly) are intentionally left blank per business decision on 2026-09-02; do not refill them from `wholesale_detail_records`.
+  - Wholesale price columns (D large-customer / E retail) keep their manually maintained values from the `wholesale_briefing_prices` table (product_key = template row 5-11); they are not derived at generation time.
+  - Retail price (G) = sales amount in som ÷ tons ÷ `DAILY_BRIEFING_EXCHANGE_RATE` (a hardcoded 87.50, not the live rate table).
   - Diesel variants such as diesel, -10 diesel, and -35 diesel must be grouped under the diesel口径.
   - Retail tons must keep 3 decimal places and match retail snapshot/AI口径: daily from the day snapshot, month from the matching monthly snapshot, year from the yearly resource snapshot; do not round each product/day to 2 decimals before totaling.
 - Self-use oil report:
@@ -84,6 +86,7 @@ Current documentation set:
 - `发布版本台账.md`: versions, commits, installers, blockmaps, deployment and validation status.
 - `生产故障处理手册.md`: production troubleshooting runbooks.
 - `销售板块可视化平台项目进展与验收报告.md`: acceptance scope, validation results, remaining work.
+- `客户名及自有站点名维护.md`: customer standard names, duplicate-name merge rules, wholesale five-way classification (transfer/export/local/procurement/processing), and own station name maintenance. Authoritative reference for classification and entity maintenance.
 
 ## Continuous Documentation Maintenance Contract
 
@@ -101,6 +104,7 @@ When making changes, update documents according to this matrix:
 | Production incident or workaround | `生产故障处理手册.md`; if released as a fix, also `发布版本台账.md` and acceptance report |
 | CodeGraph/index/tooling change | `代码知识图谱说明.md`, `维护交接手册.md` |
 | Major flow change across frontend/backend/tasks/reports | `关键调用链清单.md`, `技术方案文档.md`, relevant API/report/database docs |
+| Customer name, station name, or wholesale classification change (merge, reclassify, register, alias) | `客户名及自有站点名维护.md` (primary); also `数据库表字段说明.md` and `报表口径文档.md` if rules change |
 
 Minimum rule: if the change would confuse a future maintainer who only reads the docs, update the matching document in the same work session.
 
@@ -139,9 +143,9 @@ For desktop auto-update verification:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/latest.yml"
-Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%205.1.0.exe" -Method Head
-Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%205.1.0.exe.blockmap" -Method Head
-curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%205.1.0.exe"
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%205.6.0.exe" -Method Head
+Invoke-WebRequest -UseBasicParsing -Uri "https://sales.example.com/download/SalesDesktop%20Setup%205.6.0.exe.blockmap" -Method Head
+curl.exe -H "Range: bytes=0-9,20-29" "https://sales.example.com/download/SalesDesktop%20Setup%205.6.0.exe"
 ```
 
 ## CodeGraph Memory

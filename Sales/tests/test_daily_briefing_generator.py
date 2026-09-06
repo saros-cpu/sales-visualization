@@ -7,12 +7,9 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Border, Side
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-OILSTATION_ROOT = PROJECT_ROOT / "OilStation"
-if str(OILSTATION_ROOT) not in sys.path:
-    sys.path.insert(0, str(OILSTATION_ROOT))
+from retail_internal import import_oilstation
 
-from endpoints.v1.retail.export.service import daily_briefing as briefing
+briefing = import_oilstation("endpoints.v1.retail.export.service.daily_briefing")
 
 
 class DailyBriefingGeneratorTests(unittest.TestCase):
@@ -154,9 +151,6 @@ class DailyBriefingGeneratorTests(unittest.TestCase):
             day_totals,
             {5: 3.7, 8: 48, 11: 5.5},
             {5: 37, 8: 480, 11: 55},
-            {5: 0.3, 8: 0.8, 11: 0.1},
-            {5: 3.0, 8: 8.0, 11: 1.0},
-            {5: 30.0, 8: 80.0, 11: 10.0},
             {8: (1160, 1182), 10: (337, None), 11: (720, None)},
         )
 
@@ -210,9 +204,8 @@ class DailyBriefingGeneratorTests(unittest.TestCase):
         self.assertEqual({str(item) for item in ws.merged_cells.ranges}, expected_merges)
 
         self.assertEqual(ws["B8"].value, "柴油")
-        self.assertEqual(ws["C8"].value, 0.8)
-        self.assertEqual(ws["H8"].value, 8.0)
-        self.assertEqual(ws["J8"].value, 80.0)
+        for cell in ("C5", "C8", "C11", "H5", "H8", "H11", "J5", "J8", "J11"):
+            self.assertIsNone(ws[cell].value, f"{cell} 批发量列应留空")
         self.assertEqual(ws["D8"].value, 1160)
         self.assertEqual(ws["E8"].value, 1182)
         self.assertEqual(ws["D10"].value, 337)
@@ -231,6 +224,11 @@ class DailyBriefingGeneratorTests(unittest.TestCase):
         self.assertEqual(ws["J13"].value, "=J12+K12")
         self.assertIn("销量单位：吨；价格单位：美元/吨", ws["A14"].value)
         self.assertTrue(str(ws["A14"].value).startswith("备注："))
+        self.assertNotIn("柴油无库存", ws["A14"].value)
+        self.assertNotIn("批发未销售", ws["A14"].value)
+        self.assertIn("按加权均价显示", ws["A14"].value)
+        self.assertNotIn("3.加油站价格", ws["A14"].value)
+        self.assertEqual([ws.cell(row=r, column=1).value for r in range(5, 12)], list(range(1, 8)))
 
     def test_daily_retail_price_uses_fixed_usd_exchange_rate(self):
         self.assertEqual(
@@ -261,9 +259,6 @@ class DailyBriefingGeneratorTests(unittest.TestCase):
                 ws,
                 date(2026, 8, 10),
                 briefing._empty_template_totals(),
-                briefing._empty_tons(),
-                briefing._empty_tons(),
-                briefing._empty_tons(),
                 briefing._empty_tons(),
                 briefing._empty_tons(),
                 {},

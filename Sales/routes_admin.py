@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 import xml.etree.ElementTree as ET
 import pandas as pd
-from flask import jsonify, request, send_file
+from flask import current_app, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
 from pymysql.err import IntegrityError
@@ -824,7 +824,8 @@ def register_admin_routes(app):
                 check=False,
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            return {"taskName": task_name, "ok": False, "status": "unknown", "detail": str(exc)}
+            current_app.logger.warning("Failed to read scheduled task %s: %s", task_name, exc)
+            return {"taskName": task_name, "ok": False, "status": "unknown", "detail": "无法读取计划任务状态"}
         output = (completed.stdout or completed.stderr or "").strip()
         if completed.returncode != 0:
             detail = output.splitlines()[0] if output else "无法读取计划任务"

@@ -748,6 +748,47 @@ def _build_transfer_summary_name(raw_name, standard_name, *, entity_type=None, e
     return ""
 
 
+def _is_transfer_party(item):
+    """收/发货方是否为零售板块自有站点/油库（外运目的地）。
+
+    实体已解析为零售站点即算；未解析时按名称精确匹配站点目录兜底；
+    自有油库仅站/库性质（目录名含 DemoDepot/нефтебаза/油库 等）算，
+    内部用油/Example等非站库实体不算，避免误归外运。
+    """
+    entity_type = item.get("entityType")
+    if entity_type == "retail_station":
+        return True
+    if entity_type == "own_depot":
+        depot_name = _depot_catalog_cached().get(item.get("entityCode"))
+        if depot_name and re.search(
+            r"DemoDepot|нефтебаза|油库",
+            _normalize_whitespace(depot_name).lower(),
+        ):
+            return True
+        return False
+    source = (
+        item.get("standardEntityName")
+        or item.get("entityName")
+        or item.get("rawEntityName")
+        or ""
+    )
+    text = _normalize_whitespace(str(source)).lower()
+    if not text:
+        return False
+    try:
+        from shared_utils import retail_station_catalog_cached
+
+        station_catalog = retail_station_catalog_cached()
+    except Exception:
+        station_catalog = {}
+    for info in (station_catalog or {}).values():
+        for cand in (info.get("short"), info.get("name")):
+            cand = _normalize_whitespace(str(cand or "")).lower()
+            if cand and text == cand:
+                return True
+    return False
+
+
 def _format_export_product(raw_product, standard_product):
     raw = str(raw_product or "").strip()
     standard = str(standard_product or "").strip()
@@ -822,6 +863,9 @@ def _build_summary_rows(items):
     }
     for item in items:
         group = _resolve_summary_classification(item.get("classification"))
+        # 收/发货方是零售板块自有站点/油库 → 一律按外运归口（分类可能未标 transfer）
+        if _is_transfer_party(item):
+            group = "transfer"
         if group is None:
             continue
 
@@ -889,7 +933,7 @@ def _build_summary_rows(items):
                 "recordCount": int(row["recordCount"]),
                 "stationNumber": row["stationNumber"],
             }
-            for row in sorted(rows.values(), key=_summary_row_sort_key(group))
+            for row in sorted(rows.values(), key=_summary_row_sort_key(key))
         ]
         for key, rows in buckets.items()
     }
@@ -1059,26 +1103,25 @@ def _build_detail_export_workbook(items, summary_rows_by_category):
         entity_is_example = _is_example_party(raw_entity, standard_entity)
         if entity_is_example:
             entity_display = _preferred_party_name(raw_entity, standard_entity, prefer_internal_full=True)
-        elif _is_external_station_or_depot(item):
-            if item.get("classification") == "transfer":
-                entity_display = _build_transfer_summary_name(
-                    raw_entity,
-                    standard_entity,
-                    entity_type=item.get("entityType"),
-                    entity_code=item.get("entityCode"),
-                )
-                if not entity_display:
-                    entity_display = _preferred_party_name(
-                        raw_entity,
-                        standard_entity,
-                        prefer_russian_station=True,
-                    )
-            else:
+        elif _is_transfer_party(item):
+            entity_display = _build_transfer_summary_name(
+                raw_entity,
+                standard_entity,
+                entity_type=item.get("entityType"),
+                entity_code=item.get("entityCode"),
+            )
+            if not entity_display:
                 entity_display = _preferred_party_name(
                     raw_entity,
                     standard_entity,
                     prefer_russian_station=True,
                 )
+        elif _is_external_station_or_depot(item):
+            entity_display = _preferred_party_name(
+                raw_entity,
+                standard_entity,
+                prefer_russian_station=True,
+            )
         else:
             entity_display = _preferred_party_name(raw_entity, standard_entity)
 
@@ -1327,7 +1370,7 @@ def export_wholesale_details():
         )
     except Exception as exc:
         current_app.logger.exception("Failed to generate wholesale detail export")
-        return jsonify({"code": 5001, "message": str(exc), "data": None}), 500
+        return jsonify({"code": 5001, "message": "导出失败，请稍后重试", "data": None}), 500
     finally:
         conn.close()
 

@@ -1198,7 +1198,8 @@ def download_knowledge_attachment(attachment_id: int):
             path = KNOWLEDGE_UPLOAD_ROOT / str(row["article_id"]) / row["stored_name"]
             if not path.exists():
                 return jsonify({"code": 4040, "message": "file_missing", "data": None}), 404
-            return send_file(path, as_attachment=True, download_name=row["original_name"])
+            safe_download = secure_filename(row["original_name"]) or f"attachment_{row['attachment_id']}"
+            return send_file(path, as_attachment=True, download_name=safe_download)
     finally:
         conn.close()
 
