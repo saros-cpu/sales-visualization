@@ -6,6 +6,13 @@
 
 ## 版本更新记录
 
+### 2026-09-28 (v5.6.2)
+
+- **版本号**：5.6.1 → 5.6.2（patch）。
+- **油库名称与编号统一（三系统口径对齐）**：桌面端站点地图、壁纸端、Web 端零售/销售看板中的油库显示统一为 **D-0X STN-61（S-62）/ D-0X STN-63（S-64）/ D-0X STN-65（S-66）**，替换旧称「DemoDepotNorth/DemoDepotSouth/Главная нефтебаза」。涉及 `KgzMap.tsx`、`wallpaperData.ts`、`RetailDashboard.jsx`、`DashboardPage.jsx`，以及后端 `DEPOT_COORDS` / `DEPOTS` / 两份 `business_points.json`。
+- **顺带**：`wholesale_service.py` 中按名称 key 取油库区域的写法同步改 key（旧 key 会静默回退到默认区域「REG-06」）。
+- **测试**：桌面端 vitest 全量 68 项通过；后端 pytest 受影响 3 个文件 107 通过。
+
 ### 2026-09-05 (v5.6.1)
 
 - **版本号**：5.6.0 → 5.6.1（patch）。

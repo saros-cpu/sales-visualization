@@ -163,9 +163,9 @@ export function topInventoryStations(payload: WallpaperPayload, limit = 6) {
 }
 
 const CORE_DEPOTS: WallpaperDepot[] = [
-  { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal', statusLabel: '在营' },
-  { name: 'DemoDepotNorth', short: 'Север DemoDepot', region: 'REG-08', lng: 0, lat: 0, type: 'depot', status: 'closed', statusLabel: '装修', closedReason: '装修停业' },
-  { name: 'DemoDepotSouth', short: 'Юж DemoDepot', region: 'REG-07', lng: 0, lat: 0, type: 'depot', status: 'normal', statusLabel: '在营' },
+  { name: 'STN-61', code: 'D-0X', short: 'S-62', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal', statusLabel: '在营' },
+  { name: 'STN-63', code: 'D-0X', short: 'S-64', region: 'REG-07', lng: 0, lat: 0, type: 'depot', status: 'normal', statusLabel: '在营' },
+  { name: 'STN-65', code: 'D-0X', short: 'S-66', region: 'REG-08', lng: 0, lat: 0, type: 'depot', status: 'closed', statusLabel: '待运营', closedReason: '待运营' },
 ];
 
 const ZERO_INVENTORY_STATION_KEYS = new Set([11, 12, 21]);

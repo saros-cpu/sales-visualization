@@ -21,9 +21,9 @@ function resolveKgzDataPath() {
 }
 
 const CORE_DEPOTS = [
-  { name: 'STN-61', short: 'Главная нефтебаза', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal' },
-  { name: 'DemoDepotNorth', short: 'Север DemoDepot', region: 'REG-08', lng: 0, lat: 0, type: 'depot', status: 'closed', closedReason: '装修停业' },
-  { name: 'DemoDepotSouth', short: 'Юж DemoDepot', region: 'REG-07', lng: 0, lat: 0, type: 'depot', status: 'normal' },
+  { name: 'STN-61', code: 'D-0X', short: 'S-62', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal' },
+  { name: 'STN-63', code: 'D-0X', short: 'S-64', region: 'REG-07', lng: 0, lat: 0, type: 'depot', status: 'normal' },
+  { name: 'STN-65', code: 'D-0X', short: 'S-66', region: 'REG-08', lng: 0, lat: 0, type: 'depot', status: 'closed', closedReason: '待运营' },
 ];
 
 const ZERO_INVENTORY_STATION_KEYS = new Set([11, 12, 21]);

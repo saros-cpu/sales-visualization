@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.6.1';
-export const BUILD_DATE = '2026-09-05';
+export const VERSION = '5.6.2';
+export const BUILD_DATE = '2026-09-28';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.6.2',
+    date: '2026-09-28',
+    type: 'patch',
+    changes: [
+      '统一：油库名称与编号与 WPS 加油站清单、工作留痕三系统对齐——D-0X STN-61（S-62）/ D-0X STN-63（S-64）/ D-0X STN-65（S-66），替换旧称「DemoDepotNorth/DemoDepotSouth」。',
+      '修复：批发侧按油库名称取所属区域时旧 key 已改名，避免静默回退到默认区域「REG-06」。',
+    ],
+  },
   {
     version: '5.6.1',
     date: '2026-09-05',

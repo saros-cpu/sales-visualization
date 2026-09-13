@@ -34,8 +34,8 @@ describe('wallpaperData', () => {
     const payload = {
       stations: [{ shopKey: 1, name: 'A', short: 'A', region: '', status: 'closed' }],
       depots: [
-        { name: 'DemoDepotNorth', region: 'REG-08', lng: 0, lat: 0, status: 'normal' },
-        { name: 'DemoDepotSouth', region: 'REG-07', lng: 0, lat: 0, status: 'normal' },
+        { name: 'STN-63', region: 'REG-07', lng: 0, lat: 0, status: 'normal' },
+        { name: 'STN-65', region: 'REG-08', lng: 0, lat: 0, status: 'normal' },
       ],
     };
     expect(alertStations(payload)).toHaveLength(1);
