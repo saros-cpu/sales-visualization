@@ -490,6 +490,7 @@
     "stationAnalysis": "Анализ АЗС", "stationList": "Список АЗС",
     "resourceMix": "Структура продуктов", "productAnalysis": "Анализ продуктов",
     "volumeProportion": "Доля объема",     "productDetail": "Детали продуктов", "product": "Продукт", "plateNumber": "Госномер", "searchPlate": "Поиск госномера...",
+    "summaryScopePlate": "Госномер {{plate}}",
     "bestDay": "Лучший день", "worstDay": "Худший день", "halfCompare": "2-я пол. vs 1-я",
     "payTrend": "Тренд оплаты",
     "insightTopStation": "{{name}} ({{short}}) — продажи {{amount}}, 1-е место в сети.",

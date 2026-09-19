@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.6.2';
-export const BUILD_DATE = '2026-09-28';
+export const VERSION = '5.6.3';
+export const BUILD_DATE = '2026-09-30';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.6.3',
+    date: '2026-09-30',
+    type: 'patch',
+    changes: [
+      '优化：自用油页统计条跟随车牌筛选——未输入车牌显示所选时间区间完整累计；输入车牌后按内容区实际展示的记录实算条数、销量(L)、累计吨位、金额、质量(kg)，并在统计条前标注当前车牌。',
+      '同步：桌面端与 Web 端自用油页共用同一套实算口径（shared/retail-core 的 summarizeSelfUseRecords），Web 端顶部 KPI 卡、表尾合计与涉及站点数同步跟随车牌筛选。',
+      '修复（壁纸线 SalesWallpaperEngine 0.2.24，独立发布）：地图不再因油库改名出现重复标点——内置兜底油库列表仍为旧名（DemoDepotSouth），与线上新名去重失败，CTY-22位置叠加两个标点；现改为按油库编号/坐标/名称任一命中判定同一油库，并重建前端资源。',
+    ],
+  },
   {
     version: '5.6.2',
     date: '2026-09-28',

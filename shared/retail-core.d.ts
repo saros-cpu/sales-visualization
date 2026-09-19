@@ -19,3 +19,10 @@ export function formatRetailTonsKpi(value: unknown, language?: string): string;
 export function formatRetailTons(value: unknown, digits?: number, language?: string): string;
 export function splitRetailStationName(name?: unknown, short?: unknown): { primary: string; secondary: string; title: string };
 export function sortRankingRows<T>(rows: T[] | null | undefined, valueOf: (row: T) => unknown, limit?: number): T[];
+export function summarizeSelfUseRecords(records: unknown[] | null | undefined): {
+  totalRecords: number;
+  totalVolume: number;
+  totalWeightKg: number;
+  totalTons: number;
+  totalAmount: number;
+};

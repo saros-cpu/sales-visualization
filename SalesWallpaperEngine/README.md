@@ -130,6 +130,11 @@ The script installs to `%LOCALAPPDATA%\SalesWallpaperEngine`, adds a Startup sho
 
 ## Releases
 
+### 0.2.24
+
+- **Fixed duplicate CTY-30 depot marker**: after the depot rename (DemoDepotSouth → STN-63 / DemoDepotNorth → STN-65), the map kept falling back to the stale built-in depot list, so a second marker sat next to S-64. Depot identity now resolves by multiple keys — depot code (D-0X/02/03), coordinates, then name — so a rename can never produce a phantom second marker again.
+- **Rebuilt frontend bundle**: the shipped `wwwroot` bundle predated 2026-08-21 and still embedded the old names in its offline fallback data; the assets and the generated `business_points.json` (now including the depot `code`) are rebuilt from `OilStation/constants.py`.
+
 ### 0.2.23
 
 - **Transparent expanded inventory panel**: the expanded panel body now has a transparent background and no visible scrollbar, so the desktop wallpaper shows through while the list scrolls; scrolling itself is unchanged (`overflow-y` stays scrollable).

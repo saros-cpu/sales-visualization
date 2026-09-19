@@ -7,6 +7,7 @@ import { downloadSelfUseReport } from '@/api/export';
 import { useNameI18n } from '@/utils/i18nNames';
 import { formatRetailTons, numericMetric as numeric, retailTonsOf } from '@/utils/retailMetrics';
 import { useAuth } from '@/contexts/AuthContext';
+import { summarizeSelfUseRecords } from '@/utils/selfUseSummary';
 import dayjs from 'dayjs';
 
 const { RangePicker } = DatePicker;
@@ -63,7 +64,12 @@ export default function SelfUse() {
     { title: t('retail.density'), dataIndex: 'density', key: 'density', render: (v: number) => v ? formatNumber(v, 4) : '-' },
   ];
 
-  const summary = data?.summary;
+  const plateQuery = search.trim();
+
+  const shownSummary = useMemo(() => summarizeSelfUseRecords(filtered), [filtered]);
+
+  // 未输入车牌：沿用接口整区间汇总；输入车牌：按内容区实际展示的记录实算。
+  const summary = plateQuery ? shownSummary : data?.summary;
 
   const onExport = async () => {
     const dateFrom = dates[0].format('YYYY-MM-DD');
@@ -90,10 +96,11 @@ export default function SelfUse() {
         </Space>
         {summary && (
           <Space className="client-fit-summary-line">
-            <span>{t('common.total', { count: summary.totalRecords })} {t('retail.volume')} {summary.totalVolume.toLocaleString()}L</span>
+            {plateQuery && <span className="client-fit-summary-plate">{t('retail.summaryScopePlate', { plate: plateQuery })}</span>}
+            <span>{t('common.total', { count: summary.totalRecords })} {t('retail.volume')} {Number(summary.totalVolume).toLocaleString()}L</span>
             <span>{t('retail.totalTons')} {formatRetailTons(retailTonsOf(summary))}t</span>
             <span>{t('retail.amount')} {formatNumber(summary.totalAmount, 2)} сом</span>
-            {summary.totalWeightKg ? <span>{t('retail.weightKg')} {formatNumber(summary.totalWeightKg)}kg</span> : null}
+            {Number(summary.totalWeightKg) ? <span>{t('retail.weightKg')} {formatNumber(summary.totalWeightKg)}kg</span> : null}
           </Space>
         )}
       </div>

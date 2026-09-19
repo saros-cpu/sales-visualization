@@ -35,6 +35,7 @@ export interface WallpaperDepot {
   region?: string;
   lng?: number;
   lat?: number;
+  code?: string;
   type?: string;
   depotType?: string;
   status?: string;
@@ -197,19 +198,40 @@ function mapZeroInventoryStation(station: WallpaperStation) {
   };
 }
 
-function depotKey(depot: WallpaperDepot) {
-  const name = String(depot?.name || '');
-  if (depot?.type === 'headquarters' || name.includes('总部') || name.includes('公司总部')) return 'hq';
-  if (name.includes('北方')) return 'north';
-  if (name.includes('南方')) return 'south';
-  return name;
+/**
+ * 油库身份键集合（code / 坐标 / 名称），任一命中即视为同一个油库。
+ *
+ * 历史事故：油库改名（DemoDepotSouth → STN-63、DemoDepotNorth → STN-65）后，
+ * 旧版只按名称、且把「南方/北方」硬编码成别名的实现认不出是同一个油库，
+ * 于是内置兜底常量 CORE_DEPOTS 里残留的旧名被当新油库追加进地图，
+ * CTY-22位置出现两个标点。改名同时坐标也会微调，因此不能只认单一维度。
+ */
+function depotKeys(depot: WallpaperDepot) {
+  const keys = new Set<string>();
+  const code = String(depot?.code || '').trim().toUpperCase();
+  if (code) keys.add(`code:${code}`);
+  const lng = Number(depot?.lng);
+  const lat = Number(depot?.lat);
+  if (Number.isFinite(lng) && Number.isFinite(lat)) {
+    keys.add(`geo:${lng.toFixed(3)},${lat.toFixed(3)}`);
+  }
+  const name = String(depot?.name || '').trim();
+  if (name) keys.add(`name:${name}`);
+  return keys;
 }
 
 function ensureCoreDepots(depots: WallpaperDepot[] = []) {
   const list = Array.isArray(depots) ? [...depots] : [];
-  const keys = new Set(list.map(depotKey));
+  const known = new Set<string>();
+  const remember = (item: WallpaperDepot) => {
+    for (const key of depotKeys(item)) known.add(key);
+  };
+  list.forEach(remember);
   for (const depot of CORE_DEPOTS) {
-    if (!keys.has(depotKey(depot))) list.push(depot);
+    const keys = depotKeys(depot);
+    if ([...keys].some((key) => known.has(key))) continue;
+    list.push(depot);
+    remember(depot);
   }
   return list;
 }

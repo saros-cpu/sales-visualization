@@ -54,6 +54,34 @@ describe('wallpaperData', () => {
     }).stations[0].statusLabel).toBe('在营');
   });
 
+  it('keeps depots unique after a rename when API and core fallback disagree on names', () => {
+    const payload = {
+      stations: [],
+      depots: [
+        { name: 'STN-61', code: 'D-0X', short: 'S-62', region: 'REG-01', lng: 0, lat: 0, type: 'headquarters', status: 'normal' },
+        { name: 'STN-63', code: 'D-0X', short: 'S-64', region: 'REG-07', lng: 0, lat: 0, status: 'normal' },
+        { name: 'STN-65', code: 'D-0X', short: 'S-66', region: 'REG-08', lng: 0, lat: 0, status: 'closed' },
+      ],
+    };
+    const names = mapLayers(payload).depots.map((item) => item.name);
+    expect(names).toHaveLength(3);
+    expect(new Set(names).size).toBe(3);
+    expect(names).not.toContain('DemoDepotSouth');
+    expect(names).not.toContain('DemoDepotNorth');
+  });
+
+  it('keeps depots unique when the API omits codes but carries matching coordinates', () => {
+    const payload = {
+      stations: [],
+      depots: [
+        { name: '（服务端新名）', region: 'REG-07', lng: 0, lat: 0, status: 'normal' },
+      ],
+    };
+    const names = mapLayers(payload).depots.map((item) => item.name);
+    expect(names).toContain('（服务端新名）');
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it('filters wallpaper map markers by display settings', () => {
     const payload = {
       sensitiveData: true,

@@ -8,7 +8,7 @@
     <AssemblyName>SalesWallpaperEngine</AssemblyName>
     <RootNamespace>SalesWallpaperEngine</RootNamespace>
     <ApplicationIcon>..\SalesDesktop\build\icon.ico</ApplicationIcon>
-    <Version>0.2.23</Version>
+    <Version>0.2.24</Version>
   </PropertyGroup>
 
   <ItemGroup>

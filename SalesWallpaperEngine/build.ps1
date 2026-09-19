@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$Version = "0.2.23",
+    [string]$Version = "0.2.24",
     [string]$IncludeKeyPath = "",
     [switch]$PlainBundledKey,
     [switch]$SkipWallpaperAssets,
@@ -406,6 +406,8 @@ if (-not $NoPublishDownload) {
         installerSha256 = $setupHash
         package = "SalesWallpaperEngine"
         notes = @(
+            "Fixed duplicate CTY-30 depot marker: after the depot rename, map depots are now matched by depot code / coordinates / name together, so the stale built-in fallback (old DemoDepotSouth name) can no longer add a second marker next to S-64.",
+            "Rebuilt the bundled frontend assets and business_points.json so offline fallback data carries the current depot names and codes (D-0X 总部 / D-0X CTY-22 / D-0X REG-08).",
             "Inventory panel: expanded panel now uses a transparent background with no visible scrollbar, so the desktop wallpaper shows through while the list scrolls.",
             "Inventory panel: wider panel with larger text and rebalanced columns keeps all four column headers fully visible in both Chinese and Russian.",
             "Inventory panel: fuel level percentages now show one decimal place.",

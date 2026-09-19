@@ -538,6 +538,7 @@
     "product": "油品",
     "plateNumber": "车牌号",
     "searchPlate": "搜索车牌号...",
+    "summaryScopePlate": "车牌 {{plate}}",
     "bestDay": "最高日",
     "worstDay": "最低日",
     "halfCompare": "下半月环比",

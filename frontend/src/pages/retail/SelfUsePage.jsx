@@ -8,6 +8,7 @@ import {
   formatTonsKpi,
   metricNumber,
   retailTonsOf,
+  summarizeSelfUseRecords,
 } from '../../utils/retail-helpers';
 
 function pad(value) {
@@ -115,10 +116,17 @@ export default function SelfUsePage() {
     });
   }, [records, search, sort]);
 
-  const summary = data?.summary || {};
+  // 未输入车牌：沿用接口整区间汇总；输入车牌：按内容区实际展示的记录实算。
+  const plateKeyword = search.trim();
+  const rangeSummary = data?.summary || {};
+  const shownSummary = useMemo(() => summarizeSelfUseRecords(filteredRecords), [filteredRecords]);
+  const summary = plateKeyword ? shownSummary : rangeSummary;
   const volumeKpi = formatLitersKpiParts(summary.totalVolume);
   const amountKpi = formatSomKpiParts(summary.totalAmount);
   const totalTons = retailTonsOf(summary);
+  const stationCount = new Set(
+    (plateKeyword ? filteredRecords : records).map(row => row.shopKey || row.stationName).filter(Boolean),
+  ).size;
   const dateRangeText = dateFrom && dateTo ? `${dateFrom} 至 ${dateTo}` : '--';
 
   const toggleSort = (key) => {
@@ -170,7 +178,7 @@ export default function SelfUsePage() {
           {exporting ? '生成中...' : '导出 Excel'}
         </button>
         <span className="self-use-toolbar-meta">
-          {dateRangeText}，显示 {filteredRecords.length} / {records.length} 条
+          {dateRangeText}，{plateKeyword ? `车牌 ${plateKeyword}，` : ''}显示 {filteredRecords.length} / {records.length} 条
         </span>
       </div>
 
@@ -185,7 +193,7 @@ export default function SelfUsePage() {
           <div className="kpi-label">自用油记录</div>
           <div className="kpi-value">{metricNumber(summary.totalRecords).toLocaleString('zh-CN')}</div>
           <div className="kpi-unit">条</div>
-          <div className="kpi-change">按原报表24口径</div>
+          <div className="kpi-change">{plateKeyword ? `车牌 ${plateKeyword}` : '按原报表24口径'}</div>
         </div>
         <div className="retail-kpi-card c2">
           <div className="kpi-label">合计油量</div>
@@ -201,9 +209,9 @@ export default function SelfUsePage() {
         </div>
         <div className="retail-kpi-card c4">
           <div className="kpi-label">涉及站点</div>
-          <div className="kpi-value">{new Set(records.map(row => row.shopKey || row.stationName).filter(Boolean)).size}</div>
+          <div className="kpi-value">{stationCount}</div>
           <div className="kpi-unit">站</div>
-          <div className="kpi-change">当前区间</div>
+          <div className="kpi-change">{plateKeyword ? '当前车牌筛选' : '当前区间'}</div>
         </div>
       </div>
 

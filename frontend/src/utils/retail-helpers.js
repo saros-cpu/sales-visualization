@@ -14,6 +14,7 @@ import {
   retailCnyAmountOf,
   retailTonsOf,
   sortRankingRows,
+  summarizeSelfUseRecords,
   splitRetailStationName,
 } from '@shared/retail-core';
 
@@ -27,6 +28,7 @@ export {
   preferredRetailMonth,
   retailTonsOf,
   sortRankingRows,
+  summarizeSelfUseRecords,
 };
 
 export const REGION_COLORS = {

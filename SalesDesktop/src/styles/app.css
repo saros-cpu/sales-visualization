@@ -399,6 +399,14 @@ body {
   color: #666;
 }
 
+.client-fit-summary-plate {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(204, 0, 0, 0.08);
+  color: #b3120f;
+  font-weight: 600;
+}
+
 .client-fit-table-scroll {
   flex: 1 1 auto;
   min-height: 0;

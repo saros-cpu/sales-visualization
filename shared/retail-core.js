@@ -199,3 +199,34 @@ export function sortRankingRows(rows, valueOf, limit) {
   const sorted = [...(rows || [])].sort((left, right) => numericMetric(valueOf(right)) - numericMetric(valueOf(left)));
   return typeof limit === 'number' ? sorted.slice(0, limit) : sorted;
 }
+
+/**
+ * 自用油「按当前展示记录实算」的汇总口径。
+ *
+ * 桌面端/Web 端自用油页顶部（或汇总区）此前固定读接口返回的整区间 summary，
+ * 按车牌筛选后条数、升数、吨位、金额、质量却不跟着变。现在双端统一在这里实算：
+ * 未输入车牌时结果与接口整区间 summary 一致，输入车牌后按筛选后的记录汇总。
+ */
+export function summarizeSelfUseRecords(records) {
+  let volume = 0;
+  let weightKg = 0;
+  let amount = 0;
+  let count = 0;
+  for (const row of Array.isArray(records) ? records : []) {
+    count += 1;
+    volume += numericMetric(row?.volume);
+    weightKg += numericMetric(row?.totalWeightKg ?? row?.mass ?? row?.weightKg);
+    amount += numericMetric(row?.amount);
+  }
+  const round = (value, digits) => {
+    const factor = 10 ** digits;
+    return Math.round(value * factor) / factor;
+  };
+  return {
+    totalRecords: count,
+    totalVolume: round(volume, 2),
+    totalWeightKg: round(weightKg, 2),
+    totalTons: round(weightKg / 1000, 3),
+    totalAmount: round(amount, 2),
+  };
+}
