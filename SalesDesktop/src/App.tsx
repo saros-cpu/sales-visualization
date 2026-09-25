@@ -49,6 +49,7 @@ const RetailResource = lazyWithRetry(() => import('@/pages/retail/Resource'));
 const RetailReport = lazyWithRetry(() => import('@/pages/retail/Report'));
 const RetailAlert = lazyWithRetry(() => import('@/pages/retail/Alert'));
 const RetailSelfUse = lazyWithRetry(() => import('@/pages/retail/SelfUse'));
+const RetailTransfer = lazyWithRetry(() => import('@/pages/retail/Transfer'));
 const RetailProfit = lazyWithRetry(() => import('@/pages/retail/ProfitView'));
 const WholesaleLayout = lazyWithRetry(() => import('@/layouts/WholesaleLayout'));
 const WholesaleOverview = lazyWithRetry(() => import('@/pages/wholesale/Overview'));
@@ -248,6 +249,7 @@ function AppRoutes() {
           <Route path="report" element={<ErrorBoundary><Suspense fallback={loading}><RetailReport /></Suspense></ErrorBoundary>} />
           <Route path="alert" element={<ErrorBoundary><Suspense fallback={loading}><RetailAlert /></Suspense></ErrorBoundary>} />
           <Route path="self-use" element={<ErrorBoundary><Suspense fallback={loading}><RetailSelfUse /></Suspense></ErrorBoundary>} />
+          <Route path="transfer" element={<ErrorBoundary><Suspense fallback={loading}><RetailTransfer /></Suspense></ErrorBoundary>} />
           <Route path="profit" element={<ErrorBoundary><Suspense fallback={loading}><RetailProfit /></Suspense></ErrorBoundary>} />
         </Route>
         <Route path="wholesale" element={<ErrorBoundary><Suspense fallback={loading}><WholesaleLayout /></Suspense></ErrorBoundary>}>

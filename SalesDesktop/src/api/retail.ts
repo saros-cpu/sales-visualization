@@ -207,3 +207,46 @@ export async function getSelfUseByRange(date_from: string, date_to: string) {
   const res = await api.get(core(ApiPaths.retail.selfUseRange(date_from, date_to)));
   return res.data as SelfUseRangeData;
 }
+
+// ── 零售外运实收统计 ──
+export interface RetailTransferRecord {
+  date?: string;
+  month?: string;
+  shopKey?: number;
+  shopName?: string;
+  resourceKey?: number;
+  resourceLabel?: string;
+  liters: number;
+  tons: number;
+  rows: number;
+}
+
+export interface RetailTransferSummary {
+  byStation: Array<{ shopKey: number; shopName: string; liters: number; tons: number; rows: number }>;
+  byResource: Array<{ resourceKey: number; resourceLabel: string; liters: number; tons: number; rows: number }>;
+  byMonth: Array<{ month: string; liters: number; tons: number; rows: number }>;
+}
+
+export interface RetailTransferData {
+  range: { start: string; end: string };
+  sourceNote?: string;
+  total: { liters: number; tons: number; rows: number };
+  summary: RetailTransferSummary;
+  records: RetailTransferRecord[];
+  recordCount: number;
+}
+
+export async function getRetailTransferStats(params: {
+  start: string;
+  end: string;
+  groupBy?: string;
+  resource?: string;
+}): Promise<RetailTransferData> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  });
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await api.get(core(`${ApiPaths.retailTransfer.stats}${suffix}`));
+  return res.data as RetailTransferData;
+}

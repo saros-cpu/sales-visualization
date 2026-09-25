@@ -15,13 +15,13 @@ Future agents, tools, and maintainers must treat this file as the project memory
 
 ## Current Baseline
 
-- Current released client version: `5.6.3`.
-- Current release code commit: tag `v5.6.3`（自用油页统计条跟随车牌筛选，桌面端+Web 端共用 `summarizeSelfUseRecords`；壁纸线同步修CTY-22重复标点）；previous release was `v5.6.2`（站点地图/壁纸/Web 端油库名称与编号三系统统一，D-0X 总部/D-0X CTY-22/D-0X REG-08，替换旧称「DemoDepotNorth/DemoDepotSouth」）；wallpaper engine `v0.2.9`（提交 `eb4ed0f`：修正 0.2.8 运行时前置检查误报“缺少环境”的假阴性——改为查注册表+多路径磁盘探测，并把检查移到宿主进程启动处避免播放子进程退出导致白屏），已推进至 `v0.2.21`（0.2.13–0.2.21：系统 WebView2 运行时收敛、库存面板过滤/滚动修复、WH_MOUSE_LL 全局滚轮钩子、库存口径 >60% 隐藏/<10% 罐底油 0 天/10–60% 可售天数、站点名本地化、打包烧 key 且自动更新重部署到 %APPDATA%\sales-wallpaper-engine；配套后端 per-shop 索引+30min TTL 缓存性能修复 `cdd1e83`、可售天数 `47883ec`、卸载脚本 `8bb6ce0`），最新为 `v0.2.24`（修复STN-63重复标点：兜底油库去重改为油库编号/坐标/名称任一命中，并重建 2026-08-21 之后未再构建的前端资源与离线兜底 `business_points.json`，新增 code 字段）；再往前 v5.5.2（`513258a`：数据录入发货单位乱码字面量修复、BilingualName showRaw 判定提取纯函数+测试护栏、版本链文档同步）、v5.5.1（`36115a9`：称重审核纯俄文原始名重复显示根治）、v5.5.0（`0568a36`：采购查询/数据录入明细维护双语显示统一）、v5.4.2（`a3bd703`：BilingualName 中文文本比较根治）、v5.4.1（`3b7ca26`：中文主行相等判定）、v5.4.0（`e102b10`：双语两行显示/列宽自适应/居中/录入回车焦点/采购查询/明细保存 500/乱码根因修复）。注意：v5.2.0（`a8f0b40`）/v5.3.0（`7cb50ff`）原始提交为悬空对象（孤儿分支整理所致），其内容已并入 master 链（`db31927`/`b853522` 等），对应 tag `v5.2.0`/`v5.3.0` 为追溯兜底，非 HEAD 祖先。
+- Current released client version: `5.6.4`.
+- Current release code commit: `ff42c69` / tag `v5.6.3`（自用油页统计条跟随车牌筛选，桌面端+Web 端共用 `summarizeSelfUseRecords`；壁纸线同步修CTY-22重复标点）；previous release was `v5.6.2`（站点地图/壁纸/Web 端油库名称与编号三系统统一，D-0X 总部/D-0X CTY-22/D-0X REG-08，替换旧称「DemoDepotNorth/DemoDepotSouth」）；wallpaper engine `v0.2.9`（提交 `eb4ed0f`：修正 0.2.8 运行时前置检查误报“缺少环境”的假阴性——改为查注册表+多路径磁盘探测，并把检查移到宿主进程启动处避免播放子进程退出导致白屏），已推进至 `v0.2.21`（0.2.13–0.2.21：系统 WebView2 运行时收敛、库存面板过滤/滚动修复、WH_MOUSE_LL 全局滚轮钩子、库存口径 >60% 隐藏/<10% 罐底油 0 天/10–60% 可售天数、站点名本地化、打包烧 key 且自动更新重部署到 %APPDATA%\sales-wallpaper-engine；配套后端 per-shop 索引+30min TTL 缓存性能修复 `cdd1e83`、可售天数 `47883ec`、卸载脚本 `8bb6ce0`），最新为 `v0.2.24`（修复STN-63重复标点：兜底油库去重改为油库编号/坐标/名称任一命中，并重建 2026-08-21 之后未再构建的前端资源与离线兜底 `business_points.json`，新增 code 字段）；再往前 v5.5.2（`513258a`：数据录入发货单位乱码字面量修复、BilingualName showRaw 判定提取纯函数+测试护栏、版本链文档同步）、v5.5.1（`36115a9`：称重审核纯俄文原始名重复显示根治）、v5.5.0（`0568a36`：采购查询/数据录入明细维护双语显示统一）、v5.4.2（`a3bd703`：BilingualName 中文文本比较根治）、v5.4.1（`3b7ca26`：中文主行相等判定）、v5.4.0（`e102b10`：双语两行显示/列宽自适应/居中/录入回车焦点/采购查询/明细保存 500/乱码根因修复）。注意：v5.2.0（`a8f0b40`）/v5.3.0（`7cb50ff`）原始提交为悬空对象（孤儿分支整理所致），其内容已并入 master 链（`db31927`/`b853522` 等），对应 tag `v5.2.0`/`v5.3.0` 为追溯兜底，非 HEAD 祖先。
 - Production public entry: `https://sales.example.com/`.
 - Production backup entry details are kept only in `docs/配置文档.md`.
 - Backend listens only on `127.0.0.1:8900`.
 - Desktop update feed: `https://sales.example.com/download/latest.yml`; fallback endpoint details are kept only in `docs/配置文档.md`.
-- Current installer: `SalesDesktop Setup 5.6.3.exe`.
+- Current installer: `SalesDesktop Setup 5.6.4.exe`.
 - Current wallpaper package: `SalesWallpaperEngine 0.2.24` via `https://sales.example.com/download/wallpaper-engine/latest.json`. This remains independent from the `SalesDesktop` client version line.
 - The old web wallpaper package is retired and removed. Future wallpaper work must use `SalesWallpaperEngine`.
 - HTTPS certificate: enabled; certificate paths are kept only in `docs/配置文档.md`. HTTP remains active for compatibility.

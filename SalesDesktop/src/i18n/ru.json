@@ -454,7 +454,8 @@
   },
   "retail": {
     "overview": "Обзор", "region": "Регион", "station": "АЗС", "monthly": "Месячный",
-    "resource": "Нефтепродукты", "report": "Отчет", "alert": "Оповещения", "selfUse": "Собственное использование",
+    "resource": "Нефтепродукты",     "report": "Отчет", "alert": "Оповещения", "selfUse": "Собственное использование",
+    "transfer": "Поступление АЗС",
     "profit": "Расчёт прибыли",
     "year": "Год", "month": "Месяц", "totalSales": "Общий объем продаж", "totalLiters": "Общий объем (л)",
     "totalTons": "Общий вес", "weightKg": "Масса", "density": "Плотность",
@@ -508,7 +509,7 @@
     "other": "Другое"
   },
   "wholesale": {
-    "overview": "Обзор", "products": "Продукты", "customers": "Клиенты", "transfer": "Перевозки",
+    "overview": "Обзор", "products": "Продукты", "customers": "Клиенты", "transfer": "Отгрузка опта",
     "trend": "Тренд", "review": "Контроль", "query": "Запрос",
     "vehicleFilter": "Номер ТС",
     "companyFilter": "Companyя",

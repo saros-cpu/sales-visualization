@@ -41,6 +41,7 @@ export const menuConfig: MenuItem[] = [
           { key: '/retail/station', icon: <BankOutlined />, labelKey: 'retail.station' },
           { key: '/retail/monthly', icon: <CalendarOutlined />, labelKey: 'retail.monthly' },
           { key: '/retail/resource', icon: <DatabaseOutlined />, labelKey: 'retail.resource' },
+          { key: '/retail/transfer', icon: <SwapOutlined />, labelKey: 'retail.transfer' },
           { key: '/retail/self-use', icon: <ToolOutlined />, labelKey: 'retail.selfUse' },
           { key: '/retail/profit', icon: <CalculatorOutlined />, labelKey: 'retail.profit', moduleKey: 'profit', permissionCode: 'profit:view' },
           { key: '/retail/report', icon: <FileDoneOutlined />, labelKey: 'retail.report' },

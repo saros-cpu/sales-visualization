@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.6.3';
-export const BUILD_DATE = '2026-09-30';
+export const VERSION = '5.6.4';
+export const BUILD_DATE = '2026-10-04';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.6.4',
+    date: '2026-10-04',
+    type: 'patch',
+    changes: [
+      '优化：零售/批发两个板块的「外运」菜单标签区分显示——零售板块为「零售外运」、批发板块为「批发外运」（中俄双语同步），避免登录后菜单出现两个同名「外运」项造成混淆。',
+    ],
+  },
   {
     version: '5.6.3',
     date: '2026-09-30',
