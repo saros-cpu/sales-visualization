@@ -37,6 +37,16 @@ export const getResourcesYearly = (year, month) => {
 // ── 站点状态（预警页） ──
 export const getStationStatuses = () => get(ApiPaths.retail.stationStatuses);
 
+// ── 零售外运实收统计 ──
+export const getRetailTransferStats = (params = {}) => {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  });
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return get(`${ApiPaths.retailTransfer.stats}${suffix}`);
+};
+
 // ── KPI（通用） ──
 export const getKpi = () => get(ApiPaths.retail.kpi);
 

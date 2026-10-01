@@ -3,7 +3,7 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.6.4';
+export const VERSION = '5.6.5';
 export const BUILD_DATE = '2026-10-04';
 export const DEVELOPER = 'Юрий';
 
@@ -15,6 +15,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.6.5',
+    date: '2026-10-04',
+    type: 'minor',
+    changes: [
+      '零售外运实收统计页增强：新增「按年 / 按月」选择（与日期区间并列），年/月直接走 supply 实时聚合（亚秒级返回）。',
+      '内容区新增密度列（kg/L = 吨 ÷ 升 × 1000），KPI 卡片同步显示平均密度。',
+      '新增加油站筛选下拉（全部 / 各站名 / 空白名称（未知站）），可在所有视图使用；空白名称 = 供应记录 ShopKey 不在站点台账的记录，用于查数据质量。',
+      '油品名称统一：柴油 106/109/110 合并显示为「Д/Т」（-15、-35 全部并入柴油一个名称）。',
+      'KPI 新增按油品分类卡片（АИ 80 / АИ 92 / АИ 95 / Д/Т / СПБТ 的吨位·升·密度），随所选年/月或日期区间同步更新。',
+    ],
+  },
   {
     version: '5.6.4',
     date: '2026-10-04',

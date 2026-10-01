@@ -214,33 +214,41 @@ export interface RetailTransferRecord {
   month?: string;
   shopKey?: number;
   shopName?: string;
+  nameKnown?: boolean;
   resourceKey?: number;
   resourceLabel?: string;
   liters: number;
   tons: number;
+  density?: number;
   rows: number;
 }
 
 export interface RetailTransferSummary {
-  byStation: Array<{ shopKey: number; shopName: string; liters: number; tons: number; rows: number }>;
-  byResource: Array<{ resourceKey: number; resourceLabel: string; liters: number; tons: number; rows: number }>;
-  byMonth: Array<{ month: string; liters: number; tons: number; rows: number }>;
+  byStation: Array<{ shopKey: number; shopName: string; liters: number; tons: number; density?: number; rows: number }>;
+  byResource: Array<{ resourceKey: number; resourceLabel: string; liters: number; tons: number; density?: number; rows: number }>;
+  byMonth: Array<{ month: string; liters: number; tons: number; density?: number; rows: number }>;
 }
 
 export interface RetailTransferData {
   range: { start: string; end: string };
   sourceNote?: string;
-  total: { liters: number; tons: number; rows: number };
+  total: { liters: number; tons: number; rows: number; density?: number };
   summary: RetailTransferSummary;
+  stations?: Array<{ shopKey: number; shopName: string }>;
   records: RetailTransferRecord[];
   recordCount: number;
 }
 
 export async function getRetailTransferStats(params: {
-  start: string;
-  end: string;
+  start?: string;
+  end?: string;
+  mode?: 'range' | 'year' | 'month';
+  year?: number;
+  month?: number;
   groupBy?: string;
   resource?: string;
+  shopKey?: string | number;
+  nameStatus?: 'all' | 'known' | 'blank';
 }): Promise<RetailTransferData> {
   const qs = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {
