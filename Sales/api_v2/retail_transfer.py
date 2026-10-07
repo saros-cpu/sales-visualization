@@ -34,7 +34,28 @@ OILSTATION_DIR = ROOT_DIR / "OilStation"
 if str(OILSTATION_DIR) not in sys.path:
     sys.path.insert(0, str(OILSTATION_DIR))
 
-from export_excel import infer_supply_resource_key  # noqa: E402
+from export_excel import (  # noqa: E402
+    infer_supply_resource_key,
+    DENSITY_SANE_WINDOWS,
+    DENSITY_SANE_DEF_REF,
+)
+
+
+def _shop_names_bi():
+    """返回 {shopKey: {zh, ru}} 双语站名。zh=中文 name，ru=俄文 short。"""
+    sys.path.insert(0, str(OILSTATION_DIR))
+    try:
+        from constants import SHOP_KEY_MAP
+
+        return {
+            int(key): {
+                "zh": value.get("name") or f"Station-{key}",
+                "ru": value.get("short") or value.get("name") or f"Station-{key}",
+            }
+            for key, value in SHOP_KEY_MAP.items()
+        }
+    finally:
+        sys.path = [item for item in sys.path if item != str(OILSTATION_DIR)]
 
 # 与 OilStation/endpoints/v1/retail/analytics/service/shared.py 的 RESOURCE_NAMES 保持一致
 # 柴油口径合并：106/109/110 统一显示为「Д/Т」（-15、-35 全部并入柴油）
@@ -129,21 +150,46 @@ def _supply_price_ref(conn, start, end):
         return {(int(r[0]), int(r[1])): float(r[2] or 0) for r in cur.fetchall()}
 
 
+def _supply_liters_expr():
+    return "COALESCE(NULLIF(sp.VolumeTTN, 0), NULLIF(sp.Volume, 0), 0)"
+
+
+def _supply_mass_expr():
+    """质量兜底链路（与零售日报 _selling_mass_expr 同源）：优先真实质量字段，
+    缺失时退回 体积×密度，避免质量字段为空时密度为 0。"""
+    liters = _supply_liters_expr()
+    return (
+        f"COALESCE(NULLIF(sp.Mass, 0), NULLIF(sp.MassTTN, 0), NULLIF(sp.TankerMass, 0), "
+        f"{liters} * NULLIF(sp.Density, 0), 0)"
+    )
+
+
+def _is_sane(rk, mass, vol):
+    """行级：该行隐含密度（质量/体积）是否落在油品合理窗口内（脏密度修正口径）。"""
+    if vol <= 0 or mass <= 0:
+        return False
+    window = DENSITY_SANE_WINDOWS.get(int(rk))
+    if window is None:
+        return True
+    implied = mass / vol
+    return window[0] <= implied <= window[1]
+
+
 def _fetch_rows(start, end, shop_filter):
     conn = _retail_connection()
     try:
         price_ref = _supply_price_ref(conn, start, end)
-        names = _shop_names()
+        names = _shop_names_bi()
+        liters_expr = _supply_liters_expr()
+        mass_expr = _supply_mass_expr()
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
             sql = f"""
                 SELECT DATE(sp.AcceptDateTime) AS supply_date,
                        sp.ShopKey,
                        sp.ResourceKey,
                        sp.ResourceShopKey,
-                       SUM(sp.VolumeTTN) AS liters_ttn,
-                       SUM(sp.Volume) AS liters_raw,
-                       SUM(COALESCE(NULLIF(sp.Mass, 0), NULLIF(sp.MassTTN, 0),
-                                   NULLIF(sp.TankerMass, 0), 0)) / 1000 AS tons,
+                       SUM({liters_expr}) AS liters,
+                       SUM({mass_expr}) AS raw_mass,
                        AVG(sp.Density) AS avg_density,
                        COUNT(*) AS rows
                 FROM supply sp
@@ -183,22 +229,16 @@ def _fetch_rows(start, end, shop_filter):
                 continue
             # 柴油口径合并：109/110 归并到 106（展示统一为 Д/Т）
             rk = RESOURCE_ALIASES.get(rk, rk)
-            liters = float(r["liters_ttn"] or 0) or float(r["liters_raw"] or 0)
-            tons = round(float(r["tons"] or 0), 3)
-            name_known = sk in names
-            shop_name = names.get(sk, f"Station-{sk}")
+            liters = float(r["liters"] or 0)
+            raw_mass = float(r["raw_mass"] or 0)
             rows.append(
                 {
-                    "date": tx_date,
                     "month": tx_date[:7],
                     "shopKey": sk,
-                    "shopName": shop_name,
-                    "nameKnown": name_known,
                     "resourceKey": rk,
-                    "resourceLabel": RESOURCE_NAMES.get(rk, f"Other-{rk}"),
                     "liters": round(liters, 3),
-                    "tons": tons,
-                    "density": round(tons * 1000.0 / liters, 4) if liters else 0.0,
+                    "rawMass": round(raw_mass, 3),
+                    "nameKnown": sk in names,
                     "rows": int(r["rows"] or 0),
                 }
             )
@@ -207,30 +247,127 @@ def _fetch_rows(start, end, shop_filter):
         conn.close()
 
 
+def _enrich_corrected_mass(rows):
+    """脏密度修正（与零售日报 report_mass_expr / corrected_mass_from_split 同源）：
+    按 (站点, 油品) 桶做好/坏行分离——坏行体积按桶内好行实测密度回填（好行体积<=1L
+    才退回油品固定参考密度，用于给全脏桶补出合理吨位）。
+
+    注意展示口径：各视图(区间/月/年)最终显示的密度 = 该视图数据的**真实加权平均**
+    (总修正质量 ÷ 总体积)，不是把某个固定密度当结果显示；固定参考密度只用于给
+    缺质量字段的脏桶补质量，绝不直接当作该视图的密度。
+    """
+    buckets = {}
+    for r in rows:
+        key = (r["shopKey"], r["resourceKey"])
+        b = buckets.setdefault(key, {"gv": 0.0, "gm": 0.0, "bv": 0.0})
+        if _is_sane(r["resourceKey"], r["rawMass"], r["liters"]):
+            b["gv"] += r["liters"]
+            b["gm"] += r["rawMass"]
+        else:
+            b["bv"] += r["liters"]
+    ref_map = {}
+    for key, b in buckets.items():
+        rk = key[1]
+        ref_map[key] = (b["gm"] / b["gv"]) if b["gv"] > 1 else DENSITY_SANE_DEF_REF.get(rk, 0.8)
+    for r in rows:
+        key = (r["shopKey"], r["resourceKey"])
+        if _is_sane(r["resourceKey"], r["rawMass"], r["liters"]):
+            corrected = r["rawMass"]
+        else:
+            corrected = r["liters"] * ref_map[key]
+        r["correctedMass"] = round(corrected, 3)
+    return rows
+
+
 def _aggregate(rows, key_fn):
     agg = {}
     for r in rows:
         key = key_fn(r)
-        item = agg.setdefault(key, {"liters": 0.0, "tons": 0.0, "rows": 0})
+        item = agg.setdefault(key, {"liters": 0.0, "mass": 0.0, "rows": 0})
         item["liters"] += r["liters"]
-        item["tons"] += r["tons"]
+        item["mass"] += r["correctedMass"]
         item["rows"] += r["rows"]
     for v in agg.values():
         v["liters"] = round(v["liters"], 3)
-        v["tons"] = round(v["tons"], 3)
-        v["density"] = round(v["tons"] * 1000.0 / v["liters"], 4) if v["liters"] else 0.0
+        v["mass"] = round(v["mass"], 3)
+        v["tons"] = round(v["mass"] / 1000.0, 3)
+        v["density"] = round(v["mass"] / v["liters"], 4) if v["liters"] else 0.0
     return agg
 
 
 def _round_total(d):
+    liters = float(d.get("liters", 0) or 0)
+    mass = float(d.get("mass", 0) or 0)
     return {
-        "liters": round(float(d.get("liters", 0) or 0), 3),
-        "tons": round(float(d.get("tons", 0) or 0), 3),
+        "liters": round(liters, 3),
+        "tons": round(mass / 1000.0, 3),
         "rows": int(d.get("rows", 0) or 0),
-        "density": round(float(d.get("tons", 0) or 0) * 1000.0 / float(d.get("liters", 0) or 0), 4)
-        if d.get("liters")
-        else 0.0,
+        "density": round(mass / liters, 4) if liters else 0.0,
     }
+
+
+_SNAPSHOT_STORE = None
+
+
+def _transfer_snapshot_store():
+    """按文件路径加载 OilStation 的 cache_store 模块（避免与 Sales 同名模块冲突）。"""
+    global _SNAPSHOT_STORE
+    if _SNAPSHOT_STORE is None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "oil_cache_store_transfer", OILSTATION_DIR / "cache_store.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _SNAPSHOT_STORE = module
+    return _SNAPSHOT_STORE
+
+
+def _target_months(mode, start):
+    """按 mode 返回查询涉及的月份 [ym,...]；range 模式返回 None（走实时）。"""
+    if mode == "month":
+        return [f"{start.year:04d}-{start.month:02d}"]
+    if mode == "year":
+        return [f"{start.year:04d}-{m:02d}" for m in range(1, 13)]
+    return None
+
+
+def _all_completed(months):
+    """所有月份是否都已结束（严格早于当前月）。含当前月/未来月则返回 False→走实时。"""
+    today = date.today()
+    cur = (today.year, today.month)
+    for ym in months:
+        y, m = [int(p) for p in ym.split("-")]
+        if (y, m) >= cur:
+            return False
+    return True
+
+
+def _rows_from_snapshots(months, names):
+    """从外运月快照构建 rows（station×resource 粒度）。任一月缺快照返回 None→回退实时。"""
+    if not months:
+        return None
+    store = _transfer_snapshot_store()
+    rows = []
+    for ym in months:
+        snap = store.get_cached(f"transfer:{ym}")
+        if not snap:
+            return None
+        for sr in snap.get("stationResources") or []:
+            sk = int(sr["shopKey"])
+            rows.append(
+                {
+                    "month": ym,
+                    "shopKey": sk,
+                    "resourceKey": int(sr["resourceKey"]),
+                    "liters": float(sr.get("liters", 0) or 0),
+                    "correctedMass": float(sr.get("mass", 0) or 0),
+                    "nameKnown": sk in names,
+                    "rows": int(sr.get("rows", 0) or 0),
+                }
+            )
+    return rows
 
 
 @bp_v2.route("/retail/transfer/stats", methods=["GET"])
@@ -244,8 +381,25 @@ def retail_transfer_stats():
     sql_shop_filter = shop_filter if name_status != "blank" else []
     resource_filter = _csv_ints(request.args.get("resource"))
     group_by = (request.args.get("groupBy") or "detail").strip()
+    mode = (request.args.get("mode") or "range").strip()
 
-    rows = _fetch_rows(start, end, sql_shop_filter)
+    names = _shop_names_bi()
+    from_snapshot = False
+    rows = None
+    # 月/年模式且全部月份已结束 → 优先读外运月快照（每日零售快照流程已构建，快且口径一致）
+    target_months = _target_months(mode, start)
+    if target_months and _all_completed(target_months):
+        rows = _rows_from_snapshots(target_months, names)
+        from_snapshot = rows is not None
+    if not from_snapshot:
+        rows = _fetch_rows(start, end, sql_shop_filter)
+        # 脏密度修正：好/坏行分离，坏行按参考密度回补质量（零售日报口径）。
+        # 展示密度 = 该视图数据真实加权平均（总质量÷总体积），非固定值。
+        rows = _enrich_corrected_mass(rows)
+    elif shop_filter:
+        # 快照路径的 shopKey 过滤在内存中做（实时路径已下推 SQL）
+        wanted = set(shop_filter)
+        rows = [r for r in rows if r["shopKey"] in wanted]
 
     # 资源过滤（柴油合并后判断）
     if resource_filter:
@@ -258,16 +412,14 @@ def retail_transfer_stats():
     elif name_status == "known":
         rows = [r for r in rows if r["nameKnown"]]
 
-    # 汇总
-    total = {"liters": 0.0, "tons": 0.0, "rows": 0}
-    for r in rows:
-        total["liters"] += r["liters"]
-        total["tons"] += r["tons"]
-        total["rows"] += r["rows"]
+    # 汇总（修正质量）
+    total = _round_total(
+        _aggregate(rows, lambda r: 1).get(1, {"liters": 0.0, "mass": 0.0, "rows": 0})
+    )
 
-    names = _shop_names()
+    names = _shop_names_bi()
     by_station = [
-        {"shopKey": k, "shopName": names.get(k, f"Station-{k}"), **v}
+        {"shopKey": k, "shopName": names.get(k, {}).get("zh", f"Station-{k}"), **v}
         for k, v in sorted(
             _aggregate(rows, lambda r: r["shopKey"]).items(),
             key=lambda kv: kv[1]["tons"],
@@ -286,17 +438,35 @@ def retail_transfer_stats():
         {"month": k, **v}
         for k, v in sorted(_aggregate(rows, lambda r: r["month"]).items())
     ]
+    # 站×油品（按加油站编号顺序）：未选站时显示全站各油品，选中站时仅该站油品
+    agg_sr = _aggregate(rows, lambda r: (r["shopKey"], r["resourceKey"]))
+    by_station_resource = [
+        {
+            "shopKey": sk,
+            "shopName": names.get(sk, {}).get("zh", f"Station-{sk}"),
+            "resourceKey": rk,
+            "resourceLabel": RESOURCE_NAMES.get(rk, f"Other-{rk}"),
+            **v,
+        }
+        for (sk, rk), v in sorted(
+            agg_sr.items(), key=lambda kv: (kv[0][0], kv[0][1])
+        )
+    ]
 
     group_by_map = {
         "station": by_station,
         "resource": by_resource,
         "month": by_month,
+        "station_resource": by_station_resource,
     }
-    grouped = group_by_map.get(group_by, rows)
+    grouped = group_by_map.get(group_by, by_station_resource)
 
-    # 站名下拉数据源（已知站，按名称排序）
-    stations = [{"shopKey": k, "shopName": v} for k, v in names.items()]
-    stations.sort(key=lambda x: x["shopName"])
+    # 站名下拉数据源（已知站，按加油站编号排序；双语 zh/ru）
+    stations = [
+        {"shopKey": k, "nameZh": v["zh"], "nameRu": v["ru"]}
+        for k, v in names.items()
+    ]
+    stations.sort(key=lambda x: x["shopKey"])
 
     return jsonify(
         {
@@ -304,8 +474,11 @@ def retail_transfer_stats():
             "message": "success",
             "data": {
                 "range": {"start": start.isoformat(), "end": end.isoformat()},
-                "sourceNote": "零售库 supply 表未记录来源库（SupplierShopKey 恒为 0），故不做按来源库拆分。",
-                "total": _round_total(total),
+                "sourceNote": (
+                    "零售库 supply 表未记录来源库（SupplierShopKey 恒为 0），故不做按来源库拆分；"
+                    "密度按零售日报「脏密度修正」口径（好/坏行分离，坏行按参考密度回填）。"
+                ),
+                "total": total,
                 "summary": {
                     "byStation": by_station,
                     "byResource": by_resource,

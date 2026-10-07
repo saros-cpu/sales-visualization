@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button, Space, Alert, DatePicker, Table, Select, Row, Col, Statistic, Card } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { getRetailTransferStats, RetailTransferRecord, RetailTransferData } from '@/api/retail';
@@ -9,22 +10,6 @@ const { RangePicker } = DatePicker;
 const fmtLiters = (v: number) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 const fmtTons = (v: number) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 const fmtDensity = (v: number) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-
-const RESOURCE_OPTIONS = [
-  { value: '', label: '全部油品' },
-  { value: '102', label: 'АИ 80' },
-  { value: '103', label: 'АИ 92' },
-  { value: '104', label: 'АИ 95' },
-  { value: '106', label: 'Д/Т（含 -15/-35）' },
-  { value: '108', label: 'СПБТ' },
-];
-
-const GROUP_OPTIONS = [
-  { value: 'detail', label: '明细（日×站×油品）' },
-  { value: 'station', label: '按站点' },
-  { value: 'resource', label: '按油品' },
-  { value: 'month', label: '按月' },
-];
 
 const MODE_OPTIONS = [
   { value: 'range', label: '按日期区间' },
@@ -40,12 +25,12 @@ const YEAR_OPTIONS = (() => {
 })();
 
 export default function Transfer() {
+  const { i18n } = useTranslation();
+  const isRu = i18n.language === 'ru';
   const [mode, setMode] = useState<string>('range');
   const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('year'), dayjs()]);
   const [year, setYear] = useState<number>(dayjs().year());
   const [month, setMonth] = useState<number>(dayjs().month() + 1);
-  const [groupBy, setGroupBy] = useState<string>('detail');
-  const [resource, setResource] = useState<string>('');
   const [station, setStation] = useState<string>('');
   const [data, setData] = useState<RetailTransferData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,7 +39,7 @@ export default function Transfer() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const params: Record<string, unknown> = { groupBy, resource };
+    const params: Record<string, unknown> = { groupBy: 'station_resource' };
     if (mode === 'year') {
       params.mode = 'year';
       params.year = year;
@@ -76,7 +61,7 @@ export default function Transfer() {
     } finally {
       setLoading(false);
     }
-  }, [mode, dates, year, month, groupBy, resource, station]);
+  }, [mode, dates, year, month, station]);
 
   useEffect(() => {
     fetchData();
@@ -84,55 +69,72 @@ export default function Transfer() {
 
   const total = data?.total || { liters: 0, tons: 0, rows: 0, density: 0 };
   const stationCount = (data?.summary?.byStation || []).length;
-  const records: RetailTransferRecord[] = Array.isArray(data?.records) ? data.records : [];
   const stations = Array.isArray(data?.stations) ? data.stations : [];
   const byResource = data?.summary?.byResource || [];
 
+  // 站名解析：按当前语言选择中/俄名；未知站回退 shopName
+  const stationMap: Record<number, { nameZh?: string; nameRu?: string; shopName?: string }> = {};
+  stations.forEach((s) => { stationMap[s.shopKey] = s; });
+  const stationLabel = (shopKey?: number) => {
+    const s = shopKey != null ? stationMap[shopKey] : undefined;
+    if (s) return isRu ? (s.nameRu || s.nameZh || '') : (s.nameZh || s.nameRu || '');
+    return `Station-${shopKey}`;
+  };
+
+  // 内容区：站×油品，按加油站编号顺序（再按油品）
+  const records: RetailTransferRecord[] = (Array.isArray(data?.records) ? data.records : [])
+    .slice()
+    .sort((a, b) => (a.shopKey || 0) - (b.shopKey || 0) || (a.resourceKey || 0) - (b.resourceKey || 0));
+
   const stationOptions = [
     { value: '', label: '全部加油站' },
-    ...stations.map((s) => ({ value: String(s.shopKey), label: s.shopName })),
+    ...stations.map((s) => ({
+      value: String(s.shopKey),
+      label: isRu ? (s.nameRu || s.nameZh || '') : (s.nameZh || s.nameRu || ''),
+    })),
     { value: 'blank', label: '空白名称（未知站）' },
   ];
 
-  const columns = useMemo(() => {
-    const base = [
-      { title: '升 (L)', dataIndex: 'liters', key: 'liters', align: 'right' as const, sorter: (a: RetailTransferRecord, b: RetailTransferRecord) => a.liters - b.liters, render: (v: number) => fmtLiters(v) },
-      { title: '吨 (t)', dataIndex: 'tons', key: 'tons', align: 'right' as const, sorter: (a: RetailTransferRecord, b: RetailTransferRecord) => a.tons - b.tons, render: (v: number) => fmtTons(v) },
-      { title: '密度 (kg/L)', dataIndex: 'density', key: 'density', align: 'right' as const, render: (v: number) => fmtDensity(v) },
-      { title: '笔数', dataIndex: 'rows', key: 'rows', align: 'right' as const, render: (v: number) => v },
-    ];
-    if (groupBy === 'station') {
-      return [
-        { title: '加油站', dataIndex: 'shopName', key: 'shopName' },
-        ...base,
-      ];
-    }
-    if (groupBy === 'resource') {
-      return [
-        { title: '油品', dataIndex: 'resourceLabel', key: 'resourceLabel' },
-        ...base,
-      ];
-    }
-    if (groupBy === 'month') {
-      return [
-        { title: '月份', dataIndex: 'month', key: 'month' },
-        ...base,
-      ];
-    }
-    return [
-      { title: '日期', dataIndex: 'date', key: 'date', defaultSortOrder: 'descend' as const, sorter: (a: RetailTransferRecord, b: RetailTransferRecord) => String(a.date).localeCompare(String(b.date)) },
-      { title: '加油站', dataIndex: 'shopName', key: 'shopName' },
-      { title: '油品', dataIndex: 'resourceLabel', key: 'resourceLabel' },
-      ...base,
-    ];
-  }, [groupBy]);
+  // 选中具体加油站时隐藏「加油站」列，只显示该站各油品
+  const specificStation = station !== '' && station !== 'blank';
 
-  const rowKey = (row: RetailTransferRecord, i: number) => {
-    if (groupBy === 'station') return `st-${row.shopKey}`;
-    if (groupBy === 'resource') return `rk-${row.resourceKey}`;
-    if (groupBy === 'month') return `mo-${row.month}`;
-    return `d-${row.date}-${row.shopKey}-${row.resourceKey}-${i}`;
-  };
+  // 全部加油站时合并「加油站」列：每个站点名跨其所有油品行显示一次（rowSpan）
+  const isStart: boolean[] = [];
+  const spanOf: number[] = [];
+  {
+    let k = 0;
+    while (k < records.length) {
+      const sk = records[k].shopKey;
+      let m = k;
+      while (m < records.length && records[m].shopKey === sk) m++;
+      isStart[k] = true;
+      spanOf[k] = m - k;
+      for (let x = k + 1; x < m; x++) { isStart[x] = false; spanOf[x] = 0; }
+      k = m;
+    }
+  }
+
+  const columns = [
+    ...(specificStation
+      ? []
+      : [{
+          title: '加油站',
+          dataIndex: 'shopKey',
+          key: 'shopKey',
+          render: (v: number) => stationLabel(v),
+          onCell: (_record: RetailTransferRecord, rowIndex?: number) => {
+            const idx = rowIndex ?? 0;
+            return { rowSpan: isStart[idx] ? spanOf[idx] : 0 };
+          },
+        }]),
+    { title: '油品', dataIndex: 'resourceLabel', key: 'resourceLabel' },
+    { title: '升 (L)', dataIndex: 'liters', key: 'liters', align: 'right' as const, sorter: (a: RetailTransferRecord, b: RetailTransferRecord) => a.liters - b.liters, render: (v: number) => fmtLiters(v) },
+    { title: '吨 (t)', dataIndex: 'tons', key: 'tons', align: 'right' as const, sorter: (a: RetailTransferRecord, b: RetailTransferRecord) => a.tons - b.tons, render: (v: number) => fmtTons(v) },
+    { title: '密度 (kg/L)', dataIndex: 'density', key: 'density', align: 'right' as const, render: (v: number) => fmtDensity(v) },
+    { title: '笔数', dataIndex: 'rows', key: 'rows', align: 'right' as const, render: (v: number) => v },
+  ];
+
+  const rowKey = (row: RetailTransferRecord) => `sr-${row.shopKey}-${row.resourceKey}`;
 
   return (
     <div className="client-fit-page">
@@ -152,8 +154,6 @@ export default function Transfer() {
               <Select value={month} onChange={setMonth} style={{ width: 90 }} options={MONTH_OPTIONS} />
             </>
           )}
-          <Select value={groupBy} onChange={setGroupBy} style={{ width: 170 }} options={GROUP_OPTIONS} />
-          <Select value={resource} onChange={setResource} style={{ width: 170 }} options={RESOURCE_OPTIONS} />
           <Select value={station} onChange={setStation} style={{ width: 180 }} options={stationOptions} />
           <Button icon={<SearchOutlined />} type="primary" onClick={fetchData}>查询</Button>
         </Space>
@@ -210,7 +210,7 @@ export default function Transfer() {
           rowKey={rowKey}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 20, showTotal: (count) => `共 ${count} 行` }}
+          pagination={{ pageSize: 200, showTotal: (count) => `共 ${count} 行` }}
           scroll={{ x: 'max-content' }}
         />
       </div>

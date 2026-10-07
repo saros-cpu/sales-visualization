@@ -22,6 +22,7 @@ from business_time import business_period_condition_with_pruning, business_perio
 from cache_store import set_cached  # noqa: E402
 from constants import CLOSED_STATIONS, DEPOT_COORDS, SHOP_COORDS, SHOP_KEY_MAP  # noqa: E402
 from db import get_connection  # noqa: E402
+from transfer_snapshot import build_transfer_month_snapshot  # noqa: E402
 from endpoints.v1.retail.analytics.controller import (  # noqa: E402
     _map_resource_key_to_name as _self_use_resource_name,
     _self_use_report_resource_key,
@@ -923,6 +924,18 @@ def _iter_months(start: tuple[int, int], end: tuple[int, int]):
             month += 1
 
 
+def _build_transfer_snapshot(ym: str) -> dict | None:
+    """构建外运实收月快照（失败不阻断零售快照主流程，返回 None 跳过）。"""
+    conn = get_connection()
+    try:
+        return build_transfer_month_snapshot(ym, conn)
+    except Exception as exc:  # noqa: BLE001
+        print(f"warn transfer snapshot {ym} failed: {exc}")
+        return None
+    finally:
+        conn.close()
+
+
 def _refresh_month_snapshots(year: int, month: int) -> bool:
     ym = _month_label(year, month)
     client = app.test_client()
@@ -934,6 +947,15 @@ def _refresh_month_snapshots(year: int, month: int) -> bool:
     if self_use_snapshot:
         set_cached(f"self_use:{ym}", self_use_snapshot)
         print(f"ok self_use snapshot {ym}: {len(self_use_snapshot['records'])} records")
+    # 外运实收(supply)月快照：与零售快照同一每日流程构建，月/年查询直接读快照（无兜底密度）
+    transfer_snapshot = _build_transfer_snapshot(ym)
+    if transfer_snapshot:
+        set_cached(f"transfer:{ym}", transfer_snapshot)
+        print(
+            f"ok transfer snapshot {ym}: "
+            f"{len(transfer_snapshot['stationResources'])} station×resource rows, "
+            f"total={transfer_snapshot['total']['liters']:.0f}L/{transfer_snapshot['total']['tons']:.1f}t"
+        )
     ok = _rebuild_yearly_snapshots(year, month) and ok
     ok = _request(client, f"/api/export/profit/{ym}/data", {"refresh": "1"}) and ok
     ok = _request(client, f"/api/export/profit-year/{year}/data", {"refresh": "1"}) and ok
@@ -1204,12 +1226,73 @@ def _build_self_use_monthly_snapshot(ym: str) -> dict | None:
         conn.close()
 
 
+def _record_retail_snapshot_task(success: bool, months: list, dates: list) -> None:
+    """把本次零售快照刷新写入 Sales 库的 automation_task_runs 表。
+
+    客户端「系统健康 → 自动任务」面板读的是这张表。此前只有定时任务
+    (daily_maintenance) 和后端队列 worker 会写入，命令行直接跑本脚本不写，
+    导致快照已重做、面板上的完成时间却仍停留在早上的定时任务。这里补上写入，
+    使任何方式重跑零售快照都能刷新面板时间。写入失败不影响快照结果。
+    """
+    table = os.getenv("SALES_AUTOMATION_TASK_TABLE", "sales_visualization.automation_task_runs")
+    month_labels = ["%04d-%02d" % tuple(item) for item in months or []]
+    day_labels = [item.isoformat() for item in dates or []]
+    summary = {
+        "source": "OilStation/scripts/refresh_current_snapshots.py",
+        "mode": "current" if not (month_labels or day_labels) else "selected",
+        "months": month_labels,
+        "dates": day_labels,
+    }
+    try:
+        import pymysql
+
+        from config import DB_CONFIG
+    except Exception as exc:  # pragma: no cover - 环境缺失时不阻断主流程
+        print(f"warn: 自动任务记录不可用（{exc}），跳过写记录")
+        return
+
+    conn = None
+    try:
+        conn = pymysql.connect(**DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"INSERT INTO {table} (task_name, status, started_at, finished_at, summary, error) "
+                "VALUES (%s, %s, NOW(), NOW(), %s, %s)",
+                (
+                    "retail_snapshots",
+                    "success" if success else "failed",
+                    json.dumps(summary, ensure_ascii=False),
+                    None if success else "零售快照刷新脚本返回非零退出码",
+                ),
+            )
+        conn.commit()
+        print(f"ok automation task record: retail_snapshots/{'success' if success else 'failed'} -> {table}")
+    except Exception as exc:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"warn: 写入自动任务记录失败（不影响快照结果）：{exc}")
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Refresh retail snapshots.")
     parser.add_argument("--date", action="append", type=_parse_day, help="affected business date, YYYY-MM-DD; can be repeated")
     parser.add_argument("--month", action="append", type=_parse_month, help="affected month, YYYY-MM; can be repeated")
     parser.add_argument("--start", type=_parse_month, help="first affected month, YYYY-MM")
     parser.add_argument("--end", type=_parse_month, help="last affected month, YYYY-MM")
+    parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="不写入自动任务记录；调用方（daily_maintenance / 后端 worker）自行记录时使用，避免重复",
+    )
     args = parser.parse_args()
 
     selected_months = list(args.month or [])
@@ -1222,7 +1305,10 @@ def main() -> int:
         if not acquired:
             print("skip retail snapshot refresh: another refresh is already running")
             return 0
-        return _refresh_selected_snapshots(dates=args.date or [], months=selected_months)
+        code = _refresh_selected_snapshots(dates=args.date or [], months=selected_months)
+    if not args.no_record:
+        _record_retail_snapshot_task(code == 0, selected_months, args.date or [])
+    return code
 
 
 if __name__ == "__main__":

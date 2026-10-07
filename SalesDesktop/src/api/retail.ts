@@ -234,7 +234,7 @@ export interface RetailTransferData {
   sourceNote?: string;
   total: { liters: number; tons: number; rows: number; density?: number };
   summary: RetailTransferSummary;
-  stations?: Array<{ shopKey: number; shopName: string }>;
+  stations?: Array<{ shopKey: number; nameZh?: string; nameRu?: string }>;
   records: RetailTransferRecord[];
   recordCount: number;
 }

@@ -19,6 +19,7 @@ CACHE_TTL = {
     "dashboard_yearly": 3600,
     "resources_yearly": 3600,
     "self_use": 1800,
+    "transfer": 1800,
 }
 CURRENT_MONTH_MAX_TTL = 108000
 
@@ -35,6 +36,7 @@ SNAPSHOT_PREFIXES = {
     "resources_yearly",
     "kpi_yearly",
     "self_use",
+    "transfer",
 }
 YEARLY_SNAPSHOT_PREFIXES = {"dashboard_yearly", "resources_yearly", "kpi_yearly"}
 

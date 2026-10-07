@@ -1,29 +1,13 @@
 // src/pages/retail/TransferPage.jsx — 零售外运实收统计
 // 数据来源：零售库 supply 表（各加油站实际收到的油品转运/入库记录）。
 // 与批发外运（装车/发货口径）不同，这里是「到站实收」口径，不依赖分库发货实时数据。
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getRetailTransferStats } from '../../api/retail';
 import {
   fmtLiters,
   metricNumber,
   numberFormat,
 } from '../../utils/retail-helpers';
-
-const RESOURCE_OPTIONS = [
-  { key: '', label: '全部油品' },
-  { key: '102', label: 'АИ 80' },
-  { key: '103', label: 'АИ 92' },
-  { key: '104', label: 'АИ 95' },
-  { key: '106', label: 'Д/Т（含 -15/-35）' },
-  { key: '108', label: 'СПБТ' },
-];
-
-const GROUP_OPTIONS = [
-  { key: 'detail', label: '明细（日×站×油品）' },
-  { key: 'station', label: '按站点' },
-  { key: 'resource', label: '按油品' },
-  { key: 'month', label: '按月' },
-];
 
 const MODE_OPTIONS = [
   { key: 'range', label: '按日期区间' },
@@ -61,13 +45,14 @@ function fmtDensity(v) {
 
 export default function TransferPage() {
   const now = new Date();
+  // Web 端语言：默认中文；若 localStorage 标记 ru 则俄文（与 Desktop 同源）
+  const isRu =
+    typeof localStorage !== 'undefined' && localStorage.getItem('lang') === 'ru';
   const [mode, setMode] = useState('range');
   const [start, setStart] = useState(yearStartDate);
   const [end, setEnd] = useState(() => formatLocalDate(now));
   const [year, setYear] = useState(String(now.getFullYear()));
   const [month, setMonth] = useState(String(now.getMonth() + 1));
-  const [groupBy, setGroupBy] = useState('detail');
-  const [resource, setResource] = useState('');
   const [station, setStation] = useState(''); // ''=全部, 'blank'=未知站, 否则 shopKey
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -76,7 +61,7 @@ export default function TransferPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
-    const params = { groupBy, resource };
+    const params = { groupBy: 'station_resource' };
     if (mode === 'year') {
       params.mode = 'year';
       params.year = year;
@@ -99,7 +84,7 @@ export default function TransferPage() {
     } finally {
       setLoading(false);
     }
-  }, [mode, start, end, year, month, groupBy, resource, station]);
+  }, [mode, start, end, year, month, station]);
 
   useEffect(() => {
     loadData();
@@ -107,9 +92,22 @@ export default function TransferPage() {
 
   const total = data?.total || { liters: 0, tons: 0, rows: 0, density: 0 };
   const stationCount = (data?.summary?.byStation || []).length;
-  const records = Array.isArray(data?.records) ? data.records : [];
   const stations = Array.isArray(data?.stations) ? data.stations : [];
   const byResource = data?.summary?.byResource || [];
+
+  // 站名解析：按当前语言选择中/俄名；未知站回退 shopName
+  const stationMap = {};
+  stations.forEach((s) => { stationMap[s.shopKey] = s; });
+  const stationName = (row) => {
+    const s = stationMap[row.shopKey];
+    if (s) return isRu ? (s.nameRu || s.nameZh) : (s.nameZh || s.nameRu);
+    return row.shopName || `Station-${row.shopKey}`;
+  };
+
+  // 内容区：站×油品，按加油站编号顺序（再按油品）
+  const records = (Array.isArray(data?.records) ? data.records : [])
+    .slice()
+    .sort((a, b) => (a.shopKey - b.shopKey) || (a.resourceKey - b.resourceKey));
 
   const rangeText =
     mode === 'month'
@@ -120,46 +118,50 @@ export default function TransferPage() {
       ? `${start} 至 ${end}`
       : '--';
 
-  const columns = useMemo(() => {
-    const base = [
-      { key: 'liters', label: '升 (L)', num: true },
-      { key: 'tons', label: '吨 (t)', num: true },
-      { key: 'density', label: '密度 (kg/L)', num: true },
-      { key: 'rows', label: '笔数', num: true },
-    ];
-    if (groupBy === 'station') {
-      return [{ key: 'shopName', label: '加油站', num: false }, ...base];
-    }
-    if (groupBy === 'resource') {
-      return [{ key: 'resourceLabel', label: '油品', num: false }, ...base];
-    }
-    if (groupBy === 'month') {
-      return [{ key: 'month', label: '月份', num: false }, ...base];
-    }
-    return [
-      { key: 'date', label: '日期', num: false },
-      { key: 'shopName', label: '加油站', num: false },
-      { key: 'resourceLabel', label: '油品', num: false },
-      ...base,
-    ];
-  }, [groupBy]);
+  // 选中具体加油站时隐藏「加油站」列，只显示该站各油品
+  const specificStation = station !== '' && station !== 'blank';
 
-  const rowKey = (row, i) => {
-    if (groupBy === 'station') return `st-${row.shopKey}`;
-    if (groupBy === 'resource') return `rk-${row.resourceKey}`;
-    if (groupBy === 'month') return `mo-${row.month}`;
-    return `d-${row.date}-${row.shopKey}-${row.resourceKey}-${i}`;
-  };
+  // 全部加油站时合并「加油站」列：每个站点名跨其所有油品行显示一次（rowSpan）
+  const isGroupStart = {};
+  const stationRowSpan = {};
+  if (!specificStation && records.length) {
+    let i = 0;
+    while (i < records.length) {
+      const sk = records[i].shopKey;
+      let j = i;
+      while (j < records.length && records[j].shopKey === sk) j++;
+      isGroupStart[i] = true;
+      stationRowSpan[i] = j - i;
+      i = j;
+    }
+  }
+
+  const columns = [
+    ...(specificStation
+      ? []
+      : [{ key: 'shopName', label: '加油站', num: false, resolve: stationName }]),
+    { key: 'resourceLabel', label: '油品', num: false },
+    { key: 'liters', label: '升 (L)', num: true },
+    { key: 'tons', label: '吨 (t)', num: true },
+    { key: 'density', label: '密度 (kg/L)', num: true },
+    { key: 'rows', label: '笔数', num: true },
+  ];
+
+  const rowKey = (row) => `sr-${row.shopKey}-${row.resourceKey}`;
   const cellValue = (row, col) => {
-    if (col.num && col.key === 'density') return fmtDensity(row.density);
-    if (col.num) return fmtLiters(row[col.key]);
+    if (col.resolve) return col.resolve(row);
     if (col.key === 'tons') return fmtTons(row.tons);
+    if (col.key === 'density') return fmtDensity(row.density);
+    if (col.num) return fmtLiters(row[col.key]);
     return row[col.key] ?? '--';
   };
 
   const stationOptions = [
     { key: '', label: '全部加油站' },
-    ...stations.map((s) => ({ key: String(s.shopKey), label: s.shopName })),
+    ...stations.map((s) => ({
+      key: String(s.shopKey),
+      label: isRu ? (s.nameRu || s.nameZh) : (s.nameZh || s.nameRu),
+    })),
     { key: 'blank', label: '空白名称（未知站）' },
   ];
 
@@ -236,26 +238,6 @@ export default function TransferPage() {
           </>
         )}
 
-        <label>聚合</label>
-        <select
-          className="retail-search-input"
-          value={groupBy}
-          onChange={(e) => setGroupBy(e.target.value)}
-        >
-          {GROUP_OPTIONS.map((o) => (
-            <option key={o.key} value={o.key}>{o.label}</option>
-          ))}
-        </select>
-        <label>油品</label>
-        <select
-          className="retail-search-input"
-          value={resource}
-          onChange={(e) => setResource(e.target.value)}
-        >
-          {RESOURCE_OPTIONS.map((o) => (
-            <option key={o.key} value={o.key}>{o.label}</option>
-          ))}
-        </select>
         <label>加油站</label>
         <select
           className="retail-search-input"
@@ -287,13 +269,13 @@ export default function TransferPage() {
           <div className="kpi-label">合计吨位</div>
           <div className="kpi-value">{fmtTons(total.tons)}</div>
           <div className="kpi-unit">t</div>
-          <div className="kpi-change">Mass/TTN 兜底</div>
+          <div className="kpi-change">零售日报修正质量</div>
         </div>
         <div className="retail-kpi-card c3">
           <div className="kpi-label">平均密度</div>
           <div className="kpi-value">{fmtDensity(total.density)}</div>
           <div className="kpi-unit">kg/L</div>
-          <div className="kpi-change">吨÷升×1000</div>
+          <div className="kpi-change">修正质量÷体积</div>
         </div>
         <div className="retail-kpi-card c4">
           <div className="kpi-label">入库笔数</div>
@@ -357,9 +339,15 @@ export default function TransferPage() {
             ) : (
               records.map((row, i) => (
                 <tr key={rowKey(row, i)}>
-                  {columns.map((c) => (
-                    <td key={c.key} className={c.num ? 'num' : ''}>{cellValue(row, c)}</td>
-                  ))}
+                  {columns.map((c) => {
+                    if (c.key === 'shopName' && !specificStation) {
+                      if (!isGroupStart[i]) return null;
+                      return (
+                        <td key={c.key} rowSpan={stationRowSpan[i]} className="">{stationName(row)}</td>
+                      );
+                    }
+                    return <td key={c.key} className={c.num ? 'num' : ''}>{cellValue(row, c)}</td>;
+                  })}
                 </tr>
               ))
             )}
