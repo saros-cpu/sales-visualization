@@ -1,4 +1,4 @@
-import { refreshAccessToken } from './http';
+import { refreshAccessToken, buildFallbackUrls, NETWORK_ERROR_RE } from './http';
 
 async function getFreshToken(preferredToken?: string) {
   const refreshed = await refreshAccessToken();
@@ -42,24 +42,35 @@ export async function downloadWithAuth(url: string, filename: string, token?: st
 
   const headers: Record<string, string> = {};
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
-  let res = await fetch(url, { headers });
-  if (res.status === 401) {
-    const retryToken = await refreshAccessToken();
-    if (retryToken) {
-      res = await fetch(url, { headers: { Authorization: `Bearer ${retryToken}` } });
+  let lastErr: any;
+  for (const candidate of buildFallbackUrls(url)) {
+    try {
+      let res = await fetch(candidate, { headers });
+      if (res.status === 401) {
+        const retryToken = await refreshAccessToken();
+        if (retryToken) {
+          res = await fetch(candidate, { headers: { Authorization: `Bearer ${retryToken}` } });
+        }
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+      }, 200);
+      return;
+    } catch (e: any) {
+      lastErr = e;
+      if (e?.message && NETWORK_ERROR_RE.test(e.message)) continue;
+      throw e;
     }
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-
-  const blob = await res.blob();
-  const blobUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = blobUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  window.setTimeout(() => {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(blobUrl);
-  }, 200);
+  throw lastErr || new Error('下载失败');
 }

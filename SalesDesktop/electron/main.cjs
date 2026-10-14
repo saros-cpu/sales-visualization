@@ -562,8 +562,22 @@ function setupFileDownload() {
       };
     }
 
+    // 主域名(sales.example.com)在部分客户端网络不可达时，回退到 198.51.100.10(http)。
+    const candidateUrls = (() => {
+      const list = [url];
+      try {
+        if (/^https?:\/\//i.test(url)) {
+          const swapped = url
+            .replace(/^https:\/\//i, 'http://')
+            .replace(/sales\.example\.kg/i, '198.51.100.10');
+          if (swapped !== url) list.push(swapped);
+        }
+      } catch {}
+      return list;
+    })();
+
     const result = await dialog.showSaveDialog(mainWindow, {
-      defaultPath: filename,
+      defaultPath: path.join(app.getPath('downloads'), filename),
       filters: [
         { name: 'Documents', extensions: ['xlsx', 'docx', 'html', 'pdf'] },
         { name: 'All Files', extensions: ['*'] },
@@ -578,39 +592,51 @@ function setupFileDownload() {
       };
     }
 
-    try {
-      const headers = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        let body = '';
-        try {
-          body = (await response.text()).slice(0, 4000);
-        } catch {
-          body = '';
+    let lastErr = {
+      ok: false,
+      error: 'download_failed',
+      message: '下载文件时发生未知错误',
+    };
+    for (const target of candidateUrls) {
+      try {
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const response = await fetch(target, { headers });
+        if (!response.ok) {
+          let body = '';
+          try {
+            body = (await response.text()).slice(0, 4000);
+          } catch {
+            body = '';
+          }
+          lastErr = {
+            ok: false,
+            error: `http_${response.status}`,
+            status: response.status,
+            statusText: response.statusText,
+            message: `下载接口返回错误：${response.status} ${response.statusText}`,
+            bodyPreview: body,
+          };
+          // HTTP 错误也尝试回退主机（回退主机大概率同错），最终返回该错误
+          continue;
         }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(result.filePath, buffer);
         return {
-          ok: false,
-          error: `http_${response.status}`,
-          status: response.status,
-          statusText: response.statusText,
-          message: `下载接口返回错误：${response.status} ${response.statusText}`,
-          bodyPreview: body,
+          ok: true,
+          filePath: result.filePath,
         };
+      } catch (e) {
+        lastErr = {
+          ok: false,
+          error: 'download_failed',
+          message: e?.message || '下载文件时发生未知错误',
+        };
+        // 网络/连接错误 → 换回退主机重试
+        continue;
       }
-      const buffer = Buffer.from(await response.arrayBuffer());
-      fs.writeFileSync(result.filePath, buffer);
-      return {
-        ok: true,
-        filePath: result.filePath,
-      };
-    } catch (e) {
-      return {
-        ok: false,
-        error: 'download_failed',
-        message: e?.message || '下载文件时发生未知错误',
-      };
     }
+    return lastErr;
   });
 }
 

@@ -3,8 +3,8 @@
 // MINOR: 新增功能（向后兼容）
 // PATCH: Bug 修复、小优化（向后兼容）
 
-export const VERSION = '5.6.6';
-export const BUILD_DATE = '2026-10-04';
+export const VERSION = '5.6.7';
+export const BUILD_DATE = '2026-10-09';
 export const DEVELOPER = 'Юрий';
 
 export interface ChangelogEntry {
@@ -15,6 +15,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '5.6.7',
+    date: '2026-10-09',
+    type: 'patch',
+    changes: [
+      '修复：报表中心导出一直失败——客户端渲染器为本地 bundle（app://），导出「生成」与「下载」此前只认主域名 sales.example.com 且无主机回退，其余普通请求会自动回退到备用入口；当主域名在客户端网络不可达、但备用入口可达时，导出整体失败而数据请求正常。现导出生成与下载均改为「主域名 + 全部备用主机」候选列表逐个尝试。',
+      '优化：客户端下载文件时，主域名网络失败自动回退到备用入口（http://198.51.100.10），规避 HTTPS 证书在 Node 端的潜在拦截。',
+      '优化：下载保存对话框默认目录设为系统「下载」文件夹，便于快速定位已保存文件。',
+      '说明：后端数据口径未改动（仍为同一 8900 后端），导出内容与数据不受影响。',
+    ],
+  },
   {
     version: '5.6.6',
     date: '2026-10-04',

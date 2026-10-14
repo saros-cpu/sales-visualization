@@ -1,5 +1,5 @@
 import { message } from 'antd';
-import { API_HOST, refreshAccessToken } from './http';
+import { API_HOST, refreshAccessToken, buildFallbackUrls, NETWORK_ERROR_RE } from './http';
 import { downloadWithAuth } from './download';
 import { ApiPaths, ReportCatalog } from '@shared/api-contracts';
 
@@ -40,20 +40,34 @@ async function fetchWithAuth(url: string, init: RequestInit = {}) {
 }
 
 async function fetchJsonWithAuth(url: string, init: RequestInit = {}) {
-  const res = await fetchWithAuth(url, init);
-  const text = await res.text();
-  let json: any = {};
-  if (text) {
+  let lastErr: any;
+  for (const candidate of buildFallbackUrls(url)) {
     try {
-      json = JSON.parse(text);
-    } catch {
-      throw new Error(`HTTP ${res.status}`);
+      const res = await fetchWithAuth(candidate, init);
+      const text = await res.text();
+      let json: any = {};
+      if (text) {
+        try {
+          json = JSON.parse(text);
+        } catch {
+          throw new Error(`HTTP ${res.status}`);
+        }
+      }
+      if (!res.ok) {
+        // 真实 HTTP 错误（401/404/500 等）不换主机，直接抛出
+        throw new Error(json.message || json.error || `HTTP ${res.status}`);
+      }
+      return json;
+    } catch (e: any) {
+      lastErr = e;
+      // 仅网络/连接层失败才尝试回退主机；HTTP 错误与 JSON 解析错误直接上抛
+      if (e?.message && NETWORK_ERROR_RE.test(e.message)) {
+        continue;
+      }
+      throw e;
     }
   }
-  if (!res.ok) {
-    throw new Error(json.message || json.error || `HTTP ${res.status}`);
-  }
-  return json;
+  throw lastErr || new Error('请求失败');
 }
 
 async function downloadBlob(url: string, filename: string) {
@@ -65,6 +79,10 @@ function absoluteUrl(path?: string) {
   if (/^https?:\/\//i.test(path)) return path;
   return `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
+
+// 生成与下载只认 API_HOST 会漏掉自动回退主机（198.51.100.10）。
+// 当主域名在客户端网络不可达、但回退 IP 可达时，导出会整体失败而普通请求正常。
+// buildFallbackUrls 把主 URL 展开成「主域名 + 全部回退主机」的候选列表，逐个尝试。
 
 function ensureGenerated(json: any, fallbackMessage: string) {
   if (json?.status === 'ok' || json?.code === 0 || json?.ok === true) return;

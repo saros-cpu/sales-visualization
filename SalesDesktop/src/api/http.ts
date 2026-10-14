@@ -91,11 +91,36 @@ export function resolveApiHost() {
 
 export const API_HOST = resolveApiHost();
 
-function fallbackApiHosts() {
+export function fallbackApiHosts() {
   return Array.from(new Set([
     normalizeHost(DEFAULT_PUBLIC_API_HOST),
     ...PUBLIC_FALLBACK_API_HOSTS.map(normalizeHost),
   ])).filter((host) => host && host !== API_HOST && isAllowedApiHost(host));
+}
+
+// 网络/连接层错误（区别于 HTTP 状态码错误）：用于决定是否换回退主机重试
+export const NETWORK_ERROR_RE = /Failed to fetch|NetworkError|net::ERR|ECONN|getaddrinfo|ENOTFOUND|ETIMEDOUT|fetch failed|timed out|certificate|self.signed|UNABLE_TO_VERIFY/i;
+
+// 把主 URL 展开成「主域名 + 全部回退主机」候选列表（协议/主机替换为各候选）。
+// 客户端渲染器是本地 bundle(app://)，销售域在部分网络不可达时，导出必须能回退到 198.51.100.10。
+export function buildFallbackUrls(input: string): string[] {
+  if (!/^https?:\/\//i.test(input)) return [input];
+  try {
+    const hosts = Array.from(new Set([API_HOST, ...fallbackApiHosts()])).filter(Boolean);
+    return hosts.map((h) => {
+      try {
+        const u = new URL(input);
+        const uh = new URL(/\/\//.test(h) ? h : `https://${h}`);
+        u.protocol = uh.protocol;
+        u.host = uh.host;
+        return u.toString();
+      } catch {
+        return input;
+      }
+    });
+  } catch {
+    return [input];
+  }
 }
 
 export function clearAuthTokens() {
