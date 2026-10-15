@@ -1,48 +1,66 @@
 # Fuel Retail BI & Visualization Platform — Project Introduction (English)
 
-> An end-to-end business-intelligence and visualization platform built for **fuel retail and wholesale operations** (petrol stations, depots, wholesale customers). It aggregates point-of-sale data, produces bilingual management reports, monitors competitor fuel prices, and renders a 3D station map — delivered across **Web, desktop (Electron), and a desktop wallpaper engine**, backed by a Flask + MySQL service behind Nginx HTTPS.
+> An end-to-end business-intelligence platform for **fuel retail and wholesale operations** — petrol stations, depots and wholesale customers. It turns a legacy on-premise POS database into automated snapshots, bilingual management reports, live competitor price monitoring, an on-premise AI assistant, and a 3D station map, delivered across **Web, desktop and a desktop wallpaper engine**.
+
+---
+
+## Short pitch (for applications / profiles)
+
+I designed, built and now operate a full business-intelligence platform for a fuel retail network of a mid-size fuel retail network. It replaced a manual workflow in which staff spent 3–4 hours every day assembling Excel reports by hand from a legacy Russian point-of-sale database.
+
+The system reads the POS database directly, builds versioned daily and monthly snapshots, serves a Flask + MySQL API behind Nginx, and renders the results in three front ends: a React web dashboard, an Electron desktop client with an auto-update feed, and a desktop wallpaper engine that shows live inventory. It also scrapes competitor fuel prices daily, generates Chinese–Russian bilingual Excel and Word reports, and answers manager questions in natural language through a **locally hosted LLM**, so no operational data ever leaves the network.
+
+80 released versions, bilingual throughout, in continuous production use. This repository is a desensitized public release: all company names, coordinates, customer names and financial figures are synthetic.
 
 ---
 
 ## 1. Why this project exists
 
-Retail fuel chains in emerging markets typically run on legacy on-premise POS software whose reporting is manual and slow. In the deployment this system was built for, staff at **a mid-size fuel retail network** spent **3–4 hours every day** manually assembling Excel reports from the POS database, and management had no single view of sales, inventory, margin, or competitor pricing.
+Fuel retail chains in emerging markets commonly run on legacy on-premise POS software whose reporting is manual, slow and error-prone. In the deployment this system was built for:
 
-This platform replaces that workflow with an automated pipeline:
-POS database → automated snapshots → KPI dashboards → generated Excel/Word reports → delivered to management,
+- Staff at **a mid-size fuel retail network** spent **3–4 hours per day** manually assembling Excel reports out of the POS database.
+- Management had no single view of sales, inventory, margin or competitor pricing.
+- Reports were reconciled by hand, so the same question asked twice could get two different answers.
 
-with data also exposed through a **local LLM assistant** so non-technical managers can ask questions in Chinese or Russian and get answers grounded in the same reporting rules the system uses.
+This platform replaces that workflow with one automated pipeline:
+
+```
+POS database → automated snapshots → KPI dashboards → generated Excel / Word reports → management
+```
+
+and exposes the same data to a **local LLM assistant**, so non-technical managers can ask questions in Chinese or Russian and get answers grounded in exactly the same reporting rules the system uses for its official numbers.
 
 ---
 
 ## 2. What it does
 
-### Retail operations
-- Daily and monthly **retail snapshots** (volume, mass, revenue) per station, per fuel grade (АИ-80 / АИ-92 / АИ-95 / diesel / LPG).
-- **Data-quality correction**: dirty density readings are detected per-row and corrected against per-grade sanity windows; good and bad rows are separated rather than bucketed, so tonnage stays accurate.
-- Payment-channel breakdown (cash / card / contract / internal use / complimentary), shift-level integrity checks, and detection of zero-length shifts that silently swallow sales.
+### 2.1 Retail operations
+- Daily and monthly **retail snapshots** — volume, mass and revenue per station, per fuel grade (АИ-80 / АИ-92 / АИ-95 / diesel / LPG).
+- **Data-quality correction**: dirty density readings are detected **row by row** and corrected against per-grade sanity windows. Good and bad rows are separated individually rather than bucketed, so tonnage stays accurate.
+- Payment-channel breakdown (cash / card / contract / internal use / complimentary), shift-level integrity checks, and detection of zero-duration shifts that would otherwise silently swallow sales.
 
-### Wholesale, transfers and processing
-- Unified classification of wholesale, inter-depot transfer (supply), and toll-processing flows, driven by a single source of truth for entity names (station catalogue + customer registry) instead of ad-hoc branching.
-- Tonnage for transfers computed from real measured mass, with fallback chains (`Mass → MassTTN → TankerMass`) and no blanket density assumption.
+### 2.2 Wholesale, transfers and processing
+- Unified classification of wholesale, inter-depot transfer (supply) and toll-processing flows, driven by a **single source of truth** for entity identity (station catalogue + customer registry) instead of ad-hoc branching at each call site.
+- Transfer tonnage computed from **real measured mass**, with a fallback chain (`Mass → MassTTN → TankerMass`) and no blanket density assumption.
 
-### Reporting
-- Excel exports with **Chinese–Russian bilingual headers**, merged station-name cells, `#,##0.000` numeric formatting, auto column widths, and validity rules (rows with no sales/movement are left blank).
-- Daily management briefing and accounting handover documents generated on schedule.
-- Report figures are versioned and cacheable, so a month can be recomputed deterministically after a rule change.
+### 2.3 Reporting
+- Excel exports with **Chinese–Russian bilingual headers**, merged station-name cells, `#,##0.000` numeric formatting, auto column widths, and validity rules (rows with no sales or movement stay blank).
+- Daily management briefings and accounting handover documents generated on schedule.
+- Report figures are **versioned and cacheable**, so any month can be recomputed deterministically after a rule change.
 
-### Competitor price watch
-- Four-tier price sourcing: partner API (live) → per-competitor published price tables scraped from media → official national average anchor → station-manager "sentinel" submissions.
-- Rule: always carry forward the **latest quote at or before the target date** and mark it as carried — never present a stale price as a fresh one.
-- Listed prices and realised average prices are kept strictly separate (they are never subtracted from one another).
+### 2.4 Competitor price watch
+- Four-tier price sourcing: partner API (live) → per-competitor published price tables parsed from media → official national average anchor → station-manager "sentinel" submissions.
+- Hard rule: always carry forward the **latest quote at or before the target date** and label it as carried — a stale price is never presented as a fresh one.
+- Listed prices and realised average prices are kept strictly separate; they are never subtracted from one another.
 
-### Visualization
-- **3D station map** (custom lightweight Three.js renderer, no heavy GIS stack): station and depot markers, inventory capacity tooltips, region grouping.
-- Desktop **wallpaper engine** that renders inventory and map panels directly on the desktop background.
+### 2.5 Visualization
+- **3D station map** built on a custom lightweight Three.js renderer — no heavy GIS stack. Station and depot markers, inventory-capacity tooltips, region grouping.
+- Desktop **wallpaper engine** rendering inventory and map panels directly onto the desktop background.
 - Multi-role dashboards with department-scoped permissions.
 
-### AI assistant
-- Runs a **local LLM** (data never leaves the premises). Questions are routed by keyword to retail or wholesale domain, then answered by generated SQL over the reporting layer, with per-grade pricing computed independently rather than averaged.
+### 2.6 AI assistant
+- Runs a **local LLM**; operational data never leaves the premises.
+- Questions are routed by keyword to the retail or wholesale domain, then answered by generated SQL over the reporting layer. Per-grade prices are computed independently for each grade — never blended into a single average.
 
 ---
 
@@ -57,7 +75,7 @@ POS / MySQL  ──►  Python snapshot builders  ──►  cached snapshots (d
                     ┌─────────────────┬───────────────┼──────────────────┐
                     ▼                 ▼               ▼                  ▼
              Web frontend      Desktop client   Wallpaper engine   Local LLM
-            (React + Vite)   (Electron+Vite)    (native widget)    (inference)
+            (React + Vite)   (Electron + Vite)  (native widget)    (inference)
                     └─────────────────┴───────────────┴──────────────────┘
                                           │
                                     Nginx (HTTPS, multi-domain reverse proxy)
@@ -66,7 +84,7 @@ POS / MySQL  ──►  Python snapshot builders  ──►  cached snapshots (d
 | Layer | Stack |
 | --- | --- |
 | Backend | Python + Flask (REST, JSON) |
-| Data | MySQL (reporting views, snapshot caches) |
+| Data | MySQL — reporting views and snapshot caches |
 | Web frontend | React + Vite + React Router |
 | Desktop client | Electron + Vite + React (auto-update feed) |
 | Wallpaper engine | Standalone native widget, independent version line |
@@ -75,33 +93,35 @@ POS / MySQL  ──►  Python snapshot builders  ──►  cached snapshots (d
 | AI | Local LLM inference (on-premise) |
 
 **Design rules worth noting**
-- Single source of truth for tank↔fuel-grade mapping and station/customer identity — five consumption paths are dictionary-driven rather than branched per call site, so a mapping change is one edit plus a validation run.
-- Report semantics live in one place; the same expressions are reused by the export path, the generator, and the shared layer.
-- Snapshot-first reads: month/year queries hit prebuilt snapshots when all months are closed, and fall back to live queries only when data is incomplete.
+
+- **Single source of truth.** Tank↔fuel-grade mapping and station/customer identity live in dictionaries consumed by five separate paths; adding a mapping is one edit plus a validation run, never five branches.
+- **Report semantics live in one place.** The same mass/volume/revenue expressions are reused by the Excel export, the report generator and the shared layer.
+- **Snapshot-first reads.** Month and year queries hit prebuilt snapshots when all months are closed, and fall back to live SQL only when data is incomplete.
 
 ---
 
-## 4. Scale and maturity
+## 4. Engineering highlights
 
-- Deployed and running in production, serving **a mid-size fuel retail network**.
-- **80 released versions** (v1.0.0 → v5.6.7) of iterative development, tracked as tags in this repository.
-- Chinese–Russian bilingual throughout (UI, reports, entity naming).
-- Replaced a 3–4 hour/day manual reporting process per station network.
-- Operated behind Nginx with HTTPS across multiple domains, plus a remote desktop maintenance path.
-
----
-
-## 5. Engineering highlights
-
-1. **Correctness over convenience** — dirty-density correction works per row instead of per bucket; validation scripts assert the mapping invariants (expected count checked, not assumed).
-2. **No duplicate business logic** — mapping dictionaries and report expressions are shared across export, generation, and UI layers; a change is made once.
-3. **Defensive data pipeline** — shift joins use inclusive bounds to catch zero-duration shifts; daily snapshots record `status`/`closedReason` so anomalies are diagnosable after the fact.
-4. **Honest price sourcing** — carried-forward quotes are explicitly labelled; national averages are only ingested when they come from the same article as the matched price table.
-5. **On-premise AI** — the assistant runs locally, matching the constraint that operational data must not leave the company network.
+1. **Correctness over convenience** — dirty-density correction works per row, not per bucket, and validation scripts assert mapping invariants against an expected count rather than assuming them.
+2. **No duplicated business logic** — mapping dictionaries and report expressions are shared across export, generation and UI layers; a semantic change is made once.
+3. **Defensive data pipeline** — shift joins use inclusive bounds so zero-duration shifts are caught; daily snapshots persist `status` and `closedReason` so an anomaly is still diagnosable months later.
+4. **Honest price sourcing** — carried-forward quotes are explicitly labelled, and a national average is only ingested when it originates from the same article as the matched price table.
+5. **On-premise AI** — the assistant runs locally to satisfy the constraint that operational data must not leave the company network.
+6. **Bilingual by design** — Chinese and Russian are first-class in the UI, in report headers and in entity naming, including normalization rules for Cyrillic/Latin homoglyphs.
 
 ---
 
-## 6. Repository contents
+## 5. Scale and maturity
+
+- Running in production for a network of **a mid-size fuel retail network**.
+- **80 released versions** (v1.0.0 → v5.6.7) of continuous iteration, preserved as tags in this repository.
+- Chinese–Russian bilingual throughout — UI, reports, entity naming.
+- Eliminated a 3–4 hour per day manual reporting workload.
+- Deployed behind Nginx with HTTPS across multiple domains, with a remote-maintenance path for field support.
+
+---
+
+## 6. Repository layout
 
 | Path | Contents |
 | --- | --- |
@@ -109,7 +129,7 @@ POS / MySQL  ──►  Python snapshot builders  ──►  cached snapshots (d
 | `OilStation/` | Station data, snapshot builders, report generation |
 | `frontend/` | Web frontend (React + Vite) |
 | `SalesDesktop/` | Desktop client (Electron + Vite + React) |
-| `SalesWallpaperEngine/` | Wallpaper engine |
+| `SalesWallpaperEngine/` | Desktop wallpaper engine |
 | `shared/` | Cross-target API contracts and shared logic |
 | `scripts/` | Deployment and maintenance scripts |
 | `docs/` | Configuration and data-semantics documentation |
@@ -118,9 +138,11 @@ POS / MySQL  ──►  Python snapshot builders  ──►  cached snapshots (d
 
 ## 7. Note on this release
 
-This is a **desensitized public release**. All real company names, domains, public IPs, station coordinates, customer names, and financial figures have been replaced with synthetic placeholders. The repository contains no `.env`, no database dump, and no certificates.
+This is a **desensitized public release**. All real company names, domains, public IP addresses, station and depot coordinates, customer names, personal names, vehicle plate numbers and financial figures have been replaced with synthetic placeholders across the entire commit history. The repository contains no `.env`, no database dump and no certificates.
 
-Geo data has been intentionally removed: **station/depot coordinates are zeroed and the country/region GeoJSON basemap is not included** — anyone deploying this must supply their own geodata. Fuel-grade names (АИ-80/92/95, diesel, LPG) and generic petroleum/chemical terminology are retained as-is, since they are standard domain vocabulary rather than company information.
+Geographic data has been intentionally removed: **station and depot coordinates are zeroed, and the country/region GeoJSON basemap is not included** — anyone deploying this must supply their own geodata (see `OilStation/kgz.geojson.template`).
+
+Fuel-grade names (АИ-80/92/95, diesel, LPG) and generic petroleum/chemical terminology are retained as-is: they are standard domain vocabulary, not company information.
 
 ---
 
