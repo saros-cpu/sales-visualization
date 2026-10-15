@@ -1,0 +1,13 @@
+{
+  "_README": "GeoJSON basemap template. The public release contains no real geography data. Replace the empty features array with your own administrative boundary polygons (country / region level) and save the result as kgz.geojson so the map renderer can load it. Structure follows RFC 7946.",
+  "type": "FeatureCollection",
+  "name": "regions_template",
+  "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "REGION-01" },
+      "geometry": { "type": "MultiPolygon", "coordinates": [] }
+    }
+  ]
+}
