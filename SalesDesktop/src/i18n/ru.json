@@ -581,7 +581,7 @@
     "manualEntry": "Ручной ввод",
     "detailMaintenance": "Ведение деталей",
     "senderZd": "Example石油公司 / Example Petroleum CJSC",
-    "senderCustomerSAbbr": "油气公司 / CJSC CUSTOMER-S нефть и газ (CUSTOMER-S-АББР)",
+    "senderCustomerSAbbr": "油气公司 / CJSC CUSTOMER-S нефть и газ",
     "senderProcessing": "代加工公司 / CJSC НПЗ CUSTOMER-H-3",
     "senderCustomerH": "代加工公司 / CUSTOMER-H",
     "senderCustomerF": "代加工公司 / OcOO  “CUSTOMER-F”",
@@ -709,8 +709,8 @@
     "statusCompleted": "Завершено"
   },
   "contracts": {
-    "exCompany": "ExampleCo / ZD",
-    "customerSCompany": "Нефтегаз / CUSTOMER-S-АББР",
+    "exCompany": "ExampleCo / EX",
+    "customerSCompany": "Нефтегаз",
     "dateRangeError": "Дата окончания не может быть раньше даты начала",
     "appendixNoHint": "В колонке приложения указываются только номера приложений; несколько номеров можно разделять запятыми, точками с запятой или переносом строки. Загрузка файлов пока не выполняется.",
     "salesTypes": {

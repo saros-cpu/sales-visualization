@@ -117,6 +117,16 @@ cd SalesWallpaperEngine
 
 ---
 
+## 维护者与联系方式
+
+- **维护者 / Maintainer**：Юрий
+- **邮箱 / Email**：631131066@qq.com
+- **Telegram**：+996555883019
+
+问题反馈、部署咨询、功能建议均可通过以上方式联系。
+
+---
+
 ## 许可证
 
 本项目基于 **MIT License** 开源，详见 [`LICENSE`](./LICENSE)。

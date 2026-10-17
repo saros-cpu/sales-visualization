@@ -675,7 +675,7 @@ ru.json 对应补充。
 ```typescript
 const COMPANY_OPTIONS = [
   { label: t('common.all'), value: '' },
-  { label: `${t('common.example')} / ZD`, value: 'Example,EX' },
+  { label: `${t('common.example')} / EX`, value: 'Example,EX' },
   { label: `${t('common.oilCompany')} / CUSTOMER-S-АББР`, value: '油气公司,CUSTOMER-S-АББР' },
 ];
 ```

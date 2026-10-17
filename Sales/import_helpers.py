@@ -588,8 +588,8 @@ _INTERNAL_SUBSTRING_KEYWORDS = (
     "DemoDepot",
 )
 _INTERNAL_EXACT_KEYWORDS = (
-    "CUSTOMER-S-LAT",
     "CUSTOMER-S-АББР",
+    "CUSTOMER-S-LAT",
     "CTY-30",
     "CTY-05",
     "CTY-22-LAT",
@@ -636,7 +636,7 @@ _SENDER_STANDARD_ALIASES = (
             "Нефть и газ",
             "CUSTOMER-S-LAT",
             "Regional Petroleum Company",
-            "Oil Gas",
+            "Oil and Gas",
         ),
     ),
     ("CUSTOMER-H", ("CUSTOMER-H", "CUSTOMER-H-3", "CUSTOMER-H 3", "CUSTOMER-H-3", "CUSTOMER-H-LAT")),
@@ -645,7 +645,7 @@ _SENDER_STANDARD_ALIASES = (
         (
             'OcOO "CUSTOMER-F"',
             "CUSTOMER-F",
-            "CUSTOMER-F PETROLAT",
+            "CUSTOMER-F-LAT",
         ),
     ),
     (
@@ -653,11 +653,11 @@ _SENDER_STANDARD_ALIASES = (
         (
             'CJSC "CUSTOMER-E ГРУПП"',
             "CUSTOMER-E ГРУПП",
-            "CUSTOMER-E GROUP LAT",
+            "CUSTOMER-E-GROUP-LAT",
         ),
     ),
-    ("CUSTOMER-G", ("CUSTOMER-G", "CUSTOMER-G LAT")),
-    ('CJSC "CUSTOMER-J"', ('CJSC "CUSTOMER-J"', "CUSTOMER-J", "CUSTOMER-J LAT")),
+    ("CUSTOMER-G", ("CUSTOMER-G", "CUSTOMER-G-LAT")),
+    ('CJSC "CUSTOMER-J"', ('CJSC "CUSTOMER-J"', "CUSTOMER-J", "CUSTOMER-J-LAT")),
 )
 
 
@@ -949,7 +949,7 @@ def is_processing_sender_name(name):
         "CUSTOMER-H 3",
         "CUSTOMER-H",
         "CUSTOMER-H3",
-        "CUSTOMER-H-LAT",
+        "CUSTOMER-H-LAT-ЗАМЕНА",
         "CUSTOMER-F ПЕТРОЛАТ",
         "CUSTOMER-FПЕТРОЛАТ",
         "CUSTOMER-F PETROLAT",

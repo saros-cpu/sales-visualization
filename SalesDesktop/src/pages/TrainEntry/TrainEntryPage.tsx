@@ -74,7 +74,7 @@ export default function TrainEntryPage() {
       label: t('wholesaleEntry.senderZd'),
     },
     {
-      value: '油气公司 / CJSC CUSTOMER-S нефть и газ (CUSTOMER-S-АББР)',
+      value: '油气公司 / CJSC CUSTOMER-S нефть и газ',
       label: t('wholesaleEntry.senderCustomerSAbbr'),
     },
     { value: 'CUSTOMER-H', label: t('wholesaleEntry.senderCustomerH') },

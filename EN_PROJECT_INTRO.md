@@ -6,7 +6,7 @@
 
 ## Short pitch (for applications / profiles)
 
-I designed, built and now operate a full business-intelligence platform for a fuel retail network of a mid-size fuel retail network. It replaced a manual workflow in which staff spent 3–4 hours every day assembling Excel reports by hand from a legacy Russian point-of-sale database.
+I designed, built and now operate a full business-intelligence platform for a mid-size fuel retail network. It replaced a manual workflow in which staff spent 3–4 hours every day assembling Excel reports by hand from a legacy on-premise point-of-sale database.
 
 The system reads the POS database directly, builds versioned daily and monthly snapshots, serves a Flask + MySQL API behind Nginx, and renders the results in three front ends: a React web dashboard, an Electron desktop client with an auto-update feed, and a desktop wallpaper engine that shows live inventory. It also scrapes competitor fuel prices daily, generates Chinese–Russian bilingual Excel and Word reports, and answers manager questions in natural language through a **locally hosted LLM**, so no operational data ever leaves the network.
 
@@ -16,9 +16,9 @@ The system reads the POS database directly, builds versioned daily and monthly s
 
 ## 1. Why this project exists
 
-Fuel retail chains in emerging markets commonly run on legacy on-premise POS software whose reporting is manual, slow and error-prone. In the deployment this system was built for:
+Fuel retail chains in many emerging markets commonly run on legacy on-premise POS software whose reporting is manual, slow and error-prone. In the deployment this system was built for:
 
-- Staff at **a mid-size fuel retail network** spent **3–4 hours per day** manually assembling Excel reports out of the POS database.
+- Staff across the network spent **3–4 hours per day** manually assembling Excel reports out of the POS database.
 - Management had no single view of sales, inventory, margin or competitor pricing.
 - Reports were reconciled by hand, so the same question asked twice could get two different answers.
 
@@ -113,7 +113,7 @@ POS / MySQL  ──►  Python snapshot builders  ──►  cached snapshots (d
 
 ## 5. Scale and maturity
 
-- Running in production for a network of **a mid-size fuel retail network**.
+- Running in production for a mid-size fuel retail network.
 - **80 released versions** (v1.0.0 → v5.6.7) of continuous iteration, preserved as tags in this repository.
 - Chinese–Russian bilingual throughout — UI, reports, entity naming.
 - Eliminated a 3–4 hour per day manual reporting workload.
@@ -146,6 +146,16 @@ Fuel-grade names (АИ-80/92/95, diesel, LPG) and generic petroleum/chemical ter
 
 ---
 
-## 8. License
+## 8. Maintainer and contact
+
+- **Maintainer**: Юрий
+- **Email**: 631131066@qq.com
+- **Telegram**: +996555883019
+
+Bug reports, deployment questions and feature discussions are welcome through any of the channels above.
+
+---
+
+## 9. License
 
 Released under the **MIT License**.

@@ -652,7 +652,7 @@
     "manualEntry": "手动录入",
     "detailMaintenance": "明细维护",
     "senderZd": "Example石油公司 / Example Petroleum CJSC",
-    "senderCustomerSAbbr": "油气公司 / CJSC CUSTOMER-S нефть и газ (CUSTOMER-S-АББР)",
+    "senderCustomerSAbbr": "油气公司 / CJSC CUSTOMER-S нефть и газ",
     "senderProcessing": "代加工公司 / CJSC НПЗ CUSTOMER-H-3",
     "senderCustomerH": "代加工公司 / CUSTOMER-H",
     "senderCustomerF": "代加工公司 / OcOO  “CUSTOMER-F”",
@@ -780,8 +780,8 @@
     "statusCompleted": "已完成"
   },
   "contracts": {
-    "exCompany": "Example / ZD",
-    "customerSCompany": "油气公司 / CUSTOMER-S-АББР",
+    "exCompany": "Example / EX",
+    "customerSCompany": "油气公司",
     "dateRangeError": "到期日期不能早于生效日期",
     "appendixNoHint": "附件列仅登记附件编号；多个附件编号可用逗号、分号或换行记录，暂不上传文件。",
     "salesTypes": {
