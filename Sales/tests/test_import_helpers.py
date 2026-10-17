@@ -268,7 +268,7 @@ class CustomerTypeLookupTest(unittest.TestCase):
             cursor,
             entity_lookup,
             "Example",
-            sender_name="Example Supplier International Co",
+            sender_name="Acme Supply Co",
             current="unknown",
         )
 

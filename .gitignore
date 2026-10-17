@@ -51,6 +51,7 @@ outputs/
 report_compare_outputs/
 temp/
 uploads/
+.runtime/
 # 路径子串排除（每行一个，与 EXCLUDE_PATH_SUBSTR 对齐）
 **/项目文档*
 **/localhost_login_page*
